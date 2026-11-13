@@ -42,7 +42,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-VERSION = 1
+VERSION = 2  # 2: prefill anchored, computed prompt tokens in the traffic memory
 MEMORY = 4096  # recorded arrivals kept
 WINDOW = 32  # arrivals per dreamed window
 WINDOWS = 48  # dreamed windows per decision
@@ -52,6 +52,8 @@ TTFT_TOLERANCE = 1.02  # mean first token at most 2 % later than the incumbent's
 RETRY_AFTER = 512  # a rejected candidate may be dreamed again after this many new requests
 FORGET = 0.995
 RECENT = 256  # arrivals that count as the current traffic
+LIVE_MIN = 200  # live steps before a configuration is priced by its own live model
+FACTOR_MIN = 20  # live steps before its own live factor prices it
 FEATURES = 4  # 1, decode rows, prompt tokens / 1000, attended KV tokens / 1000
 
 
@@ -109,17 +111,28 @@ class StepCost:
         return cls([max(1e-5, step_one - per_row), per_row, max(0.0, prefill_per_1k), max(0.0, kv_per_1k)])
 
 
+class Scaled:
+    """A start model times the machine factor: how a configuration that has not served enough is priced."""
+
+    def __init__(self, base: StepCost, factor: float):
+        self.base, self.factor = base, factor
+
+    def predict(self, rows: int, prompt: int, kv: int) -> float:
+        return self.base.predict(rows, prompt, kv) * self.factor
+
+
 # --- the engine, simulated ---------------------------------------------------------------------------------------------
 
-def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple[float, int, int]], seq_ctx: int = 2048,
+def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple], seq_ctx: int = 2048,
              trace: list[tuple[int, int, int, float]] | None = None) -> dict[str, float]:
-    """The engine's continuous batching on `arrivals` [(time, prompt tokens, answer tokens)], priced by `cost`: in each
+    """The engine's continuous batching on `arrivals` [(time, prompt tokens, answer tokens[, prompt tokens computed])],
+    priced by `cost` (a prompt's kept prefix costs no prefill but is attended to): in each
     step every waiting request that has arrived takes a free sequence and its prompt goes into the step's one call
     (up to `seq_ctx` prompt tokens, at least one prompt), every running request gets one token, a finished request
     frees its sequence. Returns tokens, seconds from the first arrival to the last token, and mean first-token time."""
-    pending = sorted(arrivals)
+    pending = sorted((a[0], a[1], a[2], a[3] if len(a) > 3 else a[1]) for a in arrivals)
     i, now, free = 0, (pending[0][0] if pending else 0.0), width
-    waiting: deque[tuple[float, int, int]] = deque()
+    waiting: deque[tuple[float, int, int, int]] = deque()
     active: list[list[float]] = []  # [remaining tokens, context tokens]
     tokens, ttft = 0, []
     while i < len(pending) or waiting or active:
@@ -130,10 +143,10 @@ def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple[float, int, in
             now = pending[i][0]
             continue
         joined, prompt = [], 0
-        while waiting and free and (not joined or prompt + waiting[0][1] <= seq_ctx):
+        while waiting and free and (not joined or prompt + waiting[0][3] <= seq_ctx):
             request = waiting.popleft()
             joined.append(request)
-            prompt += request[1]
+            prompt += request[3]
             free -= 1
         if not joined and not active:  # nothing fits until something frees (cannot happen with width >= 1)
             now = pending[i][0] if i < len(pending) else now + 1e-3
@@ -152,7 +165,7 @@ def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple[float, int, in
                 survivors.append(job)
             else:
                 free += 1
-        for arrived, prompt_tokens, answer in joined:
+        for arrived, prompt_tokens, answer, _ in joined:
             ttft.append(now - arrived)
             tokens += 1
             if answer > 1:
@@ -174,9 +187,11 @@ def windows(memory: Sequence[tuple[float, int, int]], rng: random.Random, count:
     for _ in range(count):
         start = rng.randrange(max(0, last - RECENT), last) if rng.random() < 0.75 else rng.randrange(0, last)
         factor, t, window = rng.uniform(0.5, 1.5), 0.0, []
-        for gap, prompt, answer in memory[start:start + size]:
+        for row in memory[start:start + size]:
+            gap, prompt, answer = row[:3]
             t += gap * factor
-            window.append((t, max(1, int(prompt)), max(1, int(answer))))
+            computed = int(row[3]) if len(row) > 3 else int(prompt)
+            window.append((t, max(1, int(prompt)), max(1, int(answer)), max(1, min(int(prompt), computed))))
         out.append(window)
     return out
 
@@ -222,6 +237,19 @@ class GgmlAgent:
         # busy at long contexts) cannot tell rows from attended tokens apart, and without these points a model fitted
         # there drifts where it has seen nothing (AG10 S, run 1: no way back to flash attention for short chats)
         self.anchors = {name: anchors_of(c) for name, c in configs.items()}
+        # each configuration's start model alone (anchors only), and how the live machine compares with it: a model
+        # fitted on live steps against one fitted on the startup measurement compares two machines, not two
+        # configurations (seen live on 2026-11-13: the measured ones looked 8 % cheaper). A configuration with fewer
+        # than LIVE_MIN live steps is priced as its start model times the factor the served ones show.
+        self.base = {}
+        for name, points in self.anchors.items():
+            model = StepCost(self.costs[name].theta)
+            for _ in range(40):
+                for rows, prompt, kv, seconds in points:
+                    model.update(rows, prompt, kv, seconds)
+            self.base[name] = model
+        self.live = {name: 0 for name in configs}
+        self.factors = {name: 1.0 for name in configs}  # live seconds over the start model's, per configuration
         self.memory: deque[tuple[float, int, int]] = deque(maxlen=MEMORY)
         self.current = incumbent  # the hot path reads this
         self.trial: dict[str, Any] | None = None  # {"from": name, "since": requests}
@@ -239,11 +267,13 @@ class GgmlAgent:
     def observe_step(self, rows: int, prompt: int, kv: int, seconds: float) -> None:
         self._steps.append((self.current, rows, prompt, kv, seconds))
 
-    def observe_request(self, arrived: float, prompt: int, answer: int) -> None:
+    def observe_request(self, arrived: float, prompt: int, answer: int, computed: int | None = None) -> None:
+        """One finished request: when it arrived, its prompt and answer length, and how many prompt tokens were
+        computed (the rest came from a kept prefix)."""
         with self._lock:
             gap = 0.0 if self._last_arrival is None else max(0.0, arrived - self._last_arrival)
             self._last_arrival = arrived if self._last_arrival is None else max(self._last_arrival, arrived)
-            self.memory.append((gap, int(prompt), int(answer)))
+            self.memory.append((gap, int(prompt), int(answer), int(prompt if computed is None else computed)))
             self.requests += 1
 
     # idle work --------------------------------------------------------------------------------------------------------
@@ -253,6 +283,12 @@ class GgmlAgent:
         for name, rows, prompt, kv, seconds in steps:
             if name in self.costs and (rows or prompt):
                 self.costs[name].update(rows, prompt, kv, seconds)
+                self.live[name] += 1
+                expected = self.base[name].predict(rows, prompt, kv)
+                if expected > 0 and seconds > 0:  # in log space, a step at a time
+                    rate = 0.2 if self.live[name] <= 10 else 0.02
+                    self.factors[name] = math.exp((1 - rate) * math.log(self.factors[name])
+                                                  + rate * math.log(seconds / expected))
         for name, points in self.anchors.items():
             for rows, prompt, kv, seconds in points:
                 self.costs[name].update(rows, prompt, kv, seconds)
@@ -265,7 +301,8 @@ class GgmlAgent:
             memory = list(self.memory)
         if len(memory) < MIN_ARRIVALS or len(self.configs) < 2 or self.pending_switch is not None:
             return None
-        result = dream(self.configs, self.costs, self.current, memory, self._rng)
+        prices = self.prices()
+        result = dream(self.configs, prices, self.current, memory, self._rng)
         decision: dict[str, Any] = {"at": time.time(), "requests": self.requests, "incumbent": self.current,
                                     "dream": result}
         if self.trial is not None:  # the switch is on trial: keep it only while the corrected model still shows a gain
@@ -275,7 +312,7 @@ class GgmlAgent:
                 decision.update(action="watch", reason="the switch is on trial; too little traffic since it")
                 self._remember(decision)
                 return None
-            mine = dream({self.current: self.configs[self.current], back: self.configs[back]}, self.costs, back,
+            mine = dream({self.current: self.configs[self.current], back: self.configs[back]}, prices, back,
                          since, self._rng)["candidates"][self.current]
             if mine["gain"] <= 0.0 or mine["ttft_ratio"] > TTFT_TOLERANCE:
                 self.rejected[self.current] = self.requests
@@ -304,6 +341,26 @@ class GgmlAgent:
         self._remember(decision)
         return self.pending_switch
 
+    def machine_factor(self, besides: str | None = None) -> float:
+        """How the live machine compares with the startup measurement: the factor of the configuration that served
+        most (other than `besides`), 1.0 before any served."""
+        served = [(n, k) for k, n in self.live.items() if k != besides and n > 0]
+        return self.factors[max(served)[1]] if served else 1.0
+
+    def prices(self) -> dict[str, Any]:
+        """What each configuration's steps cost in a dream: its live model once it has served LIVE_MIN steps; its
+        start model times its own live factor once it has served a few (FACTOR_MIN); else its start model times the
+        machine factor the most-served configuration shows."""
+        out: dict[str, Any] = {}
+        for name in self.configs:
+            if self.live[name] >= LIVE_MIN:
+                out[name] = self.costs[name]
+            elif self.live[name] >= FACTOR_MIN:
+                out[name] = Scaled(self.base[name], self.factors[name])
+            else:
+                out[name] = Scaled(self.base[name], self.machine_factor(name))
+        return out
+
     def switched(self, name: str) -> None:
         """The engine now serves `name`."""
         self.current, self.pending_switch = name, None
@@ -314,6 +371,7 @@ class GgmlAgent:
                                                                            "settings": v.get("settings")}
                                                                        for k, v in self.configs.items()},
                 "requests": self.requests, "trial": self.trial, "rejected": sorted(self.rejected),
+                "live_factor": {k: round(v, 4) for k, v in self.factors.items()}, "live_steps": dict(self.live),
                 "world_model": {k: {"theta": [round(t, 6) for t in c.theta], "steps": c.n}
                                 for k, c in self.costs.items()},
                 "last_decisions": [{k: v for k, v in d.items() if k != "dream"} for d in self.history[-5:]]}
@@ -328,6 +386,7 @@ class GgmlAgent:
         if self.path is None:
             return
         state = {"version": VERSION, "binding": self.binding, "current": self.current, "rejected": self.rejected,
+                 "factors": self.factors, "live": self.live,
                  "requests": self.requests, "memory": list(self.memory), "trial": self.trial,
                  "costs": {k: c.to_json() for k, c in self.costs.items()}, "history": self.history[-20:]}
         try:
@@ -351,6 +410,8 @@ class GgmlAgent:
         self.costs.update({k: StepCost.from_json(v) for k, v in state.get("costs", {}).items() if k in self.configs})
         self.rejected = {k: int(v) for k, v in state.get("rejected", {}).items() if k in self.configs}
         self.requests = int(state.get("requests", 0))
+        self.factors.update({k: float(v) for k, v in state.get("factors", {}).items() if k in self.configs})
+        self.live.update({k: int(v) for k, v in state.get("live", {}).items() if k in self.configs})
         self.history = list(state.get("history", []))
         if state.get("current") in self.configs:  # resume what served, unless it was on a trial it had not passed
             self.current = state["trial"]["from"] if state.get("trial") else state["current"]
@@ -360,6 +421,9 @@ def anchors_of(config: dict[str, Any]) -> list[tuple[int, int, int, float]]:
     """(rows, prompt tokens, attended KV tokens, seconds) the startup measurement observed for a configuration."""
     width, short, long = int(config["seqs"]), int(config.get("short_ctx", 64)), int(config.get("long_ctx", 0))
     points = [(1, 0, short, float(config["step_one"])), (width, 0, width * short, float(config["step_full"]))]
+    if config.get("prefill_per_1k"):  # a prompt of 1,000 tokens alone: without it a configuration that never served
+        # would dream its prefill free (seen live on 2026-11-13: it switched to the narrower width for that)
+        points.append((0, 1000, 0, float(config["prefill_per_1k"])))
     if config.get("step_long") is not None and long > short:
         points.append((width, 0, width * long, float(config["step_long"])))
     elif config.get("kv_per_1k"):
@@ -381,9 +445,10 @@ def configs_from_measurement(measured: Iterable[dict[str, Any]], seq_ctx: int) -
             name = f"w{width}" + "".join(f"-{tag}" for key, tag in (("flash_attn", "fa"), ("kv_unified", "uni"),
                                                                      ("kv_f32", "f32"), ("kv_q8", "kv8"))
                                          if settings.get(key))
+            prefill = row.get("prefill_per_1k", 0.0)
+            prefill = prefill.get(width, 0.0) if isinstance(prefill, dict) else prefill
             out[name] = {"seqs": int(width), "settings": settings, "seq_ctx": seq_ctx, "step_full": float(full),
-                         "step_one": float(one), "kv_per_1k": kv,
-                         "prefill_per_1k": float(row.get("prefill_per_1k", 0.0)),
+                         "step_one": float(one), "kv_per_1k": kv, "prefill_per_1k": float(prefill),
                          "short_ctx": int(row.get("short_ctx", 64)), "long_ctx": int(row.get("long_ctx", 0)),
                          "step_long": None if long is None else float(long)}
     return out

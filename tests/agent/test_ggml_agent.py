@@ -1,5 +1,6 @@
 """AG10: the ggml engine's agent -- world model, simulation, dreaming, switch and revert, persistence. No llama.cpp."""
 
+import math
 import random
 
 from ironmule.ggml_agent import GgmlAgent, StepCost, configs_from_measurement, dream, simulate
@@ -71,6 +72,9 @@ def test_agent_switches_under_heavy_traffic_and_keeps_a_switch_the_live_steps_co
 
 def test_agent_reverts_when_live_steps_show_the_wider_one_is_slow(tmp_path):
     agent = make_agent(tmp_path, heavy(200))
+    for _ in range(20):  # the incumbent served as measured
+        for rows in range(1, 17):
+            agent.observe_step(rows, 0, rows * 100, 0.0874 + 0.0026 * rows)
     assert agent.idle() == "w32-kv8"
     agent.switched("w32-kv8")
     assert agent.idle() is None and agent.history[-1]["action"] == "watch"  # no traffic since the switch yet
@@ -177,3 +181,23 @@ def test_the_bridge_feeds_the_agent_and_switches_the_engine_between_runs(tmp_pat
     bridge._switch("w32-fa-kv8")
     assert bridge._engine.reconfigured == [(32, {"flash_attn": True, "kv_q8": True})]
     assert bridge.counters()["ggml_agent"]["serving"] == "w32-fa-kv8"
+
+
+def test_a_configuration_that_never_served_does_not_dream_its_prefill_free(tmp_path):
+    """Seen live on 2026-11-13: the served configuration learned what a prompt costs (3.3 s per 1,000 tokens on that
+    CPU) and the others, never served, priced it at zero, so the dream preferred any of them. With the startup
+    measurement's prefill as an anchor, equal configurations stay equal."""
+    same = {"seqs": 16, "settings": {"flash_attn": True}, "seq_ctx": 2048, "step_one": 0.093, "step_full": 0.134,
+            "kv_per_1k": 0.01, "prefill_per_1k": 3.3}
+    other = {**same, "settings": {}}
+    agent = GgmlAgent(tmp_path, {"m": "live"}, {"w16-fa": same, "w16": other}, "w16-fa")
+    rng = random.Random(4)
+    t = 0.0
+    for wave in range(10):  # waves of 12 requests with a long system prompt, all at once
+        for k in range(12):
+            agent.observe_request(t, 520, 48, 520 if wave == 0 else 30)
+        for rows in range(1, 13):
+            agent.observe_step(rows, 0, rows * 560, 0.09 + 0.003 * rows + 0.01 * rows * 0.56)
+        agent.observe_step(0, 6000, 0, 3.3 * 6 * math.exp(rng.gauss(0, 0.03)))
+        t += 10.0
+    assert agent.idle() is None and agent.history[-1]["action"] == "stay"

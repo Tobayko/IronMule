@@ -218,6 +218,9 @@ class ProductService:
                 width = self.backend.ggml_gate.get("sequences")
                 if isinstance(width, dict):  # SEQ1: the width the engine chose on this machine, and why
                     result["ggml"]["sequences"] = {k: width.get(k) for k in ("sequences", "fitting", "rates", "reason")}
+                agent = getattr(self.backend, "ggml_agent_status", None)
+                if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
+                    result["ggml"]["agent"] = dict(agent)
             if getattr(self.backend, "speculate", False) is True:  # SP2: asked for; what serves and what it learned
                 engine = (getattr(self.backend, "ready_payload", None) or {}).get("engine") or {}
                 dense = engine.get("dense_plan") or engine.get("ggml") or {}  # GG1: the ggml engine says it there

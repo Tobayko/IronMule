@@ -113,6 +113,7 @@ class Job:
     cancelled: Callable[[], bool] | None = None
     tokens: list[int] = field(default_factory=list)
     reason: str | None = None
+    reused: int = 0  # prompt tokens the sequence's kept KV already held (prefix reuse)
     first_ns: int = 0
     finished_ns: int = 0
     passed_over: int = 0
@@ -393,6 +394,7 @@ class GgmlEngine:
                     with self._lock:
                         keep = self._claim(seq, keep)
                     pending.remove(job)
+                    job.reused = keep
                     budget -= len(job.ids) - keep
                     self.prompt_tokens += len(job.ids)
                     self.reused_tokens += keep
@@ -572,7 +574,7 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
 # --- SEQ1: the engine chooses how many sequences it serves at once (owner, 2026-11-13: "like an agent") ----------------
 WIDTHS = (8, 16, 32, 64)  # the sequence counts it may choose; fewer only where 8 does not fit the memory
 WIDTH_GAIN = 1.10  # a doubling must buy at least 10 % more tokens per second, else the memory is not spent
-WIDTH_VERSION = 2  # 2 (AG10): also the default setting and a longer context, for the agent's world model
+WIDTH_VERSION = 3  # 2 (AG10): also the default setting and a longer context; 3: and the prefill's price
 AGENT_LONG_CTX = 512
 
 
@@ -712,8 +714,10 @@ def measure_widths(gguf: str, settings: dict[str, bool], seq_ctx: int, widths: S
                     engine._clear()
                     longer = (prompt * (long_ctx // len(prompt) + 1))[:long_ctx]
                     rows = [(t, j, seq, j == long_ctx - 1) for seq in range(width) for j, t in enumerate(longer)]
+                    started = time.perf_counter()
                     for start in range(0, len(rows), seq_ctx):
                         engine._decode(rows[start:start + seq_ctx])
+                    out.setdefault("prefill_per_1k", {})[str(width)] = (time.perf_counter() - started) / (len(rows) / 1000)
                     started = time.perf_counter()
                     for k in range(steps):
                         engine._decode([(longer[k % long_ctx], long_ctx + k, seq, True) for seq in range(width)])

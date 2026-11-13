@@ -806,3 +806,24 @@ contexts, could not tell rows from attended tokens apart and drifted where it ha
 traffic from before the switch (0.86 of the best in the third phase). Fixed: the startup measurement's points are folded
 into every model at each idle call, and a trial is judged only on the traffic since its switch. On this CPU with FA1 v2
 the choice is moot (FA1 is fastest at every size, FA1 above); the agent keeps it for machines where it is not.
+
+### 2026-11-13 AG10 live: `ironmule serve --agent on --gguf` on this container, and two defects it showed
+
+`ironmule serve --state-dir ... --model Qwen/Qwen3-1.7B --gguf Qwen3-4B-Q8_0.gguf --agent on` (B16 and FA1 v2 in the
+library), driven over HTTP by waves of 12 chat requests (48 tokens, every second one with the 479-token system
+prompt), 10 s idle between rounds. Startup: gate passed with flash attention (FA1, ratio 1.00001), SEQ1 chose 16
+sequences, AG10 got four configurations (8/16 sequences x flash attention on/off).
+
+First run, AG10 version 1: at its first idle spell it switched to 8 sequences with flash attention, and the next waves
+took 17-33 s instead of 9 s. Two causes, both fixed in version 2: (1) only the served configuration learned what a
+prompt costs (3.3 s per 1,000 tokens here), the others had no prefill price and dreamed it free; the width measurement
+now times the prefill (`prefill_per_1k`) and it is an anchor; the traffic memory now keeps the prompt tokens actually
+computed after prefix reuse. (2) A configuration fitted on live steps was compared with ones known only from the
+startup measurement, and the live machine was slower (factor 1.12-1.57 here, falling as the live model filled); a
+configuration is now priced by its start model times a live factor until it has 200 live steps. Regression tests in
+`tests/agent/test_ggml_agent.py`.
+
+Version 2, three rounds of 5 waves: 183 requests, none failed; every idle decision "stay" (16 sequences with FA1, which
+is the fastest configuration at these contexts per FA1 v2's table); waves 7.3-11.4 s (35-54 tok/s, the first wave of a
+fresh server 22 s with its cold prefix cache). `/health` shows the agent under `ggml.agent`. A switch under real traffic
+whose regime changes is still to be shown on hardware (simulated in AG10 S).

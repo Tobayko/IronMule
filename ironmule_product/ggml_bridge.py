@@ -153,7 +153,7 @@ class GgmlBridge:
             for job in served:
                 if job.reason != "cancelled":
                     self._agent.observe_request(arrived.get(id(job), time.monotonic()), len(job.ids),
-                                                max(1, len(job.tokens)))
+                                                max(1, len(job.tokens)), len(job.ids) - job.reused)
         reasons = {"eos": "stop", "length": "length", "cancelled": "cancelled"}
         results = []
         for job in served:

@@ -205,11 +205,17 @@ is cheaper per attended token. `ironmule/ggml_agent.py` makes that choice while 
    configuration.
 2. *World model, online:* a step's seconds = a + b x decode rows + c x prompt tokens + d x attended KV tokens, per
    configuration, by recursive least squares with forgetting, from every step the engine serves (the hot path only
-   appends one tuple; the fit runs while idle).
-3. *Traffic memory:* gap, prompt and answer length of each finished request, no text; persisted per GGUF, machine,
-   engine version and GPU offload in `ggml-agent/` of the state directory.
-4. *Dreaming:* after 3 s without a request, windows of 32 recorded arrivals (gaps scaled 0.5-1.5) run through a
-   simulation of the engine's continuous batching under every configuration's model, on the same windows.
+   appends one tuple; the fit runs while idle). The startup measurement's points (one row, full width, a longer
+   context, a prompt alone) are folded in at every idle call, so a fit never drifts where live steps carry no
+   information. A configuration is priced by its live model after 200 live steps; before that by its start model
+   times a live factor (its own after 20 steps, else that of the configuration that served most), so a configuration
+   measured once is never compared with one fitted on a busier live machine.
+3. *Traffic memory:* gap, prompt and answer length and the prompt tokens actually computed (after prefix reuse) of
+   each finished request, no text; persisted per GGUF, machine, engine version and GPU offload in `ggml-agent/` of the
+   state directory.
+4. *Dreaming:* after 3 s without a request, and only when new traffic came since the last dream, windows of 32
+   recorded arrivals (gaps scaled 0.5-1.5, three in four from the last 256) run through a simulation of the engine's
+   continuous batching under every configuration's price, on the same windows.
 5. *Switch and guard:* a configuration replaces the incumbent when the 2.5 % bootstrap bound of its dreamed
    tokens-per-second gain is above 3 % and its mean first token is at most 2 % later. The context is rebuilt on the
    loaded model in that idle spell (a request that arrives meanwhile waits for it, a few seconds at most). While the
@@ -283,8 +289,13 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 
 ## Where it stands
 
-- **No hardware gain yet.** Through AG1 V4 (T4) and V5-CPU (Kaggle CPU, cut by the 12 h limit) the agent's
-  actions (order by limit, width) had no headroom over the best fixed rule above the noise.
+- **CPU, llama.cpp's kernels (2026-11-13).** With FA1 under the ggml engine, IronMule served Qwen3-4B Q8_0 with a
+  479-token system prompt at 1.19x / 1.75x / 1.65x the tokens per second of the better stock `llama-server` setting at
+  1 / 8 / 16 requests on a 4-vCPU Xeon, first tokens sooner, answers as good (LAB.md, FA1). AG10 decides that engine's
+  configuration; its switching is shown in simulation (AG10 S), not yet under a changing real load.
+- **No gain from order and width on the group engines (AG1).** Through AG1 V4 (T4) and V5-CPU (Kaggle CPU, cut by the
+  12 h limit) those actions (order by limit, width) had no headroom over the best fixed rule above the noise; the
+  gains below came from the engine (stacking, kernels), which the agent chooses.
 - **AG2's simulation passed.** With real prompts and one limit for all, the agent learned answer lengths (rank
   correlation 0.63), qualified "shortest predicted first" by itself, and then served 6.9 % (T4 price) and 8.2 %
   (CPU price) below the best fixed rule in hindsight.
