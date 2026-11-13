@@ -872,3 +872,63 @@ layers are on the CPU; it runs twice SEQ1's width at once in the same memory.
 followed; a request without a long own match drafts from it in its own acceptance bucket (100 + n), so the step policy
 learns whether it pays. Kept tokens are always the model's own next tokens. On by default in the ggml engine
 (`IRONMULE_GGML_COLLECTIVE=0` turns it off).
+
+
+### 2026-11-13 CMP1: IronMule against llama.cpp, Ollama and LM Studio on this CPU, same GGUF
+
+Owner, 2026-11-13: clearly beat llama.cpp, Ollama, LM Studio, vLLM and SGLang (MLX left out for now). This container
+(4 vCPU Sapphire-Rapids-class Xeon, 14.3 GB cgroup limit), Qwen3-4B Q8_0 (the same GGUF file for every engine),
+`lab/cmp/bench.py` through each engine's OpenAI-compatible chat API, every answer re-tokenized with Qwen3's tokenizer,
+one engine at a time, one server configuration for all N (as a deployment would run it). Setups (`lab/cmp/run_all.sh`):
+IronMule `ironmule serve --agent on --gguf` (FA1/FA1u + ROW1 B16 in the library, SEQ1 width 16, shared pool of 32
+running requests, AG10, SP4); llama.cpp 4227c9b stock (`ROW1_GGML=0 FA1=0`) `llama-server -np 32 -c 32768 --jinja`,
+with and without `-fa`; Ollama 0.40.16 with its own llama.cpp, `OLLAMA_NUM_PARALLEL=32` (its runner took about 12 GB
+and was killed for memory twice; a second run with 16 slots was killed once at N=32), `OLLAMA_CONTEXT_LENGTH=1024`;
+LM Studio llmster 0.0.27, runtime llama.cpp avx2 2.66.0 (its Linux CPU runtime has no AVX-512 build), `--parallel 32
+--context-length 32768 --gpu off`; LM Studio chose 1 thread on this container by itself, so it was run again with
+`llm.load.llama.cpuThreadPoolSize = 4`, and only partly (it was too slow for the whole set: burst with the system
+prompt 4.8 / 8.4 / 7.2 tok/s at N = 1 / 8 / 16 with first tokens 1.5 / 11.9 / 33.2 s, from its log; the rest below).
+Results in `lab/cmp/results/`.
+
+Burst with the 479-token system prompt (`burst-sys`), 64 tokens, median of 3 blocks: tokens/s (mean first token)
+
+| Engine | N=1 | N=8 | N=16 | N=32 |
+| --- | --- | --- | --- | --- |
+| ironmule | 10.7 (0.19 s) | 50.4 (0.71 s) | 71.3 (1.19 s) | 87.5 (2.30 s) |
+| llama-server | 7.3 (0.80 s), IronMule 1.47x | 20.1 (3.22 s), IronMule 2.51x | 28.1 (5.70 s), IronMule 2.54x | 28.9 (11.31 s), IronMule 3.03x |
+| llama-server-fa | 6.2 (0.90 s), IronMule 1.72x | 16.9 (3.99 s), IronMule 2.99x | 19.8 (7.40 s), IronMule 3.61x | 21.6 (14.72 s), IronMule 4.04x |
+| ollama | 7.3 (0.87 s), IronMule 1.46x | 18.9 (3.86 s), IronMule 2.67x | 7.6 (7.05 s), IronMule 9.33x | 7.8 (14.45 s), IronMule 11.23x |
+| ollama-16 | 6.8 (0.87 s), IronMule 1.57x | 17.7 (4.32 s), IronMule 2.85x | 22.7 (6.58 s), IronMule 3.14x | 21.8 (24.50 s), IronMule 4.01x |
+| lmstudio | - | - | - | - |
+
+Burst without a system prompt (`burst`): tokens/s (mean first token)
+
+| Engine | N=1 | N=8 | N=16 | N=32 |
+| --- | --- | --- | --- | --- |
+| ironmule | 10.7 (0.15 s) | 58.7 (0.53 s) | 84.9 (0.92 s) | 113.2 (1.58 s) |
+| llama-server | 7.6 (0.83 s), IronMule 1.42x | 8.9 (5.92 s), IronMule 6.60x | 14.1 (8.38 s), IronMule 6.01x | 54.4 (8.20 s), IronMule 2.08x |
+| llama-server-fa | 7.3 (0.78 s), IronMule 1.48x | 8.2 (5.61 s), IronMule 7.13x | 12.7 (8.97 s), IronMule 6.68x | 60.3 (7.66 s), IronMule 1.88x |
+| ollama | 8.8 (0.67 s), IronMule 1.22x | 10.9 (4.31 s), IronMule 5.39x | 17.9 (6.46 s), IronMule 4.74x | 61.1 (7.89 s), IronMule 1.85x |
+| ollama-16 | 8.3 (0.66 s), IronMule 1.29x | 17.0 (3.35 s), IronMule 3.45x | 60.2 (4.06 s), IronMule 1.41x | 61.3 (11.84 s), IronMule 1.85x |
+| lmstudio | 5.2 (1.49 s), IronMule 2.05x | 13.3 (9.28 s), IronMule 4.42x | - | - |
+
+One request alone (256 tokens), open-loop Poisson arrivals at 0.5/s for 90 s (system prompt, 64 tokens), the 50 facts:
+
+| Engine | single: decode tok/s, first token | Poisson: tok/s, first token p50 / p90, end to end p90 | facts |
+| --- | --- | --- | --- |
+| ironmule | 10.1, 0.13 s | 18.8, 0.33 / 0.38 s, 8.6 s | 49/50 |
+| llama-server | 8.0, 0.83 s | 7.0, 113.02 / 140.17 s, 202.2 s | 49/50 |
+| llama-server-fa | 8.6, 0.71 s | 6.4, 124.23 / 150.58 s, 227.7 s | 49/50 |
+| ollama | - | 7.3, 84.16 / 91.78 s, 189.9 s | - |
+| ollama-16 | 8.6, 0.70 s | 11.4, 47.06 / 57.21 s, 90.8 s | 49/50 |
+| lmstudio | 6.1, 1.35 s | - | 49/50 |
+
+Reading: with many users IronMule serves 2.5-4x the tokens per second of `llama-server` and 2.7-4x Ollama's with a
+shared system prompt, first tokens 4-6x sooner; at 0.5 requests/s every llama.cpp-based server fell behind its queue
+(first token p50 47-124 s) while IronMule answered in 0.33 s (p90 0.38 s); alone it decodes 1.17-1.66x faster with a
+first token 5-10x sooner. Answers: 49/50 on every engine. Two cautions. (1) llama.cpp's servers with 32 slots pay for
+all slots in every step (`llama-server`'s log: 0.44-0.52 s a step with 8 requests running, without a system prompt), which
+makes their N=8/16 rows low; sized to the load (`-np N`, FA1 end-to-end entry above) `llama-server` made 27.3 / 40.9
+tok/s at N=8/16 with the system prompt, still 0.54x / 0.57x of IronMule here. (2) One machine, one run per engine.
+vLLM: no CPU wheel on PyPI, triton-cpu behind a blocked host, the source build stopped for disk and memory at 194 of 416
+steps; vLLM and SGLang are measured on GPUs instead (MG2 harness, Kaggle T4, once the weekly quota is back).

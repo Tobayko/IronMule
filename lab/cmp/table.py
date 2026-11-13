@@ -7,7 +7,7 @@ from pathlib import Path
 
 folder = Path(sys.argv[1])
 runs = {p.stem: json.loads(p.read_text()) for p in sorted(folder.glob("*.json")) if p.stem != "ironmule_health"}
-order = [k for k in ("ironmule", "llama", "llamafa", "ollama", "lmstudio", "vllm", "sglang") if k in runs]
+order = [k for k in ("ironmule", "llama", "llamafa", "ollama", "ollama16", "lmstudio", "vllm", "sglang") if k in runs]
 names = {k: runs[k].get("label", k) for k in order}
 for workload in ("burst-sys", "burst"):
     ns = sorted({int(n) for k in order for n in runs[k].get(workload, {})})

@@ -1,0 +1,481 @@
+{
+ "label": "llama-server",
+ "burst-sys": {
+  "1": [
+   {
+    "tok_s": 7.284259568557997,
+    "tokens": 60,
+    "wall_s": 8.236938762998761,
+    "ttft_mean_s": 0.8045675879984628,
+    "ttft_max_s": 0.8045675879984628
+   },
+   {
+    "tok_s": 7.368775820534285,
+    "tokens": 60,
+    "wall_s": 8.142465106999225,
+    "ttft_mean_s": 0.7518608339996717,
+    "ttft_max_s": 0.7518608339996717
+   },
+   {
+    "tok_s": 7.1244734619589085,
+    "tokens": 60,
+    "wall_s": 8.421674994000568,
+    "ttft_mean_s": 0.7992664699995657,
+    "ttft_max_s": 0.7992664699995657
+   }
+  ],
+  "8": [
+   {
+    "tok_s": 18.28375352447268,
+    "tokens": 392,
+    "wall_s": 21.439798970999618,
+    "ttft_mean_s": 3.554239465375076,
+    "ttft_max_s": 3.6221434729995963
+   },
+   {
+    "tok_s": 20.120587072964113,
+    "tokens": 429,
+    "wall_s": 21.32144546500058,
+    "ttft_mean_s": 3.180959981625847,
+    "ttft_max_s": 3.2208671210009925
+   },
+   {
+    "tok_s": 26.352081251911468,
+    "tokens": 443,
+    "wall_s": 16.81081641200035,
+    "ttft_mean_s": 3.2193271978751454,
+    "ttft_max_s": 3.279823848999513
+   }
+  ],
+  "16": [
+   {
+    "tok_s": 28.056911882727288,
+    "tokens": 839,
+    "wall_s": 29.903504829999292,
+    "ttft_mean_s": 5.914698016936882,
+    "ttft_max_s": 5.964531875999455
+   },
+   {
+    "tok_s": 26.305565811703794,
+    "tokens": 832,
+    "wall_s": 31.628287563000413,
+    "ttft_mean_s": 5.476190310625611,
+    "ttft_max_s": 5.523398363000524
+   },
+   {
+    "tok_s": 32.270130702040895,
+    "tokens": 885,
+    "wall_s": 27.424741726999855,
+    "ttft_mean_s": 5.7033856723753615,
+    "ttft_max_s": 5.7640108989999135
+   }
+  ],
+  "32": [
+   {
+    "tok_s": 30.238283617688374,
+    "tokens": 1704,
+    "wall_s": 56.352404836999995,
+    "ttft_mean_s": 9.969674011780512,
+    "ttft_max_s": 10.459139984999638
+   },
+   {
+    "tok_s": 28.88269439674352,
+    "tokens": 1642,
+    "wall_s": 56.85065172400027,
+    "ttft_mean_s": 11.308404184031872,
+    "ttft_max_s": 11.382495896999899
+   },
+   {
+    "tok_s": 28.827073982694163,
+    "tokens": 1674,
+    "wall_s": 58.07040981699902,
+    "ttft_mean_s": 11.892541493031104,
+    "ttft_max_s": 11.967751737000071
+   }
+  ]
+ },
+ "burst": {
+  "1": [
+   {
+    "tok_s": 8.315926762296707,
+    "tokens": 60,
+    "wall_s": 7.215070756999921,
+    "ttft_mean_s": 0.7519136280006933,
+    "ttft_max_s": 0.7519136280006933
+   },
+   {
+    "tok_s": 7.572956498831212,
+    "tokens": 60,
+    "wall_s": 7.922929440999724,
+    "ttft_mean_s": 0.8279657470011443,
+    "ttft_max_s": 0.8279657470011443
+   },
+   {
+    "tok_s": 7.334988250692113,
+    "tokens": 60,
+    "wall_s": 8.179972203000943,
+    "ttft_mean_s": 0.8405366790011612,
+    "ttft_max_s": 0.8405366790011612
+   }
+  ],
+  "8": [
+   {
+    "tok_s": 10.408149947480716,
+    "tokens": 480,
+    "wall_s": 46.11770606900063,
+    "ttft_mean_s": 5.918946302625045,
+    "ttft_max_s": 6.016429564999271
+   },
+   {
+    "tok_s": 8.892457410639754,
+    "tokens": 480,
+    "wall_s": 53.978329930001564,
+    "ttft_mean_s": 6.1407903452509345,
+    "ttft_max_s": 6.23001012000168
+   },
+   {
+    "tok_s": 8.854223339018692,
+    "tokens": 480,
+    "wall_s": 54.21141771799921,
+    "ttft_mean_s": 5.222248053499698,
+    "ttft_max_s": 5.329120201999103
+   }
+  ],
+  "16": [
+   {
+    "tok_s": 14.137622251252232,
+    "tokens": 960,
+    "wall_s": 67.9039220980012,
+    "ttft_mean_s": 8.376687050061491,
+    "ttft_max_s": 8.489141539997945
+   },
+   {
+    "tok_s": 14.161464585784124,
+    "tokens": 960,
+    "wall_s": 67.78959860999748,
+    "ttft_mean_s": 8.134818812123285,
+    "ttft_max_s": 8.266923764997046
+   },
+   {
+    "tok_s": 13.940361789256402,
+    "tokens": 960,
+    "wall_s": 68.86478374900253,
+    "ttft_mean_s": 8.524892263814309,
+    "ttft_max_s": 8.590998463001597
+   }
+  ],
+  "32": [
+   {
+    "tok_s": 54.24357457208355,
+    "tokens": 1920,
+    "wall_s": 35.395897397000226,
+    "ttft_mean_s": 8.862093399623177,
+    "ttft_max_s": 8.902117309997266
+   },
+   {
+    "tok_s": 54.433326957932536,
+    "tokens": 1920,
+    "wall_s": 35.272508723999636,
+    "ttft_mean_s": 8.199986952811628,
+    "ttft_max_s": 8.227941541998007
+   },
+   {
+    "tok_s": 55.98890353704142,
+    "tokens": 1920,
+    "wall_s": 34.29250938500263,
+    "ttft_mean_s": 7.821654840157862,
+    "ttft_max_s": 7.874888264002948
+   }
+  ]
+ },
+ "poisson": {
+  "0.5": {
+   "rate": 0.5,
+   "requests": 37,
+   "tok_s": 6.957009981843515,
+   "ttft_p50": 113.01769472453705,
+   "ttft_p90": 140.16838164859072,
+   "ttft_p99": 145.48906988030942,
+   "e2e_p50": 161.30950403080914,
+   "e2e_p90": 202.188420422309,
+   "wall_s": 242.4892309200004
+  }
+ },
+ "single": {
+  "runs": [
+   {
+    "ttft_s": 0.7453796789995977,
+    "decode_tok_s": 8.01188744104496,
+    "tokens": 252
+   },
+   {
+    "ttft_s": 0.8979155289998744,
+    "decode_tok_s": 8.000303049694512,
+    "tokens": 252
+   },
+   {
+    "ttft_s": 0.8284076960007951,
+    "decode_tok_s": 8.02286417612189,
+    "tokens": 252
+   }
+  ],
+  "decode_tok_s": 8.01188744104496,
+  "ttft_s": 0.8284076960007951
+ },
+ "facts": {
+  "correct": 49,
+  "of": 50,
+  "answers": [
+   {
+    "q": "What is the capital of France?",
+    "ok": true,
+    "a": "The capital of France is Paris."
+   },
+   {
+    "q": "What is the capital of Japan?",
+    "ok": true,
+    "a": "The capital of Japan is **Tokyo**."
+   },
+   {
+    "q": "What is the capital of Australia?",
+    "ok": true,
+    "a": "The capital of Australia is **Canberra**."
+   },
+   {
+    "q": "What is the capital of Canada?",
+    "ok": true,
+    "a": "The capital of Canada is **Ottawa**."
+   },
+   {
+    "q": "What is the capital of Italy?",
+    "ok": true,
+    "a": "The capital of Italy is **Rome**."
+   },
+   {
+    "q": "What is the capital of Egypt?",
+    "ok": true,
+    "a": "The capital of Egypt is **Cairo**."
+   },
+   {
+    "q": "What is the capital of Spain?",
+    "ok": true,
+    "a": "The capital of Spain is **Madrid**."
+   },
+   {
+    "q": "What is the capital of Germany?",
+    "ok": true,
+    "a": "The capital of Germany is **Berlin**."
+   },
+   {
+    "q": "What is the capital of Kenya?",
+    "ok": true,
+    "a": "The capital of Kenya is **Nairobi**."
+   },
+   {
+    "q": "What is the capital of Brazil?",
+    "ok": true,
+    "a": "The capital of Brazil is **Bras\u00edlia**."
+   },
+   {
+    "q": "What is 17 times 3?",
+    "ok": true,
+    "a": "17 times 3 is **51**."
+   },
+   {
+    "q": "What is 12 times 12?",
+    "ok": true,
+    "a": "12 times 12 is **144**."
+   },
+   {
+    "q": "What is 250 plus 375?",
+    "ok": true,
+    "a": "250 + 375 = 625"
+   },
+   {
+    "q": "What is 1000 minus 357?",
+    "ok": false,
+    "a": "To find the result of 1000 minus 357, you can subtract 357 from 1000:\n\n$$\n1000 - 357 = 6"
+   },
+   {
+    "q": "What is 81 divided by 9?",
+    "ok": true,
+    "a": "81 divided by 9 is **9**."
+   },
+   {
+    "q": "What is 15 squared?",
+    "ok": true,
+    "a": "15 squared is $ 15 \\times 15 $.\n\nLet's calculate it:\n\n$$\n15 \\times 15 = 225\n$$\n\nSo, **15 squared is"
+   },
+   {
+    "q": "What is the square root of 196?",
+    "ok": true,
+    "a": "The square root of 196 is **14**.\n\nBecause $ 14 \\times 14 = 196 $."
+   },
+   {
+    "q": "What is 7 times 8?",
+    "ok": true,
+    "a": "7 times 8 is **56**."
+   },
+   {
+    "q": "What is 2 to the power of 10?",
+    "ok": true,
+    "a": "2 to the power of 10 is:\n\n**1024**."
+   },
+   {
+    "q": "What is 45 plus 38?",
+    "ok": true,
+    "a": "45 plus 38 equals 83."
+   },
+   {
+    "q": "In what year did World War II end?",
+    "ok": true,
+    "a": "World War II ended in **1945**. The official end of the war was marked by the **surrender of Nazi Germany** on **May 7, "
+   },
+   {
+    "q": "In what year did the Berlin Wall fall?",
+    "ok": true,
+    "a": "The Berlin Wall fell on **November 9, 1989**. This event marked the beginning of the end of the division of Germany afte"
+   },
+   {
+    "q": "In what year did humans first land on the Moon?",
+    "ok": true,
+    "a": "Humans first landed on the Moon on **July 20, 1969**. This event was part of the **Apollo 11** mission, when astronauts "
+   },
+   {
+    "q": "In what year did Columbus first reach the Americas?",
+    "ok": true,
+    "a": "Christopher Columbus first reached the Americas in the year **1492**. He set sail from Spain on August 3, 1492, and arri"
+   },
+   {
+    "q": "In what year did the French Revolution begin?",
+    "ok": true,
+    "a": "The French Revolution began in **1789**. The revolution is often considered to have started with the **Storming of the B"
+   },
+   {
+    "q": "In what year was the US Declaration of Independence signed?",
+    "ok": true,
+    "a": "The United States Declaration of Independence was signed on **July 4, 1776**. This date is widely recognized as the offi"
+   },
+   {
+    "q": "What is the chemical symbol for gold?",
+    "ok": true,
+    "a": "The chemical symbol for gold is **Au**."
+   },
+   {
+    "q": "What is the chemical symbol for sodium?",
+    "ok": true,
+    "a": "The chemical symbol for sodium is **Na**."
+   },
+   {
+    "q": "How many planets are in the Solar System?",
+    "ok": true,
+    "a": "The Solar System contains **8 planets**. These are:\n\n1. **Mercury**  \n2. **Venus**  \n3. **Earth**  \n4. **Mars**  \n5. **J"
+   },
+   {
+    "q": "What planet is known as the Red Planet?",
+    "ok": true,
+    "a": "The planet known as the Red Planet is **Mars**. It receives this name because its surface appears reddish when viewed fr"
+   },
+   {
+    "q": "What gas do plants absorb from the air for photosynthesis?",
+    "ok": true,
+    "a": "Plants absorb **carbon dioxide (CO\u2082)** from the air for photosynthesis. During this process, they use CO\u2082, water, and su"
+   },
+   {
+    "q": "At what temperature in Celsius does water boil at sea level?",
+    "ok": true,
+    "a": "Water boils at **100\u00b0C** (212\u00b0F) at sea level. This is the standard boiling point of water under standard atmospheric pr"
+   },
+   {
+    "q": "What is the largest planet in the Solar System?",
+    "ok": true,
+    "a": "The largest planet in the Solar System is **Jupiter**. It is a gas giant, much larger than all the other planets combine"
+   },
+   {
+    "q": "How many bones are in the adult human body?",
+    "ok": true,
+    "a": "The adult human body has **206 bones**. \n\nThis number includes all the bones in the skeleton, which are categorized into"
+   },
+   {
+    "q": "What is the chemical formula of water?",
+    "ok": true,
+    "a": "The chemical formula of water is **H\u2082O**. This means each molecule of water consists of **two hydrogen atoms** and **one"
+   },
+   {
+    "q": "What is the hardest natural substance?",
+    "ok": true,
+    "a": "The hardest natural substance is **diamond**.\n\nDiamond is a form of carbon and is known for being the hardest known natu"
+   },
+   {
+    "q": "How many legs does an insect have?",
+    "ok": true,
+    "a": "An insect has **6 legs**."
+   },
+   {
+    "q": "What is the atomic number of carbon?",
+    "ok": true,
+    "a": "The atomic number of carbon is **6**. \n\nThis means that a carbon atom has **6 protons** in its nucleus."
+   },
+   {
+    "q": "How many centimeters are in a meter?",
+    "ok": true,
+    "a": "There are **100 centimeters in a meter**.  \n\n1 meter (m) = 100 centimeters (cm)."
+   },
+   {
+    "q": "How many meters are in a kilometer?",
+    "ok": true,
+    "a": "There are **1,000 meters in a kilometer**.  \n\n1 kilometer (km) = 1,000 meters (m)."
+   },
+   {
+    "q": "How many minutes are in an hour?",
+    "ok": true,
+    "a": "There are **60 minutes in an hour**."
+   },
+   {
+    "q": "How many seconds are in a minute?",
+    "ok": true,
+    "a": "There are **60 seconds in a minute**."
+   },
+   {
+    "q": "How many grams are in a kilogram?",
+    "ok": true,
+    "a": "There are **1000 grams in a kilogram**.\n\nThis is because the prefix \"kilo-\" in the metric system means **1000**, so:\n\n- "
+   },
+   {
+    "q": "How many days are in a leap year?",
+    "ok": true,
+    "a": "A **leap year** has **366 days**.\n\nThis is because a leap year includes an extra day, February 29, in addition to the us"
+   },
+   {
+    "q": "How many hours are in a day?",
+    "ok": true,
+    "a": "A day is 24 hours long. This is based on the Earth's rotation around its axis, which takes approximately 24 hours to com"
+   },
+   {
+    "q": "How many millimeters are in a centimeter?",
+    "ok": true,
+    "a": "There are **10 millimeters in a centimeter**.  \n\n1 centimeter (cm) = 10 millimeters (mm)."
+   },
+   {
+    "q": "Who wrote Romeo and Juliet?",
+    "ok": true,
+    "a": "*Romeo and Juliet* was written by **William Shakespeare**. It is one of his most famous plays, first published in 1597 a"
+   },
+   {
+    "q": "Who painted the Mona Lisa?",
+    "ok": true,
+    "a": "The Mona Lisa was painted by **Leonardo da Vinci**, an Italian Renaissance artist. She is one of the most famous paintin"
+   },
+   {
+    "q": "What is the longest river in South America?",
+    "ok": true,
+    "a": "The longest river in South America is the **Amazon River**. It flows through several countries, including Brazil, Peru, "
+   },
+   {
+    "q": "What ocean lies between Europe and North America?",
+    "ok": true,
+    "a": "The ocean that lies between Europe and North America is the **Atlantic Ocean**. It separates the two continents and is o"
+   }
+  ]
+ }
+}
