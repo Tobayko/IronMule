@@ -27,6 +27,7 @@ MODELS = [("Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf"),
           ("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")]
 NS = [int(x) for x in os.environ.get("MG2_NS", "1,8,32").split(",")]
 TOKENS, CTX = 128, 2048
+PYTHON_INPUTS, PYTHON_INPUTS_COUNT = ((), ()), None
 REPORT: dict = {"commit": COMMIT, "started": time.time(), "models": {}}
 LOG = open(W / "mg2.log", "a")
 
@@ -145,6 +146,83 @@ def ask(port, prompt, limit, t0, out, i):
     out[i] = {"first_s": first, "tokens": n, "text": "".join(text)}
 
 
+def ask_openai(port, prompt, limit, t0, out, i, model):
+    """vLLM / SGLang: the same templated prompt through /v1/completions, streamed."""
+    r = post(port, "/v1/completions", {"model": model, "prompt": prompt, "max_tokens": limit, "temperature": 0,
+                                       "stream": True})
+    first, text = None, []
+    for raw in r:
+        line = raw.decode().strip()
+        if not line.startswith("data:") or line == "data: [DONE]":
+            continue
+        piece = (json.loads(line[5:]).get("choices") or [{}])[0].get("text") or ""
+        if piece:
+            first = first if first is not None else time.perf_counter() - t0
+            text.append(piece)
+    out[i] = {"first_s": first, "tokens": None, "text": "".join(text)}
+
+
+def block_openai(port, prompts, limit, model, count):
+    out, t0 = [None] * len(prompts), time.perf_counter()
+    th = [threading.Thread(target=ask_openai, args=(port, prompts[i], limit, t0, out, i, model)) for i in range(len(prompts))]
+    [t.start() for t in th]; [t.join() for t in th]
+    wall = time.perf_counter() - t0
+    tokens = sum(count(o["text"]) for o in out)
+    return {"tok_s": tokens / wall, "ttft_s": sum(o["first_s"] or wall for o in out) / len(out), "wall_s": wall,
+            "tokens": tokens}, [o["text"] for o in out]
+
+
+def python_server(command, port, env_extra=None, timeout=1800):
+    proc = subprocess.Popen(command, env={**os.environ, **(env_extra or {})}, stdout=open(W / "pyserver.log", "a"),
+                            stderr=subprocess.STDOUT)
+    for _ in range(timeout // 2):
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=5); c.request("GET", "/v1/models")
+            if c.getresponse().status == 200:
+                return proc
+        except Exception:
+            pass
+        if proc.poll() is not None:
+            raise RuntimeError("server exited")
+        time.sleep(2)
+    proc.kill()
+    raise RuntimeError("server did not start")
+
+
+def run_python_engines(prompts, fact_prompts, facts, count):
+    """vLLM and SGLang with Qwen3-4B in float16 (a T4 has no bfloat16), on one GPU, the same templated prompts."""
+    for name, install, command in (
+            ("vllm_1gpu", "pip install -q vllm", [sys.executable, "-m", "vllm.entrypoints.openai.api_server", "--model",
+             "Qwen/Qwen3-4B", "--dtype", "half", "--max-model-len", "4096", "--gpu-memory-utilization", "0.9",
+             "--port", "8400"]),
+            ("sglang_1gpu", "pip install -q 'sglang[all]'", [sys.executable, "-m", "sglang.launch_server", "--model-path",
+             "Qwen/Qwen3-4B", "--dtype", "half", "--attention-backend", "triton", "--port", "8400",
+             "--mem-fraction-static", "0.85"])):
+        m = REPORT["models"].setdefault("Qwen3-4B-hf-fp16", {"arms": {}})
+        rows = m["arms"].setdefault(name, {})
+        try:
+            sh(install + " >> " + str(W / "pip.log") + " 2>&1")
+            proc = python_server(command, 8400, {"CUDA_VISIBLE_DEVICES": "0"})
+        except Exception as exc:  # noqa: BLE001 - recorded, the run goes on
+            rows["error"] = f"{type(exc).__name__}: {exc}"[:300]
+            log(name, "ERROR", exc); save(); continue
+        try:
+            for n in NS:
+                block_openai(8400, prompts[:n], TOKENS, "Qwen/Qwen3-4B", count)
+                rows[str(n)] = [block_openai(8400, prompts[:n], TOKENS, "Qwen/Qwen3-4B", count)[0] for _ in range(3)]
+                log(name, n, json.dumps(rows[str(n)]))
+                save()
+            answers = []
+            for k in range(0, len(fact_prompts), 8):
+                answers += block_openai(8400, fact_prompts[k:k + 8], 48, "Qwen/Qwen3-4B", count)[1]
+            m["facts_" + name] = correct(answers, facts)
+        except Exception as exc:  # noqa: BLE001
+            rows["error"] = f"{type(exc).__name__}: {exc}"[:300]
+        finally:
+            proc.kill()
+        save()
+
+
 def block_servers(ports, prompts, limit):
     out, t0 = [None] * len(prompts), time.perf_counter()
     th = [threading.Thread(target=ask, args=(ports[i % len(ports)], prompts[i], limit, t0, out, i))
@@ -243,6 +321,13 @@ def run_model(repo, name, facts):
         system = "/no_think" if "Qwen3" in name else None
         prompts = template(port, TEXTS, None)
         fact_prompts = template(port, [q + " Answer in one short sentence." for q, _ in facts], system)
+        if "Qwen3-4B" in name:  # the same templated prompts for vLLM and SGLang, counted with the model's tokenizer
+            global PYTHON_INPUTS, PYTHON_INPUTS_COUNT
+            PYTHON_INPUTS = (prompts, fact_prompts)
+            from transformers import AutoTokenizer  # the same tokenizer as the GGUF's; llama-server is stopped by then
+
+            hf = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B")
+            PYTHON_INPUTS_COUNT = lambda text: len(hf.encode(text, add_special_tokens=False))  # noqa: E731
         ans = []
         for k in range(0, len(fact_prompts), 8):
             ans += block_servers([port], fact_prompts[k:k + 8], 48)[1]
@@ -304,9 +389,11 @@ def main():
     save()
     facts = build()
     log("built", REPORT["build_s"])
-    for repo, name in MODELS:
+    for index, (repo, name) in enumerate(MODELS):
         try:
             run_model(repo, name, facts)
+            if index == 0 and os.environ.get("MG2_PYTHON_ENGINES", "1") == "1":
+                run_python_engines(*PYTHON_INPUTS, facts, PYTHON_INPUTS_COUNT)
         except Exception as exc:  # noqa: BLE001
             REPORT["models"].setdefault(name, {})["error"] = f"{type(exc).__name__}: {exc}"[:300]
             log(name, "ERROR", exc)

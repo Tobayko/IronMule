@@ -827,3 +827,48 @@ Version 2, three rounds of 5 waves: 183 requests, none failed; every idle decisi
 is the fastest configuration at these contexts per FA1 v2's table); waves 7.3-11.4 s (35-54 tok/s, the first wave of a
 fresh server 22 s with its cold prefix cache). `/health` shows the agent under `ggml.agent`. A switch under real traffic
 whose regime changes is still to be shown on hardware (simulated in AG10 S).
+
+### 2026-11-13 SP1: one KV pool with shared prefixes on the CPU (FA1u), this container
+
+Owner, 2026-11-13: clearly beat llama.cpp, Ollama, LM Studio, vLLM and SGLang. llama.cpp (and so Ollama and LM Studio,
+which run it) gives every parallel slot its own cells and reuses a slot's own last prompt only; with a system prompt
+every request holds and reads its own copy. vLLM and SGLang share prefix pages (paged attention, RadixAttention) on
+GPUs. SP1 does that on llama.cpp's CPU path:
+
+- *FA1u* (`native/ggml_patches/fa1/fa1_kern.h`): several query tokens of one stream together (a unified cache, or a
+  prompt), each key block's K and V converted once for all of them, scoring 16 keys at a time where most are visible and
+  key by key where few are, the visible keys only into V. A block that 16 sequences see is read once per step.
+- *SharedPool* (`ironmule/ggml_engine.py`): llama.cpp's unified cache; a request takes the longest prefix any running or
+  finished sequence holds via `llama_memory_seq_cp` (cells gain a sequence id, nothing is copied), reserves only its
+  prompt and answer limit, cells are counted by reference, finished sequences stay as a cache and are evicted least
+  recently used; a prompt that shares 64+ more tokens with one starting in the same step waits one step to share it.
+
+Correctness (`share_check.py`, 16 sequences = 400 shared + 20 own tokens and a step): logits against split sequences
+without flash attention max 0.057 apart (FA1 on split sequences: 0.056), every argmax the same.
+
+Decode step at full load (`lab/fa1/share_speed.py`, Qwen3-4B Q8_0, 480-token shared prefix + 80 own tokens):
+
+| Sequences | split, FA1 | shared pool, FA1u | | setup (prefill) split / shared |
+| --- | --- | --- | --- | --- |
+| 16 | 0.218 s (73.4 tok/s) | 0.158 s (101.0 tok/s) | 1.38x | 33.5 s / 7.9 s |
+| 32 | 0.364 s (88.0 tok/s) | 0.271 s (118.0 tok/s) | 1.34x | 64.8 s / 13.3 s |
+
+Through the engine's run loop (`lab/fa1/share_run.py`, 16 chat requests with the 479-token library system prompt, 48
+tokens, speculation on, then a second wave of 16 new questions):
+
+| | split (prefix reuse per sequence) | shared pool |
+| --- | --- | --- |
+| cold burst | 10.1 tok/s, first token 17.5 s | **51.8 tok/s, first token 2.7 s** (5.1x) |
+| second wave | 43.1 tok/s, first token 1.39 s | **66.3 tok/s, first token 1.11 s** (1.54x) |
+| pool cells used afterwards | 16 x ~560 per sequence | 1,789 for all |
+
+30 of 32 answers token-identical with the split run (the two others differ by batching order). The bridge serves the
+pool when FA1u is in the library (`ironmule_fa1_version`), the gate's own check of the unified setting passes, and the
+layers are on the CPU; it runs twice SEQ1's width at once in the same memory.
+
+### 2026-11-13 SP4: collective speculation (code, not measured yet)
+
+`ironmule/speculation.py` `CollectiveIndex`: every 2-4-gram of recent answers (all users) maps to the tokens that
+followed; a request without a long own match drafts from it in its own acceptance bucket (100 + n), so the step policy
+learns whether it pays. Kept tokens are always the model's own next tokens. On by default in the ggml engine
+(`IRONMULE_GGML_COLLECTIVE=0` turns it off).
