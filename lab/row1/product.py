@@ -23,9 +23,15 @@ t0 = time.perf_counter()
 saved = {k: os.environ.pop(k) for k in ("IRONMULE_GGML_SEQS", "IRONMULE_GGML_SEQ_CTX") if k in os.environ}
 checked = gate(spec.snapshot_path, gguf, cache=Path(os.environ.get("ROW1_GATE_CACHE") or out_path.parent / f"gate_{out_path.stem}"))  # gate at the default size
 os.environ.update(saved)
+if os.environ.get("ROW1_AUTO_SEQS"):  # SEQ1: the engine chooses its width, as `ironmule serve` now does
+    from ironmule.ggml_engine import choose_sequences
+    width = choose_sequences(gguf, checked.get("settings"), cache=out_path.parent / "width")
+    os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])
+    print(json.dumps({"sequences": width}), flush=True)
 res = {"gguf": os.path.basename(gguf), "env": {k: v[:60] for k, v in os.environ.items() if k.startswith(("ROW1_", "IRONMULE_GGML"))},
        "gate": {k: checked.get(k) for k in ("ran", "passes", "ratio", "interval", "settings", "reason", "seconds")},
-       "gate_tried": checked.get("tried"), "gate_s": time.perf_counter() - t0}
+       "gate_tried": checked.get("tried"), "gate_s": time.perf_counter() - t0,
+       "sequences": os.environ.get("IRONMULE_GGML_SEQS")}
 print(json.dumps(res["gate"]), flush=True)
 store = ProductStore(Path(tempfile.mkdtemp(prefix="row1p-")) / "state"); store.setup("server"); store.set_request_timeout(3600)
 store.register_model(spec)

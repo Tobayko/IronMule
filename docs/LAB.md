@@ -651,3 +651,37 @@ product trailed the same kernels under the server at N=32 (0.93x, part 6). The e
 kept KV matches best; the server's first tokens under load suggest its slot choice reuses less (not examined).
 Answers: facts 49-50/50 as before. Next: the sequence count is the largest lever left (N=32 gives 2.4x N=8) and is
 still set by hand (`IRONMULE_GGML_SEQS`, default 8); the engine should measure and pick it within the machine's memory.
+
+### 2026-11-13 SEQ1: the engine chooses its sequence count itself
+
+Owner, 2026-11-13: "let the engine choose the sequence count itself, like an agent". Built (`choose_sequences`,
+`measure_widths`, `decide_width`, `fitting_widths`, `memory_bytes` in `ironmule/ggml_engine.py`; `ironmule serve
+--engine ggml` runs it after the gate unless `IRONMULE_GGML_SEQS` is set; `/health` shows it; AGENT.md describes it).
+Rule, fixed before the product run: of 8, 16, 32, 64, the widths whose KV cache at the promised request length fits
+beside the model and a reserve (a tenth of memory, at least 1.5 GiB); measured one context at a time on one loaded
+model; doubled while a doubling buys at least 10 %; remembered per GGUF, settings, length, engine and machine.
+
+Found on the way: this container's cgroup v1 limit is 14.3 GB while `/proc/meminfo` says 16.9 GB, and the first try
+was killed for memory (it also held the 8-sequence context open while it built the 32 one). `memory_bytes` now reads
+the cgroup's limit and counts its reclaimable file cache as free (the GGUF just read sits there as 4.3 GB of active
+cache); each measured context is freed before the next.
+
+The choice on this machine (Qwen3-4B Q8_0, B16, flash attention; KV cell 147,456 bytes):
+
+| Request length | Widths that fit | Measured tokens/s at full load | Chosen | Time |
+| --- | --- | --- | --- | --- |
+| 2,048 (default) | 8, 16 | 71.4 / 123.9 | 16 | 57 s |
+| 1,024 | 8, 16, 32 | 72.5 / 114.9 / 172.9 | 32 | 92 s |
+
+Through the product (`lab/row1/seq1_p9.sh`, `serve.py`'s prompts, 64 tokens, 3 blocks, request length 2,048),
+tokens/s and mean first token:
+
+| Width | N=1 | N=8 | N=16 | N=32 | facts |
+| --- | --- | --- | --- | --- | --- |
+| 8 (the old default) | 10.3 / 11.0 / 10.6 (0.10-0.11 s) | 70.6 / 69.0 / 72.0 (0.20-0.28 s) | 65.6 / 65.6 / 67.0 (4.5 s) | 64.4 / 63.6 / 65.7 (12.3-12.6 s) | 49/50 |
+| 16 (chosen by the engine) | 10.5 / 11.3 / 10.2 (0.09-0.10 s) | 70.5 / 71.1 / 71.0 (0.11-0.12 s) | 113.7 / 114.7 / 110.7 (0.31-0.33 s) | 115.0 / 115.2 / 108.5 (5.2-5.6 s) | 49/50 |
+
+**1.72x at 16 requests and 1.76x at 32**, first tokens 14x sooner at 16, the same alone and at 8. Part 8's 1.14x over
+`llama-server` at N=32 used 32 sequences of 1,024 tokens, set by hand; at the default length the engine now picks 16
+by itself, since 32 sequences of 2,048 tokens do not fit this container. Next: let a request's length decide its
+sequence's room (llama.cpp's unified KV cache shares one pool), so the engine need not trade width for length.

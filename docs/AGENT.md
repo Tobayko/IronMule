@@ -175,6 +175,24 @@ positions takes another kernel path than one position, so answers can differ sli
 quality gate (2026-11-10), which the engine passes at every start or it refuses. The agent does not choose this engine
 by itself yet (GG2); its hardware test against `llama-server` is GG1-H in the backlog.
 
+**How many requests at once: the engine decides (SEQ1, 2026-11-13).** The number of sequences the engine serves at
+once is its largest speed lever on a CPU with AMX (ROW1: 32 sequences give 2.4x the tokens per second of 8 on Qwen3-4B),
+and it costs memory: every sequence holds a KV cache as long as the longest request it promises (2,048 tokens unless
+`IRONMULE_GGML_SEQ_CTX` says otherwise). At its first start on a machine the engine chooses it like the rest of its
+setup (`choose_sequences` in `ironmule/ggml_engine.py`):
+1. *It looks:* the memory it may use (the host's, narrowed by the container's cgroup limit, with reclaimable file cache
+   counted as free), the GGUF's size and the bytes one KV cell takes (from the GGUF's metadata). Of 8, 16, 32 and 64
+   it keeps the widths whose KV cache fits beside the model and a reserve of a tenth of the memory (at least 1.5 GiB).
+2. *It tries:* each width that fits, on one loaded model, one context at a time: every sequence a 64-token prompt, then
+   16 decode steps of all of them, median of 3.
+3. *It decides:* from 8 upward it doubles while a doubling buys at least 10 % more tokens per second (`WIDTH_GAIN`);
+   memory that buys less is not spent. A failed measurement keeps 8, as before.
+4. *It remembers:* per GGUF, settings, request length, engine version and machine; a changed machine or model is
+   measured again. `/health`'s `ggml.sequences` shows the choice, the widths that fit, the measured rates and why.
+`IRONMULE_GGML_SEQS` set by hand overrides it. A finished request's KV stays in its sequence, and a new request takes
+the free sequence whose kept tokens share the longest prefix with its prompt (`IRONMULE_GGML_PREFIX_REUSE=0` turns it
+off), as `llama-server` does.
+
 ## What it knows about the hardware (AG3)
 
 The world model learns what this machine's work costs. The agent also knows the machine's architecture

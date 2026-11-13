@@ -392,6 +392,14 @@ def serve(argv: list[str]) -> int:
                 if checked.get("passes") is not True:
                     raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
                                          f"({checked.get('reason') or checked.get('interval')})")
+                if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine
+                    from ironmule.ggml_engine import choose_sequences
+
+                    width = choose_sequences(args.gguf, checked.get("settings"), cache=Path(store.root) / "ggml-gate")
+                    os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
+                    checked = {**checked, "sequences": width}
+                    print(json.dumps({"ggml_sequences": {k: width.get(k) for k in ("sequences", "fitting", "rates",
+                                                                                   "reason")}}), flush=True)
                 ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
                                 "ggml_gate": checked, **({"speculate": True} if args.speculate != "off" else {})}
 

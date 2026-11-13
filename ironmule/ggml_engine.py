@@ -98,7 +98,7 @@ class Job:
 class GgmlEngine:
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
-                 kv_unified: bool = False, kv_f32: bool = False):
+                 kv_unified: bool = False, kv_f32: bool = False, model: Any = None):
         import numpy as np
 
         from .speculation import StepPolicy
@@ -106,7 +106,8 @@ class GgmlEngine:
         L = bindings()
         self.L, self.np = L, np
         L.llama_backend_init()
-        self.model = L.llama_model_load_from_file(str(gguf).encode(), L.llama_model_default_params())
+        self._owns_model = model is None  # SEQ1: a width measurement opens several contexts on one loaded model
+        self.model = model or L.llama_model_load_from_file(str(gguf).encode(), L.llama_model_default_params())
         if not self.model:
             raise ValueError(f"llama.cpp could not load {gguf}")
         params = L.llama_context_default_params()
@@ -439,6 +440,14 @@ class GgmlEngine:
                 **({"speculation": self.policy.summary()} if self.policy is not None else {"speculation": "off"})}
 
     def close(self) -> None:
+        self.close_context()
+        if getattr(self, "model", None):
+            if getattr(self, "_owns_model", True):
+                self.L.llama_model_free(self.model)
+            self.model = None
+
+    def close_context(self) -> None:
+        """Free the context, its KV cache, batch and thread pool; the loaded model stays."""
         if getattr(self, "batch", None) is not None:
             self.L.llama_batch_free(self.batch)
             self.batch = None
@@ -451,9 +460,20 @@ class GgmlEngine:
         if getattr(self, "ctx", None):
             self.L.llama_free(self.ctx)
             self.ctx = None
-        if getattr(self, "model", None):
-            self.L.llama_model_free(self.model)
-            self.model = None
+
+    def kv_cell_bytes(self) -> int:
+        """Bytes one KV cell (one token of one sequence) takes in every layer: K and V of every KV head, f16 or f32."""
+        def meta(key: str) -> str | None:
+            buf = __import__("ctypes").create_string_buffer(256)
+            n = self.L.llama_model_meta_val_str(self.model, key.encode(), buf, len(buf))
+            return buf.value.decode() if n > 0 else None
+
+        layers, kv_heads = self.L.llama_model_n_layer(self.model), self.L.llama_model_n_head_kv(self.model)
+        arch = meta("general.architecture") or ""
+        fallback = self.L.llama_model_n_embd(self.model) // max(1, self.L.llama_model_n_head(self.model))
+        k_len = int(meta(f"{arch}.attention.key_length") or fallback)
+        v_len = int(meta(f"{arch}.attention.value_length") or k_len)
+        return layers * kv_heads * (k_len + v_len) * (4 if self.settings.get("kv_f32") else 2)
 
 
 SETTINGS = tuple({"flash_attn": fa, "kv_unified": unified, "kv_f32": f32}
@@ -486,6 +506,197 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
         rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates["8"] * rates["1"])})
     rows.sort(key=lambda row: -row["score"])
     return {"order": [{k: row[k] for k in ("flash_attn", "kv_unified", "kv_f32")} for row in rows], "measured": rows}
+
+
+# --- SEQ1: the engine chooses how many sequences it serves at once (owner, 2026-11-13: "like an agent") ----------------
+WIDTHS = (8, 16, 32, 64)  # the sequence counts it may choose; fewer only where 8 does not fit the memory
+WIDTH_GAIN = 1.10  # a doubling must buy at least 10 % more tokens per second, else the memory is not spent
+WIDTH_VERSION = 1
+
+
+def _cgroup_memory() -> tuple[int, int] | None:
+    """(limit, usage) of this process's memory cgroup (v2 `memory.max`, v1 `memory.limit_in_bytes`), or None."""
+    try:
+        lines = Path("/proc/self/cgroup").read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        _, controllers, path = line.split(":", 2)
+        if controllers == "":  # v2
+            folder, names = Path("/sys/fs/cgroup") / path.lstrip("/"), ("memory.max", "memory.current")
+        elif "memory" in controllers.split(","):  # v1
+            folder, names = Path("/sys/fs/cgroup/memory") / path.lstrip("/"), ("memory.limit_in_bytes",
+                                                                              "memory.usage_in_bytes")
+        else:
+            continue
+        try:
+            limit, usage = ((folder / name).read_text().strip() for name in names)
+            if not (limit.isdigit() and int(limit) < 2**60):
+                continue
+            # page cache of files on disk can be reclaimed, and the cgroup counts it as used: a GGUF just read stays
+            # cached (and is counted once more as the model's own bytes); shared memory (tmpfs) cannot be reclaimed
+            stat = dict(line.split() for line in (folder / "memory.stat").read_text().splitlines() if " " in line)
+            cache = int(stat.get("total_cache", stat.get("file", 0)))
+            shmem = int(stat.get("total_shmem", stat.get("shmem", 0)))
+            return int(limit), max(0, int(usage) - max(0, cache - shmem))
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def memory_bytes() -> tuple[int, int]:
+    """(available, total) bytes this process may use: /proc/meminfo, narrowed by the memory cgroup's limit where one is
+    set (a container's limit can be below the host's memory), else half of physical memory."""
+    try:
+        values = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            name, _, rest = line.partition(":")
+            values[name] = int(rest.split()[0]) * 1024
+        available, total = values["MemAvailable"], values["MemTotal"]
+    except (OSError, KeyError, ValueError, IndexError):
+        total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        available = total // 2
+    group = _cgroup_memory()
+    if group is not None:
+        limit, usage = group
+        available, total = min(available, max(0, limit - usage)), min(total, limit)
+    return available, total
+
+
+def fitting_widths(cell_bytes: int, seq_ctx: int, model_bytes: int, available: int, total: int) -> list[int]:
+    """The widths whose KV cache (every sequence `seq_ctx` tokens long) fits beside the model and a reserve of a tenth of
+    the machine's memory (at least 1.5 GiB); 8 or the largest of 4, 2, 1 that fits where none of WIDTHS does."""
+    budget = available - model_bytes - max(int(1.5 * 2**30), total // 10)
+    fits = [w for w in WIDTHS if w * seq_ctx * cell_bytes <= budget]
+    if fits:
+        return fits
+    small = [w for w in (4, 2, 1) if w * seq_ctx * cell_bytes <= budget]
+    return [small[0] if small else 1]
+
+
+def decide_width(rates: dict[int, float]) -> int:
+    """From the measured tokens per second per width: start at the narrowest, double while that buys WIDTH_GAIN."""
+    widths = sorted(rates)
+    chosen = widths[0]
+    for wider in widths[1:]:
+        if rates[wider] >= WIDTH_GAIN * rates[chosen]:
+            chosen = wider
+        else:
+            break
+    return chosen
+
+
+def measure_widths(gguf: str, settings: dict[str, bool], seq_ctx: int, widths: Sequence[int], steps: int = 16,
+                   repeats: int = 3) -> dict[str, Any]:
+    """Tokens per second of every width at full load on this machine: per width one context on the same loaded model,
+    each sequence a 64-token prompt, then `steps` decode steps of every sequence, median of `repeats`."""
+    first = GgmlEngine(gguf, seqs=min(widths), seq_ctx=seq_ctx, speculate=False, **settings)
+    out: dict[str, Any] = {"cell_bytes": first.kv_cell_bytes(), "rates": {}, "step_s": {}}
+    model = first.model
+    try:
+        prompt = (first.tokenize(CHECK_TEXT) * 8)[:64]
+        for width in sorted(widths):
+            # one context at a time: the previous one's KV cache is freed before the next is allocated
+            engine = first if width == first.seqs else GgmlEngine(gguf, seqs=width, seq_ctx=seq_ctx, speculate=False,
+                                                                   model=model, **settings)
+            try:
+                times = []
+                for _ in range(repeats):
+                    engine._clear()
+                    rows = [(t, j, seq, j == len(prompt) - 1) for seq in range(width) for j, t in enumerate(prompt)]
+                    for start in range(0, len(rows), seq_ctx):
+                        engine._decode(rows[start:start + seq_ctx])
+                    started = time.perf_counter()
+                    for k in range(steps):
+                        engine._decode([(prompt[k % len(prompt)], len(prompt) + k, seq, True) for seq in range(width)])
+                    times.append(time.perf_counter() - started)
+                out["rates"][str(width)] = width * steps / statistics.median(times)
+                out["step_s"][str(width)] = statistics.median(times) / steps
+            finally:
+                engine.close_context()
+    finally:
+        first.close_context()
+        first.L.llama_model_free(model)
+    return out
+
+
+WIDTH_CHILD = r"""
+import json, sys
+from ironmule.ggml_engine import measure_widths
+data = json.loads(sys.stdin.read())
+print(json.dumps(measure_widths(sys.argv[1], data["settings"], data["seq_ctx"], data["widths"])))
+"""
+
+CELL_CHILD = r"""
+import json, sys
+from ironmule.ggml_engine import GgmlEngine
+data = json.loads(sys.stdin.read())
+engine = GgmlEngine(sys.argv[1], seqs=1, seq_ctx=256, speculate=False, **data["settings"])
+print(json.dumps({"cell_bytes": engine.kv_cell_bytes()}))
+engine.close()
+"""
+
+
+def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_ctx: int | None = None,
+                     cache: Path | None = None, root: Path | None = None) -> dict[str, Any]:
+    """SEQ1: how many sequences the engine serves, chosen on this machine. It sees the memory the KV cache may take at
+    the request length it promises (`seq_ctx`), measures the widths that fit (`measure_widths`), and keeps doubling
+    while a doubling buys `WIDTH_GAIN` (`decide_width`). Remembered per GGUF, settings, request length, engine and
+    machine, so a changed machine or model is measured again. Never raises: a failed measurement keeps 8."""
+    import subprocess
+
+    settings = {k: bool(v) for k, v in (settings or {}).items() if k in ("flash_attn", "kv_unified", "kv_f32")}
+    seq_ctx = seq_ctx or SEQ_CTX
+    available, total = memory_bytes()
+    key = hashlib.sha256(json.dumps([file_sha256(gguf), settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS,
+                                     WIDTH_GAIN, machine_key(), round(total / 2**30)], sort_keys=True).encode()
+                         ).hexdigest()[:24]
+    cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
+    stored = cache / f"width-{key}.json"
+    if stored.exists():
+        try:
+            return json.loads(stored.read_text())
+        except (OSError, ValueError):
+            pass
+    root = root or Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
+           "HF_HUB_OFFLINE": "1"}
+    env.pop("IRONMULE_GGML_SEQS", None)
+    started = time.perf_counter()
+
+    def child(code: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            done = subprocess.run([sys.executable, "-c", code, gguf], env=env, input=json.dumps(payload),
+                                  capture_output=True, text=True, timeout=3600, check=False)
+            return json.loads(done.stdout.strip().splitlines()[-1]) if done.returncode == 0 else None
+        except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+            return None
+
+    model_bytes = os.path.getsize(gguf)
+    cell = child(CELL_CHILD, {"settings": settings})
+    record: dict[str, Any] = {"seq_ctx": seq_ctx, "memory_available": available, "memory_total": total,
+                              "model_bytes": model_bytes, "gain_rule": WIDTH_GAIN, "machine": machine_key(),
+                              "version": WIDTH_VERSION}
+    if cell is None:
+        return {**record, "sequences": SEQS, "reason": "the KV size could not be read; 8 sequences as before"}
+    widths = fitting_widths(cell["cell_bytes"], seq_ctx, model_bytes, available, total)
+    record.update(cell_bytes=cell["cell_bytes"], fitting=widths)
+    if len(widths) == 1:
+        record.update(sequences=widths[0], reason="only this width fits the memory")
+    else:
+        measured = child(WIDTH_CHILD, {"settings": settings, "seq_ctx": seq_ctx, "widths": widths})
+        if measured is None:
+            return {**record, "sequences": SEQS, "reason": "the width measurement failed; 8 sequences as before"}
+        rates = {int(w): r for w, r in measured["rates"].items()}
+        record.update(sequences=decide_width(rates), rates=measured["rates"], step_s=measured["step_s"],
+                      reason="the widest width whose doubling still bought the gain rule")
+    record["seconds"] = round(time.perf_counter() - started, 1)
+    try:
+        cache.mkdir(parents=True, exist_ok=True)
+        stored.write_text(json.dumps(record))
+    except OSError:
+        pass
+    return record
 
 
 def machine_key() -> str:
@@ -608,5 +819,5 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     return result
 
 
-__all__ = ["ENGINE_VERSION", "OPTION_BOUND", "GgmlEngine", "Job", "autotune", "available", "bindings", "file_sha256", "gate",
-           "machine_key"]
+__all__ = ["ENGINE_VERSION", "OPTION_BOUND", "GgmlEngine", "Job", "autotune", "available", "bindings", "choose_sequences",
+           "decide_width", "file_sha256", "fitting_widths", "gate", "machine_key", "measure_widths", "memory_bytes"]

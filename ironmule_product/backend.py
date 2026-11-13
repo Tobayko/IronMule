@@ -211,8 +211,8 @@ class MLXWorkerClient:
             # STAB3 (AG5-G run 6): no more open members than the plan has slots; the agent's width may be below 8
             return min(STREAM_GROUP_REQUESTS, self.dense_width or STREAM_GROUP_REQUESTS)
         if self.execution_variant == "current_engine" and self.engine_configuration == "ggml":
-            # GG1: the ggml engine's sequences (8; ROW1: IRONMULE_GGML_SEQS raises them for a run)
-            return max(STREAM_GROUP_REQUESTS, int(os.environ.get("IRONMULE_GGML_SEQS") or 0))
+            # GG1: the ggml engine's sequences (8; SEQ1: the count the engine chose, or IRONMULE_GGML_SEQS)
+            return int(os.environ.get("IRONMULE_GGML_SEQS") or 0) or STREAM_GROUP_REQUESTS
         if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
             return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None

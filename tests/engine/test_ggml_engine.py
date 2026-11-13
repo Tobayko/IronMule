@@ -332,3 +332,93 @@ def test_reused_prompts_answer_as_fresh_ones_on_the_real_model(engine):
     before = engine.reused_tokens
     again = engine.run([Job(list(prompt), 12)])[0].tokens
     assert engine.reused_tokens - before == len(prompt) - 1 and again == fresh
+
+
+def test_seq1_the_width_doubles_only_while_a_doubling_buys_ten_percent():
+    from ironmule.ggml_engine import decide_width
+
+    assert decide_width({8: 63.0, 16: 103.0, 32: 141.0}) == 32  # ROW1 round 5: 1.6x, then 1.4x
+    assert decide_width({8: 100.0, 16: 105.0, 32: 200.0}) == 8  # 5 % is not worth the memory; it stops there
+    assert decide_width({8: 100.0, 16: 112.0, 32: 120.0, 64: 200.0}) == 16
+    assert decide_width({4: 10.0}) == 4
+
+
+def test_seq1_only_widths_whose_kv_cache_fits_beside_the_model_and_a_reserve_are_tried():
+    from ironmule.ggml_engine import fitting_widths
+
+    gib, cell = 2**30, 147_456  # Qwen3-4B, f16 KV: 36 layers x 8 KV heads x (128 + 128) x 2 bytes
+    assert fitting_widths(cell, 2048, int(4.3 * gib), 15 * gib, 15 * gib) == [8, 16, 32]
+    assert fitting_widths(cell, 1024, int(4.3 * gib), 15 * gib, 15 * gib) == [8, 16, 32, 64]
+    assert fitting_widths(cell, 2048, int(4.3 * gib), 8 * gib, 15 * gib) == [4]  # 8 sequences would not fit
+    assert fitting_widths(cell, 2048, 7 * gib, 8 * gib, 15 * gib) == [1]  # nothing fits: one sequence, never zero
+
+
+def test_seq1_the_choice_is_measured_once_and_remembered(monkeypatch, tmp_path):
+    import subprocess
+    import types
+
+    from ironmule import ggml_engine
+
+    calls = []
+
+    def run(argv, **kw):  # the KV-size child, then the width child (it alone calls measure_widths)
+        calls.append(argv[2])
+        out = ('{"cell_bytes": 1000, "rates": {"8": 50.0, "16": 90.0, "32": 95.0, "64": 96.0}, "step_s": {}}'
+               if "measure_widths" in argv[2] else '{"cell_bytes": 1000}')
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+    (tmp_path / "m.gguf").write_bytes(b"gguf")
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(ggml_engine, "memory_bytes", lambda: (16 * 2**30, 16 * 2**30))
+    first = ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {"flash_attn": True}, cache=tmp_path / "c")
+    again = ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {"flash_attn": True}, cache=tmp_path / "c")
+    assert first["sequences"] == 16 and first["fitting"] == [8, 16, 32, 64] and again == first and len(calls) == 2
+
+
+def test_seq1_a_failed_measurement_keeps_eight_sequences(monkeypatch, tmp_path):
+    import subprocess
+    import types
+
+    from ironmule import ggml_engine
+
+    (tmp_path / "m.gguf").write_bytes(b"gguf")
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: types.SimpleNamespace(returncode=1, stdout="", stderr="x"))
+    result = ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {}, cache=tmp_path / "c")
+    assert result["sequences"] == 8 and "8 sequences as before" in result["reason"]
+    assert not (tmp_path / "c").exists()  # a failure is not remembered
+
+
+def test_seq1_widths_are_measured_on_one_loaded_model(engine):
+    from ironmule.ggml_engine import measure_widths
+
+    out = measure_widths(GGUF, dict(engine.settings), 256, [1, 2], steps=2, repeats=1)
+    assert out["cell_bytes"] > 0 and set(out["rates"]) == {"1", "2"} and all(r > 0 for r in out["rates"].values())
+
+
+def test_seq1_the_memory_seen_is_the_container_s_limit_with_its_file_cache_free(monkeypatch, tmp_path):
+    from pathlib import Path as RealPath
+
+    from ironmule import ggml_engine
+
+    group = tmp_path / "sys/fs/cgroup/memory/box"
+    group.mkdir(parents=True)
+    (group / "memory.limit_in_bytes").write_text(str(14 * 2**30))
+    (group / "memory.usage_in_bytes").write_text(str(5 * 2**30))
+    (group / "memory.stat").write_text(f"total_cache {4 * 2**30}\ntotal_shmem {2**30}\ntotal_rss {2**30}\n")
+    files = {"/proc/self/cgroup": "4:memory:/box\n0::/\n",
+             "/proc/meminfo": "MemTotal: 16777216 kB\nMemAvailable: 16000000 kB\n"}
+
+    def path(name, *rest):
+        name = str(name)
+        if name in files:
+            target = tmp_path / name.strip("/").replace("/", "_")
+            target.write_text(files[name])
+            return RealPath(target)
+        if name.startswith("/sys/fs/cgroup"):
+            return RealPath(tmp_path / name.lstrip("/"), *rest)
+        return RealPath(name, *rest)
+
+    monkeypatch.setattr(ggml_engine, "Path", path)
+    available, total = ggml_engine.memory_bytes()
+    # used: 5 GiB minus 3 GiB of reclaimable file cache (4 GiB of cache, 1 GiB of it shared memory)
+    assert total == 14 * 2**30 and available == 12 * 2**30
