@@ -471,3 +471,18 @@ def test_sp1_a_finished_sequence_is_continued_past_the_shared_prefix():
     pool.release(0, list(range(50)) + [1, 2, 3])
     seq, keep = pool.place(list(range(50)) + [8], 5)
     assert (seq, keep) == (0, 50) and ("rm", 0, 50, -1) in calls and pool.used == 50
+
+
+def test_sp4_drafts_come_from_other_requests_answers_in_their_own_bucket():
+    from ironmule.speculation import COLLECTIVE_BUCKET, CollectiveIndex
+
+    index = CollectiveIndex(keys=1000)
+    index.add([5, 6, 7, 8, 9, 10, 11, 12])
+    assert index.draft([1, 2, 6, 7, 8, 9], 3) == ([10, 11, 12], COLLECTIVE_BUCKET + 4)
+    assert index.draft([1, 2, 3, 8, 9], 2) == ([10, 11], COLLECTIVE_BUCKET + 2)
+    assert index.draft([1, 2, 3], 4) == ([], 0)
+    index.add([1, 8, 9, 40, 41])  # the most recent answer wins for the same n-gram
+    assert index.draft([0, 8, 9], 2) == ([40, 41], COLLECTIVE_BUCKET + 2)
+    small = CollectiveIndex(keys=5)
+    small.add(list(range(50)))
+    assert len(small.table) == 5  # bounded, oldest keys go first

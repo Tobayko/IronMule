@@ -41,6 +41,7 @@ OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves withi
 # 0 (the default) means one call's size (the sequence length); a number sets the budget.
 PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", 0))
 PASSED_OVER = 8
+COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
 LLAMA_MAX_SEQ = 64  # llama.cpp's limit on sequence ids in one context (4227c9b)
 SHARE_WAIT = 64  # SP1: a prompt waits a step for a fresh one when that one would give it this many more shared tokens
 MAX_DRAFT_SLACK = 8  # SP1: cells a running request may take beyond its answer for draft rows (speculation.MAX_DRAFT)  # a waiting request passed over this often by shorter prompts goes first
@@ -274,6 +275,7 @@ class GgmlEngine:
     observer: Callable[[int, int, int, float], None] | None = None  # AG10: (rows, prompt, kv, seconds) of each step
     gpu_layers = 0
     pool: "SharedPool | None" = None
+    collective: Any = None
 
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
@@ -338,6 +340,10 @@ class GgmlEngine:
         self.seqs, self.seq_ctx = seqs, seq_ctx
         self.batch = L.llama_batch_init(max(seq_ctx, self.max_rows), 0, seqs)
         self.policy = StepPolicy(self.max_rows) if self.speculate else None
+        if self.speculate and COLLECTIVE and getattr(self, "collective", None) is None:
+            from .speculation import CollectiveIndex
+
+            self.collective = CollectiveIndex()  # SP4: drafts from other requests' answers
         self._free = list(range(seqs))
         self._kept: dict[int, list[int]] = {}  # free sequence -> the tokens its KV still holds (prefix reuse)
         self.pool = SharedPool(self, seqs * seq_ctx, self.cap, ids, MAX_DRAFT_SLACK) if shared else None
@@ -506,6 +512,8 @@ class GgmlEngine:
 
         def finish(seq: int, job: Job, reason: str, keep: bool = True) -> None:
             job.reason, job.finished_ns = reason, time.monotonic_ns()
+            if self.collective is not None and reason in ("eos", "length") and job.tokens:
+                self.collective.add(job.tokens)  # SP4: this answer becomes a draft source for later requests
             held = len(job.ids) + len(job.tokens) - 1  # every token but the last went through the model
             if self.pool is not None:  # SP1: the pool keeps its cells as a cache, or frees them
                 ok = (keep and self.prefix_reuse and held > 0
@@ -610,8 +618,11 @@ class GgmlEngine:
                     job = active[seq]
                     pos = len(job.ids) + len(job.tokens) - 1
                     room = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos)
-                    offers.append(draft(job.ids + job.tokens, room) if self.policy is not None and room > 0
-                                  else ([], 0))
+                    offer = draft(job.ids + job.tokens, room) if self.policy is not None and room > 0 else ([], 0)
+                    if self.collective is not None and room > 0 and len(offer[0]) < 2:  # SP4: others' answers
+                        other = self.collective.draft(job.ids + job.tokens, room)
+                        offer = other if len(other[0]) > len(offer[0]) else offer
+                    offers.append(offer)
                 ks = self.policy.choose(offers) if self.policy is not None and order else [0] * len(order)
                 rows: list[tuple[int, int, int, bool]] = []
                 for seq, (drafts, _), k in zip(order, offers, ks):

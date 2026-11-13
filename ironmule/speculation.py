@@ -276,3 +276,52 @@ class StepPolicy:
 
 
 __all__ = ["MARGIN", "MAX_DRAFT", "MIN_NGRAM", "POLICY_VERSION", "StepPolicy", "WindowPolicy", "accept", "draft"]
+
+
+COLLECTIVE_BUCKET = 100  # drafts from other requests' answers are learned apart: bucket 100 + match length
+COLLECTIVE_NGRAM = 4
+
+
+class CollectiveIndex:
+    """SP4 (2026-11-13): drafts from what other requests answered, not only from the request's own context.
+
+    Prompt lookup (llama.cpp's `--lookup`, vLLM's n-gram speculator, SP1-0 here) copies drafts from the request itself.
+    On a server many users ask alike things, and an answer's next tokens often repeat what the model answered someone
+    else. This index maps every `COLLECTIVE_NGRAM` .. 2 tokens of recent answers to the tokens that followed them, most
+    recent first; a request without a long own match drafts from it. The drafts are verified like any others: a token
+    is kept only where it is the model's own next token, so nothing of another user's answer reaches a reply unless
+    the model would have written it anyway. Their acceptance is learned in its own bucket, so the step policy stops
+    drafting from it where it does not pay. IRONMULE_GGML_COLLECTIVE=0 turns it off."""
+
+    def __init__(self, keys: int = 200_000, ngram: int = COLLECTIVE_NGRAM):
+        from collections import OrderedDict
+
+        self.keys, self.ngram = keys, ngram
+        self.table: OrderedDict[tuple[int, ...], tuple[int, ...]] = OrderedDict()
+        self._lock = threading.Lock()
+        self.added = 0
+
+    def add(self, tokens: Sequence[int]) -> None:
+        """Index an answer: every n-gram (n = ngram .. 2) and up to MAX_DRAFT tokens after it."""
+        tokens = list(tokens)
+        with self._lock:
+            for n in range(self.ngram, 1, -1):
+                for i in range(len(tokens) - n):
+                    key = tuple(tokens[i:i + n])
+                    self.table[key] = tuple(tokens[i + n:i + n + MAX_DRAFT])
+                    self.table.move_to_end(key)
+            while len(self.table) > self.keys:
+                self.table.popitem(last=False)
+            self.added += 1
+
+    def draft(self, context: Sequence[int], k: int) -> tuple[list[int], int]:
+        """Up to `k` tokens that followed the context's last n tokens in some answer (longest n first), and the
+        bucket (COLLECTIVE_BUCKET + n), or ([], 0)."""
+        if k < 1:
+            return [], 0
+        with self._lock:
+            for n in range(min(self.ngram, len(context)), 1, -1):
+                found = self.table.get(tuple(context[len(context) - n:]))
+                if found:
+                    return list(found[:k]), COLLECTIVE_BUCKET + n
+        return [], 0
