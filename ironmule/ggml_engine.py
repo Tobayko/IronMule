@@ -33,14 +33,17 @@ SEQS, SEQ_CTX, MAX_ROWS, THREADS = 8, 2048, 16, 4
 SEQS = int(os.environ.get("IRONMULE_GGML_SEQS", SEQS))
 SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
 POLL = 50  # llama-server's default busy-wait level
-ENGINE_VERSION = 3  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005
+ENGINE_VERSION = 4  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005
 OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default
 # Prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one). GG2 used 96, so early
 # requests streamed while later prompts waited; ROW1 round 5 (2026-11-12, Qwen3-4B, 32 sequences) measured 7-9 % more
 # tokens per second at 16-32 requests when every waiting prompt that fits one call goes in, as llama-server does.
 # 0 (the default) means one call's size (the sequence length); a number sets the budget.
 PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", 0))
-PASSED_OVER = 8  # a waiting request passed over this often by shorter prompts goes first
+PASSED_OVER = 8
+LLAMA_MAX_SEQ = 64  # llama.cpp's limit on sequence ids in one context (4227c9b)
+SHARE_WAIT = 64  # SP1: a prompt waits a step for a fresh one when that one would give it this many more shared tokens
+MAX_DRAFT_SLACK = 8  # SP1: cells a running request may take beyond its answer for draft rows (speculation.MAX_DRAFT)  # a waiting request passed over this often by shorter prompts goes first
 # ROW1 round 5 (2026-11-12): a finished request's KV stays in its sequence, and a new request takes the free sequence
 # whose kept tokens share the longest prefix with its prompt and prefills only the rest, as llama-server's
 # `cache_prompt` (its default). The reused positions were computed in another batch, so tokens can differ as on
@@ -68,6 +71,21 @@ def bindings() -> Any:
     import llama_cpp
 
     return llama_cpp
+
+
+def fa1_version() -> int:
+    """FA1's version in the loaded ggml CPU library (native/ggml_patches/fa1; 3 = FA1u for several tokens), 0 without it.
+    A shared KV pool (SP1) serves only with FA1u: llama.cpp's own CPU attention scans every cell of a unified pool for
+    every query (KV1: 1.39 s a step instead of 0.43 s)."""
+    import ctypes
+
+    try:
+        L = bindings()
+        folder = Path(L.llama_cpp._lib._name).parent if hasattr(L, "llama_cpp") else Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+        lib = ctypes.CDLL(str(next(folder.glob("libggml-cpu.so*"))))
+        return int(lib.ironmule_fa1_version())
+    except Exception:  # noqa: BLE001 - no library, no symbol: a stock build
+        return 0
 
 
 def gpu_offload(L: Any | None = None) -> bool:
@@ -119,13 +137,148 @@ class Job:
     passed_over: int = 0
 
 
+class SharedPool:
+    """SP1 (2026-11-13): one KV pool for every sequence (llama.cpp's unified cache) whose cells a new request shares with
+    any running or finished sequence that holds the same leading tokens, as SGLang's RadixAttention does on a GPU.
+
+    llama.cpp gives every sequence of a split cache its own `seq_ctx` cells, and `llama-server` reuses a slot's own
+    prompt only. Here a request copies the longest matching prefix from whichever sequence holds it with
+    `llama_memory_seq_cp`, which in a unified cache adds the request to those cells instead of copying them, and
+    computes only the rest. Each sequence reserves only its prompt and its answer limit, not `seq_ctx`, so more requests
+    fit the same memory. FA1u (native/ggml_patches/fa1) reads a shared block once per step for every sequence that sees
+    it. The pool counts cells itself: every position of every sequence is a node with a reference count, shared nodes
+    once; a request is admitted when the pool's used cells, every running request's remaining answer limit and its own
+    need fit, after finished sequences (kept as a cache) have been evicted least recently used first."""
+
+    def __init__(self, engine: "GgmlEngine", cells: int, cap: int, ids: int, slack: int):
+        from collections import OrderedDict
+
+        self.e, self.cells, self.cap, self.slack = engine, cells, cap, slack
+        self.free_ids = list(range(ids))
+        self.tokens: dict[int, list[int]] = {}  # sequence -> the tokens its cells hold, from position 0
+        self.nodes: dict[int, list[int]] = {}  # sequence -> one node per held position
+        self.ref: dict[int, int] = {}  # node -> sequences that hold it; a node is one physical cell
+        self.next_node = 0
+        self.active: set[int] = set()
+        self.reserve: dict[int, int] = {}  # running sequence -> cells it may still take
+        self.kept: OrderedDict[int, None] = OrderedDict()  # finished sequences kept as a cache, oldest first
+        self.shared_tokens = 0
+
+    @property
+    def used(self) -> int:
+        return len(self.ref)
+
+    def slots(self) -> int:
+        return max(0, self.cap - len(self.active))
+
+    def reset(self) -> None:
+        self.free_ids = sorted(set(self.free_ids) | set(self.tokens) | set(self.active))
+        self.tokens.clear(); self.nodes.clear(); self.ref.clear(); self.active.clear(); self.reserve.clear()
+        self.kept.clear()
+
+    def _unref(self, nodes: list[int]) -> None:
+        for node in nodes:
+            count = self.ref[node] - 1
+            if count:
+                self.ref[node] = count
+            else:
+                del self.ref[node]
+
+    def _evict(self, spare: int | None) -> bool:
+        """Drop the least recently used finished sequence other than `spare`; False when there is none."""
+        for seq in self.kept:
+            if seq != spare:
+                del self.kept[seq]
+                self.e.L.llama_memory_seq_rm(self.e.memory, seq, -1, -1)
+                self._unref(self.nodes.pop(seq, []))
+                self.tokens.pop(seq, None)
+                self.free_ids.append(seq)
+                return True
+        return False
+
+    def place(self, ids: list[int], limit: int) -> tuple[int, int] | None:
+        """A sequence for a new request and how many of its prompt tokens it already holds, or None while it does
+        not fit (it waits)."""
+        best, match = None, 0
+        if self.e.prefix_reuse:
+            for seq, held in self.tokens.items():
+                n = GgmlEngine._common(held, ids)
+                if n > match:
+                    best, match = seq, n
+        keep = min(match, len(ids) - 1)
+        if keep <= 0:
+            best, keep = None, 0
+        need = len(ids) - keep + limit + self.slack
+        while self.used + sum(self.reserve.values()) + need > self.cells:
+            if not self._evict(best):
+                return None
+        if best is not None and best in self.kept:  # a finished sequence: continue in it, past the shared prefix
+            del self.kept[best]
+            seq = best
+            if len(self.tokens[seq]) > keep:
+                self.e.L.llama_memory_seq_rm(self.e.memory, seq, keep, -1)
+                self._unref(self.nodes[seq][keep:])
+                del self.nodes[seq][keep:]
+                del self.tokens[seq][keep:]
+        else:
+            while not self.free_ids:
+                if not self._evict(best):
+                    return None
+            seq = self.free_ids.pop(0)
+            self.tokens[seq], self.nodes[seq] = [], []
+            if keep:
+                self.e.L.llama_memory_seq_cp(self.e.memory, best, seq, 0, keep)
+                shared = self.nodes[best][:keep]
+                for node in shared:
+                    self.ref[node] += 1
+                self.nodes[seq], self.tokens[seq] = list(shared), list(ids[:keep])
+        self.shared_tokens += keep
+        self.active.add(seq)
+        self.reserve[seq] = len(ids) - keep + limit + self.slack
+        return seq, keep
+
+    def sync(self, seq: int, held: list[int], remaining: int) -> None:
+        """After a step: `seq`'s cells hold `held`; it may still take `remaining` cells."""
+        nodes, tokens = self.nodes[seq], self.tokens[seq]
+        if len(nodes) > len(held):
+            self._unref(nodes[len(held):])
+            del nodes[len(held):]
+            del tokens[len(held):]
+        for token in held[len(nodes):]:
+            self.ref[self.next_node] = 1
+            nodes.append(self.next_node)
+            tokens.append(token)
+            self.next_node += 1
+        self.reserve[seq] = max(0, remaining) + self.slack
+
+    def release(self, seq: int, held: list[int] | None) -> None:
+        """A request ends: keep its cells as a cache (`held`, the tokens they hold) or free them (None)."""
+        self.active.discard(seq)
+        self.reserve.pop(seq, None)
+        if held is not None and held:
+            self.sync(seq, held, 0)
+            self.reserve.pop(seq, None)
+            self.kept[seq] = None
+        else:
+            self.e.L.llama_memory_seq_rm(self.e.memory, seq, -1, -1)
+            self._unref(self.nodes.pop(seq, []))
+            self.tokens.pop(seq, None)
+            self.free_ids.append(seq)
+
+    def summary(self) -> dict[str, Any]:
+        return {"cells": self.cells, "used": self.used, "running": len(self.active), "cap": self.cap,
+                "kept": len(self.kept), "shared_tokens": self.shared_tokens}
+
+
 class GgmlEngine:
     observer: Callable[[int, int, int, float], None] | None = None  # AG10: (rows, prompt, kv, seconds) of each step
     gpu_layers = 0
+    pool: "SharedPool | None" = None
 
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
-                 kv_unified: bool = False, kv_f32: bool = False, kv_q8: bool = False, model: Any = None):
+                 kv_unified: bool = False, kv_f32: bool = False, kv_q8: bool = False, model: Any = None,
+                 shared: bool = False, cap: int | None = None):
         import numpy as np
 
         L = bindings()
@@ -145,7 +298,10 @@ class GgmlEngine:
         self.prefix_reuse = PREFIX_REUSE
         self.prompt_tokens = self.reused_tokens = 0
         self._lock = threading.Lock()
-        self._open(seqs, seq_ctx, flash_attn=flash_attn, kv_unified=kv_unified, kv_f32=kv_f32, kv_q8=kv_q8)
+        self.shared = bool(shared)  # SP1: one pool, prefixes shared; `seqs * seq_ctx` cells, up to `cap` running
+        self.cap = int(cap or min(LLAMA_MAX_SEQ, 2 * seqs)) if shared else seqs
+        self._open(seqs, seq_ctx, flash_attn=flash_attn, kv_unified=kv_unified or self.shared, kv_f32=kv_f32,
+                   kv_q8=kv_q8)
         self.steps = 0
         self._warm_up()
 
@@ -156,8 +312,10 @@ class GgmlEngine:
 
         L, threads = self.L, self.threads
         params = L.llama_context_default_params()
+        shared = getattr(self, "shared", False)
+        ids = LLAMA_MAX_SEQ if shared else seqs  # SP1: running sequences and finished ones kept as a cache
         params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, seq_ctx, 512
-        params.n_seq_max, params.n_threads, params.n_threads_batch = seqs, threads, threads
+        params.n_seq_max, params.n_threads, params.n_threads_batch = ids, threads, threads
         params.flash_attn, params.kv_unified = bool(flash_attn), bool(kv_unified)  # GG1: measured at the first start
         if kv_f32:  # GG1, second amendment: the KV cache in full precision (GGML_TYPE_F32) instead of f16
             params.type_k = params.type_v = 0
@@ -182,6 +340,9 @@ class GgmlEngine:
         self.policy = StepPolicy(self.max_rows) if self.speculate else None
         self._free = list(range(seqs))
         self._kept: dict[int, list[int]] = {}  # free sequence -> the tokens its KV still holds (prefix reuse)
+        self.pool = SharedPool(self, seqs * seq_ctx, self.cap, ids, MAX_DRAFT_SLACK) if shared else None
+        if shared:
+            self.settings["shared_prefix"] = True
 
     def reconfigure(self, seqs: int, settings: dict[str, bool]) -> None:
         """AG10: serve with another width or KV cache on the same loaded model; only between runs (the caller holds the
@@ -266,7 +427,13 @@ class GgmlEngine:
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
             b.seq_id[i][0] = seq
-        if self.L.llama_decode(self.ctx, b) != 0:
+        status = self.L.llama_decode(self.ctx, b)
+        if status == 1 and getattr(self, "pool", None) is not None:  # SP1: no free cells; drop the cached sequences
+            with self._lock:
+                while self.pool._evict(None):
+                    pass
+            status = self.L.llama_decode(self.ctx, b)
+        if status != 0:
             raise RuntimeError("llama_decode failed")
         out = []
         for i, (_, _, _, logits) in enumerate(rows):
@@ -278,6 +445,8 @@ class GgmlEngine:
     def _clear(self) -> None:
         self.L.llama_memory_clear(self.memory, True)
         self._kept.clear()
+        if getattr(self, "pool", None) is not None:
+            self.pool.reset()
 
     @staticmethod
     def _common(a: Sequence[int], b: Sequence[int]) -> int:
@@ -321,7 +490,10 @@ class GgmlEngine:
 
     def free_slots(self) -> int:
         with self._lock:
-            return len(self._free)
+            return self.pool.slots() if self.pool is not None else len(self._free)
+
+    def _slots(self) -> int:
+        return self.pool.slots() if self.pool is not None else len(self._free)
 
     # --- serving ------------------------------------------------------------------------------------------------------
     def run(self, jobs: list[Job], admit: Callable[[int], list[Job]] | None = None) -> list[Job]:
@@ -335,6 +507,13 @@ class GgmlEngine:
         def finish(seq: int, job: Job, reason: str, keep: bool = True) -> None:
             job.reason, job.finished_ns = reason, time.monotonic_ns()
             held = len(job.ids) + len(job.tokens) - 1  # every token but the last went through the model
+            if self.pool is not None:  # SP1: the pool keeps its cells as a cache, or frees them
+                ok = (keep and self.prefix_reuse and held > 0
+                      and self.L.llama_memory_seq_rm(self.memory, seq, held, -1))
+                active.pop(seq, None)
+                with self._lock:
+                    self.pool.release(seq, (job.ids + job.tokens)[:held] if ok else None)
+                return
             if (keep and self.prefix_reuse and held > 0
                     and self.L.llama_memory_seq_rm(self.memory, seq, held, -1)):
                 kept = (job.ids + job.tokens)[:held]
@@ -368,8 +547,8 @@ class GgmlEngine:
 
         try:
             while True:
-                if admit is not None and self._free:
-                    more = admit(len(self._free))
+                if admit is not None and self._slots():
+                    more = admit(self._slots())
                     served.extend(more)
                     pending.extend(more)
                 # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
@@ -381,18 +560,32 @@ class GgmlEngine:
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
                         pending.remove(job)
                         continue
-                    if not self._free:
-                        job.passed_over += 1
-                        continue
-                    with self._lock:
-                        seq, keep = self._take_sequence(job.ids)
-                    if fresh and len(job.ids) - keep > budget:
+                    if not self._slots():
                         job.passed_over += 1
                         continue
                     if len(job.ids) + job.limit > self.seq_ctx:
                         raise ValueError(f"{len(job.ids) + job.limit} tokens do not fit a {self.seq_ctx}-token sequence")
-                    with self._lock:
-                        keep = self._claim(seq, keep)
+                    if self.pool is not None:  # SP1: a sequence that shares the longest prefix any sequence holds
+                        # a prompt that shares a long prefix with one starting in this step waits one step and then
+                        # shares its cells, instead of computing the same prefix again (a burst with one system prompt)
+                        with self._lock:
+                            pooled = max((self._common(t, job.ids) for t in self.pool.tokens.values()), default=0)
+                        if any(self._common(other.ids, job.ids) >= pooled + SHARE_WAIT for _, other, _ in fresh):
+                            continue
+                        with self._lock:
+                            placed = self.pool.place(job.ids, job.limit)
+                        if placed is None:  # the pool is full until a running request ends
+                            job.passed_over += 1
+                            continue
+                        seq, keep = placed
+                    else:
+                        with self._lock:
+                            seq, keep = self._take_sequence(job.ids)
+                        if fresh and len(job.ids) - keep > budget:
+                            job.passed_over += 1
+                            continue
+                        with self._lock:
+                            keep = self._claim(seq, keep)
                     pending.remove(job)
                     job.reused = keep
                     budget -= len(job.ids) - keep
@@ -403,7 +596,7 @@ class GgmlEngine:
                     if pending:
                         continue
                     if admit is not None:
-                        more = admit(len(self._free))
+                        more = admit(self._slots())
                         if more:
                             served.extend(more)
                             pending.extend(more)
@@ -462,6 +655,11 @@ class GgmlEngine:
                     active[seq] = job
                     take(seq, job, picks[at])
                     at += 1
+                if self.pool is not None:  # SP1: what every running sequence's cells hold now
+                    with self._lock:
+                        for seq, job in active.items():
+                            self.pool.sync(seq, (job.ids + job.tokens)[:len(job.ids) + len(job.tokens) - 1],
+                                           job.limit - len(job.tokens))
         finally:
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
@@ -498,6 +696,7 @@ class GgmlEngine:
                 "sequence_tokens": self.seq_ctx, "steps": self.steps,
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
+                **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
                 **({"speculation": self.policy.summary()} if self.policy is not None else {"speculation": "off"})}
 
     def close(self) -> None:
@@ -940,7 +1139,14 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         if tried[-1]["passes"]:
             break
     chosen = tried[-1]
-    result = {"ran": True, **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
+    shared = None
+    if fa1_version() >= 3:  # SP1: the shared pool (unified KV, flash attention through FA1u) is gated on its own
+        settings = {**chosen["settings"], "flash_attn": True, "kv_unified": True}
+        rows, error = nll(settings)
+        shared = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
+                  else {"settings": settings, "error": error})
+        shared["passes"] = rows is not None and shared["interval"][1] <= OPTION_BOUND
+    result = {"ran": True, "shared": shared, **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
               "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
               "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}

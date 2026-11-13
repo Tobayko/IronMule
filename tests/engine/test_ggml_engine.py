@@ -423,3 +423,51 @@ def test_seq1_the_memory_seen_is_the_container_s_limit_with_its_file_cache_free(
     available, total = ggml_engine.memory_bytes()
     # used: 5 GiB minus 3 GiB of reclaimable file cache (4 GiB of cache, 1 GiB of it shared memory)
     assert total == 14 * 2**30 and available == 12 * 2**30
+
+
+def _pool_engine(cells=1000, cap=4):
+    """A SharedPool on a stand-in engine that records llama.cpp's memory calls."""
+    import types
+
+    from ironmule import ggml_engine as ge
+
+    calls = []
+    L = types.SimpleNamespace(llama_memory_seq_rm=lambda m, s, a, b: calls.append(("rm", s, a, b)) or True,
+                              llama_memory_seq_cp=lambda m, a, b, p0, p1: calls.append(("cp", a, b, p0, p1)))
+    engine = types.SimpleNamespace(L=L, memory=None, prefix_reuse=True)
+    return ge.SharedPool(engine, cells, cap, 8, 2), calls
+
+
+def test_sp1_a_request_shares_the_longest_prefix_any_sequence_holds():
+    pool, calls = _pool_engine()
+    system = list(range(100))
+    a = pool.place(system + [500, 501], 10)
+    assert a == (0, 0)  # nothing to share yet
+    pool.sync(0, system + [500, 501, 7], 9)  # its prompt went through the model, one token generated
+    b = pool.place(system + [600], 10)
+    assert b == (1, 100) and ("cp", 0, 1, 0, 100) in calls
+    pool.sync(1, system + [600], 10)
+    assert pool.used == 104  # the 100 shared cells once, 3 of the first sequence's own, 1 of the second's
+    pool.release(0, system + [500, 501, 7])
+    pool.release(1, None)  # cancelled: its own cells go, the shared ones stay with the first (kept as a cache)
+    assert pool.used == 103 and list(pool.kept) == [0] and pool.slots() == 4
+
+
+def test_sp1_a_full_pool_evicts_finished_sequences_first_and_otherwise_makes_a_request_wait():
+    pool, calls = _pool_engine(cells=300, cap=4)
+    pool.place(list(range(200)), 10)
+    pool.sync(0, list(range(200)), 10)
+    pool.release(0, list(range(200)))  # 200 cells kept as a cache
+    seq, keep = pool.place([9000 + i for i in range(150)], 20)  # needs 150 + 20 + 2; the cache must go
+    assert keep == 0 and 0 not in pool.kept and ("rm", 0, -1, -1) in calls and pool.used == 0
+    pool.sync(seq, [9000 + i for i in range(150)], 20)
+    assert pool.place([7000 + i for i in range(150)], 20) is None  # 150 used + 22 reserved + 172 > 300: it waits
+
+
+def test_sp1_a_finished_sequence_is_continued_past_the_shared_prefix():
+    pool, calls = _pool_engine()
+    pool.place(list(range(50)) + [1, 2], 5)
+    pool.sync(0, list(range(50)) + [1, 2, 3], 4)
+    pool.release(0, list(range(50)) + [1, 2, 3])
+    seq, keep = pool.place(list(range(50)) + [8], 5)
+    assert (seq, keep) == (0, 50) and ("rm", 0, 50, -1) in calls and pool.used == 50

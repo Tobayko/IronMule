@@ -218,6 +218,9 @@ class ProductService:
                 width = self.backend.ggml_gate.get("sequences")
                 if isinstance(width, dict):  # SEQ1: the width the engine chose on this machine, and why
                     result["ggml"]["sequences"] = {k: width.get(k) for k in ("sequences", "fitting", "rates", "reason")}
+                pool = self.backend.ggml_gate.get("shared_serving")
+                if isinstance(pool, dict):  # SP1: one KV pool with shared prefixes, its gate and how many run at once
+                    result["ggml"]["shared_pool"] = {k: pool.get(k) for k in ("cap", "ratio", "interval")}
                 agent = getattr(self.backend, "ggml_agent_status", None)
                 if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
                     result["ggml"]["agent"] = dict(agent)

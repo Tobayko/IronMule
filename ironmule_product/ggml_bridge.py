@@ -25,8 +25,14 @@ class GgmlBridge:
             "IRONMULE_GGML_AGENT", "1") != "0" else None
         # AG10: the service's capacity is the widest configuration the agent may switch to; the engine starts at the
         # incumbent's width
+        shared = (gate or {}).get("shared_serving")  # SP1: the shared pool, when its gate passed and FA1u is loaded
+        if shared:
+            settings = {**settings, **{k: bool(v) for k, v in shared["settings"].items()
+                                       if k in ("flash_attn", "kv_unified", "kv_f32", "kv_q8")}}
+        width = int(start["seqs"]) if start else int(((gate or {}).get("sequences") or {}).get("sequences") or 0)
         self._engine = GgmlEngine(gguf, speculate=speculate, **settings,
-                                  **({"seqs": int(start["seqs"])} if start else {}))
+                                  **({"seqs": width} if width else {}),
+                                  **({"shared": True, "cap": int(shared["cap"])} if shared else {}))
         try:
             hf = getattr(tokenizer, "_tokenizer", tokenizer)
             if self._engine.tokenize(CHECK_TEXT) != list(hf.encode(CHECK_TEXT, add_special_tokens=False)):

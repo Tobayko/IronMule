@@ -221,7 +221,7 @@ def _engine_options(engine: str, width: int | None = None) -> dict[str, Any]:
 
 
 
-def _ggml_agent_plan(width: dict[str, Any], root: Any) -> dict[str, Any] | None:
+def _ggml_agent_plan(width: dict[str, Any], root: Any, flash_only: bool = False) -> dict[str, Any] | None:
     """AG10: the configurations the ggml engine's agent may serve -- every width SEQ1 measured on this machine with the
     settings the quality gate passed -- and the one SEQ1's rule chose as the incumbent. None with fewer than two."""
     from ironmule.ggml_agent import configs_from_measurement
@@ -231,6 +231,8 @@ def _ggml_agent_plan(width: dict[str, Any], root: Any) -> dict[str, Any] | None:
     measured = width.get("measured") or [{"settings": width.get("settings") or {}, "step_s": width["step_s"],
                                           "step_one_s": width.get("step_one_s") or {}}]
     configs = configs_from_measurement(measured, int(width["seq_ctx"]))
+    if flash_only:  # SP1: the shared pool needs flash attention (FA1u); widths size its pool
+        configs = {k: c for k, c in configs.items() if c["settings"].get("flash_attn")}
     served = {k: True for k, v in (width.get("settings") or {}).items() if v}
     incumbent = next((k for k, c in configs.items()
                       if c["seqs"] == int(width["sequences"]) and c["settings"] == served), None)
@@ -418,10 +420,24 @@ def serve(argv: list[str]) -> int:
                                              device=devices[0])
                     os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
                     checked = {**checked, "sequences": width}
-                    plan = _ggml_agent_plan(width, store.root)
+                    shared = checked.get("shared") or {}
+                    if shared.get("passes") and os.environ.get("IRONMULE_GGML_SHARED", "1") != "0":
+                        from ironmule.ggml_engine import LLAMA_MAX_SEQ, fa1_version
+
+                        if fa1_version() >= 3:  # SP1: one pool, prefixes shared; twice the requests at once
+                            cap = int(os.environ.get("IRONMULE_GGML_SHARED_CAP") or min(LLAMA_MAX_SEQ // 2,
+                                                                                      2 * int(width["sequences"])))
+                            checked["shared_serving"] = {"settings": shared["settings"], "cap": cap,
+                                                         "ratio": shared.get("ratio"),
+                                                         "interval": shared.get("interval")}
+                            print(json.dumps({"ggml_shared_pool": checked["shared_serving"]}), flush=True)
+                    plan = _ggml_agent_plan(width, store.root, flash_only=bool(checked.get("shared_serving")))
                     if plan is not None:  # AG10: the agent may switch among the measured widths while it serves
                         checked["agent"] = plan
                         os.environ["IRONMULE_GGML_SEQS"] = str(max(c["seqs"] for c in plan["configs"].values()))
+                    if checked.get("shared_serving"):  # the service feeds up to the pool's running requests
+                        os.environ["IRONMULE_GGML_SEQS"] = str(max(int(os.environ["IRONMULE_GGML_SEQS"]),
+                                                                   checked["shared_serving"]["cap"]))
                     print(json.dumps({"ggml_sequences": {k: width.get(k) for k in ("sequences", "fitting", "rates",
                                                                                    "reason")}}), flush=True)
                 ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),

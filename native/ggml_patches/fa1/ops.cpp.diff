@@ -3,7 +3,7 @@
 > 
 8171a8174,8178
 > #if defined(__AVX512F__)
->     if (fa1_attn(params, dst)) {
+>     if (fa1u_attn(params, dst) || fa1_attn(params, dst)) {
 >         return;
 >     }
 > #endif
