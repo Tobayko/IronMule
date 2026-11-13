@@ -230,7 +230,9 @@ attention for f16 KV caches on AVX-512 CPUs: the query heads that share a KV hea
 blocks with one softmax rescale per block and vectorized exponentials, and V is accumulated in f32 (llama.cpp's
 accumulates in f16). On a 4-vCPU Xeon with Qwen3-4B a decode step at 16 sequences of 1,024 tokens took 0.481 s
 instead of 0.845 s; its logits were closer to the non-flash reference than llama.cpp's own flash attention, and its
-perplexity ratio to llama.cpp's default was 1.00001. `python tools/build_ggml.py` builds llama.cpp with it.
+perplexity ratio to llama.cpp's default was 1.00001. `python tools/build_ggml.py` builds llama.cpp with it (and with
+ROW1's AMX kernels for Q8_0 weights, which serve only with `ROW1_GGML=B16` set); built from scratch and checked with the
+engine's real-GGUF tests on 2026-11-13.
 
 **GPUs (MG2).** A llama.cpp build with a GPU backend (`tools/build_ggml.py --cuda 75`) offloads every layer
 (`IRONMULE_GGML_GPU_LAYERS` sets fewer). `--gpus all` runs one engine per GPU, each seeing only its own (data parallel);
