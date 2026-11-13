@@ -94,7 +94,11 @@ def burst(client, tok, n: int, system: bool, block_index: int, limit: int = 64) 
 
     def one(i):
         topic = TOPICS[(block_index * n + i) % len(TOPICS)]
-        out[i] = client.chat(messages(f"Write a short story about {topic}, variant {block_index}-{i}.", system), limit, t0)
+        try:
+            out[i] = client.chat(messages(f"Write a short story about {topic}, variant {block_index}-{i}.", system),
+                                 limit, t0)
+        except Exception as exc:  # noqa: BLE001 - a failed request is counted, not fatal
+            out[i] = {"text": "", "first": None, "end": time.perf_counter() - t0, "error": str(exc)[:200]}
 
     threads = [threading.Thread(target=one, args=(i,)) for i in range(n)]
     for t in threads:
@@ -103,8 +107,9 @@ def burst(client, tok, n: int, system: bool, block_index: int, limit: int = 64) 
         t.join()
     wall = max(o["end"] for o in out)
     tokens = sum(len(tok.encode(o["text"])) for o in out)
-    return {"tok_s": tokens / wall, "tokens": tokens, "wall_s": wall,
-            "ttft_mean_s": statistics.mean(o["first"] for o in out), "ttft_max_s": max(o["first"] for o in out)}
+    firsts = [o["first"] for o in out if o["first"] is not None] or [wall]
+    return {"tok_s": tokens / wall, "tokens": tokens, "wall_s": wall, "failed": sum("error" in o for o in out),
+            "ttft_mean_s": statistics.mean(firsts), "ttft_max_s": max(firsts)}
 
 
 def poisson(client, tok, rate: float, seconds: float = 90.0, limit: int = 64, seed: int = 0) -> dict:
@@ -119,7 +124,11 @@ def poisson(client, tok, rate: float, seconds: float = 90.0, limit: int = 64, se
         if delay > 0:
             time.sleep(delay)
         topic = TOPICS[i % len(TOPICS)]
-        r = client.chat(messages(f"Describe {topic} in a few sentences, request {i}.", True), limit, t0)
+        try:
+            r = client.chat(messages(f"Describe {topic} in a few sentences, request {i}.", True), limit, t0)
+        except Exception as exc:  # noqa: BLE001
+            now = time.perf_counter() - t0
+            r = {"text": "", "first": now, "end": now, "error": str(exc)[:200]}
         r["arrival"] = at
         out[i] = r
 
@@ -134,7 +143,7 @@ def poisson(client, tok, rate: float, seconds: float = 90.0, limit: int = 64, se
     q = lambda xs, p: xs[min(len(xs) - 1, int(p * len(xs)))]  # noqa: E731
     return {"rate": rate, "requests": len(out), "tok_s": sum(len(tok.encode(o["text"])) for o in out) / wall,
             "ttft_p50": q(ttft, 0.5), "ttft_p90": q(ttft, 0.9), "ttft_p99": q(ttft, 0.99),
-            "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9), "wall_s": wall}
+            "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9), "wall_s": wall, "failed": sum("error" in o for o in out)}
 
 
 def single(client, tok, limit: int = 256) -> dict:
@@ -155,7 +164,10 @@ def facts(client) -> dict:
         group, out = questions[k:k + 8], [None] * 8
 
         def one(i):
-            out[i] = client.chat(messages(group[i][0], False), 48)["text"]
+            try:
+                out[i] = client.chat(messages(group[i][0], False), 48)["text"]
+            except Exception:  # noqa: BLE001 - counts as wrong
+                out[i] = ""
 
         threads = [threading.Thread(target=one, args=(i,)) for i in range(len(group))]
         for th in threads:

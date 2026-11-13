@@ -29,6 +29,11 @@ for e in ${3//,/ }; do
       $NS/cmp/ollama/bin/ollama serve > $O/ollama.log 2>&1 &
     PID=$!; wait_up http://127.0.0.1:8303/api/version && python lab/cmp/bench.py http://127.0.0.1:8303 qwen3-4b-q8 ollama $O/ollama.json --workloads $W >> $O/summary.txt 2>&1
     kill $PID; wait $PID ;;
+  ollama16)  # Ollama with 16 slots: with 32 its runner took about 12 GB and was killed for memory on this container
+    OLLAMA_MODELS=$NS/cmp/ollama-models OLLAMA_HOST=127.0.0.1:8305 OLLAMA_NUM_PARALLEL=16 OLLAMA_CONTEXT_LENGTH=1024 OLLAMA_KEEP_ALIVE=-1 \
+      $NS/cmp/ollama/bin/ollama serve > $O/ollama16.log 2>&1 &
+    PID=$!; wait_up http://127.0.0.1:8305/api/version && python lab/cmp/bench.py http://127.0.0.1:8305 qwen3-4b-q8 ollama-16 $O/ollama16.json --workloads $W >> $O/summary.txt 2>&1
+    kill $PID; wait $PID ;;
   lmstudio)
     unset BUN_OPTIONS; L=/root/.lmstudio/bin/lms
     $L server start --port 8304 > $O/lmstudio.log 2>&1
