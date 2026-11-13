@@ -784,7 +784,8 @@ Every argmax agreed. FA1 passes the gate's bound (1.005) on all three and is clo
 llama.cpp's flash attention on each. Note on the owner's stricter reading for IronMule's own kernels (2026-11-10:
 perplexity not above llama.cpp's default, ratio at most 1.000): FA1's point ratio is 1.00001 on Qwen3-4B and Llama 3.2
 and 1.0008 on Gemma 3 1B, inside noise but above 1.000; under the 2026-11-11 reading for llama.cpp's own options (flash
-attention is one; within 1.005) it passes. The product's gate applies the latter. A decision for the owner.
+attention is one; within 1.005) it passes. The product's gate applies the latter. **Owner, 2026-11-13: "FA1 ist in
+Ordnung"** -- FA1 counts as the implementation of llama.cpp's flash-attention option and is held to its bound (1.005).
 
 ### 2026-11-13 AG10 S: the ggml engine's agent in simulation, traffic that changes regime
 
@@ -947,3 +948,59 @@ answer is in, users run at once. Total tokens/s and mean first token per turn:
 No failed request on either. Open: at 16 users IronMule's later turns wait about as long for a first token as
 llama-server's (a returning turn's own new tokens queue behind running steps while 32 may run); a turn that continues
 its own kept sequence could be admitted ahead of fresh conversations.
+
+### 2026-11-13 RL-MATH: a roofline of this CPU, and FA1x (attention on the AMX matrix unit)
+
+Owner, 2026-11-13: "approach it mathematically, maybe there is something left". Measured: streaming read 47.4 GB/s with
+4 threads (`lab/row1/bw.c`, huge pages; 11.6 / 22.6 GB/s with 1 / 2). Qwen3-4B Q8_0 reads 4.28 GB of weights per decode
+step (the output matrix is the tied embedding). AMX int8 peak about 1,024 MACs/cycle/core x 2.3 GHz x 4 = 9.4e12 MAC/s;
+AMX bf16 half of that; AVX-512 FP32 about 2.9e11 FLOP/s.
+
+| Quantity | Model | Measured | Share of the bound |
+| --- | --- | --- | --- |
+| one request: step floor = weights / bandwidth | 4.28 GB / 47.4 GB/s = 90 ms (11.0 tok/s) | 99 ms (10.1 tok/s) | 92 % |
+| per extra row of a step (B16: two int8 passes) | 2 x 4.0e9 MAC / 9.4e12 = 0.85 ms | 2.4 ms (SEQ1: 8 -> 16 rows) | 35 % of AMX peak |
+| attention per row at a 560-token chat context, 32 rows | 165 M MAC in FP32 on the vector units | about 3 ms | about a third of FP32 peak |
+
+So: (1) one user alone is at 92 % of what the memory can deliver; only more tokens per weight read (speculation) can
+add there. (2) The row term is at a third of AMX peak (B16 kernel efficiency, ROW1's ground). (3) The attention of a
+busy chat step runs on the vector units while the matrix unit, ten times faster in bf16, idles.
+
+**FA1x** (`native/ggml_patches/fa1/fa1_kern.h`, on by default with FA1/FA1u, `FA1X=0` turns it off) moves (3) to AMX:
+- *Accuracy by an error-compensated split:* bf16 alone (8-bit mantissa) put prefill logits up to 2.7 off. Each operand
+  x = hi + lo with hi = bf16(x), lo = bf16(x - hi) (exact for f16 K and V, about 16 bits for f32 Q and P), and every
+  product as hi*hi + hi*lo + lo*hi (lo*lo, about 2^-16, dropped): the Ozaki-style split, three AMX passes, fp32
+  accumulation. Logits then within 0.06 (shared-pool decode) and 0.26-0.28 (prefill) of the non-flash reference, as
+  close as FA1u (0.06 / 0.21); every argmax the same.
+- *Layout by orientation:* v1 computed S = Q K^T and spent ten times the AMX work re-laying K into tiles each block (it
+  was slower than FA1u). v2 computes S^T = K Q^T: K stays in its row layout as the A tile, Q^T is laid out once per
+  unit, the online softmax runs down the columns of S^T 16 rows per vector, P is gathered to rows, O += P V with V rows
+  interleaved in pairs by one permute.
+- *Density routing:* a block's AMX cost is about fixed, the vector path's grows with the visible (row, key) pairs; in a
+  unified pool the other sequences' cells make most blocks sparse (each key seen by one sequence's rk2 rows). A block
+  with at least `FA1X_DENSE` = 480 visible pairs goes to AMX (the shared prefix), the rest to FA1u's per-pair path.
+  480 / 1,500 / 3,000 measured within noise; 480 kept.
+
+Decode step, Qwen3-4B Q8_0, shared pool, 480-token shared prefix + 80 own tokens (`share_speed.py`), and the setup
+(prefill of the prefix and the own tokens):
+
+| Sequences | FA1u | FA1x | setup FA1u / FA1x |
+| --- | --- | --- | --- |
+| 16 | 0.163 s | 0.160-0.175 s (same within noise) | 7.5 s / 5.6-5.9 s |
+| 32 | 0.258 s (124 tok/s) | **0.221 s (144.5 tok/s)**, 1.17x | 12.7 s / 10.2-10.6 s (1.2x) |
+
+Gate: Qwen3-4B 1.00002 [0.99994, 1.00010]; Llama 3.2 1B 1.00011 [0.99931, 1.00101]; Gemma 3 1B 1.0024 [1.0004, 1.0044]
+(passes 1.005, but less margin than FA1's 1.0008; Gemma 3 1B is the most sensitive of the three: llama.cpp's own flash
+attention moves its logits by up to 3.1, FA1x by 3.8). The product gates every GGUF at its start, so a model where FA1x
+fails falls back.
+
+Through the product (`run_all.sh`, `burst-sys`, same machine and setup as CMP1): N=8 / 16 / 32 **52.7 / 82.4 / 113.3
+tok/s**, first token 0.59 / 0.90 / 1.88 s, against CMP1's 50.4 / 71.3 / 87.5 tok/s and 0.71 / 1.19 / 2.30 s: 1.05x /
+1.16x / 1.29x. Against CMP1's `llama-server` at N=32: 3.9x the tokens per second.
+
+Next by the same arithmetic: (2) the row term (B16 at 35 % of AMX peak: two int8 passes per row; an exact
+error-compensated int8 split like the one above costs the same two passes, so the gain must come from the kernel's
+efficiency, ROW1); (1) for one user, speculation: rows cost 2.4 ms against a 99 ms step, so verifying k drafts costs
+about 2.4 % each, and with per-token acceptance a the expected tokens per step are (1 - a^(k+1)) / (1 - a): a draft source
+with a = 0.6 at k = 7 would give 2.4 tokens for 1.17 steps, 2.1x; prompt lookup's a on free text is far lower, which is
+why tree drafts (several candidates per position, cheap as shared-pool sequences) are the next mathematical lever.
