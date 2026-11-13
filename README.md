@@ -32,7 +32,7 @@
 
 ## What is IronMule?
 
-**IronMule runs AI language models on your own computer: up to 1.82× faster with exactly the same answers, or up to 5× with an opt-in mode on older NVIDIA graphics cards.** It works on Apple Silicon Macs and on Linux PCs with an NVIDIA GPU (more slowly, also on a CPU alone), fully offline. It is fast because it reuses work, skips work that is not needed and answers several questions together. Each speed-up is checked to give the same answer as the normal path before it is used. IronMule is built on [MLX](https://github.com/ml-explore/mlx) and runs models such as Gemma 3 and Qwen 3. You install it with one line, and you can use it as a local chat server or from three lines of Python.
+**IronMule runs AI language models on your own computer: up to 1.82× faster with exactly the same answers, or up to 5× with an opt-in mode on older NVIDIA graphics cards.** It works on Apple Silicon Macs and on Linux PCs with an NVIDIA GPU (more slowly, also on a CPU alone), fully offline. It is fast because it reuses work, skips work that is not needed and answers several questions together. Each speed-up is checked to give the same answer as the normal path before it is used. IronMule is built on [MLX](https://github.com/ml-explore/mlx) and runs models such as Gemma 3 and Qwen 3; with `--gguf` it serves a GGUF through llama.cpp's kernels plus its own (Qwen 3, Gemma 3, Llama 3, Mistral checked on a CPU). You install it with one line, and you can use it as a local chat server or from three lines of Python.
 
 **The project's main goal is the IronMule agent:** a small decision model inside the server, not a language model. It decides on its own how requests run on
 your hardware, keeps learning by reinforcement learning while it serves, and decides in microseconds. It serves a
@@ -45,6 +45,7 @@ Gemma 3 1B on an Apple M1 Max, six questions at once: reference path on the left
 ## How much faster?
 
 - **Exact mode — same tokens as stock:** up to 1.82× (+82%) on Gemma 3 1B on an NVIDIA Tesla T4, 1.61× (+61%) on the same model on an Apple M1 Max. Checked token by token before use; falls back to the reference if it cannot prove identical output.
+- **CPU, llama.cpp's kernels plus IronMule's (`--gguf`), quality-gated:** on a 4-vCPU Intel Xeon (Sapphire Rapids) with Qwen3-4B Q8_0 and a 479-token system prompt on every request, 1.19× / 1.75× / 1.65× the tokens per second of the better stock `llama-server` setting at 1 / 8 / 16 concurrent requests, first tokens sooner, the same 49/50 on a fact check. IronMule's flash-attention kernel (FA1) makes a decode step at 16 × 1,024 tokens 2.69× faster than llama.cpp's; its batching, prefix reuse and width choice do the rest. One machine, one run each ([docs/LAB.md](docs/LAB.md), FA1); build the kernels with `python tools/build_ggml.py`.
 - **Opt-in numeric plans — different arithmetic, quality-gated:** on NVIDIA GPUs below compute capability 8 (Turing, Volta — e.g. Tesla T4), `--compute-dtype native` reaches up to 5.00× (+400%) on Gemma 3 12B. It changes the arithmetic relative to bf16, must pass a perplexity gate, and `ironmule plans` recommends it only for the checkpoints it has measured (Qwen 3 8B, Qwen 3 14B, Gemma 3 12B).
 
 | Model (4-bit) | Apple M1 Max | NVIDIA Tesla T4 | T4, opt-in `--compute-dtype float32` |

@@ -73,9 +73,12 @@ def test_agent_reverts_when_live_steps_show_the_wider_one_is_slow(tmp_path):
     agent = make_agent(tmp_path, heavy(200))
     assert agent.idle() == "w32-kv8"
     agent.switched("w32-kv8")
+    assert agent.idle() is None and agent.history[-1]["action"] == "watch"  # no traffic since the switch yet
     for _ in range(40):  # on this machine the 8-bit cache turns out to cost far more per row
         for rows in (4, 16, 32):
             agent.observe_step(rows, 0, 2000, 0.09 + 0.012 * rows)
+    for gap, prompt, answer in heavy(100, seed=6):
+        agent.observe_request(agent._last_arrival + gap, prompt, answer)
     assert agent.idle() == "w16" and "w32-kv8" in agent.rejected
     agent.switched("w16")
     assert agent.idle() is None  # rejected: not tried again before RETRY_AFTER requests
@@ -125,3 +128,52 @@ def test_dreaming_chooses_attention_by_the_traffic_context():
     long = [(rng.expovariate(1 / 0.02), rng.randint(1500, 1800), rng.randint(40, 120)) for _ in range(300)]
     assert dream(configs, costs, "w16-fa", short, random.Random(0))["candidates"]["w16"]["gain"] < 0
     assert dream(configs, costs, "w16-fa", long, random.Random(0))["candidates"]["w16"]["low"] > 0.03
+
+
+def test_the_bridge_feeds_the_agent_and_switches_the_engine_between_runs(tmp_path, monkeypatch):
+    """The ggml bridge with a stand-in engine: every served request enters the traffic memory, every step the world
+    model, and the agent's switch rebuilds the engine's context under the run lock."""
+    import threading
+    import time
+
+    from ironmule_product.ggml_bridge import GgmlBridge
+
+    class Engine:
+        seqs, settings, gpu_layers, observer = 16, {"flash_attn": True}, 0, None
+
+        def __init__(self):
+            self.reconfigured = []
+
+        def run(self, jobs, admit=None):
+            for job in jobs:
+                self.observer(len(jobs), len(job.ids), 100, 0.1)
+                job.tokens, job.reason = [5] * job.limit, "length"
+            return jobs
+
+        def reconfigure(self, seqs, settings):
+            self.reconfigured.append((seqs, dict(settings)))
+            self.seqs, self.settings = seqs, dict(settings)
+
+        def summary(self):
+            return {"steps": 0, "speculation": "off"}
+
+    class Tokenizer:
+        def decode(self, ids):
+            return "x" * len(ids)
+
+    monkeypatch.setattr(threading.Thread, "start", lambda self: None)  # no idle thread: the test calls the agent
+    bridge = GgmlBridge.__new__(GgmlBridge)
+    bridge._engine, bridge._tokenizer, bridge._eos = Engine(), Tokenizer(), (0,)
+    bridge._gguf_sha256, bridge._speculate = "0" * 64, False
+    bridge._run_lock, bridge._last_run, bridge._agent, bridge._stop = threading.Lock(), time.monotonic(), None, None
+    bridge._gate = {"agent": {"configs": {"w16-fa": NARROW, "w32-fa-kv8": WIDE}, "incumbent": "w16-fa",
+                              "root": str(tmp_path)}}
+    bridge._stop = threading.Event()
+    bridge._start_agent()
+    assert bridge._engine.observer is not None and bridge._agent.current == "w16-fa"
+    for _ in range(3):
+        bridge.generate_many([[1, 2, 3]] * 20, 50)
+    assert bridge._agent.requests == 60 and len(bridge._agent._steps) == 60
+    bridge._switch("w32-fa-kv8")
+    assert bridge._engine.reconfigured == [(32, {"flash_attn": True, "kv_q8": True})]
+    assert bridge.counters()["ggml_agent"]["serving"] == "w32-fa-kv8"

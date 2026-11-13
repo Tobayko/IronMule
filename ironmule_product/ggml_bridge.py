@@ -77,9 +77,13 @@ class GgmlBridge:
         self._agent.switched(name)
 
     def _idle_loop(self) -> None:
+        dreamt_at = -1  # dream again only after new traffic: a quiet server spends no CPU on it
         while not self._stop.wait(1.0):
             if self._run_lock.locked() or time.monotonic() - self._last_run < 3.0:
                 continue
+            if self._agent.requests == dreamt_at:
+                continue
+            dreamt_at = self._agent.requests
             try:
                 target = self._agent.idle()
                 if target is not None and target != self._agent.current and not self._run_lock.locked():

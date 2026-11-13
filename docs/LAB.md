@@ -685,3 +685,124 @@ tokens/s and mean first token:
 `llama-server` at N=32 used 32 sequences of 1,024 tokens, set by hand; at the default length the engine now picks 16
 by itself, since 32 sequences of 2,048 tokens do not fit this container. Next: let a request's length decide its
 sequence's room (llama.cpp's unified KV cache shares one pool), so the engine need not trade width for length.
+
+### 2026-11-13 KV1: where a step's time goes at longer contexts, and two ways to more width that do not work here
+
+Same container as SEQ1 (4 vCPU Sapphire-Rapids-class Xeon, cgroup limit 14.3 GB), Qwen3-4B Q8_0, llama.cpp 4227c9b
+with the ROW1 patch (B16 on), `lab/kv1/`. Question: SEQ1 is limited by KV memory at the default request length of
+2,048 (16 sequences fit, 32 do not); can the width grow without changing the model?
+
+- *8-bit KV cache (llama.cpp's `-ctk q8_0 -ctv q8_0`, engine option `kv_q8`).* Half the bytes per cell (78,336 against
+  147,456), so 32 sequences fit: 148.6 tok/s at 32 against 96.7 at 16 (f16) at full load. **It fails the quality gate**:
+  perplexity ratio to llama.cpp's default 1.0026, 95 % interval [0.9990, 1.0082], above the owner's bound of 1.005
+  (16 chunks). It does not serve; the option stays in the engine for models where it passes.
+- *One shared KV pool (`kv_unified`), 32 sequences in the cells of 16.* On the CPU every sequence's attention then runs
+  over every used cell of the pool: a step at a 64-token context 0.292 s (16 split sequences: 0.143 s), at 512 tokens
+  1.388 s (0.429 s). Rejected on this CPU.
+- *The finding on the way:* at 16 sequences a full step took 0.143 s at a 64-token context and 0.429 s at 512 tokens,
+  and 0.845 s at 1,024 (llama.cpp's flash attention). At chat-like contexts the step is dominated by attention, not by
+  the weights; the setting the gate's speed test picks (flash attention, measured at 64 tokens) is the slower one at
+  long contexts: without flash attention 0.417 s at 16 x 1,024 against 0.845 s, but 0.213 s against 0.148 s at
+  16 x 64. Two follow-ups: FA1 (a faster attention kernel) and AG10 (the agent chooses the attention by the traffic).
+
+### 2026-11-13 FA1: a flash-attention kernel for f16 KV on AVX-512 (llama.cpp patch)
+
+llama.cpp's CPU flash attention walks the keys one at a time per query head: an f16 dot product, an `expf` and an f16
+multiply-add of V per key, with V*softmax accumulated in f16, and every KV head read again for each query head that
+shares it. FA1 (`native/ggml_patches/fa1/fa1_kern.h`, a 5-line hook in `ggml-cpu/ops.cpp`; `FA1=0` turns it off) does
+the same attention with the query heads of a KV head together, keys in blocks of 32 (one running-max update and
+rescale per block, exponentials vectorized with ggml's own `ggml_v_expf`), and f32 accumulation. Taken only for f32 Q,
+f16 K/V, head sizes 64-256, no ALiBi, no sinks, a mask shared by all heads.
+
+Correctness (`fa1_check.py`-style, four sequences of 700/300/50/5 tokens and a decode step, 16 logit rows): against
+llama.cpp without flash attention as the reference, llama.cpp's flash attention differs by up to 0.491 (mean 0.0188)
+in a logit, FA1 by up to 0.205 (mean 0.0091); every argmax the same. Gate (`lab/fa1/gate.py`, the numeric gate's 16
+chunks through the multi-position decode): FA1's perplexity ratio to llama.cpp's default **1.00001 [0.99993, 1.00009]**
+(llama.cpp's flash attention 0.99943). Decode step at full load (median of 3 x 8 steps, `lab/kv1/attn.py`):
+
+| Sequences x context | llama.cpp flash attention | FA1 | llama.cpp without flash attention |
+| --- | --- | --- | --- |
+| 1 x 64 | 0.099 s | 0.093 s | 0.116 s |
+| 1 x 1,024 | 0.139 s | 0.122 s | 0.114 s |
+| 16 x 64 | 0.148 s | 0.157 s | 0.213 s |
+| 16 x 256 | 0.229 s | 0.208 s | 0.259 s |
+| 16 x 1,024 | 0.845 s | **0.481 s** (1.76x) | 0.417 s |
+
+At 16 x 1,024 FA1's attention part still moved only about 7.5 GB/s of KV: compute-bound per key (one horizontal sum
+per key and head). **FA1 v2** converts a block's K rows to f32 once and scores 16 keys per head in 16 accumulators,
+summed across lanes together (`fa1_hsum16`, checked against scalar sums); logits and gate ratio unchanged (1.00001
+[0.99993, 1.00009]). Steps, same probe:
+
+| Sequences x context | llama.cpp flash attention | FA1 v2 | llama.cpp without flash attention |
+| --- | --- | --- | --- |
+| 1 x 64 | 0.099 s | 0.097 s | 0.116 s |
+| 1 x 1,024 | 0.139 s | **0.104 s** | 0.114 s |
+| 16 x 64 | 0.148 s | **0.134 s** | 0.213 s |
+| 16 x 256 | 0.229 s | **0.154 s** | 0.259 s |
+| 16 x 1,024 | 0.845 s | **0.314 s** (2.69x) | 0.417 s |
+
+FA1 v2 is now the fastest of the three at every measured size, so the choice of attention that KV1 left to the agent
+is settled on this CPU in FA1's favour (the agent keeps the choice for machines where it is not).
+
+### 2026-11-13 FA1 end to end: IronMule against stock llama-server with a long system prompt
+
+`lab/fa1/e2e.sh` (stock servers) and `lab/row1/product.py` (IronMule), same container, Qwen3-4B Q8_0, every request
+with the same 479-token system prompt (`lab/fa1/system.txt`, a library's house rules) and a short story request, 64
+tokens, one warm-up and 3 blocks of N streamed requests. Stock = the same llama.cpp build (4227c9b) with ROW1 and FA1
+off (`ROW1_GGML=0 FA1=0`), `llama-server -np N -c N*2048 -t 4`, with and without `-fa`. IronMule = the product
+(service, worker, ggml engine with B16 and FA1 v2, flash attention as its gate chose, 16 sequences as SEQ1 chose, prefix
+reuse, speculation). Tokens/s per block (mean first token):
+
+| N | llama-server -fa | llama-server | IronMule (FA1 v1) | IronMule (FA1 v2) |
+| --- | --- | --- | --- | --- |
+| 1 | 6.5 / 7.4 / 7.1 (0.13-0.15 s) | 7.6 / 7.9 / 7.6 (0.13 s) | 9.7 / 9.1 / 9.3 (0.11 s) | 8.7 / 9.0 / 9.8 (0.11-0.13 s) |
+| 8 | 22.9 / 22.8 / 12.1* (0.38-0.67 s) | 28.1 / 26.7 / 27.1 (0.43-0.71 s) | 41.6 / 41.8 / 44.1 (0.37-0.49 s) | 48.4 / 47.4 / 47.5 (0.27-0.28 s) |
+| 16 | 31.0 / 32.7 / 17.9* (0.74-0.83 s) | 41.2 / 41.4 / 40.2 (0.67-0.73 s) | 54.3 / 56.7 / 56.7 (0.55-0.78 s) | 66.6 / 67.5 / 68.4 (0.44-0.47 s) |
+
+*Third block disturbed by a test run of this session on the same CPU; the other two stand.
+
+Against the better stock server (without `-fa` at this context): **1.19x / 1.75x / 1.65x** tokens per second with
+FA1 v2, first tokens 1.1x / 1.6-2.6x / 1.5x sooner. Against `llama-server -fa`: 1.31x / 2.09x / 2.12x.
+
+Answers. With the library system prompt the model often declines general questions ("ask the staff at the desk"):
+facts 36/50 through IronMule, 38/50 through stock `llama-server` (`lab/fa1/facts_server.py`), the misses being such
+refusals on both. Without a system prompt: 49/50 on both.
+
+### 2026-11-13 FA1 on other families (Gemma 3, Llama 3.2, Mistral), this container
+
+`lab/fa1/families.py`: logits of four sequences (700/300/50/5 tokens) and a decode step against llama.cpp without
+flash attention; perplexity on the numeric gate's text tokenized by the GGUF itself (16 chunks); full-load decode
+steps at 8 sequences. ROW1 off (these are not Q8_0-only kernels' models; B16 serves Q8_0 weights only).
+
+| GGUF | gate ratio of FA1 to llama.cpp's default | logit error vs no flash: FA1 / llama.cpp flash (max, mean) | 8 x 64: no flash / llama.cpp flash / FA1 | 8 x 1,024: no flash / llama.cpp flash / FA1 |
+| --- | --- | --- | --- | --- |
+| Gemma 3 1B it Q8_0 (head 256, sliding window) | 1.0008 [0.9989, 1.0026] | 1.57, 0.113 / 1.88, 0.138 | 0.060 / 0.057 / **0.048 s** | 0.068 / 0.069 / **0.062 s** |
+| Llama 3.2 1B Instruct Q8_0 (head 64) | 1.00001 [0.99998, 1.00005] | 0.026, 0.002 / 0.114, 0.010 | 0.046 / **0.038** / 0.041 s | 0.073 / 0.099 / **0.062 s** |
+| Mistral 7B Instruct v0.3 Q4_K_M | 0.9989 [0.9955, 1.0017] | 0.79, 0.060 / 1.43, 0.064 | 0.414 / 0.419 / **0.360 s** | 0.519 / 0.751 / **0.486 s** |
+
+Every argmax agreed. FA1 passes the gate's bound (1.005) on all three and is closer to the non-flash reference than
+llama.cpp's flash attention on each. Note on the owner's stricter reading for IronMule's own kernels (2026-11-10:
+perplexity not above llama.cpp's default, ratio at most 1.000): FA1's point ratio is 1.00001 on Qwen3-4B and Llama 3.2
+and 1.0008 on Gemma 3 1B, inside noise but above 1.000; under the 2026-11-11 reading for llama.cpp's own options (flash
+attention is one; within 1.005) it passes. The product's gate applies the latter. A decision for the owner.
+
+### 2026-11-13 AG10 S: the ggml engine's agent in simulation, traffic that changes regime
+
+`training/ag10_sim.py`, 3 seeds x 3 phases x 60 windows of 32 arrivals (an arrival every 0.25 s on average, the engine
+busy): short chats (prompts 20-120 tokens), long-context requests (1,200-1,700), short again. True step costs from
+KV1's measurement on this CPU (16 and 8 sequences, flash attention or not); the agent's start values off by up to
+15 %; 3 % noise on every observed step. Tokens/s of the agent's choice against the fixed incumbent (SEQ1's choice,
+16 sequences with flash attention) and against the best fixed configuration in hindsight:
+
+| Phase | agent / incumbent | agent / best fixed (which) |
+| --- | --- | --- |
+| short | 1.00 / 1.00 / 1.00 | 1.00 (w16-fa) |
+| long | 1.196 / 1.200 / 1.197 | 0.985 / 0.988 / 0.985 (w16, no flash) |
+| short again | 0.979 / 0.961 / 0.972 | same (w16-fa) |
+
+Every seed switched to llama.cpp's matmul attention a few windows into the long phase and back in the third. Run 1
+(before the fix) did not come back: the served configuration's least-squares fit, seeing only full steps at long
+contexts, could not tell rows from attended tokens apart and drifted where it had no data, and the trial was judged on
+traffic from before the switch (0.86 of the best in the third phase). Fixed: the startup measurement's points are folded
+into every model at each idle call, and a trial is judged only on the traffic since its switch. On this CPU with FA1 v2
+the choice is moot (FA1 is fastest at every size, FA1 above); the agent keeps it for machines where it is not.

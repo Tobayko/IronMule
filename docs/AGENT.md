@@ -173,7 +173,7 @@ scheduling and the speculation policy version 3, which learns per row count what
 each size probed a few times first) and per match length how often drafts are right. On ggml a step of several
 positions takes another kernel path than one position, so answers can differ slightly; the owner allowed that behind a
 quality gate (2026-11-10), which the engine passes at every start or it refuses. The agent does not choose this engine
-by itself yet (GG2); its hardware test against `llama-server` is GG1-H in the backlog.
+by itself yet (GG2): a `--gguf` names it, and then its own agent (AG10, below) decides how it serves.
 
 **How many requests at once: the engine decides (SEQ1, 2026-11-13).** The number of sequences the engine serves at
 once is its largest speed lever on a CPU with AMX (ROW1: 32 sequences give 2.4x the tokens per second of 8 on Qwen3-4B),
@@ -192,6 +192,44 @@ setup (`choose_sequences` in `ironmule/ggml_engine.py`):
 `IRONMULE_GGML_SEQS` set by hand overrides it. A finished request's KV stays in its sequence, and a new request takes
 the free sequence whose kept tokens share the longest prefix with its prompt (`IRONMULE_GGML_PREFIX_REUSE=0` turns it
 off), as `llama-server` does.
+
+## The ggml engine's own agent: learning, dreaming, switching (AG10, 2026-11-13)
+
+SEQ1 chooses the width once, at full load and at a short context. Which configuration serves best also depends on the
+traffic: KV1 (docs/LAB.md) measured that on a CPU a decode step at long contexts is dominated by attention, and that
+llama.cpp's flash attention is the cheaper setting at short contexts while its matmul attention (flash attention off)
+is cheaper per attended token. `ironmule/ggml_agent.py` makes that choice while it serves, in the engine's worker:
+1. *Configurations:* every width SEQ1 measured, each under the setting the quality gate chose and under llama.cpp's
+   default (which passes the gate by definition). The measurement also times a full step at a 512-token context, so
+   each configuration's start model knows its price per attended KV token. Nothing the gate did not pass is ever a
+   configuration.
+2. *World model, online:* a step's seconds = a + b x decode rows + c x prompt tokens + d x attended KV tokens, per
+   configuration, by recursive least squares with forgetting, from every step the engine serves (the hot path only
+   appends one tuple; the fit runs while idle).
+3. *Traffic memory:* gap, prompt and answer length of each finished request, no text; persisted per GGUF, machine,
+   engine version and GPU offload in `ggml-agent/` of the state directory.
+4. *Dreaming:* after 3 s without a request, windows of 32 recorded arrivals (gaps scaled 0.5-1.5) run through a
+   simulation of the engine's continuous batching under every configuration's model, on the same windows.
+5. *Switch and guard:* a configuration replaces the incumbent when the 2.5 % bootstrap bound of its dreamed
+   tokens-per-second gain is above 3 % and its mean first token is at most 2 % later. The context is rebuilt on the
+   loaded model in that idle spell (a request that arrives meanwhile waits for it, a few seconds at most). While the
+   switch is on trial the live steps keep correcting its model; when a re-dream no longer shows a gain the agent
+   switches back and does not try it again for 2,048 requests.
+`/health` shows it under `ggml_agent` (what serves, the world models, the last decisions and why);
+`IRONMULE_GGML_AGENT=0` turns it off (SEQ1's choice then serves alone). With `--agent on --gguf FILE` it is the agent;
+the group agent of AG1 does not attach to this engine, whose continuous batching it does not model.
+
+**FA1: a faster attention kernel under the engine.** `native/ggml_patches/fa1` replaces llama.cpp's CPU flash
+attention for f16 KV caches on AVX-512 CPUs: the query heads that share a KV head are computed together, keys go in
+blocks with one softmax rescale per block and vectorized exponentials, and V is accumulated in f32 (llama.cpp's
+accumulates in f16). On a 4-vCPU Xeon with Qwen3-4B a decode step at 16 sequences of 1,024 tokens took 0.481 s
+instead of 0.845 s; its logits were closer to the non-flash reference than llama.cpp's own flash attention, and its
+perplexity ratio to llama.cpp's default was 1.00001. `python tools/build_ggml.py` builds llama.cpp with it.
+
+**GPUs (MG2).** A llama.cpp build with a GPU backend (`tools/build_ggml.py --cuda 75`) offloads every layer
+(`IRONMULE_GGML_GPU_LAYERS` sets fewer). `--gpus all` runs one engine per GPU, each seeing only its own (data parallel);
+without it, several visible GPUs share one model by layers (`IRONMULE_GGML_SPLIT=layer|row|none`). The width is then
+chosen within the GPU's memory. Not yet measured on a GPU: the Kaggle harness `lab/mg2/kaggle_gpu.py` is ready.
 
 ## What it knows about the hardware (AG3)
 
@@ -213,6 +251,11 @@ ironmule serve --agent on                 # one GPU, or the CPU
 ironmule serve --agent on --gpus all      # one agent per GPU
 ```
 
+```bash
+python tools/build_ggml.py                 # once: llama.cpp with IronMule's kernels; prints two exports
+ironmule serve --agent on --gguf Qwen3-4B-Q8_0.gguf --model Qwen/Qwen3-1.7B  # a registered model with the GGUF's tokenizer
+```
+
 `GET /health` and `GET /v1/ironmule/dispatch` show each agent: what serves and its measured gain, the world
 model, the length model's `lengths` block, the planner, the candidate and its triplets, and decision counts and
 times. `POST /v1/ironmule/dispatch` with `{"action": "off"}` withdraws and pauses every agent, and `"on"` resumes
@@ -223,6 +266,9 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | Path | What it holds |
 | :-- | :-- |
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
+| `ironmule/ggml_agent.py` | AG10: the ggml engine's agent: step-cost model, traffic memory, dreaming, switch and revert |
+| `ironmule/ggml_engine.py` | GG1/SEQ1: llama.cpp's kernels in process, continuous batching, the gate, the width choice, GPU offload |
+| `native/ggml_patches/`, `tools/build_ggml.py` | FA1 and ROW1 kernels for llama.cpp, and the build that applies them |
 | `ironmule_product/length_model.py` | AG2's online answer-length model |
 | `ironmule/plan_choice.py` | AG4: the agent's own choice of numeric plan and stacked engine, once per machine and model |
 | `ironmule_product/path_router.py` | AG4: routes each request between two paths on one card, learning their costs online; AG6: `PolicyRouter` dreams which serving mode to use |

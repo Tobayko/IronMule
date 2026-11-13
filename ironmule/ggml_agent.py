@@ -49,8 +49,9 @@ WINDOWS = 48  # dreamed windows per decision
 MIN_ARRIVALS = 48  # dream only with this much recorded traffic
 MARGIN = 0.03  # a switch needs a 2.5 % bound of the dreamed gain above 3 %
 TTFT_TOLERANCE = 1.02  # mean first token at most 2 % later than the incumbent's
-RETRY_AFTER = 2048  # a rejected candidate may be dreamed again after this many new requests
+RETRY_AFTER = 512  # a rejected candidate may be dreamed again after this many new requests
 FORGET = 0.995
+RECENT = 256  # arrivals that count as the current traffic
 FEATURES = 4  # 1, decode rows, prompt tokens / 1000, attended KV tokens / 1000
 
 
@@ -110,8 +111,8 @@ class StepCost:
 
 # --- the engine, simulated ---------------------------------------------------------------------------------------------
 
-def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple[float, int, int]], seq_ctx: int = 2048
-             ) -> dict[str, float]:
+def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple[float, int, int]], seq_ctx: int = 2048,
+             trace: list[tuple[int, int, int, float]] | None = None) -> dict[str, float]:
     """The engine's continuous batching on `arrivals` [(time, prompt tokens, answer tokens)], priced by `cost`: in each
     step every waiting request that has arrived takes a free sequence and its prompt goes into the step's one call
     (up to `seq_ctx` prompt tokens, at least one prompt), every running request gets one token, a finished request
@@ -138,7 +139,10 @@ def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple[float, int, in
             now = pending[i][0] if i < len(pending) else now + 1e-3
             continue
         kv = int(sum(a[1] for a in active))
-        now += cost.predict(len(active), prompt, kv)
+        seconds = cost.predict(len(active), prompt, kv)
+        now += seconds
+        if trace is not None:
+            trace.append((len(active), prompt, kv, seconds))
         survivors = []
         for job in active:
             job[0] -= 1
@@ -163,10 +167,12 @@ def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple[float, int, in
 
 def windows(memory: Sequence[tuple[float, int, int]], rng: random.Random, count: int = WINDOWS,
             size: int = WINDOW) -> list[list[tuple[float, int, int]]]:
-    """Windows of `size` consecutive recorded arrivals, gaps scaled by one factor in 0.5-1.5 per window."""
+    """Windows of `size` consecutive recorded arrivals, gaps scaled by one factor in 0.5-1.5 per window; three in four
+    start among the last `RECENT` arrivals, so a change in the traffic shows in the dream soon after it happens."""
     out = []
+    last = max(1, len(memory) - size + 1)
     for _ in range(count):
-        start = rng.randrange(0, max(1, len(memory) - size + 1))
+        start = rng.randrange(max(0, last - RECENT), last) if rng.random() < 0.75 else rng.randrange(0, last)
         factor, t, window = rng.uniform(0.5, 1.5), 0.0, []
         for gap, prompt, answer in memory[start:start + size]:
             t += gap * factor
@@ -212,6 +218,10 @@ class GgmlAgent:
         self.costs = {name: StepCost.from_measurement(int(c["seqs"]), float(c["step_one"]), float(c["step_full"]),
                                                       float(c.get("prefill_per_1k", 0.0)), float(c.get("kv_per_1k", 0.0)))
                       for name, c in configs.items()}
+        # the startup measurement's points, folded in at every idle call: live steps of one kind of traffic (all rows
+        # busy at long contexts) cannot tell rows from attended tokens apart, and without these points a model fitted
+        # there drifts where it has seen nothing (AG10 S, run 1: no way back to flash attention for short chats)
+        self.anchors = {name: anchors_of(c) for name, c in configs.items()}
         self.memory: deque[tuple[float, int, int]] = deque(maxlen=MEMORY)
         self.current = incumbent  # the hot path reads this
         self.trial: dict[str, Any] | None = None  # {"from": name, "since": requests}
@@ -243,6 +253,9 @@ class GgmlAgent:
         for name, rows, prompt, kv, seconds in steps:
             if name in self.costs and (rows or prompt):
                 self.costs[name].update(rows, prompt, kv, seconds)
+        for name, points in self.anchors.items():
+            for rows, prompt, kv, seconds in points:
+                self.costs[name].update(rows, prompt, kv, seconds)
         return len(steps)
 
     def idle(self) -> str | None:
@@ -257,8 +270,13 @@ class GgmlAgent:
                                     "dream": result}
         if self.trial is not None:  # the switch is on trial: keep it only while the corrected model still shows a gain
             back = self.trial["from"]
+            since = memory[-(self.requests - self.trial["since"]):] if self.requests > self.trial["since"] else []
+            if len(since) < 2 * WINDOW:  # judged on the traffic it served, not on what came before the switch
+                decision.update(action="watch", reason="the switch is on trial; too little traffic since it")
+                self._remember(decision)
+                return None
             mine = dream({self.current: self.configs[self.current], back: self.configs[back]}, self.costs, back,
-                         memory, self._rng)["candidates"][self.current]
+                         since, self._rng)["candidates"][self.current]
             if mine["gain"] <= 0.0 or mine["ttft_ratio"] > TTFT_TOLERANCE:
                 self.rejected[self.current] = self.requests
                 decision.update(action="revert", to=back, reason="the live steps corrected the model; no gain left")
@@ -338,6 +356,18 @@ class GgmlAgent:
             self.current = state["trial"]["from"] if state.get("trial") else state["current"]
 
 
+def anchors_of(config: dict[str, Any]) -> list[tuple[int, int, int, float]]:
+    """(rows, prompt tokens, attended KV tokens, seconds) the startup measurement observed for a configuration."""
+    width, short, long = int(config["seqs"]), int(config.get("short_ctx", 64)), int(config.get("long_ctx", 0))
+    points = [(1, 0, short, float(config["step_one"])), (width, 0, width * short, float(config["step_full"]))]
+    if config.get("step_long") is not None and long > short:
+        points.append((width, 0, width * long, float(config["step_long"])))
+    elif config.get("kv_per_1k"):
+        points.append((width, 0, width * 1024, float(config["step_full"]) + float(config["kv_per_1k"]) * width
+                       * (1024 - short) / 1000.0))
+    return points
+
+
 def configs_from_measurement(measured: Iterable[dict[str, Any]], seq_ctx: int) -> dict[str, dict[str, Any]]:
     """Configurations from `ggml_engine.choose_sequences`'s measured rows: one per (settings, width)."""
     out = {}
@@ -353,7 +383,9 @@ def configs_from_measurement(measured: Iterable[dict[str, Any]], seq_ctx: int) -
                                          if settings.get(key))
             out[name] = {"seqs": int(width), "settings": settings, "seq_ctx": seq_ctx, "step_full": float(full),
                          "step_one": float(one), "kv_per_1k": kv,
-                         "prefill_per_1k": float(row.get("prefill_per_1k", 0.0))}
+                         "prefill_per_1k": float(row.get("prefill_per_1k", 0.0)),
+                         "short_ctx": int(row.get("short_ctx", 64)), "long_ctx": int(row.get("long_ctx", 0)),
+                         "step_long": None if long is None else float(long)}
     return out
 
 

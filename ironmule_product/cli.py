@@ -324,6 +324,8 @@ def serve(argv: list[str]) -> int:
                              "unchanged, and only when no tune profile is stored; `reference` keeps the engine's "
                              "default knobs")
     args = parser.parse_args(argv)
+    if args.gguf is not None and args.engine is None:  # a GGUF names the ggml engine (GG1); AG10 is its agent
+        args.engine = "ggml"
     agent_chooses = args.agent == "on" and args.engine is None and args.compute_dtype is None and not args.no_model
     args.engine = {"stock": "reference", "ironmule": "tuned", None: "reference"}.get(args.engine, args.engine)
     if not 0 <= args.port <= 65535:
@@ -352,6 +354,7 @@ def serve(argv: list[str]) -> int:
     store = ProductStore(args.state_dir)
     store.settings()
     backend = service = server = agent_setup = None
+    ggml_options: dict[str, Any] = {}
     lease = None
     lease_entered = False
     previous_term = signal.getsignal(signal.SIGTERM)
@@ -501,6 +504,13 @@ def serve(argv: list[str]) -> int:
         if spec is not None and args.agent == "on" and args.engine == "route":
             print(json.dumps({"agent": {"serving": "two paths on one card; the agent dreams whether to route, stack or "
                                                    "serve single", "reason": agent_setup["reason"]}}), flush=True)
+        elif spec is not None and args.agent == "on" and args.engine == "ggml":
+            # AG10: the ggml engine batches continuously and reuses sequences; its own agent (in the worker) learns,
+            # dreams and switches its width and attention; the group agent (AG1) would price the wrong engine
+            plan = (ggml_options.get("ggml_gate") or {}).get("agent")
+            print(json.dumps({"agent": {"serving": "the ggml engine's own agent (AG10)" if plan else
+                                        "the ggml engine's measured width (SEQ1)",
+                                        "configurations": sorted((plan or {}).get("configs", {}))}}), flush=True)
         elif spec is not None and args.agent == "on" and args.engine == "dense":
             # AG4: the stacked engine serves its measured schedule (w8, slot reuse); the online agent does not
             # attach yet, because its world model prices one group at a time, not slot reuse (AG4, step 3).

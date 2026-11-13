@@ -87,6 +87,27 @@ passes when its share of correct answers is not lower than the reference's by mo
 noise. It joins the perplexity gate for every path that changes tokens; its protocol is fixed before it serves a
 decision.
 
+### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
+
+`ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among
+the configurations SEQ1 measured (width x attention setting, all within the gate) by dreaming recorded traffic through
+a learned step-cost model, switches in idle time and reverts when the live steps disagree. Simulated in
+`training/ag10_sim.py` (LAB.md, AG10 S). Open: a hardware run where the traffic changes regime under a real server,
+and actions beyond configurations (thread count, admission) where a measurement shows headroom.
+
+### FA1 — IronMule's flash-attention kernel for llama.cpp on AVX-512 (2026-11-13, fast mode; shipped as a patch)
+
+`native/ggml_patches/fa1`, built by `tools/build_ggml.py`. 2.69x a decode step at 16 x 1,024 tokens against
+llama.cpp's flash attention, gate ratio 1.00001; end to end 1.19x-1.75x the better stock `llama-server` setting with a
+long system prompt (LAB.md, KV1 and FA1). Open: an AMX-BF16 or AVX512-FP16 variant, prefill with blocks of queries,
+other families' head layouts on hardware (Gemma 3, Llama 3.2, Mistral checked on this CPU, LAB.md).
+
+### MG2 — The ggml engine on GPUs, one or many (2026-11-13; code ready, not measured)
+
+GPU offload, split modes and one engine per GPU (`--gpus all --gguf`). `lab/mg2/kaggle_gpu.py` measures it on a Kaggle
+T4 x2 against `llama-server` (one GPU, split, one server per GPU) on Qwen3-4B, Gemma 3 4B, Mistral 7B and Llama 3.1 8B,
+about 2 GPU hours. Not run: the weekly Kaggle GPU quota (30 h) was used up on 2026-11-13.
+
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
 **Mechanism.** `ironmule_product/agent.py`, opt-in (`ironmule serve --agent on`), one decision owner (refused

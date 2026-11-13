@@ -29,6 +29,24 @@ static int fa1_enabled() {
 
 static inline float fa1_hsum(__m512 v) { return _mm512_reduce_add_ps(v); }
 
+// The 16 horizontal sums of v[0..15] in one vector, in order (FA1 v2). Two 256-bit and one 128-bit fold across
+// vectors, then a 4x4 transpose-add inside each 128-bit lane; the inputs are taken as v0-3, v8-11, v4-7, v12-15 so the
+// sums come out as 0..15.
+static inline __m512 fa1_hsum16(const __m512 * v) {
+    static const int order[16] = {0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7, 12, 13, 14, 15};
+    __m512 w[8], x[4];
+    for (int i = 0; i < 8; ++i) {
+        const __m512 a = v[order[i]], b = v[order[i + 8]];
+        w[i] = _mm512_add_ps(_mm512_shuffle_f32x4(a, b, 0x44), _mm512_shuffle_f32x4(a, b, 0xEE));
+    }
+    for (int i = 0; i < 4; ++i) {
+        x[i] = _mm512_add_ps(_mm512_shuffle_f32x4(w[i], w[i + 4], 0x88), _mm512_shuffle_f32x4(w[i], w[i + 4], 0xDD));
+    }
+    const __m512 y0 = _mm512_add_ps(_mm512_unpacklo_ps(x[0], x[1]), _mm512_unpackhi_ps(x[0], x[1]));
+    const __m512 y1 = _mm512_add_ps(_mm512_unpacklo_ps(x[2], x[3]), _mm512_unpackhi_ps(x[2], x[3]));
+    return _mm512_add_ps(_mm512_shuffle_ps(y0, y1, 0x44), _mm512_shuffle_ps(y0, y1, 0xEE));
+}
+
 static bool fa1_attn(const ggml_compute_params * params, ggml_tensor * dst) {
     const ggml_tensor * q = dst->src[0], * k = dst->src[1], * v = dst->src[2], * mask = dst->src[3], * sinks = dst->src[4];
     if (!fa1_enabled() || q->type != GGML_TYPE_F32 || k->type != GGML_TYPE_F16 || v->type != GGML_TYPE_F16 || sinks) {
@@ -59,6 +77,7 @@ static bool fa1_attn(const ggml_compute_params * params, ggml_tensor * dst) {
     alignas(64) float Q[8][256];
     alignas(64) float A[8][256];
     alignas(64) float P[8][FA1_BLOCK];
+    alignas(64) float KF[FA1_BLOCK][256];
     float M[8], S[8];
     const int nd = (int) (DK / 16), nv = (int) (DV / 16);
 
@@ -83,18 +102,28 @@ static bool fa1_attn(const ggml_compute_params * params, ggml_tensor * dst) {
                 live += mval[j] != -INFINITY;
             }
             if (!live) continue;
-            // scores of the block for every query head of the group
+            // scores of the block for every query head of the group: the block's K rows converted to f32 once, then
+            // per head 16 keys at a time in 16 accumulators, summed across lanes together (fa1_hsum16)
             for (int j = 0; j < nb; ++j) {
-                if (mval[j] == -INFINITY) { for (int h = 0; h < rk2; ++h) P[h][j] = -INFINITY; continue; }
                 const ggml_fp16_t * kr = (const ggml_fp16_t *) (kb + (c0 + j) * k->nb[1]);
-                __m512 acc[8];
-                for (int h = 0; h < rk2; ++h) acc[h] = _mm512_setzero_ps();
                 for (int d = 0; d < nd; ++d) {
-                    const __m512 kd = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *) (kr + 16 * d)));
-                    for (int h = 0; h < rk2; ++h) acc[h] = _mm512_fmadd_ps(kd, _mm512_load_ps(Q[h] + 16 * d), acc[h]);
+                    _mm512_store_ps(KF[j] + 16 * d, _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *) (kr + 16 * d))));
                 }
-                for (int h = 0; h < rk2; ++h) {
-                    float s = fa1_hsum(acc[h]) * scale;
+            }
+            for (int j = nb; j < FA1_BLOCK; ++j) memset(KF[j], 0, DK * sizeof(float));
+            for (int h = 0; h < rk2; ++h) {
+                for (int j0 = 0; j0 < FA1_BLOCK; j0 += 16) {
+                    __m512 acc[16];
+                    for (int j = 0; j < 16; ++j) acc[j] = _mm512_setzero_ps();
+                    for (int d = 0; d < nd; ++d) {
+                        const __m512 qd = _mm512_load_ps(Q[h] + 16 * d);
+                        for (int j = 0; j < 16; ++j) acc[j] = _mm512_fmadd_ps(_mm512_load_ps(KF[j0 + j] + 16 * d), qd, acc[j]);
+                    }
+                    _mm512_store_ps(P[h] + j0, _mm512_mul_ps(fa1_hsum16(acc), _mm512_set1_ps(scale)));
+                }
+                for (int j = 0; j < nb; ++j) {
+                    if (mval[j] == -INFINITY) { P[h][j] = -INFINITY; continue; }
+                    float s = P[h][j];
                     if (softcap != 0.0f) s = softcap * tanhf(s);
                     P[h][j] = s + mval[j];
                 }
