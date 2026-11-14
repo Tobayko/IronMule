@@ -1231,7 +1231,7 @@ ahead of IronMule on one GPU at 8 (271) and 32 (714); facts 50 / 50. Facts throu
 Qwen3 49 / 49, Gemma 3 47 / 48, Mistral 49 / 49, Llama 3.1 49 / 49. SGLang: not installed (the install's output went
 to no log; v6 logs it).
 
-Read: PAD1 with one unified KV cache is a real gain at 8 requests: 1.36-1.40x the best llama-server arm on all four
+Read: PAD1 with one unified KV cache is a real gain at 8 requests: 1.32-1.40x the best llama-server arm on all four
 models. With per-sequence caches it is a loss (llama.cpp splits a step whose sequences carry different token counts
 into several passes), so PAD1 now runs only with a unified cache. Without SP4's repeated-prompt drafts IronMule is
 slightly behind llama-server for one request on one GPU (46.1 against 52.9 on Qwen3) and behind its layer split over
