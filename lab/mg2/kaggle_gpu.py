@@ -17,6 +17,10 @@ requests (N = 1, 8, 32; one warm-up block and 3 blocks; 128 tokens; greedy; the 
 
 A CUDA build attached as the dataset `ironmule-mg2-cuda-build` (the same llama.cpp tree, built by an earlier run) is
 unpacked instead of building again (an hour of the session). Each engine arm logs its steps and step times by rows.
+The engine runs with collective speculation (SP4) off: the blocks repeat their prompts, and SP4 would draft from the
+answers of the block before (MG2 v4: 315 of 328 drafts accepted for one request), which no other engine does. A
+prompt gets the model's BOS when its tokenizer adds one (llama-server's /apply-template leaves it out; Gemma 3
+without it answered 23 of 50 facts in v4).
 
 Answers: the 50 checkable facts of lab/row1/facts.py through llama-server and through the engine (both greedy).
 Writes /kaggle/working/mg2.json. Usage on Kaggle: the kernel runs this file with the commit to fetch in MG2_COMMIT.
@@ -61,10 +65,17 @@ LIB = SRC / "llama_cpp_python-0.3.16/vendor/llama.cpp/build/bin"
 def build():
     t0 = time.time()
     cached = next(iter(glob.glob("/kaggle/input/**/mg2_build.tar.gz", recursive=True)), None)
+    unpacked = next(iter(glob.glob("/kaggle/input/**/build/bin/libllama.so", recursive=True)), None)
+    REPORT["inputs"] = glob.glob("/kaggle/input/*/*")[:20]
     if cached and not (LIB / "libllama.so").exists():
         SRC.mkdir(exist_ok=True)
         sh(f"cd {SRC} && tar xzf {cached}")
         REPORT["build_cached"] = cached
+    elif unpacked and not (LIB / "libllama.so").exists():  # Kaggle unpacks an uploaded archive
+        top = Path(unpacked).parents[4]  # .../llama_cpp_python-0.3.16
+        SRC.mkdir(exist_ok=True)
+        sh(f"cp -r {top} {SRC}/ && chmod +x {LIB}/llama-server")
+        REPORT["build_cached"] = str(top)
     if not (LIB / "libllama.so").exists():
         SRC.mkdir(exist_ok=True)
         sh(f"cd {SRC} && pip download llama_cpp_python==0.3.16 --no-binary :all: --no-deps -d . -q && tar xzf llama_cpp_python-0.3.16.tar.gz")
@@ -97,7 +108,7 @@ def build():
 
 def env(gpus=None):
     e = {**os.environ, "IRONMULE_GGML_BINDINGS": str(SRC / "llama_cpp_python-0.3.16"), "LLAMA_CPP_LIB_PATH": str(LIB),
-         "PYTHONPATH": str(W / "pkg")}
+         "PYTHONPATH": str(W / "pkg"), "IRONMULE_GGML_COLLECTIVE": "0"}
     if gpus is not None:
         e["CUDA_VISIBLE_DEVICES"] = gpus
     return e
@@ -239,7 +250,8 @@ def run_python_engines(prompts, fact_prompts, facts, count):
     for name, install, command in (
             ("vllm_1gpu", "pip install -q vllm", vllm + ["--model", "Qwen/Qwen3-4B", "--dtype", "half"]),
             ("vllm_awq_1gpu", "true", vllm + ["--model", "Qwen/Qwen3-4B-AWQ", "--quantization", "awq", "--dtype", "half"]),
-            ("sglang_1gpu", f"pip install -q uv && uv venv -q -p 3.12 /kaggle/working/sgl && VIRTUAL_ENV=/kaggle/working/sgl "
+            ("sglang_1gpu", "curl -sSf https://sh.rustup.rs | sh -s -- -y -q --profile minimal && export PATH=$HOME/.cargo/bin:$PATH "
+             "&& pip install -q uv && uv venv -q -p 3.12 /kaggle/working/sgl && VIRTUAL_ENV=/kaggle/working/sgl "
              "uv pip install -q 'sglang[all]'", [sgl, "-m", "sglang.launch_server", "--model-path",
              "Qwen/Qwen3-4B", "--served-model-name", "Qwen/Qwen3-4B", "--dtype", "half", "--attention-backend", "triton",
              "--port", "8400", "--mem-fraction-static", "0.85"])):
@@ -285,11 +297,16 @@ from ironmule.ggml_engine import GgmlEngine, Job
 cfg = json.loads(sys.stdin.readline())
 e = GgmlEngine(cfg["gguf"], seqs=cfg["seqs"], seq_ctx=cfg["ctx"], speculate=cfg.get("speculate", True), flash_attn=True,
                shared=cfg.get("shared", False), cap=cfg.get("cap"))
+BOS = int(e.L.llama_vocab_bos(e.vocab))
+ADD_BOS = bool(e.L.llama_vocab_get_add_bos(e.vocab)) and BOS >= 0
+def prompt_ids(text):
+    ids = e.tokenize(text)
+    return [BOS] + ids if ADD_BOS and (not ids or ids[0] != BOS) else ids
 print(json.dumps({"ready": True, "summary": e.summary()}), flush=True)
 for line in sys.stdin:
     req = json.loads(line)
     if req.get("quit"): break
-    jobs = [Job(e.tokenize(p), req["limit"]) for p in req["prompts"]]
+    jobs = [Job(prompt_ids(p), req["limit"]) for p in req["prompts"]]
     start = time.monotonic_ns()
     while time.monotonic_ns() < req["at_ns"]: pass
     t0 = time.monotonic_ns()
@@ -298,7 +315,7 @@ for line in sys.stdin:
     print(json.dumps({"t0": t0, "t1": t1, "tokens": [len(j.tokens) for j in jobs],
                       "first": [(j.first_ns - t0) / 1e9 for j in jobs], "texts": [j.tokens for j in jobs],
                       "steps": e.steps, "spec": e.policy.summary() if e.policy is not None else None,
-                      "pilot": (e.summary() or {}).get("pilot")}), flush=True)
+                      "pilot": (e.summary() or {}).get("pilot"), "padding": (e.summary() or {}).get("padding")}), flush=True)
 """
 
 
@@ -327,7 +344,8 @@ class Engines:
         for p, part in zip(self.procs, parts):
             p.stdin.write(json.dumps({"prompts": part, "limit": limit, "at_ns": at}) + "\n"); p.stdin.flush()
         rows = [json.loads(self._line(p)) for p in self.procs]
-        self.last = [{"steps": r.get("steps"), "spec": r.get("spec"), "pilot": r.get("pilot")} for r in rows]
+        self.last = [{"steps": r.get("steps"), "spec": r.get("spec"), "pilot": r.get("pilot"), "padding": r.get("padding")}
+                     for r in rows]
         wall = (max(r["t1"] for r in rows) - min(r["t0"] for r in rows)) / 1e9
         tokens = sum(sum(r["tokens"]) for r in rows)
         firsts = [f for r in rows for f in r["first"]]

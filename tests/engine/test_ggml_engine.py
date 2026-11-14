@@ -486,3 +486,31 @@ def test_sp4_drafts_come_from_other_requests_answers_in_their_own_bucket():
     small = CollectiveIndex(keys=5)
     small.add(list(range(50)))
     assert len(small.table) == 5  # bounded, oldest keys go first
+
+
+def test_pad1_fills_a_step_only_to_a_size_measured_cheaper():
+    from ironmule.ggml_engine import pad_table
+
+    # MG2 v4 on a T4: 4 rows 33 ms, 5-8 rows about 50 ms, more than 8 cheaper again (CUDA's matmul kernels)
+    prices = {1: 0.0196, 2: 0.0210, 3: 0.0278, 4: 0.0331, 5: 0.0500, 6: 0.0510, 7: 0.0520, 8: 0.0525, 9: 0.0380,
+              10: 0.0385, 16: 0.0410}
+    table = pad_table(prices)
+    assert table == {5: 9, 6: 9, 7: 9, 8: 9}
+    assert pad_table({1: 0.10, 2: 0.11, 3: 0.12}) == {}  # a CPU: every larger step costs more
+    assert pad_table({1: 0.10, 2: 0.097}) == {}  # within 5 %: not worth a guess
+
+
+def test_pad1_guesses_change_no_answer_on_the_real_model(engine):
+    from ironmule.ggml_engine import Job
+
+    asks = ["Count from 1 to 20.", "Name three colours of the rainbow."]
+    prompts = [engine.tokenize(f"<|im_start|>user\n{q}<|im_end|>\n<|im_start|>assistant\n") for q in asks]
+    saved = getattr(engine, "pad_to", {})
+    try:
+        engine.pad_to = {}
+        plain = [j.tokens for j in engine.run([Job(list(p), 12) for p in prompts])]
+        engine.pad_to, engine.padded = {t: 9 for t in range(1, 9)}, 0
+        padded = [j.tokens for j in engine.run([Job(list(p), 12) for p in prompts])]
+        assert padded == plain and engine.padded > 0
+    finally:
+        engine.pad_to = saved

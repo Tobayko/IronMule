@@ -53,6 +53,10 @@ OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves withi
 PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", 0))
 PASSED_OVER = 8
 COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
+# PAD1: measure a step's price by its token count at the start (on GPUs; "1" also on CPUs, "0" never) and fill a step
+# with guessed tokens up to a size measured cheaper: llama.cpp's CUDA matmuls switch kernels above 8 tokens, and on a
+# T4 a step of 8 rows cost 52 ms against 41 ms for 32 (MG2 v4). Guesses are verified like drafts: answers do not change.
+PAD = os.environ.get("IRONMULE_GGML_PAD", "")
 PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PI1: the decision network, when its weights are present
 DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
 DRAFT_SLOTS = int(os.environ.get("IRONMULE_GGML_DRAFT_SLOTS", DRAFT_MAX_RUNNING))  # DM1: its sequences
@@ -111,6 +115,17 @@ def gpu_offload(L: Any | None = None) -> bool:
         return bool(L.llama_supports_gpu_offload())
     except Exception:  # noqa: BLE001 - no library, no GPU
         return False
+
+
+def pad_table(prices: dict[int, float], margin: float = 0.95) -> dict[int, int]:
+    """PAD1: for each measured token count, the larger one to fill a step to when it was measured at least 5 % cheaper
+    (the cheapest; the smaller of equally cheap ones)."""
+    pad = {}
+    for t in prices:
+        best = min((m for m in prices if m >= t), key=lambda m: (prices[m], m))
+        if best > t and prices[best] < margin * prices[t]:
+            pad[t] = best
+    return pad
 
 
 def gpu_layers(L: Any | None = None) -> int:
@@ -325,6 +340,11 @@ class GgmlEngine:
                    kv_q8=kv_q8)
         self.steps = 0
         self._warm_up()
+        self.pad_to: dict[int, int] = {}
+        self.pad_prices: dict[int, float] = {}
+        self.padded = 0
+        if self.speculate and PAD != "0" and (self.gpu_layers or PAD == "1"):
+            self.pad_to = self.measure_padding()
         self.drafter = None
         if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies
             self.drafter = self._open_drafter(draft_gguf, threads)
@@ -336,6 +356,25 @@ class GgmlEngine:
                           gpu=bool(self.gpu_layers))
             self.pilot = pilot if pilot.active else None
             self.pilot_refused = None if pilot.active else pilot.reason
+
+    def measure_padding(self, repeats: int = 5) -> dict[int, int]:
+        """PAD1: a verify step's seconds for 1 to `max_rows` tokens of one sequence (median of `repeats`), and for each
+        token count the larger count to fill it to when that one is measured at least 5 % cheaper."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        self._clear()
+        self._decode([(bos, j, 0, j == 63) for j in range(64)])
+        prices: dict[int, float] = {}
+        for t in range(1, self.max_rows + 1):
+            times = []
+            for _ in range(repeats + 1):
+                started = time.perf_counter()
+                self._decode([(bos, 64 + j, 0, True) for j in range(t)])
+                times.append(time.perf_counter() - started)
+                self.L.llama_memory_seq_rm(self.memory, 0, 64, -1)
+            prices[t] = sorted(times[1:])[len(times[1:]) // 2]
+        self._clear()
+        self.pad_prices = prices
+        return pad_table(prices)
 
     def measure_costs(self) -> dict[str, float]:
         """PI1: what a step costs on this machine, for the Pilot's features (seconds): one row at a 64-token context,
@@ -786,6 +825,24 @@ class GgmlEngine:
                             budget -= ks[i]
                 else:
                     ks = self.policy.choose(offers) if self.policy is not None and order else [0] * len(order)
+                real = list(ks)
+                pad_to = getattr(self, "pad_to", None)
+                want = pad_to.get(len(order) + sum(ks)) if pad_to else None
+                if want:  # PAD1: guesses (the last token again) fill the step to the size measured cheaper
+                    extra = want - len(order) - sum(ks)
+                    for i, seq in enumerate(order * MAX_DRAFT):
+                        if extra <= 0:
+                            break
+                        i %= len(order)
+                        job = active[order[i]]
+                        pos = len(job.ids) + len(job.tokens) - 1
+                        cap = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos)
+                        if ks[i] < cap and order[i] not in modelled:  # the draft model's rows keep its own lengths
+                            if ks[i] >= len(offers[i][0]):
+                                offers[i] = (list(offers[i][0][:ks[i]]) + [job.tokens[-1]], offers[i][1])
+                            ks[i] += 1
+                            extra -= 1
+                    self.padded += sum(ks) - sum(real)
                 rows: list[tuple[int, int, int, bool]] = []
                 for seq, (drafts, _), k in zip(order, offers, ks):
                     job = active[seq]
@@ -812,16 +869,16 @@ class GgmlEngine:
                                   sum(len(j.ids) + len(j.tokens) for j in active.values()), seconds)
                 self.steps += 1
                 at = produced = 0
-                for seq, (drafts, bucket), k in zip(order, offers, ks):
+                for seq, (drafts, bucket), k, r in zip(order, offers, ks, real):
                     job = active[seq]
                     pos = len(job.ids) + len(job.tokens) - 1
                     new = accept(list(drafts[:k]), picks[at:at + k + 1])
                     at += k + 1
                     produced += len(new)
                     if seq in modelled:
-                        self.drafter.settle(seq, k, len(new) - 1)
-                    elif k and self.policy is not None:
-                        self.policy.observe_drafts(bucket, k, len(new) - 1)
+                        self.drafter.settle(seq, r, min(r, len(new) - 1))
+                    elif r and self.policy is not None:  # PAD1's guesses are not the drafts' acceptance
+                        self.policy.observe_drafts(bucket, r, min(r, len(new) - 1))
                     if k:
                         self.L.llama_memory_seq_rm(self.memory, seq, pos + len(new), -1)  # rejected positions
                     for token in new:
@@ -880,6 +937,9 @@ class GgmlEngine:
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
+                **({"padding": {"to": {str(k): v for k, v in self.pad_to.items()}, "guesses": self.padded,
+                                "step_ms_by_tokens": {str(k): round(v * 1000, 2) for k, v in self.pad_prices.items()}}}
+                   if self.pad_prices else {}),
                 **({"pilot": self.pilot.status()} if self.pilot is not None else
                    {"pilot": {"active": False, "reason": self.pilot_refused}} if self.pilot_refused else {}),
                 **({"draft_model": self.drafter.summary()} if self.drafter is not None else
