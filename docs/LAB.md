@@ -1125,7 +1125,9 @@ story per request, greedy, N requests at once, median of 3 blocks after a warm-u
 | **IronMule, one per GPU** | **110.3, 0.016 s** | 177.7, 0.035 s | **958.5, 0.028 s** |
 
 Facts: 49 of 50 through llama-server and through the engine (same answers checked), 50 of 50 for vLLM's float16
-model. IronMule is 1.7-2x the best llama-server arm for one request and 1.3x for 32 (958.5 against 735.0 for both
+model. *Correction (v4):* the one-request column is not a fair comparison: the blocks repeat their prompts and the
+engine's collective speculation (SP4) drafted from the block before (v4: 315 of 328 drafts accepted); v5 turns SP4
+off. At 8 and 32 requests the engine drafted nothing, so those columns stand. IronMule is 1.7-2x the best llama-server arm for one request and 1.3x for 32 (958.5 against 735.0 for both
 setups one per GPU), with first tokens about 4x sooner at 8 and 10x sooner at 32 than llama-server in the same setup. At 8 requests on one GPU it is behind llama-server
 (146.4) and vLLM (185.0): 8 rows cost almost as long as 8 single steps, which the CPU does not show (8 story requests
 there: 62-68 tok/s against 10 for one, per-sequence or shared KV alike). Not measured: SGLang (its `outlines_core`
@@ -1172,3 +1174,29 @@ The new weights chose 3 threads at 50 % (and at 25 % for one request); with whol
 for 1 / 2 busy processes (7.49 / 45.2 and 5.68 / 35.0 tok/s), the same as before. Decision time 377-416 microseconds.
 In world v3 (same evaluation): new weights -1415.0 (8.9 % more tokens than the defaults, 36 % less waiting), Kaggle seed
 1 -1411.1, first weights -1427.6, hand rule -1420.2, defaults -2035.9. A from-scratch Kaggle run in world v3 is queued.
+
+### 2026-11-14 MG2 v4: four models, vLLM 4-bit, and why 8 requests are slow on a T4
+
+`lab/mg2/kaggle_gpu.py` at 30dcc74, Kaggle T4 x2 (the cached build was not found: built again, 59 minutes; 1 h 54 min
+in all). Same workload as v3. Tokens/s, median of 3 blocks:
+
+| Qwen3-4B | 1 request | 8 requests | 32 requests |
+| --- | --- | --- | --- |
+| llama-server, one GPU / split / one per GPU | 55.2 / 64.2 / 49.2 | 153.1 / 190.6 / 225.3 | 520.0 / 471.7 / 796.8 |
+| vLLM float16 / AWQ 4-bit, one GPU | 28.1 / 65.7 | 192.7 / **431.1** | 514.6 / 892.5 |
+| IronMule, one GPU / one per GPU | (146.0 / 144.5, SP4) | 150.5 / 242.4 | 747.6 / **1037.1** |
+| IronMule shared pool, one GPU / one per GPU | (143.7 / 141.2, SP4) | 150.5 / 251.4 | 730.8 / **1059.1** |
+
+32 requests, one engine or server per GPU: Gemma 3 4B 1042 against 704 (llama-server), Mistral 7B 713 against 642,
+Llama 3.1 8B 667 against 576; first tokens 0.03-0.05 s against 0.2-0.3 s. Facts: Qwen3 49 / 49 (llama-server /
+IronMule), Mistral 49 / 49, Llama 3.1 49 / 49, vLLM 50 (both), Gemma 3 48 / **23**: the engine got Gemma's prompts
+without BOS (llama-server's `/apply-template` leaves it out, llama-server adds it when it tokenizes); Gemma 3 is out
+until v5 checks it again. SGLang: `outlines-core` 0.1.26 needs a Rust compiler on Python 3.12 too. The one-request
+cells (in brackets) are SP4 drafting from the previous block's answers, not a comparison.
+
+*8 requests.* The engine's step prices by rows (Qwen3, one GPU): 1 row 19.6 ms, 4 rows 33 ms, 5-8 rows 50-52 ms, 32
+rows 41 ms. llama.cpp's CUDA backend runs quantised matmuls of up to 8 tokens as matrix-vector kernels whose cost
+grows with every token, and larger ones as matrix-matrix kernels; on a T4 a step of 8 costs more than one of 32.
+vLLM AWQ at 8 requests (431) shows what the GPU can do there. PAD1 (74026876) measures the price of 1-16 tokens at
+startup on a GPU and fills a step of 5-8 tokens with verified guesses up to the cheaper size (answers unchanged:
+token-identical on the CPU with a forced table, per-sequence and shared pool). v5 measures it.
