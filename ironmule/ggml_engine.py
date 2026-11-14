@@ -56,6 +56,8 @@ COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
 # PAD1: measure a step's price by its token count at the start (on GPUs; "1" also on CPUs, "0" never) and fill a step
 # with guessed tokens up to a size measured cheaper: llama.cpp's CUDA matmuls switch kernels above 8 tokens, and on a
 # T4 a step of 8 rows cost 52 ms against 41 ms for 32 (MG2 v4). Guesses are verified like drafts: answers do not change.
+# Only with one unified KV cache: per-sequence caches split a step whose sequences carry different token counts into
+# several passes (MG2 v5, 8 requests on a T4: 271 tok/s with the shared pool, 95 per-sequence, 150 per-sequence unpadded).
 PAD = os.environ.get("IRONMULE_GGML_PAD", "")
 PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PI1: the decision network, when its weights are present
 DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
@@ -343,7 +345,7 @@ class GgmlEngine:
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
-        if self.speculate and PAD != "0" and (self.gpu_layers or PAD == "1"):
+        if self.speculate and PAD != "0" and (self.gpu_layers or PAD == "1") and self.settings.get("kv_unified"):
             self.pad_to = self.measure_padding()
         self.drafter = None
         if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies

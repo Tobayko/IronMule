@@ -251,8 +251,9 @@ def run_python_engines(prompts, fact_prompts, facts, count):
             ("vllm_1gpu", "pip install -q vllm", vllm + ["--model", "Qwen/Qwen3-4B", "--dtype", "half"]),
             ("vllm_awq_1gpu", "true", vllm + ["--model", "Qwen/Qwen3-4B-AWQ", "--quantization", "awq", "--dtype", "half"]),
             ("sglang_1gpu", "curl -sSf https://sh.rustup.rs | sh -s -- -y -q --profile minimal && export PATH=$HOME/.cargo/bin:$PATH "
-             "&& pip install -q uv && uv venv -q -p 3.12 /kaggle/working/sgl && VIRTUAL_ENV=/kaggle/working/sgl "
-             "uv pip install -q 'sglang[all]'", [sgl, "-m", "sglang.launch_server", "--model-path",
+             "&& pip install -q uv && uv venv -p 3.12 /kaggle/working/sgl >> /kaggle/working/pip.log 2>&1 && "
+             "uv pip install --python /kaggle/working/sgl/bin/python 'sglang[all]' >> /kaggle/working/pip.log 2>&1 && "
+             "/kaggle/working/sgl/bin/python -c 'import sglang'", [sgl, "-m", "sglang.launch_server", "--model-path",
              "Qwen/Qwen3-4B", "--served-model-name", "Qwen/Qwen3-4B", "--dtype", "half", "--attention-backend", "triton",
              "--port", "8400", "--mem-fraction-static", "0.85"])):
         m = REPORT["models"].setdefault("Qwen3-4B-hf-fp16", {"arms": {}})
@@ -442,14 +443,24 @@ def run_model(repo, name, facts):
             _, ids = eng.block(fact_prompts[k:k + 8], 48)
             texts += ids
         eng.close()
+        eng = Engines(gguf, 8, ["0"], speculate=True, shared=True)  # the shared pool with PAD1's guesses
+        pooled = []
+        for k in range(0, len(fact_prompts), 8):
+            _, ids = eng.block(fact_prompts[k:k + 8], 48)
+            pooled += ids
+        m["pool_padding"] = eng.last
+        eng.close()
+        m["pool_same_tokens"] = sum(a == b for a, b in zip(texts, pooled))
         proc, port = server(gguf, 1, "0", "none")
         try:
             m["facts_ironmule"] = correct([detok_server(port, ids) for ids in texts], facts)
+            m["facts_ironmule_pool"] = correct([detok_server(port, ids) for ids in pooled], facts)
         finally:
             stop(proc)
     except Exception as exc:  # noqa: BLE001
         m["facts_ironmule"] = f"error: {exc}"[:200]
-    log(name, "facts", m.get("facts_server"), m.get("facts_ironmule"))
+    log(name, "facts", m.get("facts_server"), m.get("facts_ironmule"), m.get("facts_ironmule_pool"),
+        "same tokens", m.get("pool_same_tokens"))
     save()
 
 
