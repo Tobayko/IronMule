@@ -106,10 +106,11 @@ other families' head layouts on hardware (Gemma 3, Llama 3.2, Mistral checked on
 
 GPU offload, split modes and one engine per GPU (`--gpus all --gguf`). `lab/mg2/kaggle_gpu.py` measures it on a Kaggle
 T4 x2 against `llama-server` (one GPU, split, one server per GPU), vLLM and SGLang on Qwen3-4B, Gemma 3 4B, Mistral 7B
-and Llama 3.1 8B. v4 (docs/LAB.md, 2026-11-14 MG2 v4): at 32 requests, one engine per GPU, IronMule 1037-1059 tok/s on
-Qwen3-4B against 797 for llama-server and 893 for vLLM AWQ on one GPU, ahead on Gemma 3, Mistral and Llama 3.1 too; at
-8 requests on one GPU even with llama-server (CUDA's small-batch kernels; PAD1 in v5); Gemma 3's answers failed
-through the harness (no BOS, fixed in v5); one-request numbers were inflated by SP4 on repeated prompts (off in v5).
+and Llama 3.1 8B. v4 (docs/LAB.md, 2026-11-14 MG2 v4), Qwen3-4B at 32 requests: one per GPU IronMule 1037-1059 tok/s
+against 797 for llama-server (ahead on Mistral 7B and Llama 3.1 8B too); on one GPU IronMule 748, llama-server 520,
+vLLM with AWQ 4-bit 893. At 8 requests on one GPU IronMule 150, llama-server 153, vLLM AWQ 431: vLLM is ahead on one
+GPU, and CUDA's small-batch kernels make 5-8 rows dear (PAD1, measured in v5). Gemma 3's answers failed through the
+harness (no BOS, fixed in v5); one-request numbers were inflated by SP4 on repeated prompts (off in v5).
 
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
