@@ -1200,3 +1200,10 @@ grows with every token, and larger ones as matrix-matrix kernels; on a T4 a step
 vLLM AWQ at 8 requests (431) shows what the GPU can do there. PAD1 (74026876) measures the price of 1-16 tokens at
 startup on a GPU and fills a step of 5-8 tokens with verified guesses up to the cheaper size (answers unchanged:
 token-identical on the CPU with a forced table, per-sequence and shared pool). v5 measures it.
+
+*PI1, from scratch in world v3* (Kaggle, two T4s, 8,192 servers, 400 iterations, 77 minutes). In world v3 (same
+evaluation as above) seed 0 scored -1398.4, better than the shipped weights (-1415.0); but on the real machine's
+readings (`half.py`: foreign load seen and step time at 4 threads) it keeps 4 threads with one core half busy, where 3
+were measured 1.4x faster in the engine. The dream world gives the part-time case too little weight for the reward
+to prefer it; the shipped weights stay. Next: weight the part-time case in the world by what servers show, or train
+on recorded server traces.
