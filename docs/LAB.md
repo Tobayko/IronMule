@@ -1036,3 +1036,68 @@ for one row). So the draft model rests above `IRONMULE_GGML_DRAFT_MAX_RUNNING` =
 any load where steps with drafts were slower than plain ones. Product: `ironmule serve --gguf BIG --draft-gguf SMALL`.
 The session's container moved to another host (2.1 GHz) during this entry; the product numbers follow on that host
 with their own plain baseline.
+
+### 2026-11-14 PI1: the Pilot, a trained decision network for every engine step, and the busy-server collapse
+
+*The collapse* (`lab/pi1/threads.py`, Qwen3-4B Q8_0, 4-vCPU Xeon, B16 + FA1, H busy foreign processes). llama.cpp
+splits each matmul across its threads and waits at a barrier for the slowest; a thread that shares its core with a
+foreign process holds everyone up. Seconds of a one-row step:
+
+| foreign | 1 thread | 2 threads | 3 threads | 4 threads |
+| --- | --- | --- | --- | --- |
+| 0 | 0.414 | 0.184 | 0.139 | **0.108** |
+| 1 | 0.353 | 0.186 | **0.136** | 2.423 |
+| 2 | 0.344 | **0.194** | 1.103 | 5.480 |
+| 3 | 0.343 | 0.333 | 4.959 | 5.656 |
+
+Stock `llama-server` (all cores, `-np 8`, `lab/pi1/busy_cmp.sh`, workload `quick`) under the same load: 7.23 / 0.24 /
+0.13 tok/s for one user with 0 / 1 / 2 foreign processes (first token 0.83 / 23.5 / 45.9 s), 23.3 / 1.41 / 0.68 tok/s for
+eight (first token 3.7 / 54 / 149 s).
+
+*The Pilot* (`ironmule/pilot.py`, weights `ironmule/pilot_weights.npz`): an MLP 20 -> 128 -> 128 -> four heads
+(threads as a fraction of the usable cores, running cap, prompt tokens per step, drafting), trained from scratch in a
+dreamed world of continuous batching whose step times follow the measured costs and this collapse, randomised over
+cores, bandwidth, model size, traffic, bursts and foreign processes; imitation of "threads = free cores" first, then
+PPO. The world and the recipe stay private (open weights only).
+
+*In the engine* (`lab/pi1/real.py`, shared pool cap 32, collective speculation off, 32 tokens, one block per cell;
+`default` = all 4 threads, no Pilot), tokens/s:
+
+| foreign | default, 1 | Pilot, 1 | default, 8 | Pilot, 8 | Pilot's threads |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 9.74 | 8.98 | 61.3 | 53.1 | 4 |
+| 1 | 0.30 | **6.76** | 2.51 | **50.8** | 3 |
+| 2 | 0.18 | **5.30** | 1.45 | **38.5** | 2 |
+
+The idle row's gap is the first measured cell after startup: alternating on one engine (`ab.py`, three rounds, 32
+tokens) the Pilot and no Pilot made 10.21 / 9.83 / 9.79 against 9.34 / 9.75 / 9.86 tok/s for one request and 60.9 /
+68.0 / 72.6 against 70.8 / 67.6 / 71.6 for eight. Answers were token-identical at 4, 3, 2 and 1 threads (one and four
+requests). Decision time in the server 531-558 microseconds per step (the MLP about 20; the rest is the `/proc` read,
+slowed by the engine's polling threads), 0.5 % of a step.
+
+*Through the product* (`lab/pi1/busy_cmp.sh`, `ironmule serve --gguf --agent on`, workload `quick`, against the
+`llama-server` numbers above), tokens/s and first token:
+
+| foreign | llama-server, 1 | IronMule, 1 | llama-server, 8 | IronMule, 8 |
+| --- | --- | --- | --- | --- |
+| 0 | 7.23, 0.83 s | **9.33, 0.27 s** | 23.3, 3.7 s | **58.8, 0.54 s** |
+| 1 | 0.24, 23.5 s | **7.07, 0.31 s** | 1.41, 54 s | **46.2, 0.34 s** |
+| 2 | 0.13, 45.9 s | **5.46, 0.29 s** | 0.68, 149 s | **35.2, 0.68 s** |
+
+With collective speculation on (the default), the same run made 9.66 / 21.8 / 22.4 for one request: `quick` repeats its
+prompts, so from the second load level on SP4 drafted from the answers it had already served. That is real for
+repeated questions but not the Pilot's doing, hence the table without it. `/health` showed `ggml.pilot` deciding 4 / 3 /
+2 threads with 0.0 / 1.03 / 1.98 foreign cores seen.
+
+*Training.* Two versions, each imitation (3,000 steps, thread accuracy 0.998) and 150 PPO iterations on 1,024 dreamed
+servers on this CPU (about 33 minutes). The first world showed no CPU load at all without a foreign process; the real
+machine shows 0.0-0.2 cores of background, and the first weights gave up a core from 0.2 foreign cores on. The world
+now adds 0-0.35 cores of harmless background to what the Pilot sees; the shipped weights keep all 4 threads up to 0.5
+foreign cores and choose 3 at 0.8-1.0 and 2 from 1.5. Dream evaluation (240 s, 1,024 machines, reward per server):
+Pilot -1436, defaults -2251, the hand rule "threads = free cores" -1417; PPO's best checkpoint came after 25 iterations
+(-493.6 against -508.9 after imitation on the 120 s evaluation), later iterations did not improve on it. Also found
+on the way: `ironmule serve --gguf` timed out at its 120 s worker start once the start measured the Pilot's costs (105 s
+here); the ggml worker now has the 600 s the dense plan has.
+
+*Next:* a GPU-trained version (Kaggle, 8,192 servers, 400 iterations, two seeds) against these weights; GPU servers
+(MG2), where the Pilot's thread head does not act and only cap, budget and drafting remain.

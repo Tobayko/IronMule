@@ -5,15 +5,16 @@ them other programs keep busy, what a step costs on this machine (measured), how
 their prompts and contexts are -- and decides four things for the next step:
 
 * how many CPU threads the step uses (on a shared server the default of "all cores" can make every step 20-50x slower:
-  llama.cpp's threads wait at barriers for the one a foreign process pushed off its core; docs/LAB.md, PL1);
+  llama.cpp's threads wait at barriers for the one a foreign process pushed off its core; docs/LAB.md, PI1);
 * how many requests run at once;
 * how many prompt tokens may join a step (first tokens of new requests against the pace of running ones);
 * whether the draft model may draft (DM1).
 
-The network is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads), about 21,000 weights. It was
+The network is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads), about 22,000 weights. It was
 trained from scratch by reinforcement learning in a dreamed world -- a world model of serving built from measurements --
-and never on a production server; its weights ship as `pilot_weights.npz` (open weights). A decision takes a few tens of
-microseconds in numpy. It never changes what the model answers: every decision is a scheduling or threading choice.
+and never on a production server; its weights ship as `pilot_weights.npz` (open weights). The network takes a few tens
+of microseconds in numpy; with the CPU-load read a decision took about 0.5 ms in a busy server (PI1). It never changes
+what the model answers: every decision is a scheduling or threading choice.
 
 Safety: without the weights file, with features outside the ranges it was trained on, or with `IRONMULE_PILOT=0`, the
 engine keeps its own defaults. `status()` reports what the Pilot decided and why it is or is not active.

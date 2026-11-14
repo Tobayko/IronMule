@@ -361,7 +361,7 @@ def serve(argv: list[str]) -> int:
         parser.error("--dispatch-policy and --learning both decide groups; use one")
     if args.agent == "on" and (args.learning != "off" or args.dispatch_policy is not None):
         parser.error("--agent decides groups itself; use it without --learning and --dispatch-policy")
-    from .backend import MLXWorkerClient
+    from .backend import DENSE_STARTUP_TIMEOUT, MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
     from .service import ProductService
@@ -459,8 +459,11 @@ def serve(argv: list[str]) -> int:
                                                                                    "reason")}}), flush=True)
                 if args.draft_gguf:
                     checked = {**checked, "draft": {"gguf": str(Path(args.draft_gguf).resolve())}}
+                # PI1: the worker loads the GGUF, measures this machine's step costs for the Pilot and, with a draft
+                # model, its draft calls before it is ready; on a 4-vCPU Xeon that took about 105 s of the default 120
                 ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
-                                "ggml_gate": checked, **({"speculate": True} if args.speculate != "off" else {})}
+                                "ggml_gate": checked, "startup_timeout": DENSE_STARTUP_TIMEOUT,
+                                **({"speculate": True} if args.speculate != "off" else {})}
 
             def make_backend(device=devices[0]):
                 # SP2: speculation on the stacked engine where asked. SP2-H (2026-11-10) did not pass its bound, so

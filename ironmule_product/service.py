@@ -222,7 +222,7 @@ class ProductService:
                 if isinstance(pool, dict):  # SP1: one KV pool with shared prefixes, its gate and how many run at once
                     result["ggml"]["shared_pool"] = {k: pool.get(k) for k in ("cap", "ratio", "interval")}
                 pilot = getattr(self.backend, "pilot_status", None)
-                if isinstance(pilot, dict):  # PL1: what the Pilot decides on this machine, and how fast
+                if isinstance(pilot, dict):  # PI1: what the Pilot decides on this machine, and how fast
                     result["ggml"]["pilot"] = dict(pilot)
                 drafting = getattr(self.backend, "draft_model_status", None)
                 if isinstance(drafting, dict):  # DM1: the draft model's calibration, costs and what it brought

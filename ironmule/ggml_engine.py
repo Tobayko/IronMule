@@ -37,7 +37,7 @@ def _usable_cores() -> int:
     return usable_cores()
 
 
-# PL1 (2026-11-14): every core this process may use (affinity and cgroup quota), not a fixed 4; IRONMULE_GGML_THREADS
+# PI1 (2026-11-14): every core this process may use (affinity and cgroup quota), not a fixed 4; IRONMULE_GGML_THREADS
 # sets a number. The Pilot then chooses how many of them a step uses.
 THREADS = int(os.environ.get("IRONMULE_GGML_THREADS") or _usable_cores())
 # ROW1 (2026-11-12): sequences and per-sequence context can be raised for a run, e.g. 32 requests in one batch
@@ -53,7 +53,7 @@ OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves withi
 PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", 0))
 PASSED_OVER = 8
 COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
-PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PL1: the decision network, when its weights are present
+PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PI1: the decision network, when its weights are present
 DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
 DRAFT_SLOTS = int(os.environ.get("IRONMULE_GGML_DRAFT_SLOTS", DRAFT_MAX_RUNNING))  # DM1: its sequences
 LLAMA_MAX_SEQ = 64  # llama.cpp's limit on sequence ids in one context (4227c9b)
@@ -329,7 +329,7 @@ class GgmlEngine:
         if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies
             self.drafter = self._open_drafter(draft_gguf, threads)
         self.pilot = None
-        if PILOT and model is None:  # PL1: the decision network, with this machine's measured step costs
+        if PILOT and model is None:  # PI1: the decision network, with this machine's measured step costs
             from .pilot import Pilot
 
             pilot = Pilot(self, self.measure_costs(), max_cap=self.cap if self.pool is not None else self.seqs,
@@ -338,7 +338,7 @@ class GgmlEngine:
             self.pilot_refused = None if pilot.active else pilot.reason
 
     def measure_costs(self) -> dict[str, float]:
-        """PL1: what a step costs on this machine, for the Pilot's features (seconds): one row at a 64-token context,
+        """PI1: what a step costs on this machine, for the Pilot's features (seconds): one row at a 64-token context,
         each further row, 1,000 prompt tokens, 1,000 attended tokens. About a second for a 4B model on a 4-core CPU."""
         bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
         rows8 = min(8, self.seqs if self.pool is None else LLAMA_MAX_SEQ)
@@ -478,7 +478,7 @@ class GgmlEngine:
         self.L.llama_memory_clear(self.memory, True)
 
     def set_threads(self, threads: int, poll: int | None = None) -> None:
-        """PL1: change how many CPU threads the next steps use (and how long they busy-wait between a graph's
+        """PI1: change how many CPU threads the next steps use (and how long they busy-wait between a graph's
         operations), on the live context; between steps only. A few milliseconds: a new thread pool is attached."""
         threads = max(1, int(threads))
         poll = POLL if poll is None else int(poll)
@@ -681,7 +681,7 @@ class GgmlEngine:
         arrived = 0
         try:
             while True:
-                if self.pilot is not None:  # PL1: threads, running cap, prompt budget and drafting for this step
+                if self.pilot is not None:  # PI1: threads, running cap, prompt budget and drafting for this step
                     ctx = (sum(len(j.ids) + len(j.tokens) for j in active.values()) / len(active)) if active else 0.0
                     decision = self.pilot.decide(len(active), len(pending), sum(len(j.ids) for j in pending), ctx)
                     if decision["threads"] != self.threads:

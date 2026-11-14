@@ -15,7 +15,7 @@ requests (N = 1, 8, 32; one warm-up block and 3 blocks; 128 tokens; greedy; the 
 Answers: the 50 checkable facts of lab/row1/facts.py through llama-server and through the engine (both greedy).
 Writes /kaggle/working/mg2.json. Usage on Kaggle: the kernel runs this file with the commit to fetch in MG2_COMMIT.
 """
-import http.client, json, os, socket, subprocess, sys, threading, time, urllib.request
+import glob, http.client, json, os, socket, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 
 W = Path("/kaggle/working") if Path("/kaggle/working").exists() else Path(os.environ.get("MG2_WORK", "/tmp/mg2"))
@@ -58,15 +58,25 @@ def build():
         SRC.mkdir(exist_ok=True)
         sh(f"cd {SRC} && pip download llama_cpp_python==0.3.16 --no-binary :all: --no-deps -d . -q && tar xzf llama_cpp_python-0.3.16.tar.gz")
         root = SRC / "llama_cpp_python-0.3.16/vendor/llama.cpp"
+        # Kaggle's default toolkit is CUDA 13; llama.cpp 4227c9b predates it, so a CUDA 12 toolkit is preferred when
+        # one is installed. CUDA::cuda_driver needs libcuda: the toolkit's stub, or the driver itself.
+        cuda = next(iter(sorted(glob.glob("/usr/local/cuda-12*"), reverse=True)), "/usr/local/cuda")
+        driver = next((p for p in [*glob.glob(f"{cuda}/lib64/stubs/libcuda.so"),
+                                   *glob.glob(f"{cuda}/targets/x86_64-linux/lib/stubs/libcuda.so"),
+                                   *glob.glob("/usr/local/cuda/lib64/stubs/libcuda.so"),
+                                   *glob.glob("/usr/lib/x86_64-linux-gnu/libcuda.so*"),
+                                   *glob.glob("/usr/local/nvidia/lib64/libcuda.so*")]), None)
+        REPORT["cuda"] = {"toolkit": cuda, "driver_lib": driver, "toolkits": glob.glob("/usr/local/cuda*")}
         sh(f"cd {root} && cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_CURL=OFF -DGGML_CUDA=ON "
-           f"-DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=ON -DCUDAToolkit_ROOT=/usr/local/cuda "
-           f"-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs > build.log 2>&1 && "
+           f"-DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=ON -DCUDAToolkit_ROOT={cuda} "
+           f"-DCMAKE_CUDA_COMPILER={cuda}/bin/nvcc -DCMAKE_LIBRARY_PATH={cuda}/lib64/stubs "
+           + (f"-DCUDA_cuda_driver_LIBRARY={driver} " if driver else "") + "> build.log 2>&1 && "
            f"cmake --build build --target llama-server llama -j 4 >> build.log 2>&1")
     REPORT["build_s"] = time.time() - t0
     pkg = W / "pkg/ironmule"
     pkg.mkdir(parents=True, exist_ok=True)
     (pkg / "__init__.py").write_text("")
-    for name in ("ggml_engine.py", "speculation.py", "ggml_agent.py"):
+    for name in ("ggml_engine.py", "speculation.py", "ggml_agent.py", "pilot.py", "draft_model.py", "pilot_weights.npz"):
         url = f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/ironmule/{name}"
         (pkg / name).write_bytes(urllib.request.urlopen(url, timeout=60).read())
     facts = urllib.request.urlopen(f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/lab/row1/facts.py",

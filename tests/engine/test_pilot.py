@@ -1,4 +1,4 @@
-"""PL1: the Pilot's features, decisions, fallbacks and speed, with a stand-in engine and made-up weights."""
+"""PI1: the Pilot's features, decisions, fallbacks and speed, with a stand-in engine and made-up weights."""
 
 import time
 import types

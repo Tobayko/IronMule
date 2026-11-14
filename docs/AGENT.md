@@ -252,6 +252,43 @@ two and nothing from three on). `/health` shows it under `ggml.draft_model`.
 without it, several visible GPUs share one model by layers (`IRONMULE_GGML_SPLIT=layer|row|none`). The width is then
 chosen within the GPU's memory. Not yet measured on a GPU: the Kaggle harness `lab/mg2/kaggle_gpu.py` is ready.
 
+## The Pilot: a trained decision network for every step (PI1, 2026-11-14)
+
+AG10 chooses a configuration while idle; the Pilot (`ironmule/pilot.py`) decides on every step of the ggml engine. It
+is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,000 weights) whose weights ship as
+`ironmule/pilot_weights.npz` (open weights; the world it was trained in and the recipe are not published).
+
+- *What it reads (20 features):* the cores this process may use (affinity and cgroup quota), how many of them other
+  programs keep busy (`/proc/stat` minus this process's own CPU time, read at most every 50 ms), this machine's step
+  costs measured when the engine starts (one row, each further row, 1,000 prompt tokens, 1,000 attended tokens),
+  whether a GPU runs the layers and a draft model is attached, how the last step's time compares with its uncontended
+  price, the running, queued and waiting prompt tokens, the mean context, arrival and token rates, its own last
+  choices and the draft acceptance seen.
+- *What it decides:* the step's CPU threads (an eighth to all of the usable cores), the running cap (1-64), the prompt
+  tokens a step may take (256 to unlimited) and whether the draft model may draft. None of these changes an answer.
+- *Why threads matter:* llama.cpp splits each matmul across its threads and waits at a barrier for the slowest.
+  When a foreign process holds a core, the thread on it runs only part of the time and every other thread waits:
+  on the 4-vCPU Xeon with Qwen3-4B Q8_0 a one-row step took 2.42 s with one busy foreign process at 4 threads and
+  0.136 s at 3, and 5.48 s at 4 threads against 0.194 s at 2 with two (lab/pi1/threads.py). Stock `llama-server` uses every core and fell from
+  7.2 to 0.24 tokens per second for one user with one foreign process (docs/LAB.md, PI1).
+- *How it was trained:* from scratch, in a dreamed world: a simulator of continuous batching whose step times follow
+  the measured costs and the measured contention collapse, randomised over machines, models, traffic and foreign
+  load, first by imitating a simple rule (threads = free cores) and then by PPO.
+- *Safety:* without the weights, with a feature outside the range it was trained on (|x| > 4 or not finite), or with
+  `IRONMULE_PILOT=0` the engine keeps its defaults (all usable cores, no cap below the engine's, no prompt budget,
+  drafting allowed). `/health` shows it under `ggml.pilot`: whether it is active and why not, the cores, the foreign
+  load it saw, its current decision, decision count and mean decision time.
+
+*Measured (2026-11-14, 4-vCPU Xeon, Qwen3-4B Q8_0, one run each; LAB.md, PI1).* Through the HTTP API, with collective
+speculation off so that only the Pilot differs from stock `llama-server` (all cores): one user 9.33 / 7.07 / 5.46 tokens
+per second with 0 / 1 / 2 busy foreign processes against 7.23 / 0.24 / 0.13, eight users 58.8 / 46.2 / 35.2 against
+23.3 / 1.41 / 0.68; first tokens 0.3-0.7 s against 0.8-149 s. It chose 4 / 3 / 2 threads; answers were token-identical
+at 4, 3, 2 and 1 threads. On an idle machine it costs nothing measurable (same engine, alternating: 9.81 against 9.81
+tokens per second for one user). In the dreamed world (240 s, 1,024 random machines) it made 10.9 % more tokens than the
+defaults with 38 % less waiting, about as well as the best hand rule. Its weights were trained on a 4-vCPU CPU in about
+33 minutes; the first version, trained without the background load a quiet server shows, gave up a core at 0.2 foreign
+cores, and the world was corrected before these weights.
+
 ## What it knows about the hardware (AG3)
 
 The world model learns what this machine's work costs. The agent also knows the machine's architecture
@@ -288,6 +325,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | :-- | :-- |
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule/ggml_agent.py` | AG10: the ggml engine's agent: step-cost model, traffic memory, dreaming, switch and revert |
+| `ironmule/pilot.py`, `ironmule/pilot_weights.npz` | PI1: the Pilot, its features, decision and open weights |
 | `ironmule/draft_model.py` | DM1: the draft model's stopping rule, calibration and KV bookkeeping |
 | `ironmule/ggml_engine.py` | GG1/SEQ1: llama.cpp's kernels in process, continuous batching, the gate, the width choice, GPU offload |
 | `native/ggml_patches/`, `tools/build_ggml.py` | FA1 and ROW1 kernels for llama.cpp, and the build that applies them |
