@@ -1,16 +1,20 @@
 """PI1 on the real machine: the engine with its defaults against the engine with the Pilot, under foreign CPU load.
 Qwen3-4B Q8_0, shared pool (cap 32), N chat requests at once (64 tokens), H busy foreign processes the whole time,
-or ("dyn") one that switches on and off every 6 s. Prints tokens/s, mean first token and what the Pilot chose.
+or ("dyn") one that switches on and off every 6 s, or ("d0.5") one busy that fraction of every 20 ms. Prints tokens/s, mean first token and what the Pilot chose.
 Usage: real.py GGUF MODE(default|pilot) OUT.json  (REAL_HOGS=0,1,2,dyn REAL_NS=1,8,16 REAL_BLOCKS REAL_TOKENS: a shorter run)"""
 import json, multiprocessing as mp, os, sys, time
 sys.path.insert(0, "/home/user/IronMule")
-def hog(stop, on):
+def hog(stop, on, duty=1.0):
     x = 0
     while not stop.is_set():
-        if on.is_set():
+        if not on.is_set():
+            time.sleep(0.01)
+        elif duty >= 1.0:
             for _ in range(100000): x += 1
         else:
-            time.sleep(0.01)
+            t = time.perf_counter()
+            while time.perf_counter() - t < 0.02 * duty: pass
+            time.sleep(0.02 * (1 - duty))
 if __name__ == "__main__":
     gguf, mode, out = sys.argv[1], sys.argv[2], sys.argv[3]
     os.environ["IRONMULE_PILOT"] = "1" if mode == "pilot" else "0"
@@ -23,13 +27,14 @@ if __name__ == "__main__":
            for i in range(64) for q in ask[i % 4:i % 4 + 1]]
     e.run([Job(ids[0], 8)])
     res = {"mode": mode, "rows": []}
-    HOGS = [h if h == "dyn" else int(h) for h in os.environ.get("REAL_HOGS", "0,1,2,dyn").split(",")]
+    HOGS = [h if h == "dyn" or h.startswith("d") else int(h) for h in os.environ.get("REAL_HOGS", "0,1,2,dyn").split(",")]
     NS = [int(n) for n in os.environ.get("REAL_NS", "1,8,16").split(",")]
     BLOCKS, TOKENS = os.environ.get("REAL_BLOCKS"), int(os.environ.get("REAL_TOKENS", "64"))
     for hogs in HOGS:
         stop, on = mp.Event(), mp.Event()
-        n_h = 1 if hogs == "dyn" else hogs
-        ps = [mp.Process(target=hog, args=(stop, on), daemon=True) for _ in range(n_h)]
+        part = isinstance(hogs, str) and hogs.startswith("d0")
+        n_h = 1 if hogs == "dyn" or part else hogs
+        ps = [mp.Process(target=hog, args=(stop, on, float(hogs[1:]) if part else 1.0), daemon=True) for _ in range(n_h)]
         [p.start() for p in ps]
         if hogs != "dyn": on.set()
         time.sleep(1.0)
