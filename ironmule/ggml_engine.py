@@ -28,7 +28,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-SEQS, SEQ_CTX, MAX_ROWS, THREADS = 8, 2048, 16, 4
+SEQS, SEQ_CTX, MAX_ROWS = 8, 2048, 16
+
+
+def _usable_cores() -> int:
+    from .pilot import usable_cores
+
+    return usable_cores()
+
+
+# PL1 (2026-11-14): every core this process may use (affinity and cgroup quota), not a fixed 4; IRONMULE_GGML_THREADS
+# sets a number. The Pilot then chooses how many of them a step uses.
+THREADS = int(os.environ.get("IRONMULE_GGML_THREADS") or _usable_cores())
 # ROW1 (2026-11-12): sequences and per-sequence context can be raised for a run, e.g. 32 requests in one batch
 SEQS = int(os.environ.get("IRONMULE_GGML_SEQS", SEQS))
 SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
@@ -42,6 +53,7 @@ OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves withi
 PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", 0))
 PASSED_OVER = 8
 COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
+PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PL1: the decision network, when its weights are present
 DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
 DRAFT_SLOTS = int(os.environ.get("IRONMULE_GGML_DRAFT_SLOTS", DRAFT_MAX_RUNNING))  # DM1: its sequences
 LLAMA_MAX_SEQ = 64  # llama.cpp's limit on sequence ids in one context (4227c9b)
@@ -278,6 +290,8 @@ class GgmlEngine:
     observer: Callable[[int, int, int, float], None] | None = None  # AG10: (rows, prompt, kv, seconds) of each step
     gpu_layers = 0
     pool: "SharedPool | None" = None
+    pilot: Any = None
+    pilot_refused: str | None = None
     collective: Any = None
     drafter: Any = None
     draft_refused: str | None = None
@@ -314,6 +328,59 @@ class GgmlEngine:
         self.drafter = None
         if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies
             self.drafter = self._open_drafter(draft_gguf, threads)
+        self.pilot = None
+        if PILOT and model is None:  # PL1: the decision network, with this machine's measured step costs
+            from .pilot import Pilot
+
+            pilot = Pilot(self, self.measure_costs(), max_cap=self.cap if self.pool is not None else self.seqs,
+                          gpu=bool(self.gpu_layers))
+            self.pilot = pilot if pilot.active else None
+            self.pilot_refused = None if pilot.active else pilot.reason
+
+    def measure_costs(self) -> dict[str, float]:
+        """PL1: what a step costs on this machine, for the Pilot's features (seconds): one row at a 64-token context,
+        each further row, 1,000 prompt tokens, 1,000 attended tokens. About a second for a 4B model on a 4-core CPU."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        rows8 = min(8, self.seqs if self.pool is None else LLAMA_MAX_SEQ)
+
+        def median(fn, n=4):
+            times = []
+            for _ in range(n):
+                started = time.perf_counter()
+                fn()
+                times.append(time.perf_counter() - started)
+            return sorted(times)[len(times) // 2]
+
+        self._clear()
+        started = time.perf_counter()
+        self._decode([(bos, j, 0, j == 255) for j in range(256)])
+        prefill_1k = (time.perf_counter() - started) * 1000 / 256
+        pos = [256]
+
+        def one_long():
+            self._decode([(bos, pos[0], 0, True)])
+            pos[0] += 1
+        t_long = median(one_long)
+        self._clear()
+        self._decode([(bos, j, s, j == 63) for s in range(rows8) for j in range(64)])
+        pos = [64]
+
+        def one():
+            self._decode([(bos, pos[0], 0, True)])
+            pos[0] += 1
+        t_one = median(one)
+        pos8 = [pos[0]]
+
+        def eight():
+            self._decode([(bos, pos8[0], s, True) for s in range(rows8)])
+            pos8[0] += 1
+        for s in range(1, rows8):  # the other sequences to the same position
+            for p in range(64, pos[0]):
+                self._decode([(bos, p, s, False)])
+        t_eight = median(eight)
+        self._clear()
+        return {"step_one": t_one, "row": max(1e-5, (t_eight - t_one) / max(1, rows8 - 1)),
+                "prefill_1k": prefill_1k, "kv_1k": max(1e-5, (t_long - t_one) / 0.192)}
 
     def _open_drafter(self, gguf: str, threads: int) -> Any:
         """The draft model with `DRAFT_SLOTS` sequences, or None (with the reason in `draft_refused`) where its
@@ -409,6 +476,23 @@ class GgmlEngine:
         self._decode([(bos, 64, seq, True) for seq in range(self.seqs)])
         self._decode([(bos, 65, 0, True)])
         self.L.llama_memory_clear(self.memory, True)
+
+    def set_threads(self, threads: int, poll: int | None = None) -> None:
+        """PL1: change how many CPU threads the next steps use (and how long they busy-wait between a graph's
+        operations), on the live context; between steps only. A few milliseconds: a new thread pool is attached."""
+        threads = max(1, int(threads))
+        poll = POLL if poll is None else int(poll)
+        if threads == self.threads and poll == getattr(self, "poll", POLL):
+            return
+        if getattr(self, "_threadpool", None):
+            try:
+                self._free_pool()
+            except Exception:  # noqa: BLE001 - the context's own pool serves meanwhile
+                pass
+            self._threadpool = None
+        self.L.llama_set_n_threads(self.ctx, threads, threads)
+        self.threads, self.poll = threads, poll
+        self._threadpool = self._attach_threadpool(threads, poll)
 
     def _attach_threadpool(self, threads: int, poll: int) -> Any:
         """llama-server's own thread pool: `threads` threads that busy-wait up to `poll` (its default 50) between a
@@ -593,22 +677,34 @@ class GgmlEngine:
                 return True
             return False
 
+        decision = {"cap": 1 << 30, "budget": 1 << 30, "draft": True}
+        arrived = 0
         try:
             while True:
-                if admit is not None and self._slots():
-                    more = admit(self._slots())
+                if self.pilot is not None:  # PL1: threads, running cap, prompt budget and drafting for this step
+                    ctx = (sum(len(j.ids) + len(j.tokens) for j in active.values()) / len(active)) if active else 0.0
+                    decision = self.pilot.decide(len(active), len(pending), sum(len(j.ids) for j in pending), ctx)
+                    if decision["threads"] != self.threads:
+                        self.set_threads(decision["threads"])
+
+                def room() -> int:
+                    return max(0, min(self._slots(), decision["cap"] - len(active)))
+
+                if admit is not None and room():
+                    more = admit(room())
                     served.extend(more)
                     pending.extend(more)
+                    arrived += len(more)
                 # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
                 # budget (whole prompts, at least one), and one passed over too often first
                 fresh: list[tuple[int, Job, int]] = []
-                budget = PROMPT_BUDGET or self.seq_ctx
+                budget = min(PROMPT_BUDGET or self.seq_ctx, decision["budget"])
                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
                         pending.remove(job)
                         continue
-                    if not self._slots():
+                    if not self._slots() or len(active) + len(fresh) >= decision["cap"]:
                         job.passed_over += 1
                         continue
                     if len(job.ids) + job.limit > self.seq_ctx:
@@ -644,7 +740,7 @@ class GgmlEngine:
                     if pending:
                         continue
                     if admit is not None:
-                        more = admit(self._slots())
+                        more = admit(room())
                         if more:
                             served.extend(more)
                             pending.extend(more)
@@ -655,7 +751,8 @@ class GgmlEngine:
                 order = sorted(active)
                 offers = []
                 modelled: dict[int, list[int]] = {}
-                if self.drafter is not None and order and len(order) < self.max_rows:  # DM1: the draft model's drafts
+                if (self.drafter is not None and order and len(order) < self.max_rows
+                        and decision["draft"]):  # DM1: the draft model's drafts, where the Pilot allows them
                     wants = {}
                     # the step's free rows, shared by the requests the draft model has slots for: a draft beyond a
                     # request's share would be computed and then not verified
@@ -732,6 +829,11 @@ class GgmlEngine:
                             break
                 if self.drafter is not None and order and not batched:  # DM1: what this step cost and made
                     self.drafter.end_step(seconds, len(order), decode_rows - len(order), produced)
+                if self.pilot is not None and rows:
+                    acc = (self.drafter.stop.accepted / self.drafter.stop.drafted
+                           if self.drafter is not None and self.drafter.stop.drafted else None)
+                    self.pilot.observe(seconds, produced + len(batched), arrived, acc)
+                    arrived = 0
                 for seq, job in batched:  # each prompt asked for logits at its last position only
                     active[seq] = job
                     take(seq, job, picks[at])
@@ -778,6 +880,8 @@ class GgmlEngine:
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
+                **({"pilot": self.pilot.status()} if self.pilot is not None else
+                   {"pilot": {"active": False, "reason": self.pilot_refused}} if self.pilot_refused else {}),
                 **({"draft_model": self.drafter.summary()} if self.drafter is not None else
                    {"draft_model": {"refused": self.draft_refused}} if self.draft_refused else {}),
                 **({"speculation": self.policy.summary()} if self.policy is not None else {"speculation": "off"})}

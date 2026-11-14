@@ -59,7 +59,8 @@ def build():
         sh(f"cd {SRC} && pip download llama_cpp_python==0.3.16 --no-binary :all: --no-deps -d . -q && tar xzf llama_cpp_python-0.3.16.tar.gz")
         root = SRC / "llama_cpp_python-0.3.16/vendor/llama.cpp"
         sh(f"cd {root} && cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_CURL=OFF -DGGML_CUDA=ON "
-           f"-DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=ON > build.log 2>&1 && "
+           f"-DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=ON -DCUDAToolkit_ROOT=/usr/local/cuda "
+           f"-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs > build.log 2>&1 && "
            f"cmake --build build --target llama-server llama -j 4 >> build.log 2>&1")
     REPORT["build_s"] = time.time() - t0
     pkg = W / "pkg/ironmule"

@@ -84,6 +84,9 @@ def build(tree: Path, cuda: str | None, jobs: int) -> Path:
     options = ["-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=ON", "-DLLAMA_CURL=OFF", "-DGGML_NATIVE=ON"]
     if cuda:
         options += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_ARCHITECTURES={cuda.replace(',', ';')}"]
+        if Path("/usr/local/cuda/bin/nvcc").exists():  # Kaggle: find the toolkit and its driver stub (CUDA::cuda_driver)
+            options += ["-DCUDAToolkit_ROOT=/usr/local/cuda", "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc",
+                        "-DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs"]
     run(["cmake", "-B", "build", *options], cwd=tree, log=log)
     run(["cmake", "--build", "build", "--target", "llama", "llama-server", "-j", str(jobs)], cwd=tree, log=log)
     return tree / "build" / "bin"

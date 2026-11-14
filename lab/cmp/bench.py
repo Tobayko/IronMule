@@ -240,6 +240,10 @@ def main(argv=None) -> int:
                 result.setdefault("multiturn", {})[str(n)] = r = multiturn(client, tok, n)
                 print(args.label, "multiturn", n, round(r["tok_s"], 1), {k: round(v, 2) for k, v in r["ttft_by_turn"].items()},
                       "failed", r["failed"], flush=True)
+        elif workload == "quick":  # one block of N requests, 32 tokens, no warm-up: for very slow (overloaded) setups
+            for n in [int(x) for x in args.ns.split(",")]:
+                result.setdefault("quick", {})[str(n)] = r = burst(client, tok, n, False, 7, limit=32)
+                print(args.label, "quick", n, round(r["tok_s"], 2), "tok/s, first", round(r["ttft_mean_s"], 2), flush=True)
         elif workload == "poisson":
             result.setdefault("poisson", {})[str(args.rate)] = r = poisson(client, tok, args.rate)
             print(args.label, "poisson", json.dumps({k: round(v, 2) for k, v in r.items()}), flush=True)

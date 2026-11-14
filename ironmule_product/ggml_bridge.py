@@ -112,6 +112,7 @@ class GgmlBridge:
         return {"ggml_steps": summary["steps"], **({"speculation": summary["speculation"]}
                                                    if isinstance(summary["speculation"], dict) else {}),
                 **({"draft_model": summary["draft_model"]} if "draft_model" in summary else {}),
+                **({"pilot": summary["pilot"]} if "pilot" in summary else {}),
                 **({"ggml_agent": self._agent.status()} if self._agent is not None else {})}
 
     def eos_ids(self) -> tuple[int, ...]:
