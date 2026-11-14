@@ -1107,3 +1107,30 @@ here); the ggml worker now has the 600 s the dense plan has.
 
 *Next:* a GPU-trained version (Kaggle, 8,192 servers, 400 iterations, two seeds) against these weights; GPU servers
 (MG2), where the Pilot's thread head does not act and only cap, budget and drafting remain.
+
+### 2026-11-14 MG2 v3: the first GPU numbers (Kaggle T4 x2, Qwen3-4B)
+
+`lab/mg2/kaggle_gpu.py` at 43d78f5 on a Kaggle "GPU T4 x2" session (CUDA build of llama.cpp 4227c9b for sm_75, an hour
+of the session). Qwen3-4B Q4_K_M for llama-server and IronMule's engine (`ironmule_*`: per-sequence KV, speculation
+from the context, Pilot active; one GPU or one engine per GPU), Qwen3-4B in float16 for vLLM; 128 tokens of a short
+story per request, greedy, N requests at once, median of 3 blocks after a warm-up, tokens/s and mean first token:
+
+| arm | 1 request | 8 requests | 32 requests |
+| --- | --- | --- | --- |
+| llama-server, one GPU | 53.8, 0.022 s | 146.4, 0.137 s | 504.0, 0.389 s |
+| llama-server, split over both | 64.4, 0.019 s | 188.1, 0.097 s | 453.9, 0.334 s |
+| llama-server, one per GPU | 36.7, 0.028 s | 172.2, 0.135 s | 735.0, 0.275 s |
+| vLLM, one GPU (float16) | 22.1, 0.048 s | 185.0, 0.092 s | 473.7, 0.153 s |
+| **IronMule, one GPU** | **110.4, 0.016 s** | 118.1, 0.038 s | **683.9, 0.039 s** |
+| **IronMule, one per GPU** | **110.3, 0.016 s** | 177.7, 0.035 s | **958.5, 0.028 s** |
+
+Facts: 49 of 50 through llama-server and through the engine (same answers checked), 50 of 50 for vLLM's float16
+model. IronMule is 1.7-2x the best llama-server arm for one request and 1.3x for 32 (958.5 against 735.0 for both
+setups one per GPU), with first tokens about 4x sooner at 8 and 10x sooner at 32 than llama-server in the same setup. At 8 requests on one GPU it is behind llama-server
+(146.4) and vLLM (185.0): 8 rows cost almost as long as 8 single steps, which the CPU does not show (8 story requests
+there: 62-68 tok/s against 10 for one, per-sequence or shared KV alike). Not measured: SGLang (its `outlines_core`
+has no wheel for Kaggle's Python 3.13), Gemma 3, Mistral 7B and Llama 3.1 8B (llama-server could not load them: vLLM's
+engine process outlived its killed parent and kept GPU 0's memory). v4 (30dcc74) kills the Python servers' process
+groups and waits for the memory, installs SGLang into a 3.12 venv, adds vLLM with Qwen3-4B-AWQ (4-bit), adds the engine
+with one shared KV pool, records the engine's step times by rows, and reuses this build (a private dataset) instead of
+building again.

@@ -102,11 +102,13 @@ llama.cpp's flash attention, gate ratio 1.00001; end to end 1.19x-1.75x the bett
 long system prompt (LAB.md, KV1 and FA1). Open: an AMX-BF16 or AVX512-FP16 variant, prefill with blocks of queries,
 other families' head layouts on hardware (Gemma 3, Llama 3.2, Mistral checked on this CPU, LAB.md).
 
-### MG2 — The ggml engine on GPUs, one or many (2026-11-13; code ready, not measured)
+### MG2 — The ggml engine on GPUs, one or many (2026-11-13; first numbers 2026-11-14)
 
 GPU offload, split modes and one engine per GPU (`--gpus all --gguf`). `lab/mg2/kaggle_gpu.py` measures it on a Kaggle
-T4 x2 against `llama-server` (one GPU, split, one server per GPU) on Qwen3-4B, Gemma 3 4B, Mistral 7B and Llama 3.1 8B,
-about 2 GPU hours. Not run: the weekly Kaggle GPU quota (30 h) was used up on 2026-11-13.
+T4 x2 against `llama-server` (one GPU, split, one server per GPU), vLLM and SGLang on Qwen3-4B, Gemma 3 4B, Mistral 7B
+and Llama 3.1 8B. v3 (docs/LAB.md, 2026-11-14 MG2 v3) measured Qwen3-4B: IronMule 110 tok/s for one request against
+64 for the best llama-server arm and 22 for vLLM, 958 against 735 and 474 for 32, but behind both at 8 requests on one
+GPU; the other models were not measured (a harness fault, fixed in v4).
 
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
