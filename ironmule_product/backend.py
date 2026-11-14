@@ -91,6 +91,7 @@ class MLXWorkerClient:
             raise ValueError("the ggml engine serves only after its quality gate passed (GG1)")
         self.ggml_gguf, self.ggml_gate = ggml_gguf, ggml_gate
         self.speculation_status: dict[str, Any] | None = None  # SP2: the policy's last summary a request reported
+        self.draft_model_status: dict[str, Any] | None = None  # DM1: the draft model, as its last request saw it
         self.ggml_agent_status: dict[str, Any] | None = None  # AG10: the ggml engine's agent, as its last request saw it
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
@@ -872,6 +873,8 @@ class MLXWorkerClient:
                         engine = event.get("engine")
                         if isinstance(engine, dict) and isinstance(engine.get("speculation"), dict):
                             self.speculation_status = engine["speculation"]  # SP2: shown under /health
+                        if isinstance(engine, dict) and isinstance(engine.get("draft_model"), dict):
+                            self.draft_model_status = engine["draft_model"]  # DM1: shown under /health
                         if isinstance(engine, dict) and isinstance(engine.get("ggml_agent"), dict):
                             self.ggml_agent_status = engine["ggml_agent"]  # AG10: shown under /health
                         digest = event.get("prompt_ids_sha256")

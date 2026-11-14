@@ -1004,3 +1004,35 @@ efficiency, ROW1); (1) for one user, speculation: rows cost 2.4 ms against a 99 
 about 2.4 % each, and with per-token acceptance a the expected tokens per step are (1 - a^(k+1)) / (1 - a): a draft source
 with a = 0.6 at k = 7 would give 2.4 tokens for 1.17 steps, 2.1x; prompt lookup's a on free text is far lower, which is
 why tree drafts (several candidates per position, cheap as shared-pool sequences) are the next mathematical lever.
+
+### 2026-11-14 DM1: a draft model for one or two requests, stopped by an optimal rule (engine numbers; product run pending)
+
+RL-MATH put one request at 92 % of the memory bound and a verification row at 2-3 % of a step: one user can only gain
+by more tokens per read of the weights. Target Qwen3-4B Q8_0, draft Qwen3-0.6B Q8_0 (same tokenizer), greedy, 8 prompts
+(story, explanation, code, list, JSON, summary, instructions), 128 tokens, B16 + FA1 in the library.
+
+*Probe* (`lab/dm1/probe.py`, raw decode calls, host at 2.3 GHz): plain 12.9-13.2 tok/s. Fixed draft length k = 3 / 5 / 7:
+20.6 / 19.5 / 17.6 tok/s (1.56x / 1.48x / 1.33x); a draft call 15-17 ms, a verify step 82-89 ms. The optimal myopic
+stopping rule (draft on while q x mean chance / (call + row) beats the step's rate so far; chance from the draft's
+top-1 probability through a calibration learned online): **21.9-22.0 tok/s, 1.71x**, 2.8 tokens per step, acceptance
+0.66. A first form of the rule that priced the already computed draft instead of the next one made 1.49-1.56x.
+Learned calibration (acceptance by confidence decile): 0.03, 0.14, 0.28, 0.30, 0.40, 0.45, 0.53, 0.74, 0.77, 0.97.
+8 of 8 answers token-identical to plain decoding in every run.
+
+*In the engine* (`ironmule/draft_model.py`, `GgmlEngine(draft_gguf=...)`, `lab/dm1/engine_run.py`, shared pool,
+collective speculation off for the comparison), tokens/s plain / with the draft model:
+
+| Requests at once | plain | draft model | |
+| --- | --- | --- | --- |
+| 1 | 13.67 | **22.16** | 1.62x |
+| 2 | 23.78 | **32.37** | 1.36x |
+| 4 | 44.35 | 42.96 | 0.97x (it drafts only while at most 2 run) |
+| 8 | 79.06 | 76.57 | 0.97x |
+
+32 of 32 answers token-identical. With four draft slots and no limit on the load, 4 and 8 requests lost (42 and 60-65
+tok/s): steps with drafts made 33-45 tok/s at 3-7 running requests where plain steps make 36-70, although the cost
+model predicted about +25 % at 4. Not explained yet (draft calls of 2-3 rows measured 27-32 ms there against 16.5 ms
+for one row). So the draft model rests above `IRONMULE_GGML_DRAFT_MAX_RUNNING` = 2, and a measured check stops it at
+any load where steps with drafts were slower than plain ones. Product: `ironmule serve --gguf BIG --draft-gguf SMALL`.
+The session's container moved to another host (2.1 GHz) during this entry; the product numbers follow on that host
+with their own plain baseline.

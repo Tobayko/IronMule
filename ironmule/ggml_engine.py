@@ -42,8 +42,11 @@ OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves withi
 PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", 0))
 PASSED_OVER = 8
 COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
+DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
+DRAFT_SLOTS = int(os.environ.get("IRONMULE_GGML_DRAFT_SLOTS", DRAFT_MAX_RUNNING))  # DM1: its sequences
 LLAMA_MAX_SEQ = 64  # llama.cpp's limit on sequence ids in one context (4227c9b)
 SHARE_WAIT = 64  # SP1: a prompt waits a step for a fresh one when that one would give it this many more shared tokens
+DRAFT_BUCKET = 200  # DM1: drafts of the draft model (their lengths come from its own stopping rule)
 MAX_DRAFT_SLACK = 8  # SP1: cells a running request may take beyond its answer for draft rows (speculation.MAX_DRAFT)  # a waiting request passed over this often by shorter prompts goes first
 # ROW1 round 5 (2026-11-12): a finished request's KV stays in its sequence, and a new request takes the free sequence
 # whose kept tokens share the longest prefix with its prompt and prefills only the rest, as llama-server's
@@ -276,11 +279,13 @@ class GgmlEngine:
     gpu_layers = 0
     pool: "SharedPool | None" = None
     collective: Any = None
+    drafter: Any = None
+    draft_refused: str | None = None
 
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
                  kv_unified: bool = False, kv_f32: bool = False, kv_q8: bool = False, model: Any = None,
-                 shared: bool = False, cap: int | None = None):
+                 shared: bool = False, cap: int | None = None, draft_gguf: str | None = None):
         import numpy as np
 
         L = bindings()
@@ -306,6 +311,39 @@ class GgmlEngine:
                    kv_q8=kv_q8)
         self.steps = 0
         self._warm_up()
+        self.drafter = None
+        if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies
+            self.drafter = self._open_drafter(draft_gguf, threads)
+
+    def _open_drafter(self, gguf: str, threads: int) -> Any:
+        """The draft model with `DRAFT_SLOTS` sequences, or None (with the reason in `draft_refused`) where its
+        tokenizer is not this model's."""
+        from .draft_model import Drafter
+
+        engine = GgmlEngine(gguf, threads=threads, seqs=DRAFT_SLOTS, seq_ctx=self.seq_ctx, speculate=False,
+                            flash_attn=True)
+        if engine.n_vocab != self.n_vocab or engine.tokenize(CHECK_TEXT) != self.tokenize(CHECK_TEXT):
+            engine.close()
+            self.draft_refused = "the draft GGUF's tokenizer is not the model's"
+            return None
+        return Drafter(engine, max_running=DRAFT_MAX_RUNNING)
+
+    def _decode_conf(self, rows: list[tuple[int, int, int, bool]]) -> list[tuple[int, float]]:
+        """As `_decode`, but per row that asks for logits its top token and that token's probability."""
+        b, np = self.batch, self.np
+        b.n_tokens = len(rows)
+        for i, (token, pos, seq, logits) in enumerate(rows):
+            b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
+            b.seq_id[i][0] = seq
+        if self.L.llama_decode(self.ctx, b) != 0:
+            raise RuntimeError("llama_decode failed")
+        out = []
+        for i, (_, _, _, logits) in enumerate(rows):
+            if logits:
+                row = np.ctypeslib.as_array(self.L.llama_get_logits_ith(self.ctx, i), shape=(self.n_vocab,))
+                top = int(row.argmax())
+                out.append((top, float(1.0 / np.exp(row - row[top]).sum())))
+        return out
 
     def _open(self, seqs: int, seq_ctx: int, *, flash_attn: bool = False, kv_unified: bool = False,
               kv_f32: bool = False, kv_q8: bool = False) -> None:
@@ -514,6 +552,8 @@ class GgmlEngine:
             job.reason, job.finished_ns = reason, time.monotonic_ns()
             if self.collective is not None and reason in ("eos", "length") and job.tokens:
                 self.collective.add(job.tokens)  # SP4: this answer becomes a draft source for later requests
+            if self.drafter is not None:
+                self.drafter.release(seq)
             held = len(job.ids) + len(job.tokens) - 1  # every token but the last went through the model
             if self.pool is not None:  # SP1: the pool keeps its cells as a cache, or frees them
                 ok = (keep and self.prefix_reuse and held > 0
@@ -614,16 +654,41 @@ class GgmlEngine:
                 # the prompts of the requests that start now (beyond one call's tokens, the rest go first on their own).
                 order = sorted(active)
                 offers = []
+                modelled: dict[int, list[int]] = {}
+                if self.drafter is not None and order and len(order) < self.max_rows:  # DM1: the draft model's drafts
+                    wants = {}
+                    # the step's free rows, shared by the requests the draft model has slots for: a draft beyond a
+                    # request's share would be computed and then not verified
+                    share = (self.max_rows - len(order)) // max(1, min(len(order), len(self.drafter.held)))
+                    for seq in order:
+                        job = active[seq]
+                        pos = len(job.ids) + len(job.tokens) - 1
+                        room = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos, share)
+                        if room > 0:
+                            wants[seq] = (job.ids + job.tokens, room)
+                    modelled = self.drafter.draft(wants, len(order)) if wants else {}
                 for seq in order:
                     job = active[seq]
                     pos = len(job.ids) + len(job.tokens) - 1
                     room = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos)
+                    if seq in modelled:
+                        offers.append((modelled[seq], DRAFT_BUCKET))
+                        continue
                     offer = draft(job.ids + job.tokens, room) if self.policy is not None and room > 0 else ([], 0)
                     if self.collective is not None and room > 0 and len(offer[0]) < 2:  # SP4: others' answers
                         other = self.collective.draft(job.ids + job.tokens, room)
                         offer = other if len(other[0]) > len(offer[0]) else offer
                     offers.append(offer)
-                ks = self.policy.choose(offers) if self.policy is not None and order else [0] * len(order)
+                if modelled:  # the stopping rule chose these lengths; the others share what the step's rows leave
+                    rest = [([], 0) if seq in modelled else offer for seq, offer in zip(order, offers)]
+                    ks = self.policy.choose(rest) if self.policy is not None else [0] * len(order)
+                    budget = self.max_rows - len(order) - sum(ks)
+                    for i, seq in enumerate(order):
+                        if seq in modelled:
+                            ks[i] = max(0, min(len(modelled[seq]), budget))
+                            budget -= ks[i]
+                else:
+                    ks = self.policy.choose(offers) if self.policy is not None and order else [0] * len(order)
                 rows: list[tuple[int, int, int, bool]] = []
                 for seq, (drafts, _), k in zip(order, offers, ks):
                     job = active[seq]
@@ -649,19 +714,24 @@ class GgmlEngine:
                     self.observer(decode_rows, len(rows) - decode_rows,
                                   sum(len(j.ids) + len(j.tokens) for j in active.values()), seconds)
                 self.steps += 1
-                at = 0
+                at = produced = 0
                 for seq, (drafts, bucket), k in zip(order, offers, ks):
                     job = active[seq]
                     pos = len(job.ids) + len(job.tokens) - 1
                     new = accept(list(drafts[:k]), picks[at:at + k + 1])
                     at += k + 1
-                    if k and self.policy is not None:
+                    produced += len(new)
+                    if seq in modelled:
+                        self.drafter.settle(seq, k, len(new) - 1)
+                    elif k and self.policy is not None:
                         self.policy.observe_drafts(bucket, k, len(new) - 1)
                     if k:
                         self.L.llama_memory_seq_rm(self.memory, seq, pos + len(new), -1)  # rejected positions
                     for token in new:
                         if take(seq, job, token):
                             break
+                if self.drafter is not None and order and not batched:  # DM1: what this step cost and made
+                    self.drafter.end_step(seconds, len(order), decode_rows - len(order), produced)
                 for seq, job in batched:  # each prompt asked for logits at its last position only
                     active[seq] = job
                     take(seq, job, picks[at])
@@ -708,9 +778,14 @@ class GgmlEngine:
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
+                **({"draft_model": self.drafter.summary()} if self.drafter is not None else
+                   {"draft_model": {"refused": self.draft_refused}} if self.draft_refused else {}),
                 **({"speculation": self.policy.summary()} if self.policy is not None else {"speculation": "off"})}
 
     def close(self) -> None:
+        if getattr(self, "drafter", None) is not None:
+            self.drafter.close()
+            self.drafter = None
         self.close_context()
         if getattr(self, "model", None):
             if getattr(self, "_owns_model", True):
@@ -960,7 +1035,8 @@ engine.close()
 
 
 def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_ctx: int | None = None,
-                     cache: Path | None = None, root: Path | None = None, device: str | None = None) -> dict[str, Any]:
+                     cache: Path | None = None, root: Path | None = None, device: str | None = None,
+                     extra_bytes: int = 0) -> dict[str, Any]:
     """SEQ1: how many sequences the engine serves, chosen on this machine. It sees the memory the KV cache may take at
     the request length it promises (`seq_ctx`), measures the widths that fit (`measure_widths`), and keeps doubling
     while a doubling buys `WIDTH_GAIN` (`decide_width`). Remembered per GGUF, settings, request length, engine and
@@ -976,6 +1052,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         if found is not None:
             available, total = found
     key = hashlib.sha256(json.dumps([file_sha256(gguf), settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS,
+                                     int(extra_bytes) >> 28,
                                      WIDTH_GAIN, machine_key(), round(total / 2**30)], sort_keys=True).encode()
                          ).hexdigest()[:24]
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
@@ -1001,7 +1078,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         except (OSError, ValueError, IndexError, subprocess.SubprocessError):
             return None
 
-    model_bytes = os.path.getsize(gguf)
+    model_bytes = os.path.getsize(gguf) + int(extra_bytes)  # DM1: a draft model's weights and KV take memory too
     cell = child(CELL_CHILD, {"settings": settings})
     record: dict[str, Any] = {"seq_ctx": seq_ctx, "memory_available": available, "memory_total": total,
                               "memory": "gpu" if on_gpu else "host",

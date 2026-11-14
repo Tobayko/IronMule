@@ -17,6 +17,13 @@ for e in ${3//,/ }; do
       python ironmule_cli.py serve --state-dir $ST --model Qwen/Qwen3-1.7B --gguf $G --agent on --port 8301 > $O/ironmule.log 2>&1 &
     PID=$!; wait_up http://127.0.0.1:8301/health && python lab/cmp/bench.py http://127.0.0.1:8301 Qwen/Qwen3-1.7B ironmule $O/ironmule.json --workloads $W ${NS_ARGS:-} >> $O/summary.txt 2>&1
     curl -s http://127.0.0.1:8301/health > $O/ironmule_health.json; kill $PID; wait $PID ;;
+  ironmuledraft)  # DM1: the same with a draft model (IRONMULE_CMP_DRAFT names the small GGUF)
+    ST=$NS/cmp/state-ironmule
+    [ -d $ST ] || { python ironmule_cli.py setup --state-dir $ST --mode server >/dev/null; python ironmule_cli.py models add Qwen/Qwen3-1.7B --state-dir $ST >/dev/null; }
+    GLIBC_TUNABLES=glibc.malloc.hugetlb=1 IRONMULE_GGML_BINDINGS=$SP/src/llama_cpp_python-0.3.16 LLAMA_CPP_LIB_PATH=$LIB ROW1_GGML=B16 \
+      python ironmule_cli.py serve --state-dir $ST --model Qwen/Qwen3-1.7B --gguf $G --draft-gguf $IRONMULE_CMP_DRAFT --agent on --port 8307 > $O/ironmuledraft.log 2>&1 &
+    PID=$!; wait_up http://127.0.0.1:8307/health && python lab/cmp/bench.py http://127.0.0.1:8307 Qwen/Qwen3-1.7B ironmule-draft $O/ironmuledraft.json --workloads $W ${NS_ARGS:-} >> $O/summary.txt 2>&1
+    curl -s http://127.0.0.1:8307/health > $O/ironmuledraft_health.json; kill $PID; wait $PID ;;
   llama)
     ROW1_GGML=0 FA1=0 LLAMA_CPP_LIB_PATH=$LIB $LIB/llama-server -m $G --host 127.0.0.1 --port 8302 -t 4 -np 32 -c 32768 --no-webui --jinja > $O/llama.log 2>&1 &
     PID=$!; wait_up http://127.0.0.1:8302/health && python lab/cmp/bench.py http://127.0.0.1:8302 qwen llama-server $O/llama.json --workloads $W ${NS_ARGS:-} >> $O/summary.txt 2>&1

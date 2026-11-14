@@ -221,6 +221,9 @@ class ProductService:
                 pool = self.backend.ggml_gate.get("shared_serving")
                 if isinstance(pool, dict):  # SP1: one KV pool with shared prefixes, its gate and how many run at once
                     result["ggml"]["shared_pool"] = {k: pool.get(k) for k in ("cap", "ratio", "interval")}
+                drafting = getattr(self.backend, "draft_model_status", None)
+                if isinstance(drafting, dict):  # DM1: the draft model's calibration, costs and what it brought
+                    result["ggml"]["draft_model"] = dict(drafting)
                 agent = getattr(self.backend, "ggml_agent_status", None)
                 if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
                     result["ggml"]["agent"] = dict(agent)

@@ -234,6 +234,19 @@ perplexity ratio to llama.cpp's default was 1.00001. `python tools/build_ggml.py
 ROW1's AMX kernels for Q8_0 weights, which serve only with `ROW1_GGML=B16` set); built from scratch and checked with the
 engine's real-GGUF tests on 2026-11-13.
 
+**A draft model for one or two requests (DM1, 2026-11-14).** One request alone sits at the memory bound (RL-MATH in
+LAB.md: 92 % of what the memory can deliver), so it can only gain by getting several tokens out of one read of the
+weights, and with the ROW1/FA1 kernels a verification row costs 2-3 % of a step. With `--draft-gguf SMALL.gguf` a small
+model of the same family (the same tokenizer; checked at the start, else it is refused and `/health` says so) drafts
+the next tokens and the served model verifies them in its step; a draft is kept only where it is the served model's own
+next token. How far to draft is decided token by token by the optimal myopic rule (`ironmule/draft_model.py`): one more
+draft costs a draft call and a row and adds q x p expected tokens; it goes on while that beats the step's rate so far.
+p comes from the draft model's own confidence through a calibration learned online (accepted or not, by confidence
+bin), the costs from this machine's measured draft calls and steps, and a direct check stops drafting at a load where
+steps with drafts measured slower than plain ones (tried again every 200 steps). It drafts while at most
+`IRONMULE_GGML_DRAFT_MAX_RUNNING` requests run (default 2: on a 4-vCPU Xeon it gave 1.6x for one request, 1.36x for
+two and nothing from three on). `/health` shows it under `ggml.draft_model`.
+
 **GPUs (MG2).** A llama.cpp build with a GPU backend (`tools/build_ggml.py --cuda 75`) offloads every layer
 (`IRONMULE_GGML_GPU_LAYERS` sets fewer). `--gpus all` runs one engine per GPU, each seeing only its own (data parallel);
 without it, several visible GPUs share one model by layers (`IRONMULE_GGML_SPLIT=layer|row|none`). The width is then
@@ -275,6 +288,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | :-- | :-- |
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule/ggml_agent.py` | AG10: the ggml engine's agent: step-cost model, traffic memory, dreaming, switch and revert |
+| `ironmule/draft_model.py` | DM1: the draft model's stopping rule, calibration and KV bookkeeping |
 | `ironmule/ggml_engine.py` | GG1/SEQ1: llama.cpp's kernels in process, continuous batching, the gate, the width choice, GPU offload |
 | `native/ggml_patches/`, `tools/build_ggml.py` | FA1 and ROW1 kernels for llama.cpp, and the build that applies them |
 | `ironmule_product/length_model.py` | AG2's online answer-length model |

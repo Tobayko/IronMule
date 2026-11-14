@@ -250,6 +250,11 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
+    parser.add_argument("--draft-gguf", default=None,
+                        help="DM1 (with --gguf): a small GGUF of the same model family (the same tokenizer) that drafts "
+                             "the next tokens while one or two requests run; the served model verifies every draft, so "
+                             "answers are its own. Implies --speculate context. On a 4-vCPU Xeon one request ran 1.6x "
+                             "faster with Qwen3-0.6B drafting for Qwen3-4B")
     parser.add_argument("--gguf", default=None,
                         help="GG1 (with --engine ggml, CPU only): the GGUF llama.cpp serves for the registered model; "
                              "it must give the model's token ids and pass the quality gate on this machine (its "
@@ -328,6 +333,14 @@ def serve(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if args.gguf is not None and args.engine is None:  # a GGUF names the ggml engine (GG1); AG10 is its agent
         args.engine = "ggml"
+    if args.draft_gguf is not None:
+        if args.gguf is None:
+            parser.error("--draft-gguf drafts for a --gguf (DM1)")
+        if not Path(args.draft_gguf).is_file():
+            parser.error("--draft-gguf names no file")
+        if args.speculate == "off":
+            parser.error("--draft-gguf is speculation; use it without --speculate off")
+        args.speculate = "context"
     agent_chooses = args.agent == "on" and args.engine is None and args.compute_dtype is None and not args.no_model
     args.engine = {"stock": "reference", "ironmule": "tuned", None: "reference"}.get(args.engine, args.engine)
     if not 0 <= args.port <= 65535:
@@ -416,8 +429,10 @@ def serve(argv: list[str]) -> int:
                 if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine
                     from ironmule.ggml_engine import choose_sequences
 
+                    # DM1: the draft model's weights (packed once more by the AMX kernels) and its few sequences
+                    draft_bytes = (int(1.5 * os.path.getsize(args.draft_gguf)) + 2**30) if args.draft_gguf else 0
                     width = choose_sequences(args.gguf, checked.get("settings"), cache=Path(store.root) / "ggml-gate",
-                                             device=devices[0])
+                                             device=devices[0], extra_bytes=draft_bytes)
                     os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
                     checked = {**checked, "sequences": width}
                     shared = checked.get("shared") or {}
@@ -442,6 +457,8 @@ def serve(argv: list[str]) -> int:
                                                                    checked["shared_serving"]["cap"]))
                     print(json.dumps({"ggml_sequences": {k: width.get(k) for k in ("sequences", "fitting", "rates",
                                                                                    "reason")}}), flush=True)
+                if args.draft_gguf:
+                    checked = {**checked, "draft": {"gguf": str(Path(args.draft_gguf).resolve())}}
                 ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
                                 "ggml_gate": checked, **({"speculate": True} if args.speculate != "off" else {})}
 

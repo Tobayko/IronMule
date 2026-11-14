@@ -32,7 +32,9 @@ class GgmlBridge:
         width = int(start["seqs"]) if start else int(((gate or {}).get("sequences") or {}).get("sequences") or 0)
         self._engine = GgmlEngine(gguf, speculate=speculate, **settings,
                                   **({"seqs": width} if width else {}),
-                                  **({"shared": True, "cap": int(shared["cap"])} if shared else {}))
+                                  **({"shared": True, "cap": int(shared["cap"])} if shared else {}),
+                                  **({"draft_gguf": gate["draft"]["gguf"]} if speculate and (gate or {}).get("draft")
+                                     else {}))
         try:
             hf = getattr(tokenizer, "_tokenizer", tokenizer)
             if self._engine.tokenize(CHECK_TEXT) != list(hf.encode(CHECK_TEXT, add_special_tokens=False)):
@@ -109,6 +111,7 @@ class GgmlBridge:
         summary = self._engine.summary()
         return {"ggml_steps": summary["steps"], **({"speculation": summary["speculation"]}
                                                    if isinstance(summary["speculation"], dict) else {}),
+                **({"draft_model": summary["draft_model"]} if "draft_model" in summary else {}),
                 **({"ggml_agent": self._agent.status()} if self._agent is not None else {})}
 
     def eos_ids(self) -> tuple[int, ...]:
