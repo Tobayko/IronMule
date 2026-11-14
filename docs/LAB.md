@@ -1207,3 +1207,34 @@ readings (`half.py`: foreign load seen and step time at 4 threads) it keeps 4 th
 were measured 1.4x faster in the engine. The dream world gives the part-time case too little weight for the reward
 to prefer it; the shipped weights stay. Next: weight the part-time case in the world by what servers show, or train
 on recorded server traces.
+
+### 2026-11-14 MG2 v5: PAD1 on T4, Gemma 3 fixed, fair one-request numbers
+
+`lab/mg2/kaggle_gpu.py` at 74026876 (cached build: 8 s; 75 minutes in all), SP4 off, BOS added, PAD1 on (measured
+at startup: Qwen3-4B, one sequence, 1 token 20.6 ms, 8 tokens 54.1 ms, 9-16 tokens 27.3-28.1 ms, so 3-8 tokens are
+filled to 9-10). Tokens/s, median of 3 blocks:
+
+| | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
+| --- | --- | --- | --- | --- |
+| 1 request: best llama-server (split) | 64.2 | 60.1 | 48.6 | 44.4 |
+| 1 request: llama-server / IronMule, one GPU | 52.9 / 46.1 | 49.6 / 47.4 | 25.3 / 23.7 | 22.9 / 22.5 |
+| 8 requests: best llama-server | 193.5 | 195.2 | 128.0 | 119.1 |
+| 8 requests: IronMule shared pool + PAD1, one GPU | **270.7** | **263.6** | **175.1** | **157.7** |
+| 8 requests: the same, one per GPU | **288.0** | **272.1** | **177.1** | **161.6** |
+| 8 requests: IronMule per-sequence KV + PAD1, one GPU | 94.7 | 99.3 | 57.1 | 53.8 |
+| 32 requests: best llama-server (one per GPU) | 786.0 | 713.2 | 614.1 | 544.1 |
+| 32 requests: IronMule shared pool, one per GPU | **1026.9** | **1007.3** | **679.1** | **633.2** |
+| first token at 32: llama-server / IronMule (one per GPU) | 0.245 / 0.029 s | 0.239 / 0.032 s | 0.405 / 0.037 s | 0.346 / 0.041 s |
+
+vLLM on one GPU (Qwen3-4B): float16 26.7 / 190.8 / 500.7, AWQ 4-bit 61.7 / 403.0 / 865.0 for 1 / 8 / 32 requests,
+ahead of IronMule on one GPU at 8 (271) and 32 (714); facts 50 / 50. Facts through llama-server / the engine:
+Qwen3 49 / 49, Gemma 3 47 / 48, Mistral 49 / 49, Llama 3.1 49 / 49. SGLang: not installed (the install's output went
+to no log; v6 logs it).
+
+Read: PAD1 with one unified KV cache is a real gain at 8 requests: 1.36-1.40x the best llama-server arm on all four
+models. With per-sequence caches it is a loss (llama.cpp splits a step whose sequences carry different token counts
+into several passes), so PAD1 now runs only with a unified cache. Without SP4's repeated-prompt drafts IronMule is
+slightly behind llama-server for one request on one GPU (46.1 against 52.9 on Qwen3) and behind its layer split over
+two GPUs (64.2): one request is bound by the per-token step, where IronMule has nothing extra yet. The product does
+not yet use the shared pool on GPUs (it is gated to CPUs, where FA1u serves it); v6 checks the pool's padded answers
+on the GPU first.
