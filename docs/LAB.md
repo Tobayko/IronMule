@@ -1134,3 +1134,41 @@ engine process outlived its killed parent and kept GPU 0's memory). v4 (30dcc74)
 groups and waits for the memory, installs SGLang into a 3.12 venv, adds vLLM with Qwen3-4B-AWQ (4-bit), adds the engine
 with one shared KV pool, records the engine's step times by rows, and reuses this build (a private dataset) instead of
 building again.
+
+### 2026-11-14 PI1 (continued): Kaggle-trained weights, part-time foreign load, new shipped weights
+
+*Kaggle training.* The private kernel `ironmule-pilot-train` (two T4s, one seed each, 8,192 dreamed servers, 400 PPO
+iterations after imitation, 67 minutes after 3 h 15 min in the queue). On the same dream evaluation as the first
+weights (240 s, 1,024 machines, seed 12345): seed 1 -1406.7, seed 0 -1424.3, first weights -1436.3, the hand rule
+"threads = free cores" -1416.9. On the real machine seed 1 chose the same threads (4 / 3 / 2 with 0 / 1 / 2 busy
+processes) at the same speed within noise; it differed only in giving up a core from 0.5 foreign cores instead of 0.8.
+
+*Part-time load* (`lab/pi1/half.py`, one foreign process busy a fraction of every 20 ms, Qwen3-4B Q8_0, step seconds):
+
+| busy | 3 threads, 1 row | 4 threads, 1 row | 3 threads, 8 rows | 4 threads, 8 rows | seen at 4 threads |
+| --- | --- | --- | --- | --- | --- |
+| 0 % | 0.134 | **0.113** | 0.161 | **0.137** | 0.07-0.09 |
+| 25 % | **0.130** | 0.139 | **0.152** | 0.184 | 0.0-0.22 |
+| 50 % | **0.133** | 0.217 | **0.162** | 0.239 | 0.23-0.32 |
+| 75 % | **0.145** | 0.305 | **0.156** | 0.337 | 0.44-0.51 |
+| 100 % | **0.143** | 1.723 | **0.175** | 1.053 | 0.95-0.97 |
+
+A process busy a quarter of the time already makes 4 threads the wrong choice, and the reader sees about half of a
+part-time process while our threads starve it. The dream world had only processes that were on or off and treated up
+to 0.35 cores of background as harmless, so every version kept 4 threads far too long. World v3 (private): half the
+foreign processes are part-time (duty 0.1-0.9, a 4-thread step slower by 0.9-2.5x per core of partial excess, seen at
+40-70 % while starved), background 0-0.12 cores. Kaggle seed 1, fine-tuned 100 iterations in it on this CPU (29
+minutes; best checkpoint after 75), is the new `ironmule/pilot_weights.npz`.
+
+*In the engine* (`real.py`, shared pool, SP4 off, 2 blocks of 32 tokens per cell; tokens/s for 1 / 8 requests):
+
+| load | defaults | first weights | Kaggle seed 1 | shipped now |
+| --- | --- | --- | --- | --- |
+| idle | 9.17 / 61.0 | 9.08 / 59.5 | 9.26 / 58.7 | 9.39 / 60.0 |
+| 25 % busy | 6.99 / 44.2 | 6.57 / 46.4 | 7.01 / 46.0 | 6.96 / 46.5 |
+| 50 % busy | 5.20 / 35.4 | 5.32 / 36.0 | 7.39 / 50.2 | **7.44 / 51.1** |
+
+The new weights chose 3 threads at 50 % (and at 25 % for one request); with whole processes they chose 3 / 2 threads
+for 1 / 2 busy processes (7.49 / 45.2 and 5.68 / 35.0 tok/s), the same as before. Decision time 377-416 microseconds.
+In world v3 (same evaluation): new weights -1415.0 (8.9 % more tokens than the defaults, 36 % less waiting), Kaggle seed
+1 -1411.1, first weights -1427.6, hand rule -1420.2, defaults -2035.9. A from-scratch Kaggle run in world v3 is queued.

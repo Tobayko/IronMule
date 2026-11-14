@@ -270,10 +270,14 @@ is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,
   When a foreign process holds a core, the thread on it runs only part of the time and every other thread waits:
   on the 4-vCPU Xeon with Qwen3-4B Q8_0 a one-row step took 2.42 s with one busy foreign process at 4 threads and
   0.136 s at 3, and 5.48 s at 4 threads against 0.194 s at 2 with two (lab/pi1/threads.py). Stock `llama-server` uses every core and fell from
-  7.2 to 0.24 tokens per second for one user with one foreign process (docs/LAB.md, PI1).
+  7.2 to 0.24 tokens per second for one user with one foreign process (docs/LAB.md, PI1). A process busy only part of
+  the time hurts too: at 25 / 50 / 75 % of every 20 ms an 8-row step at 4 threads was 1.34 / 1.75 / 2.46x slower and at
+  3 threads unharmed, while the load reader saw only 0.0-0.2 / 0.23-0.32 / 0.44-0.51 cores of it (lab/pi1/half.py).
 - *How it was trained:* from scratch, in a dreamed world: a simulator of continuous batching whose step times follow
   the measured costs and the measured contention collapse, randomised over machines, models, traffic and foreign
-  load, first by imitating a simple rule (threads = free cores) and then by PPO.
+  load, first by imitating a simple rule (threads = free cores) and then by PPO. The shipped weights: 400 PPO
+  iterations on 8,192 dreamed servers on two Kaggle T4 GPUs (two seeds, 67 minutes), then 100 iterations on this CPU
+  (29 minutes) in a world with part-time foreign processes and less harmless background (0-0.12 cores).
 - *Safety:* without the weights, with a feature outside the range it was trained on (|x| > 4 or not finite), or with
   `IRONMULE_PILOT=0` the engine keeps its defaults (all usable cores, no cap below the engine's, no prompt budget,
   drafting allowed). `/health` shows it under `ggml.pilot`: whether it is active and why not, the cores, the foreign
@@ -284,10 +288,11 @@ speculation off so that only the Pilot differs from stock `llama-server` (all co
 per second with 0 / 1 / 2 busy foreign processes against 7.23 / 0.24 / 0.13, eight users 58.8 / 46.2 / 35.2 against
 23.3 / 1.41 / 0.68; first tokens 0.3-0.7 s against 0.8-149 s. It chose 4 / 3 / 2 threads; answers were token-identical
 at 4, 3, 2 and 1 threads. On an idle machine it costs nothing measurable (same engine, alternating: 9.81 against 9.81
-tokens per second for one user). In the dreamed world (240 s, 1,024 random machines) it made 10.9 % more tokens than the
-defaults with 38 % less waiting, about as well as the best hand rule. Its weights were trained on a 4-vCPU CPU in about
-33 minutes; the first version, trained without the background load a quiet server shows, gave up a core at 0.2 foreign
-cores, and the world was corrected before these weights.
+tokens per second for one user). Those numbers are from the first shipped weights; the current ones choose the same
+threads there and also give up a core when one program keeps a core half busy: 7.44 / 51.1 tokens per second for 1 / 8
+requests against 5.20 / 35.4 with the defaults and 5.32 / 36.0 with the first weights (in the engine, `real.py`). In the
+dreamed world (240 s, 1,024 random machines) they make 8.9 % more tokens than the defaults with 36 % less waiting, a
+little ahead of the hand rule (reward -1415 against -1420; defaults -2036).
 
 ## What it knows about the hardware (AG3)
 
