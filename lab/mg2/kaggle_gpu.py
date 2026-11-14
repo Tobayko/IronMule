@@ -11,6 +11,12 @@ requests (N = 1, 8, 32; one warm-up block and 3 blocks; 128 tokens; greedy; the 
   ironmule_1gpu  IronMule's ggml engine (continuous batching, one call per step, prefix reuse, speculation from the
                  context) on one GPU, N sequences of 2,048 tokens
   ironmule_x2    one engine per GPU (`ironmule serve --gpus all`), requests split evenly
+  ironmule_pool  the engine with one shared KV pool (SP1, the product's CPU setup), on one GPU and one per GPU (_x2)
+  vllm_1gpu      vLLM, Qwen3-4B in float16; vllm_awq_1gpu: Qwen3-4B-AWQ (4-bit, the closest to Q4_K_M)
+  sglang_1gpu    SGLang, Qwen3-4B in float16 (installed into a Python 3.12 venv: its outlines_core has no 3.13 wheel)
+
+A CUDA build attached as the dataset `ironmule-mg2-cuda-build` (the same llama.cpp tree, built by an earlier run) is
+unpacked instead of building again (an hour of the session). Each engine arm logs its steps and step times by rows.
 
 Answers: the 50 checkable facts of lab/row1/facts.py through llama-server and through the engine (both greedy).
 Writes /kaggle/working/mg2.json. Usage on Kaggle: the kernel runs this file with the commit to fetch in MG2_COMMIT.
@@ -54,6 +60,11 @@ LIB = SRC / "llama_cpp_python-0.3.16/vendor/llama.cpp/build/bin"
 
 def build():
     t0 = time.time()
+    cached = next(iter(glob.glob("/kaggle/input/**/mg2_build.tar.gz", recursive=True)), None)
+    if cached and not (LIB / "libllama.so").exists():
+        SRC.mkdir(exist_ok=True)
+        sh(f"cd {SRC} && tar xzf {cached}")
+        REPORT["build_cached"] = cached
     if not (LIB / "libllama.so").exists():
         SRC.mkdir(exist_ok=True)
         sh(f"cd {SRC} && pip download llama_cpp_python==0.3.16 --no-binary :all: --no-deps -d . -q && tar xzf llama_cpp_python-0.3.16.tar.gz")
@@ -185,7 +196,7 @@ def block_openai(port, prompts, limit, model, count):
 
 def python_server(command, port, env_extra=None, timeout=1800):
     proc = subprocess.Popen(command, env={**os.environ, **(env_extra or {})}, stdout=open(W / "pyserver.log", "a"),
-                            stderr=subprocess.STDOUT)
+                            stderr=subprocess.STDOUT, start_new_session=True)
     for _ in range(timeout // 2):
         try:
             c = http.client.HTTPConnection("127.0.0.1", port, timeout=5); c.request("GET", "/v1/models")
@@ -196,19 +207,42 @@ def python_server(command, port, env_extra=None, timeout=1800):
         if proc.poll() is not None:
             raise RuntimeError("server exited")
         time.sleep(2)
-    proc.kill()
+    kill_group(proc)
     raise RuntimeError("server did not start")
+
+
+def gpu_used_mib():
+    out = subprocess.run("nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits", shell=True,
+                         capture_output=True, text=True).stdout.split()
+    return [int(x) for x in out if x.isdigit()]
+
+
+def kill_group(proc, wait=180):
+    """vLLM and SGLang start engine processes of their own that outlive a killed parent and keep the GPU's memory
+    (MG2 v3: every model after them failed to load). Kill the whole group, then wait for the memory."""
+    import signal
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        proc.kill()
+    t0 = time.time()
+    while time.time() - t0 < wait and any(m > 600 for m in gpu_used_mib()):
+        time.sleep(3)
+    REPORT.setdefault("gpu_free_after_kill", []).append({"s": round(time.time() - t0, 1), "mib": gpu_used_mib()})
 
 
 def run_python_engines(prompts, fact_prompts, facts, count):
     """vLLM and SGLang with Qwen3-4B in float16 (a T4 has no bfloat16), on one GPU, the same templated prompts."""
+    vllm = [sys.executable, "-m", "vllm.entrypoints.openai.api_server", "--served-model-name", "Qwen/Qwen3-4B",
+            "--max-model-len", "4096", "--gpu-memory-utilization", "0.9", "--port", "8400"]
+    sgl = "/kaggle/working/sgl/bin/python"
     for name, install, command in (
-            ("vllm_1gpu", "pip install -q vllm", [sys.executable, "-m", "vllm.entrypoints.openai.api_server", "--model",
-             "Qwen/Qwen3-4B", "--dtype", "half", "--max-model-len", "4096", "--gpu-memory-utilization", "0.9",
-             "--port", "8400"]),
-            ("sglang_1gpu", "pip install -q 'sglang[all]'", [sys.executable, "-m", "sglang.launch_server", "--model-path",
-             "Qwen/Qwen3-4B", "--dtype", "half", "--attention-backend", "triton", "--port", "8400",
-             "--mem-fraction-static", "0.85"])):
+            ("vllm_1gpu", "pip install -q vllm", vllm + ["--model", "Qwen/Qwen3-4B", "--dtype", "half"]),
+            ("vllm_awq_1gpu", "true", vllm + ["--model", "Qwen/Qwen3-4B-AWQ", "--quantization", "awq", "--dtype", "half"]),
+            ("sglang_1gpu", f"pip install -q uv && uv venv -q -p 3.12 /kaggle/working/sgl && VIRTUAL_ENV=/kaggle/working/sgl "
+             "uv pip install -q 'sglang[all]'", [sgl, "-m", "sglang.launch_server", "--model-path",
+             "Qwen/Qwen3-4B", "--served-model-name", "Qwen/Qwen3-4B", "--dtype", "half", "--attention-backend", "triton",
+             "--port", "8400", "--mem-fraction-static", "0.85"])):
         m = REPORT["models"].setdefault("Qwen3-4B-hf-fp16", {"arms": {}})
         rows = m["arms"].setdefault(name, {})
         try:
@@ -230,7 +264,7 @@ def run_python_engines(prompts, fact_prompts, facts, count):
         except Exception as exc:  # noqa: BLE001
             rows["error"] = f"{type(exc).__name__}: {exc}"[:300]
         finally:
-            proc.kill()
+            kill_group(proc)
         save()
 
 
@@ -249,7 +283,8 @@ ENGINE_CHILD = r"""
 import json, sys, time
 from ironmule.ggml_engine import GgmlEngine, Job
 cfg = json.loads(sys.stdin.readline())
-e = GgmlEngine(cfg["gguf"], seqs=cfg["seqs"], seq_ctx=cfg["ctx"], speculate=cfg.get("speculate", True), flash_attn=True)
+e = GgmlEngine(cfg["gguf"], seqs=cfg["seqs"], seq_ctx=cfg["ctx"], speculate=cfg.get("speculate", True), flash_attn=True,
+               shared=cfg.get("shared", False), cap=cfg.get("cap"))
 print(json.dumps({"ready": True, "summary": e.summary()}), flush=True)
 for line in sys.stdin:
     req = json.loads(line)
@@ -262,17 +297,19 @@ for line in sys.stdin:
     t1 = time.monotonic_ns()
     print(json.dumps({"t0": t0, "t1": t1, "tokens": [len(j.tokens) for j in jobs],
                       "first": [(j.first_ns - t0) / 1e9 for j in jobs], "texts": [j.tokens for j in jobs],
-                      "steps": e.steps}), flush=True)
+                      "steps": e.steps, "spec": e.policy.summary() if e.policy is not None else None,
+                      "pilot": (e.summary() or {}).get("pilot")}), flush=True)
 """
 
 
 class Engines:
-    def __init__(self, gguf, seqs, gpus_list, speculate=True):
-        self.procs = []
+    def __init__(self, gguf, seqs, gpus_list, speculate=True, shared=False):
+        self.procs, self.last = [], []
         for gpus in gpus_list:
             p = subprocess.Popen([sys.executable, "-c", ENGINE_CHILD], env=env(gpus), stdin=subprocess.PIPE,
                                  stdout=subprocess.PIPE, stderr=open(W / "engine.err", "a"), text=True)
-            p.stdin.write(json.dumps({"gguf": gguf, "seqs": seqs, "ctx": CTX, "speculate": speculate}) + "\n")
+            p.stdin.write(json.dumps({"gguf": gguf, "seqs": seqs, "ctx": CTX, "speculate": speculate, "shared": shared,
+                                      "cap": max(16, 2 * seqs) if shared else None}) + "\n")
             p.stdin.flush()
             self.procs.append(p)
         self.summary = [json.loads(self._line(p)) for p in self.procs]
@@ -290,6 +327,7 @@ class Engines:
         for p, part in zip(self.procs, parts):
             p.stdin.write(json.dumps({"prompts": part, "limit": limit, "at_ns": at}) + "\n"); p.stdin.flush()
         rows = [json.loads(self._line(p)) for p in self.procs]
+        self.last = [{"steps": r.get("steps"), "spec": r.get("spec"), "pilot": r.get("pilot")} for r in rows]
         wall = (max(r["t1"] for r in rows) - min(r["t0"] for r in rows)) / 1e9
         tokens = sum(sum(r["tokens"]) for r in rows)
         firsts = [f for r in rows for f in r["first"]]
@@ -347,7 +385,8 @@ def run_model(repo, name, facts):
         stop(proc)
     for arm, kind, gpus, split in (("server_1gpu", "server", ["0"], "none"), ("server_split", "server", ["0,1"], "layer"),
                                    ("server_x2", "server", ["0", "1"], "none"), ("ironmule_1gpu", "engine", ["0"], None),
-                                   ("ironmule_x2", "engine", ["0", "1"], None)):
+                                   ("ironmule_x2", "engine", ["0", "1"], None), ("ironmule_pool", "engine", ["0"], "pool"),
+                                   ("ironmule_pool_x2", "engine", ["0", "1"], "pool")):
         rows = m["arms"].setdefault(arm, {})
         for n in NS:
             if str(n) in rows:
@@ -359,11 +398,13 @@ def run_model(repo, name, facts):
                     ports = [p for _, p in started]
                     run = lambda pr: block_servers(ports, pr, TOKENS)
                 else:
-                    eng = Engines(gguf, each, gpus)
+                    eng = Engines(gguf, each, gpus, shared=split == "pool")
                     run = lambda pr: eng.block(pr, TOKENS)
                 try:
                     run(prompts[:n])  # warm-up block
                     blocks = [run(prompts[:n])[0] for _ in range(3)]
+                    if kind == "engine":
+                        m.setdefault("engine_steps", {})[f"{arm}_{n}"] = eng.last
                 finally:
                     if kind == "server":
                         [stop(p) for p, _ in started]
