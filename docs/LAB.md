@@ -1087,7 +1087,13 @@ slowed by the engine's polling threads), 0.5 % of a step.
 With collective speculation on (the default), the same run made 9.66 / 21.8 / 22.4 for one request: `quick` repeats its
 prompts, so from the second load level on SP4 drafted from the answers it had already served. That is real for
 repeated questions but not the Pilot's doing, hence the table without it. `/health` showed `ggml.pilot` deciding 4 / 3 /
-2 threads with 0.0 / 1.03 / 1.98 foreign cores seen.
+2 threads with 0.0 / 1.03 / 1.98 foreign cores seen. In every measured cell the other three heads kept the engine's defaults (running cap at the pool's
+limit, no prompt budget, drafting allowed): at these loads only the thread count changed anything.
+
+*Load that comes and goes* (`real.py`, `REAL_HOGS=dyn`: one foreign process switched on or off every 6 s, set at
+each block's start, 3 blocks of 32 tokens): Pilot 7.0 / 38.2 tok/s for 1 / 8 requests, defaults 0.32 / 6.25. The
+switch is read at block starts, so the slower arm spent a different share of its time with the process on; a rough
+check that the Pilot follows a changing load, not a clean ratio.
 
 *Training.* Two versions, each imitation (3,000 steps, thread accuracy 0.998) and 150 PPO iterations on 1,024 dreamed
 servers on this CPU (about 33 minutes). The first world showed no CPU load at all without a foreign process; the real
