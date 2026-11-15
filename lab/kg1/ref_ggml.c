@@ -1,6 +1,6 @@
 // KG1: llama.cpp's own CUDA kernel for the same Q4_K weights and activations (ggml_mul_mat on the CUDA backend), its
 // time per matmul and its result, for gen.py's benchmark to compare against.
-// usage: ref_ggml WEIGHTS.bin N K X.bin OUT_PREFIX COPIES REPS B...
+// usage: ref_ggml WEIGHTS.bin N K X.bin OUT_PREFIX COPIES REPS B...   (REF_TYPE: the ggml type, default 12 = Q4_K)
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -27,13 +27,14 @@ int main(int argc, char **argv) {
     size_t wn, xn;
     void *w = slurp(wpath, &wn); float *x = slurp(xpath, &xn);
     ggml_backend_t be = ggml_backend_cuda_init(0);
+    const enum ggml_type type = getenv("REF_TYPE") ? (enum ggml_type)atoi(getenv("REF_TYPE")) : GGML_TYPE_Q4_K;
     for (int a = 8; a < argc; a++) {
         const int B = atoi(argv[a]);
         struct ggml_init_params ip = { ggml_tensor_overhead() * (2 * C + 8) + ggml_graph_overhead(), NULL, true };
         struct ggml_context *ctx = ggml_init(ip);
         struct ggml_tensor *X = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, K, B);
         struct ggml_tensor *W[64], *Y[64];
-        for (int c = 0; c < C; c++) W[c] = ggml_new_tensor_2d(ctx, GGML_TYPE_Q4_K, K, N);
+        for (int c = 0; c < C; c++) W[c] = ggml_new_tensor_2d(ctx, type, K, N);
         for (int c = 0; c < C; c++) Y[c] = ggml_mul_mat(ctx, W[c], X);
         struct ggml_cgraph *gf = ggml_new_graph(ctx);
         for (int c = 0; c < C; c++) ggml_build_forward_expand(gf, Y[c]);
@@ -48,8 +49,8 @@ int main(int argc, char **argv) {
         ggml_backend_tensor_get(Y[0], y, 0, (size_t)N * B * sizeof(float));
         char path[512]; snprintf(path, sizeof path, "%s_B%d.bin", prefix, B);
         FILE *f = fopen(path, "wb"); fwrite(y, sizeof(float), (size_t)N * B, f); fclose(f);
-        printf("{\"ggml\": true, \"N\": %d, \"K\": %d, \"B\": %d, \"us\": %.2f, \"GBps\": %.1f}\n", N, K, B, us,
-               wn / us / 1e3);
+        printf("{\"ggml\": true, \"type\": %d, \"N\": %d, \"K\": %d, \"B\": %d, \"us\": %.2f, \"GBps\": %.1f}\n",
+               (int)type, N, K, B, us, wn / us / 1e3);
         fflush(stdout);
         free(y);
         ggml_backend_buffer_free(buf);
