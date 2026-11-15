@@ -1,0 +1,126 @@
+{
+ "schema_version": 1,
+ "source_document": "tests/fixtures/legacy_h1h2_summaries_fixture.json (synthetic: the real H1/H2 summaries live in IronMule-Research)",
+ "records": [
+  {
+   "source_key": "fixture-dispatch-0",
+   "tool": "dispatch",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000000000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 0 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-cooldown-1",
+   "tool": "cooldown",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000060000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 1 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-loop-2",
+   "tool": "loop",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000120000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 2 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-model-loop-3",
+   "tool": "model-loop",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000180000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 3 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-codegen-4",
+   "tool": "codegen",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000240000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 4 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-roofline-5",
+   "tool": "roofline",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000300000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 5 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-fusion-6",
+   "tool": "fusion",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000360000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 6 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-dispatch-7",
+   "tool": "dispatch",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000420000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 7 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-roofline-8",
+   "tool": "roofline",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000480000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 8 for the importer's tests"
+   }
+  },
+  {
+   "source_key": "fixture-fusion-9",
+   "tool": "fusion",
+   "result_status": "summary_only",
+   "observed_at_unix_ns": 1700000540000000000,
+   "report": {
+    "evidence_grade": "legacy_summary",
+    "raw_measurements_available": false,
+    "formal_claim": false,
+    "summary": "synthetic legacy summary 9 for the importer's tests"
+   }
+  }
+ ]
+}

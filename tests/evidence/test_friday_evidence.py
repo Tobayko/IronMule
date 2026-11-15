@@ -33,6 +33,9 @@ from friday_evidence.run import run_persisted
 from friday_evidence.storage import EvidenceStorage, StorageError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# The real H1/H2 summaries moved to the IronMule-Research repository with the rest of the sealed records; the importer
+# and the dashboard are checked here on a synthetic source in the same format (10 records over the registered tools).
+LEGACY_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "legacy_h1h2_summaries_fixture.json"
 
 
 def provenance(tool: str = "dispatch") -> dict[str, object]:
@@ -283,7 +286,7 @@ class LegacyAndDashboardTest(unittest.TestCase):
         self.path = Path(self.temp.name) / "evidence.sqlite3"
         with EvidenceStorage.open(self.path, initialize=True) as storage:
             self.outcomes = import_legacy_summaries(
-                storage, PROJECT_ROOT / "experiments" / "legacy_h1h2_summaries_v1.json"
+                storage, LEGACY_FIXTURE
             )
 
     def test_all_legacy_rows_are_explicitly_downgraded(self) -> None:
@@ -297,7 +300,7 @@ class LegacyAndDashboardTest(unittest.TestCase):
     def test_import_is_idempotent(self) -> None:
         with EvidenceStorage.open(self.path) as storage:
             outcomes = import_legacy_summaries(
-                storage, PROJECT_ROOT / "experiments" / "legacy_h1h2_summaries_v1.json"
+                storage, LEGACY_FIXTURE
             )
         self.assertTrue(all(item.state == "already_present" for item in outcomes))
 
@@ -373,7 +376,7 @@ class EvidenceCliTest(unittest.TestCase):
         self.assertEqual((code, report["state"]), (78, "not_applied"))
         self.assertFalse(self.path.exists())
 
-        code, report = self.invoke("import-legacy", "--apply")
+        code, report = self.invoke("import-legacy", "--source", str(LEGACY_FIXTURE), "--apply")
         self.assertEqual((code, report["inserted"], report["total"]), (0, 10, 10))
         self.assertEqual(self.invoke("verify")[1]["records"], 10)
         snapshot = self.invoke("snapshot", "--limit", "3")[1]
