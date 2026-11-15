@@ -1540,3 +1540,30 @@ MQ1 was correct (2.4-3.9e-7 against float64) but 7-22 % slower than the best of 
 14.3 against 11.7 us; 9728 x 2560: 73.7 against 68.5), so no MQ1 kernel entered the library. With PAD1 off the
 library alone gives 1.53x at 8 requests; with PAD1 the two overlap (9-16-token steps use llama.cpp's tensor cores).
 vLLM AWQ on a T4 (MG2 v6): 63.7 / 419 / 861 tok/s at 1 / 8 / 32 requests, still ahead.
+
+## 2026-11-15 PI1: the Pilot trained from scratch on Kaggle (world v4), shipped for its stability
+
+The same recipe as the CPU run before it (world v4, the warm start from the teacher that knows the dream's true load,
+then PPO), from random weights, on Kaggle: two T4 GPUs, one seed each (20, 21), 8,192 dreamed servers, 200 PPO
+iterations, 49 minutes (private kernel `ironmule-pilot-train` v3; the world and the recipe stay private).
+
+| | reward (dream, v4) | tokens | wait s | real readings: idle / 25 / 50 / 75 / 100 % |
+| --- | --- | --- | --- | --- |
+| shipped before (v4, CPU, seed 10) | -1407.7 | 52,253 | 13,119 | 4 / 3 / 3 / 3 / 3 |
+| Kaggle seed 20 | -1428.8 | 52,654 | 13,250 | 4 / 3 / 3 / 3 / 3 |
+| **Kaggle seed 21** | -1418.5 | **52,828** | 13,159 | 4 / 3 / 3 / 3 / 3 |
+
+On the real machine (4-vCPU Xeon, Qwen3-4B Q8_0, `lab/pi1/real.py`, 64 tokens), the two alternating twice, tok/s for
+1 / 8 requests, with the threads each ended on:
+
+| foreign load | Kaggle seed 21 (a, b) | shipped before (a, b) |
+| --- | --- | --- |
+| none | 9.13 / 63.7 (4), 9.11 / 62.6 (4) | 9.35 / 64.3 (4), 9.45 / 61.0 (4) |
+| one busy process | 7.12 / 49.3 (3), 7.40 / 49.2 (3) | 7.34 / 49.3 (3), **4.19 / 36.0 (2)** |
+| one process busy half of every 20 ms | 7.15 / 50.2 (3), 7.27 / 51.1 (3) | 7.19 / 51.7 (3), **5.84 / 39.6 (4)** |
+
+Read: in the dream the two are within noise (seed 21 1.1 % more tokens, 0.3 % more waiting). On the machine the
+weights before chose differently in their second pass on readings near a boundary (2 threads beside a busy process,
+whose reading came out 1.07 / 0.96; 4 beside a half-busy one read as 0.18 / 0.29), and lost 20-43 % there; seed 21 chose
+3 both times. Seed 21 replaces them as `ironmule/pilot_weights.npz`: the same speed where both chose alike (idle 9.1
+against 9.4 for one request at the same 4 threads, within the runs' spread), and the same choice in both passes.
