@@ -1,4 +1,6 @@
-"""KG1 v3 on a Kaggle T4: the generated kernels inside the engine, end to end.
+"""KG1 v3-v5 on a Kaggle T4: the generated kernels inside the engine, end to end. v5 (ST2): the library includes MQ1
+(Q4_K repacked for warp streaming, one token), and the rule fixed before the data is one request at least 15 % faster
+than the engine without the library on the same GPU.
 
 1. Builds llama.cpp 4227c9b for CUDA with gr1 and the kg1 hook (MG2's build, about 45 minutes) and keeps it as
    this run's output (kg1_build.tar.gz) for later runs.
