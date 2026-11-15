@@ -1384,3 +1384,24 @@ T4's 320 GB/s; the float32 variants win on the small 2560 x 1024 matrices and lo
 they are bound by float32 arithmetic. llama.cpp's own small-batch path is weakest at 4-8 tokens (55-57 GB/s on the
 large matrices, slower than its 16-token path). v2 adds variants with 8-bit activations and `__dp4a` (four
 multiply-adds per instruction) for that range.
+
+## 2026-11-15 KG1 v3: the library tuned on a T4, but the engine ran without the hook
+
+Kaggle T4, `lab/kg1/kaggle_e2e.py` at 404cc14. The tuning worked: `ironmule/kernel_gen.py` compiled 288 variants
+(50 s), measured them on the five Q4_K shapes of Qwen3-4B for 1-8 tokens (124 s) and built a 40-entry library; the
+fastest variants were mostly L8 with R 1-2 at 1-4 tokens and R 2-8 at 5-8 tokens (per shape: 2560 x 9728 67.1 /
+85.4 / 129.1 us at 1 / 4 / 8 tokens; 9728 x 2560 68.5 / 79.1 / 112.6 us). The patched build failed: `tools/build_ggml.py`
+found no CUDA::cuda_driver on Kaggle (fixed: it now falls back to the driver library), and MG2's build that ran after it
+extracted the source afresh, so the engine served without the kg1 hook. Its own measurement shows that: steps with the
+library "on" and "off" cost the same (18.7 / 34.0 / 54.4 ms at 1 / 4 / 8 tokens either way). Measured anyway, on one
+GPU, Qwen3-4B Q4_K_M, tok/s, two alternating passes:
+
+| requests | llama-server | engine (shared pool + PAD1) |
+| --- | --- | --- |
+| 1 | 53.0, 48.7 | 49.1, 49.9 |
+| 2 | 94.7, 86.6 | 90.8, 86.5 |
+| 4 | 119.1, 112.5 | 148.3, 147.2 |
+| 8 | 138.7, 137.0 | 278.2, 278.4 |
+
+Facts 49 / 50 for every engine arm. v4 builds with MG2's build and the patches applied right before cmake (as SG1 v2
+did for gr1), keeps the build and the model outside `/kaggle/working`, and adds both engines with PAD1 off.

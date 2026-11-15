@@ -97,9 +97,13 @@ def build(tree: Path, cuda: str | None, jobs: int) -> Path:
         if root is not None:
             options += [f"-DCUDAToolkit_ROOT={root}", f"-DCMAKE_CUDA_COMPILER={root}/bin/nvcc",
                         f"-DCMAKE_LIBRARY_PATH={root}/lib64/stubs"]
-            stub = next(iter(sorted(root.glob("lib64/stubs/libcuda.so")) + sorted(root.glob("targets/*/lib/stubs/libcuda.so"))), None)
-            if stub is not None:
-                options.append(f"-DCUDA_cuda_driver_LIBRARY={stub}")
+            # CUDA::cuda_driver: the toolkit's stub, else the driver itself (Kaggle's toolkit ships no stub; KG1 v3's
+            # build failed without it)
+            driver = next(iter(sorted(root.glob("lib64/stubs/libcuda.so")) + sorted(root.glob("targets/*/lib/stubs/libcuda.so"))
+                               + sorted(Path("/usr/lib/x86_64-linux-gnu").glob("libcuda.so*"))
+                               + sorted(Path("/usr/local/nvidia/lib64").glob("libcuda.so*"))), None)
+            if driver is not None:
+                options.append(f"-DCUDA_cuda_driver_LIBRARY={driver}")
     run(["cmake", "-B", "build", *options], cwd=tree, log=log)
     run(["cmake", "--build", "build", "--target", "llama", "llama-server", "-j", str(jobs)], cwd=tree, log=log)
     return tree / "build" / "bin"
