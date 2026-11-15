@@ -172,6 +172,78 @@ class Job:
     first_ns: int = 0
     finished_ns: int = 0
     passed_over: int = 0
+    context: Any = None  # speculation.NgramIndex over ids + tokens, kept up to date by the engine
+
+    def full_context(self) -> list[int]:
+        """ids + tokens, grown by the new tokens only (the engine's per-step view of a request's context)."""
+        if self.context is None:
+            from .speculation import NgramIndex
+
+            self.context = NgramIndex(self.ids)
+        self.context.follow(self.tokens)
+        return self.context.tokens
+
+
+class _PrefixTrie:
+    """The sequences of a SharedPool by the tokens their cells hold, one node per token: the longest prefix any sequence
+    shares with a prompt is a walk down the prompt (one dict lookup per token), not a scan of every sequence. A node
+    knows the sequences that pass through it; ties go to the sequence that entered the pool first, as the scan's did."""
+
+    __slots__ = ("root", "paths", "order", "_next")
+
+    def __init__(self) -> None:
+        self.root: list = [{}, set(), None, None]  # children, sequences, parent, token
+        self.paths: dict[int, list[list]] = {}
+        self.order: dict[int, int] = {}
+        self._next = 0
+
+    def add(self, seq: int) -> None:
+        self.paths[seq] = []
+        self.order[seq] = self._next
+        self._next += 1
+
+    def extend(self, seq: int, tokens: Sequence[int]) -> None:
+        path = self.paths[seq]
+        node = path[-1] if path else self.root
+        for token in tokens:
+            child = node[0].get(token)
+            if child is None:
+                child = [{}, set(), node, token]
+                node[0][token] = child
+            child[1].add(seq)
+            path.append(child)
+            node = child
+
+    def truncate(self, seq: int, n: int) -> None:
+        path = self.paths[seq]
+        for node in reversed(path[n:]):
+            node[1].discard(seq)
+            if not node[1]:  # no sequence passes here, so none below either
+                del node[2][0][node[3]]
+        del path[n:]
+
+    def remove(self, seq: int) -> None:
+        if seq in self.paths:
+            self.truncate(seq, 0)
+            del self.paths[seq]
+            del self.order[seq]
+
+    def clear(self) -> None:
+        self.root[0].clear()
+        self.paths.clear()
+        self.order.clear()
+
+    def longest(self, ids: Sequence[int]) -> tuple[int | None, int]:
+        """The sequence holding the longest prefix of `ids` (the earliest among equals) and its length."""
+        node, depth = self.root, 0
+        for token in ids:
+            child = node[0].get(token)
+            if child is None:
+                break
+            node, depth = child, depth + 1
+        if depth == 0:
+            return None, 0
+        return min(node[1], key=self.order.__getitem__), depth
 
 
 class SharedPool:
@@ -200,6 +272,7 @@ class SharedPool:
         self.reserve: dict[int, int] = {}  # running sequence -> cells it may still take
         self.kept: OrderedDict[int, None] = OrderedDict()  # finished sequences kept as a cache, oldest first
         self.shared_tokens = 0
+        self.trie = _PrefixTrie()  # self.tokens by prefix: the longest shared prefix in one walk down a prompt
 
     @property
     def used(self) -> int:
@@ -212,6 +285,11 @@ class SharedPool:
         self.free_ids = sorted(set(self.free_ids) | set(self.tokens) | set(self.active))
         self.tokens.clear(); self.nodes.clear(); self.ref.clear(); self.active.clear(); self.reserve.clear()
         self.kept.clear()
+        self.trie.clear()
+
+    def longest(self, ids: Sequence[int]) -> tuple[int | None, int]:
+        """The sequence holding the longest prefix of `ids` and its length (None, 0 when none shares a token)."""
+        return self.trie.longest(ids)
 
     def _unref(self, nodes: list[int]) -> None:
         for node in nodes:
@@ -229,6 +307,7 @@ class SharedPool:
                 self.e.L.llama_memory_seq_rm(self.e.memory, seq, -1, -1)
                 self._unref(self.nodes.pop(seq, []))
                 self.tokens.pop(seq, None)
+                self.trie.remove(seq)
                 self.free_ids.append(seq)
                 return True
         return False
@@ -236,12 +315,7 @@ class SharedPool:
     def place(self, ids: list[int], limit: int) -> tuple[int, int] | None:
         """A sequence for a new request and how many of its prompt tokens it already holds, or None while it does
         not fit (it waits)."""
-        best, match = None, 0
-        if self.e.prefix_reuse:
-            for seq, held in self.tokens.items():
-                n = GgmlEngine._common(held, ids)
-                if n > match:
-                    best, match = seq, n
+        best, match = self.trie.longest(ids) if self.e.prefix_reuse else (None, 0)
         keep = min(match, len(ids) - 1)
         if keep <= 0:
             best, keep = None, 0
@@ -257,35 +331,44 @@ class SharedPool:
                 self._unref(self.nodes[seq][keep:])
                 del self.nodes[seq][keep:]
                 del self.tokens[seq][keep:]
+                self.trie.truncate(seq, keep)
         else:
             while not self.free_ids:
                 if not self._evict(best):
                     return None
             seq = self.free_ids.pop(0)
             self.tokens[seq], self.nodes[seq] = [], []
+            self.trie.add(seq)
             if keep:
                 self.e.L.llama_memory_seq_cp(self.e.memory, best, seq, 0, keep)
                 shared = self.nodes[best][:keep]
                 for node in shared:
                     self.ref[node] += 1
                 self.nodes[seq], self.tokens[seq] = list(shared), list(ids[:keep])
+                self.trie.extend(seq, ids[:keep])
         self.shared_tokens += keep
         self.active.add(seq)
         self.reserve[seq] = len(ids) - keep + limit + self.slack
         return seq, keep
 
-    def sync(self, seq: int, held: list[int], remaining: int) -> None:
-        """After a step: `seq`'s cells hold `held`; it may still take `remaining` cells."""
+    def sync(self, seq: int, held: Sequence[int], remaining: int, length: int | None = None) -> None:
+        """After a step: `seq`'s cells hold the first `length` tokens of `held` (all of them by default); it may still
+        take `remaining` cells. Costs the tokens that changed, not the context."""
+        n = len(held) if length is None else length
         nodes, tokens = self.nodes[seq], self.tokens[seq]
-        if len(nodes) > len(held):
-            self._unref(nodes[len(held):])
-            del nodes[len(held):]
-            del tokens[len(held):]
-        for token in held[len(nodes):]:
+        if len(nodes) > n:
+            self._unref(nodes[n:])
+            del nodes[n:]
+            del tokens[n:]
+            self.trie.truncate(seq, n)
+        new = held[len(nodes):n]
+        for token in new:
             self.ref[self.next_node] = 1
             nodes.append(self.next_node)
             tokens.append(token)
             self.next_node += 1
+        if new:
+            self.trie.extend(seq, new)
         self.reserve[seq] = max(0, remaining) + self.slack
 
     def release(self, seq: int, held: list[int] | None) -> None:
@@ -300,6 +383,7 @@ class SharedPool:
             self.e.L.llama_memory_seq_rm(self.e.memory, seq, -1, -1)
             self._unref(self.nodes.pop(seq, []))
             self.tokens.pop(seq, None)
+            self.trie.remove(seq)
             self.free_ids.append(seq)
 
     def summary(self) -> dict[str, Any]:
@@ -674,8 +758,13 @@ class GgmlEngine:
 
     @staticmethod
     def _common(a: Sequence[int], b: Sequence[int]) -> int:
+        """The length of the longest common prefix: compared 64 tokens per slice in C, then token by token."""
+        if type(a) is not type(b):
+            a, b = list(a), list(b)
         n = min(len(a), len(b))
         i = 0
+        while i + 64 <= n and a[i:i + 64] == b[i:i + 64]:
+            i += 64
         while i < n and a[i] == b[i]:
             i += 1
         return i
@@ -722,7 +811,7 @@ class GgmlEngine:
     # --- serving ------------------------------------------------------------------------------------------------------
     def run(self, jobs: list[Job], admit: Callable[[int], list[Job]] | None = None) -> list[Job]:
         """Serve `jobs` and every job `admit(free sequences)` hands over while they run; returns all, in order."""
-        from .speculation import MAX_DRAFT, accept, draft
+        from .speculation import MAX_DRAFT, accept
 
         served: list[Job] = list(jobs)
         pending = list(jobs)
@@ -809,7 +898,7 @@ class GgmlEngine:
                         # a prompt that shares a long prefix with one starting in this step waits one step and then
                         # shares its cells, instead of computing the same prefix again (a burst with one system prompt)
                         with self._lock:
-                            pooled = max((self._common(t, job.ids) for t in self.pool.tokens.values()), default=0)
+                            pooled = self.pool.longest(job.ids)[1]
                         if any(self._common(other.ids, job.ids) >= pooled + SHARE_WAIT for _, other, _ in fresh):
                             continue
                         with self._lock:
@@ -858,7 +947,7 @@ class GgmlEngine:
                         pos = len(job.ids) + len(job.tokens) - 1
                         room = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos, share)
                         if room > 0:
-                            wants[seq] = (job.ids + job.tokens, room)
+                            wants[seq] = (job.full_context(), room)
                     modelled = self.drafter.draft(wants, len(order)) if wants else {}
                 for seq in order:
                     job = active[seq]
@@ -867,9 +956,10 @@ class GgmlEngine:
                     if seq in modelled:
                         offers.append((modelled[seq], DRAFT_BUCKET))
                         continue
-                    offer = draft(job.ids + job.tokens, room) if self.policy is not None and room > 0 else ([], 0)
+                    context = job.full_context()
+                    offer = job.context.draft(room) if self.policy is not None and room > 0 else ([], 0)
                     if self.collective is not None and room > 0 and len(offer[0]) < 2:  # SP4: others' answers
-                        other = self.collective.draft(job.ids + job.tokens, room)
+                        other = self.collective.draft(context, room)
                         offer = other if len(other[0]) > len(offer[0]) else offer
                     offers.append(offer)
                 if modelled:  # the stopping rule chose these lengths; the others share what the step's rows leave
@@ -955,8 +1045,8 @@ class GgmlEngine:
                 if self.pool is not None:  # SP1: what every running sequence's cells hold now
                     with self._lock:
                         for seq, job in active.items():
-                            self.pool.sync(seq, (job.ids + job.tokens)[:len(job.ids) + len(job.tokens) - 1],
-                                           job.limit - len(job.tokens))
+                            self.pool.sync(seq, job.full_context(), job.limit - len(job.tokens),
+                                           length=len(job.ids) + len(job.tokens) - 1)
         finally:
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)

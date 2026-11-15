@@ -141,8 +141,13 @@ class DraftStop:
 
 
 def _common(a: Sequence[int], b: Sequence[int]) -> int:
+    """The longest common prefix: 64 tokens per slice comparison in C, then token by token."""
+    if type(a) is not type(b):
+        a, b = list(a), list(b)
     n = min(len(a), len(b))
     i = 0
+    while i + 64 <= n and a[i:i + 64] == b[i:i + 64]:
+        i += 64
     while i < n and a[i] == b[i]:
         i += 1
     return i
@@ -198,7 +203,7 @@ class Drafter:
             return {}
         rows: list[tuple[int, int, int, bool]] = []
         for key in keys:
-            context, slot = list(wants[key][0]), self.slot_of[key]
+            context, slot = wants[key][0], self.slot_of[key]  # read only: no copy of the whole context per step
             held = self.held[slot]
             shared = min(_common(held, context), len(context) - 1)  # the last token is always computed, for logits
             if len(held) > shared:
