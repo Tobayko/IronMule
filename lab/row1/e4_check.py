@@ -1,7 +1,7 @@
 """Step 4 check: greedy answers of 4 prompts decoded together (M=4 rows per call, prefill M=prompt length) through the
 library at LLAMA_CPP_LIB_PATH; prints tokens and text so two settings (ROW1_GGML=0/1) can be compared."""
 import json, os, sys
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 import ironmule.ggml_engine as ge
 ge.GgmlEngine._warm_up = lambda self: None
 eng = ge.GgmlEngine(sys.argv[1], speculate=False, seqs=4, seq_ctx=256, max_rows=64)

@@ -2,9 +2,9 @@
 output-matmul inputs, fitted on the first half of the positions, tested on the second half), keep d rotated
 dimensions of the output matrix as int8 (or int4) per row. Recall of the exact argmax in the top k and a certified
 rate (Cauchy-Schwarz bound on the dropped dimensions plus rounding)."""
-import sys, json
+import os, sys, json
 import numpy as np
-SP = "/tmp/claude-0/-home-user-IronMule/6e4a0a70-e763-5189-b9a9-9d8ce1e4fff1/scratchpad"
+SP = os.environ.get("ROW1_WORK", "/tmp/row1-work")
 sys.path.insert(0, f"{SP}/row1/llama.cpp/gguf-py")
 import gguf
 r = gguf.GGUFReader(sys.argv[1]); by = {t.name: t for t in r.tensors}

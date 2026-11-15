@@ -1,10 +1,10 @@
 #!/bin/bash
 # Round 4 part 1b: our kernels on the 4-bit files: A4 (exact Q4_0) for the layers, ROW1_OUT=1 (B16) for the Q6_K
 # output matrix. Quality, single request, rows table; stock = hook off.
-SP=/tmp/claude-0/-home-user-IronMule/6e4a0a70-e763-5189-b9a9-9d8ce1e4fff1/scratchpad
+SP=${ROW1_WORK:-/tmp/row1-work}
 source $SP/gg3env.sh; export LLAMA_CPP_LIB_PATH=$SP/row1/llama.cpp/build/bin GLIBC_TUNABLES=glibc.malloc.hugetlb=1
 SRV=$SP/row1/llama.cpp/build/bin/llama-server; O=$SP/row1/p5
-cd /home/user/IronMule
+cd "$(dirname "$0")/../.."
 run() { local tag=$1 q=$2; shift 2; G=$SP/row1/gguf/Qwen3-1.7B-$q.gguf
   env "$@" python lab/row1/ppl.py $G 2>/dev/null > $O/ppl_${q}_$tag.json
   env "$@" python lab/row1/facts.py $G 2>/dev/null > $O/facts_${q}_$tag.json

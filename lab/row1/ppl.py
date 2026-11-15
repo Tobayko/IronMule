@@ -1,7 +1,7 @@
 """Part 2: perplexity on the project's fixed text (numeric_choice: 16 chunks of 512 tokens, scored through one
 multi-position decode each, GgmlEngine.chunk_nll), through the library at LLAMA_CPP_LIB_PATH."""
 import json, math, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, TEXT
 eng = GgmlEngine(sys.argv[1], speculate=False, seqs=1, seq_ctx=1024)

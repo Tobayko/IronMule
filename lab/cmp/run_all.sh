@@ -1,7 +1,7 @@
 #!/bin/bash
 # CMP1: every engine on this CPU with the same GGUF (Qwen3-4B Q8_0), one after another, the vLLM build paused while
 # one measures. Usage: run_all.sh OLD_SCRATCHPAD NEW_SCRATCHPAD ENGINES (ironmule,llama,ollama,lmstudio)
-SP=$1; NS=$2; O=$NS/cmp/results; mkdir -p $O; cd /home/user/IronMule
+SP=$1; NS=$2; O=$NS/cmp/results; mkdir -p $O; cd "$(dirname "$0")/../.."
 G=$SP/row1/gguf/Qwen3-4B-Q8_0.gguf; LIB=$SP/row1/llama.cpp/build/bin; W="burst-sys,burst,poisson,single,facts"
 export HF_HUB_OFFLINE=1
 pause() { for p in $(pgrep -f "cc1plus|ninja|cmake|build_vllm|pip install"); do kill -$1 $p 2>/dev/null; done; }

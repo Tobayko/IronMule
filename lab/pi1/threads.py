@@ -1,7 +1,7 @@
 """PI1 probe: what a decode step costs with T threads (and busy-wait level) while H other busy processes run on this
 CPU, for R rows at a short context; Qwen3-4B Q8_0, shared-pool engine. Usage: threads.py GGUF OUT.json"""
 import json, multiprocessing as mp, os, statistics, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 def hog(stop):
     x = 0
     while not stop.is_set():

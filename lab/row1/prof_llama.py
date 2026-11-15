@@ -1,6 +1,6 @@
 """E1 breakdown: per-op compute and barrier-wait time inside llama_decode, via the ROW1-instrumented ggml copy."""
 import os, sys, time, ctypes
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 import ironmule.ggml_engine as ge
 gguf = sys.argv[1]
 ge.GgmlEngine._warm_up = lambda self: None

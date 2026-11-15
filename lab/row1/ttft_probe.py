@@ -3,7 +3,7 @@
 first streamed token, 5 runs, and the service's schedule policy."""
 import json, os, sys, tempfile, time
 from pathlib import Path
-ROOT = Path("/home/user/IronMule"); sys.path[:0] = [str(ROOT), str(ROOT / "tools"), str(ROOT / "training")]
+ROOT = Path(__file__).resolve().parents[2]; sys.path[:0] = [str(ROOT), str(ROOT / "tools"), str(ROOT / "training")]
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 import gg1_measure
 gguf, model, gate = sys.argv[1], sys.argv[2], json.loads(open(sys.argv[3]).read())

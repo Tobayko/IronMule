@@ -4,11 +4,11 @@ flash attention (FA1=0) and FA1, each in its own process; (2) perplexity on the 
 GGUF itself, 16 chunks) for the reference and FA1, with the gate's ratio interval; (3) full-load decode steps at 8
 sequences x 64 and x 1,024 tokens for the three. Usage: families.py GGUF OUT.json"""
 import json, os, statistics, subprocess, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 gguf, out = sys.argv[1], sys.argv[2]
 CHILD = r'''
 import json, os, statistics, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 import numpy as np
 from ironmule.ggml_engine import GgmlEngine, CHECK_TEXT
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, TEXT

@@ -1,6 +1,6 @@
 """Summarize part 3/4 outputs in $SP/row1/p3 (median of 3 blocks / runs)."""
 import json, glob, os, statistics as st
-O = "/tmp/claude-0/-home-user-IronMule/6e4a0a70-e763-5189-b9a9-9d8ce1e4fff1/scratchpad/row1/p3"
+O = os.path.join(os.environ.get("ROW1_WORK", "/tmp/row1-work"), "row1/p3")
 def last(f): return json.loads(open(f).read().strip().splitlines()[-1])
 for f in sorted(glob.glob(f"{O}/serve_*.json")):
     d = last(f); cells = []

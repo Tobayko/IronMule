@@ -3,7 +3,7 @@ Greedy answers of 8 chat prompts (shared template prefix, different topics), 48 
 off; first-token times of single requests; answers compared."""
 import json, os, sys, time
 from pathlib import Path
-ROOT = Path("/home/user/IronMule"); sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
+ROOT = Path(__file__).resolve().parents[2]; sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 import gg1_measure
 from mlx_lm.tokenizer_utils import load

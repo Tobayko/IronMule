@@ -2,7 +2,7 @@
 the draft model; tokens/s, mean first token, the draft model's summary, and how many answers are token-identical.
 Usage: engine_run.py TARGET.gguf DRAFT.gguf N[,N...]"""
 import json, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine, Job
 target, draft, NS = sys.argv[1], sys.argv[2], [int(x) for x in sys.argv[3].split(",")]
 ASK = ["Write a short story about a lighthouse keeper.", "Explain how a refrigerator keeps food cold.",

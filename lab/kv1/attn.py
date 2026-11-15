@@ -1,7 +1,7 @@
 """KV1 attention probe: full-load decode step of W sequences at context C, flash attention on and off, Qwen3-4B Q8_0
 on this CPU; median of 3 x 8 steps. Usage: attn.py GGUF OUT.json"""
 import json, os, statistics, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine, CHECK_TEXT
 gguf, out = sys.argv[1], sys.argv[2]
 res = []

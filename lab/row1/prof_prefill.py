@@ -1,6 +1,6 @@
 """Per-op profile of one 512-token prefill decode (instrumented build, ROW1_PROF=1)."""
 import ctypes, os, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine
 from ironmule.numeric_choice import TEXT
 eng = GgmlEngine(sys.argv[1], speculate=False, seqs=1, seq_ctx=1024, kv_f32=os.environ.get("ROW1_KVF32") == "1", flash_attn=os.environ.get("ROW1_FA") == "1")

@@ -1,7 +1,7 @@
 """PI1 probe: a decode step's seconds with 3 or 4 threads while one foreign process is busy a fraction D of the time
 (on/off in 20 ms periods), and the foreign load the Pilot's reader sees. Usage: half.py GGUF OUT.json"""
 import json, multiprocessing as mp, statistics, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 def hog(stop, duty):
     while not stop.is_set():
         t = time.perf_counter()

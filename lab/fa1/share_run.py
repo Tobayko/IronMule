@@ -3,10 +3,10 @@ then a second wave that finds the first wave's cells kept; split sequences (pref
 shared pool. Prints tokens/s, mean first token, the pool summary and how many answers are token-identical.
 Usage: share_run.py GGUF N TOKENS"""
 import json, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine, Job
 gguf, n, limit = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-system = open("/home/user/IronMule/lab/fa1/system.txt").read()
+system = open(__import__("os").path.abspath(__file__ + "/../../..") + "/lab/fa1/system.txt").read()
 out = {}
 for mode in ("split", "shared"):
     e = GgmlEngine(gguf, seqs=16, seq_ctx=2048, speculate=True, flash_attn=True, shared=(mode == "shared"), cap=n)

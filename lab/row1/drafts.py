@@ -4,7 +4,7 @@ greedy argmax (from the captured output-matmul inputs, `argmax.npy` if given). F
 (stock answers of facts.py), context = prompt + answer so far, which is exactly what a speculation step would see."""
 import json, sys
 import numpy as np
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 import ironmule.ggml_engine as ge
 from ironmule.speculation import draft
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, TEXT

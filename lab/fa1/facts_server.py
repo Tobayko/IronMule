@@ -1,10 +1,10 @@
 """The 50 facts of lab/row1/facts.py through llama-server's chat API (greedy, 48 tokens, /no_think, 8 at a time), with
 the system prompt in ROW1_SYSTEM if set. Usage: facts_server.py SERVER GGUF [extra flags]"""
 import json, os, sys, threading
-sys.path.insert(0, "/home/user/IronMule/lab/row1")
-src = open("/home/user/IronMule/lab/row1/facts.py").read()
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../..") + "/lab/row1")
+src = open(__import__("os").path.abspath(__file__ + "/../../..") + "/lab/row1/facts.py").read()
 Q = eval(src[src.index("Q = [") + 4:src.index("]\nge.") + 1])
-s = open("/home/user/IronMule/lab/row1/serve.py").read()
+s = open(__import__("os").path.abspath(__file__ + "/../../..") + "/lab/row1/serve.py").read()
 import http.client, socket, subprocess, time
 ns = {**globals(), "server": sys.argv[1], "gguf": sys.argv[2], "extra": sys.argv[3:]}
 exec(s[s.index("def free_port"):s.index("def block")], ns)

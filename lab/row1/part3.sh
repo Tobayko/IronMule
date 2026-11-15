@@ -1,10 +1,10 @@
 #!/bin/bash
 # Part 3/4: rows table, serving, single request, prefill; stock (hook off) against A and B16. One job at a time.
-SP=/tmp/claude-0/-home-user-IronMule/6e4a0a70-e763-5189-b9a9-9d8ce1e4fff1/scratchpad
+SP=${ROW1_WORK:-/tmp/row1-work}
 source $SP/gg3env.sh; export LLAMA_CPP_LIB_PATH=$SP/row1/llama.cpp/build/bin
 SRV=$SP/row1/llama.cpp/build/bin/llama-server
 ORIG=$SP/lc1_src/llama_cpp_python-0.3.16/vendor/llama.cpp/build/bin/llama-server
-O=$SP/row1/p3; mkdir -p $O; cd /home/user/IronMule
+O=$SP/row1/p3; mkdir -p $O; cd "$(dirname "$0")/../.."
 G17=$SP/gg3_gguf/Qwen3-1.7B-Q8_0.gguf; G06=$SP/gg3_gguf/Qwen3-0.6B-Q8_0.gguf
 HP="GLIBC_TUNABLES=glibc.malloc.hugetlb=1"
 run() { local out=$1; shift; [ -s $O/$out ] || env "$@" > $O/$out 2>>$O/log.txt; echo "$out $(date +%T)" >> $O/progress.txt; }

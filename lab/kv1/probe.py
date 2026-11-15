@@ -4,7 +4,7 @@ numeric gate's chunks through the multi-position decode (as `gate` scores a llam
 Usage: probe.py GGUF SNAPSHOT OUT.json"""
 import json, sys, time
 from pathlib import Path
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine, measure_widths, memory_bytes
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, gate_lead, ratio_interval, _text_ids, gate_bos
 from mlx_lm.tokenizer_utils import load

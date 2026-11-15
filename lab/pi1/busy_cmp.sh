@@ -1,7 +1,7 @@
 #!/bin/bash
 # PI1: llama-server (stock, all cores) against IronMule with the Pilot, while 0, 1 or 2 foreign processes keep cores
 # busy; Qwen3-4B Q8_0, `burst` with N = 1 and 8, `single`. Usage: busy_cmp.sh OLD_SCRATCHPAD NEW_SCRATCHPAD WEIGHTS
-SP=$1; NS=$2; WT=$3; O=$NS/cmp/busy; mkdir -p $O; cd /home/user/IronMule
+SP=$1; NS=$2; WT=$3; O=$NS/cmp/busy; mkdir -p $O; cd "$(dirname "$0")/../.."
 G=$SP/row1/gguf/Qwen3-4B-Q8_0.gguf; LIB=$SP/row1/llama.cpp/build/bin; export HF_HUB_OFFLINE=1
 wait_up() { for i in $(seq 1 1800); do curl -s -o /dev/null -w "%{http_code}" "$1" 2>/dev/null | grep -q 200 && return 0; sleep 2; done; return 1; }
 if [ "${PART:-all}" != "ironmule" ]; then

@@ -2,7 +2,7 @@
 sequences of 2,048 cells, flash attention, Qwen3-4B Q8_0 on this CPU. Full-load decode steps at a given context per
 sequence (prompt `ctx` tokens), median of 3 x 16 steps. Usage: pool.py GGUF OUT.json"""
 import json, statistics, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine, CHECK_TEXT
 gguf, out = sys.argv[1], sys.argv[2]
 res = []

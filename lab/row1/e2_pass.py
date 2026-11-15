@@ -1,7 +1,7 @@
 """E2: full-pass timing of the ROW1 AMX kernel on Qwen3's real Q8_0 weights, variants A and B, R rows."""
 import ctypes, os, sys, time, json
 import numpy as np
-SP = "/tmp/claude-0/-home-user-IronMule/6e4a0a70-e763-5189-b9a9-9d8ce1e4fff1/scratchpad"
+SP = os.environ.get("ROW1_WORK", "/tmp/row1-work")
 sys.path.insert(0, f"{SP}/row1/llama.cpp/gguf-py")
 import gguf
 

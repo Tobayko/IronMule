@@ -1,6 +1,6 @@
 """E1: llama.cpp decode-call time against rows. R sequences x 1 position, and 1 sequence x R positions."""
 import os, sys, time, statistics, json
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 import ironmule.ggml_engine as ge
 
 gguf = sys.argv[1]

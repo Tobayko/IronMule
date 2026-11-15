@@ -4,7 +4,7 @@ at LLAMA_CPP_LIB_PATH and the ROW1_* variables passed through to the worker. Usa
 streamed requests at once (64 tokens, serve.py's prompts), then the 50 facts (48 tokens, /no_think)."""
 import json, os, sys, tempfile, threading, time
 from pathlib import Path
-ROOT = Path("/home/user/IronMule"); sys.path[:0] = [str(ROOT), str(ROOT / "tools"), str(ROOT / "training"), str(ROOT / "lab/row1")]
+ROOT = Path(__file__).resolve().parents[2]; sys.path[:0] = [str(ROOT), str(ROOT / "tools"), str(ROOT / "training"), str(ROOT / "lab/row1")]
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 import gg1_measure
 from ironmule.ggml_engine import gate

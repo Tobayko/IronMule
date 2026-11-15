@@ -1,7 +1,7 @@
 """Part 2: fact check. ~50 questions with short checkable answers, greedy, chat template with /no_think, at most
 48 tokens, decoded 8 at a time; correct when an expected string is in the answer (case-insensitive)."""
 import json, sys
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 import ironmule.ggml_engine as ge
 Q = [("What is the capital of France?", ["paris"]), ("What is the capital of Japan?", ["tokyo"]),
      ("What is the capital of Australia?", ["canberra"]), ("What is the capital of Canada?", ["ottawa"]),

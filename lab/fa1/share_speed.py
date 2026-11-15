@@ -2,7 +2,7 @@
 split = every sequence its own copy (llama.cpp's default, FA1 per row); unified = one pool, the prefix cells shared
 by llama_memory_seq_cp (FA1u). Median of 3 x 8 steps. Usage: share_speed.py GGUF N P T"""
 import json, statistics, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine, CHECK_TEXT
 gguf, n, P, T = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 for mode in ("split", "unified"):

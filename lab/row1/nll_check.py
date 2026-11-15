@@ -2,7 +2,7 @@
 one token per call (M=1 path), to tell which matmul path changes a result."""
 import json, math, sys
 import numpy as np
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine
 from ironmule.numeric_choice import CHUNK_TOKENS, TEXT
 eng = GgmlEngine(sys.argv[1], speculate=False, seqs=1, seq_ctx=1024)

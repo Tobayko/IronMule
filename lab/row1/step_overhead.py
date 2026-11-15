@@ -2,7 +2,7 @@
 costs about 0), random logits over Qwen3's 151,936-token vocabulary. Usage: [IRONMULE_GGML_PROMPT_BUDGET=B] python step_overhead.py"""
 import ctypes, sys, time, types, random
 import numpy as np
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule import ggml_engine as ge
 from ironmule.speculation import StepPolicy
 

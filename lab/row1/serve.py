@@ -5,7 +5,7 @@ MODE "single": one request alone, 128 tokens, 1 warm-up + 3 runs. MODE "prefill"
 the fixed text, n_predict 1, cache off; server-reported prompt tokens/s and wall time. Environment passes through
 (ROW1_GGML, GLIBC_TUNABLES)."""
 import http.client, json, os, socket, subprocess, sys, threading, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 server, gguf, label, mode, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
 TOPICS = ["a lighthouse keeper", "a lost robot", "a mountain village", "a river in winter", "a clockmaker", "a desert caravan",
           "a library at night", "a sailing ship", "a city garden", "an old bakery", "a train journey", "a forest fire watch",

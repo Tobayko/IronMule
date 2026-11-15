@@ -1,6 +1,6 @@
 """PI1: the Pilot against no Pilot on one engine, alternating, idle machine. Usage: ab.py GGUF (IRONMULE_PILOT_WEIGHTS)"""
 import sys, time, json
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine, Job
 e = GgmlEngine(sys.argv[1], seqs=16, seq_ctx=2048, speculate=True, flash_attn=True, shared=True, cap=32)
 e.collective = None

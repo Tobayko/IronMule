@@ -4,7 +4,7 @@ tokens, 8 prompts. Plain decoding against draft-k-then-verify for several k: tok
 by position, where the time went, and whether the tokens are the plain run's.
 Usage: probe.py TARGET.gguf DRAFT.gguf OUT.json [k,k,...]"""
 import json, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 from ironmule.ggml_engine import GgmlEngine
 target_path, draft_path, out = sys.argv[1], sys.argv[2], sys.argv[3]
 KS = [int(x) for x in (sys.argv[4] if len(sys.argv) > 4 else "3,5,7").split(",")]

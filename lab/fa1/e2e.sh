@@ -2,7 +2,7 @@
 # FA1 end to end: a 479-token system prompt on every request (lab/fa1/system.txt), Qwen3-4B Q8_0, this CPU.
 # Stock llama-server (ROW1 kernels off, FA1 off) with and without -fa, against IronMule's product (B16 + FA1, the
 # engine choosing its width). Usage: e2e.sh OLD_SCRATCHPAD OUT_DIR
-SP=$1; O=$2; mkdir -p $O; cd /home/user/IronMule
+SP=$1; O=$2; mkdir -p $O; cd "$(dirname "$0")/../.."
 export GLIBC_TUNABLES=glibc.malloc.hugetlb=1 IRONMULE_GGML_BINDINGS=$SP/src/llama_cpp_python-0.3.16
 export LLAMA_CPP_LIB_PATH=$SP/row1/llama.cpp/build/bin HF_HUB_OFFLINE=1
 export ROW1_SYSTEM="$(cat lab/fa1/system.txt)"

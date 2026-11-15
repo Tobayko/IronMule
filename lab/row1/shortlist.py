@@ -2,9 +2,9 @@
 captured by the hook (ROW1_DUMP) while scoring the fixed text (16 x 512 positions). Exact = float32 on the
 dequantized Q8_0 output matrix. For each sketch: recall of the exact argmax in the sketch's top k, sketch size, and
 for the rotation sketches the share of positions where a per-row error bound proves the top-k shortlist holds it."""
-import sys, json, time
+import os, sys, json, time
 import numpy as np
-SP = "/tmp/claude-0/-home-user-IronMule/6e4a0a70-e763-5189-b9a9-9d8ce1e4fff1/scratchpad"
+SP = os.environ.get("ROW1_WORK", "/tmp/row1-work")
 sys.path.insert(0, f"{SP}/row1/llama.cpp/gguf-py")
 import gguf
 gg, dump = sys.argv[1], sys.argv[2]

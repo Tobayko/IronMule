@@ -3,7 +3,7 @@ Qwen3-4B Q8_0, shared pool (cap 32), N chat requests at once (64 tokens), H busy
 or ("dyn") one that switches on and off every 6 s, or ("d0.5") one busy that fraction of every 20 ms. Prints tokens/s, mean first token and what the Pilot chose.
 Usage: real.py GGUF MODE(default|pilot) OUT.json  (REAL_HOGS=0,1,2,dyn REAL_NS=1,8,16 REAL_BLOCKS REAL_TOKENS: a shorter run)"""
 import json, multiprocessing as mp, os, sys, time
-sys.path.insert(0, "/home/user/IronMule")
+sys.path.insert(0, __import__("os").path.abspath(__file__ + "/../../.."))
 def hog(stop, on, duty=1.0):
     x = 0
     while not stop.is_set():

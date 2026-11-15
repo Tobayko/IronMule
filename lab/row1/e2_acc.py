@@ -4,7 +4,7 @@ with llama.cpp's own Q8_0 arithmetic (emulated in numpy) as the reference error.
 float from that. Not hidden states of a full forward (deeper layers have larger outliers)."""
 import ctypes, os, sys
 import numpy as np
-SP = "/tmp/claude-0/-home-user-IronMule/6e4a0a70-e763-5189-b9a9-9d8ce1e4fff1/scratchpad"
+SP = os.environ.get("ROW1_WORK", "/tmp/row1-work")
 sys.path.insert(0, f"{SP}/row1/llama.cpp/gguf-py")
 import gguf
 lib = ctypes.CDLL(os.path.join(os.path.dirname(os.path.abspath(__file__)), "libgemm.so"))
