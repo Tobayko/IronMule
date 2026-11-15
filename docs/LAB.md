@@ -1567,3 +1567,5 @@ weights before chose differently in their second pass on readings near a boundar
 whose reading came out 1.07 / 0.96; 4 beside a half-busy one read as 0.18 / 0.29), and lost 20-43 % there; seed 21 chose
 3 both times. Seed 21 replaces them as `ironmule/pilot_weights.npz`: the same speed where both chose alike (idle 9.1
 against 9.4 for one request at the same 4 threads, within the runs' spread), and the same choice in both passes.
+Beside two busy processes (16-token answers, one block) seed 21 chose 2 threads: 5.04 / 26.0 tok/s for 1 / 8 requests
+(the defaults: 0.19 / 1.46 in the run of the weights before).
