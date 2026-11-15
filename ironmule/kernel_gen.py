@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-KG_VERSION = 1
+KG_VERSION = 2  # 2 (ST2): MQ1 kernels for one token
 TYPE_Q4_K = 12  # GGML_TYPE_Q4_K
 BATCHES = tuple(range(1, 9))  # from 9 tokens on llama.cpp's tensor-core kernel is faster (KG1 v2: 16.8 ms vs 42.4)
 LANES, ROWS, WARPS = (8, 16, 32), (1, 2, 4, 8), (2, 4, 8)
@@ -46,6 +46,8 @@ DEVICE = r"""
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <map>
+#include <mutex>
 #include <vector>
 
 struct block_q4_K { uint16_t d, dmin; uint8_t scales[12]; uint8_t qs[128]; };
@@ -159,6 +161,100 @@ __global__ void __launch_bounds__(W * 32) kq4k(const block_q4_K *__restrict__ wq
         }
 }
 
+// MQ1 (ST2): Q4_K repacked once so that lane j of a warp reads sub-block j's 16 bytes (512 contiguous bytes per warp
+// and iteration), float32 activations as they are; one token. repack_q4k: one thread per 256-weight block.
+__global__ void repack_q4k(const block_q4_K *__restrict__ src, uint4 *__restrict__ qs, uint4 *__restrict__ hdr,
+                           size_t nblocks) {
+    const size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= nblocks) return;
+    const block_q4_K &b = src[i];
+    hdr[i] = *reinterpret_cast<const uint4 *>(&b);
+    for (int j = 0; j < 8; j++) {  // sub-block j: weights 32j .. 32j + 31, chunk c = j / 2, low or high nibbles
+        const int c = j / 2, high = j & 1;
+        uint32_t words[4];
+        for (int k = 0; k < 4; k++) {
+            uint32_t v = 0;
+            for (int t = 0; t < 4; t++) {
+                const int i0 = 2 * (4 * k + t);  // weights i0 and i0 + 1 of the sub-block: bytes l = i0, i0 + 1
+                const uint32_t a = high ? (b.qs[32 * c + i0] >> 4) : (b.qs[32 * c + i0] & 0xF);
+                const uint32_t bb = high ? (b.qs[32 * c + i0 + 1] >> 4) : (b.qs[32 * c + i0 + 1] & 0xF);
+                v |= (a | (bb << 4)) << (8 * t);
+            }
+            words[k] = v;
+        }
+        qs[8 * i + j] = make_uint4(words[0], words[1], words[2], words[3]);
+    }
+}
+
+template <int W, int R, int U>
+__global__ void __launch_bounds__(W * 32) mq1(const uint4 *__restrict__ qs, const uint4 *__restrict__ hdr,
+                                              const float *__restrict__ x, float *__restrict__ y, int N, int K) {
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32;
+    const int row0 = (blockIdx.x * W + warp) * R;
+    if (row0 >= N) return;
+    const int nsub = K / 32, nblk = K / 256;
+    float acc[R];
+#pragma unroll
+    for (int r = 0; r < R; r++) acc[r] = 0.f;
+    for (int base = 0; base < nsub; base += 32 * U) {
+        uint4 q[U][R], h[U][R];
+#pragma unroll
+        for (int u = 0; u < U; u++) {
+            const int j = base + 32 * u + lane;
+#pragma unroll
+            for (int r = 0; r < R; r++)
+                if (j < nsub && row0 + r < N) {
+                    q[u][r] = __ldg(qs + (size_t)(row0 + r) * nsub + j);
+                    h[u][r] = __ldg(hdr + (size_t)(row0 + r) * nblk + j / 8);
+                }
+        }
+#pragma unroll
+        for (int u = 0; u < U; u++) {
+            const int j = base + 32 * u + lane;
+            if (j >= nsub) break;
+            float xs[32], sx = 0.f;
+            const float4 *px = reinterpret_cast<const float4 *>(x + 32 * (size_t)j);
+#pragma unroll
+            for (int v = 0; v < 8; v++) {
+                const float4 a = __ldg(px + v);
+                xs[4 * v] = a.x; xs[4 * v + 1] = a.y; xs[4 * v + 2] = a.z; xs[4 * v + 3] = a.w;
+                sx += (a.x + a.y) + (a.z + a.w);
+            }
+#pragma unroll
+            for (int r = 0; r < R; r++) {
+                if (row0 + r >= N) break;
+                const uint4 hh = h[u][r];
+                const float d = __half2float(__ushort_as_half((unsigned short)(hh.x & 0xFFFF)));
+                const float dm = __half2float(__ushort_as_half((unsigned short)(hh.x >> 16)));
+                float sc, mn;
+                scale_min(hh.y, hh.z, hh.w, j % 8, sc, mn);
+                const uint32_t words[4] = {q[u][r].x, q[u][r].y, q[u][r].z, q[u][r].w};
+                float s = 0.f;
+#pragma unroll
+                for (int i = 0; i < 16; i++) {
+                    const uint32_t byte = (words[i / 4] >> (8 * (i & 3))) & 0xFF;
+                    s = fmaf((float)(byte & 0xF), xs[2 * i], s);
+                    s = fmaf((float)(byte >> 4), xs[2 * i + 1], s);
+                }
+                acc[r] += d * sc * s - dm * mn * sx;
+            }
+        }
+    }
+#pragma unroll
+    for (int r = 0; r < R; r++) {
+        float v = acc[r];
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) v += __shfl_xor_sync(0xffffffffu, v, off);
+        if (lane == 0 && row0 + r < N) y[row0 + r] = v;
+    }
+}
+typedef void (*mq_launch_t)(const uint4 *, const uint4 *, const float *, float *, int, int, cudaStream_t);
+template <int W, int R, int U>
+void launch_mq(const uint4 *qs, const uint4 *hdr, const float *x, float *y, int N, int K, cudaStream_t s) {
+    mq1<W, R, U><<<(N + W * R - 1) / (W * R), W * 32, 0, s>>>(qs, hdr, x, y, N, K);
+}
+struct MqVariant { int W, R, U; mq_launch_t fn; };
+
 typedef void (*launch_t)(const block_q4_K *, const int8_t *, const float *, float *, int, int, cudaStream_t);
 template <int L, int R, int W, int B>
 void launch(const block_q4_K *w, const int8_t *xq, const float *xd, float *y, int N, int K, cudaStream_t s) {
@@ -195,6 +291,46 @@ __global__ void ref64(const block_q4_K *__restrict__ wq, const float *__restrict
         for (int off = 16; off > 0; off >>= 1) s += __shfl_xor_sync(0xffffffffu, s, off);
         if (lane == 0) y[(size_t)b * N + row] = s;
     }
+}
+
+extern "C" int kg_mq_count() { return (int)MQ_VARIANTS.size(); }
+extern "C" void kg_mq_info(int i, int *out) { out[0] = MQ_VARIANTS[i].W; out[1] = MQ_VARIANTS[i].R; out[2] = MQ_VARIANTS[i].U; }
+
+// MQ1 variant i for one token: repacked on the GPU first, then timed and checked like kg_measure
+extern "C" int kg_measure_mq(int i, const void *w_host, int N, int K, const float *x_host, int copies, int reps,
+                             double *us, double *rel_err) {
+    const MqVariant &v = MQ_VARIANTS[i];
+    const size_t nblocks = (size_t)N * (K / 256), wbytes = nblocks * 144;
+    std::vector<uint4 *> dq(copies), dh(copies);
+    block_q4_K *dw; float *dx, *dy; double *dr;
+    if (cudaMalloc(&dw, wbytes) || cudaMalloc(&dx, (size_t)K * 4) || cudaMalloc(&dy, (size_t)N * 4) ||
+        cudaMalloc(&dr, (size_t)N * 8)) return 1;
+    cudaMemcpy(dw, w_host, wbytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(dx, x_host, (size_t)K * 4, cudaMemcpyHostToDevice);
+    for (int c = 0; c < copies; c++) {
+        if (cudaMalloc(&dq[c], nblocks * 128) || cudaMalloc(&dh[c], nblocks * 16)) return 2;
+        repack_q4k<<<(unsigned)((nblocks + 127) / 128), 128>>>(dw, dq[c], dh[c], nblocks);
+    }
+    ref64<<<(N + 7) / 8, 256>>>(dw, dx, dr, N, K, 1);
+    v.fn(dq[0], dh[0], dx, dy, N, K, 0);
+    if (cudaDeviceSynchronize() != cudaSuccess) return 3;
+    std::vector<float> hy(N); std::vector<double> hr(N);
+    cudaMemcpy(hy.data(), dy, (size_t)N * 4, cudaMemcpyDeviceToHost);
+    cudaMemcpy(hr.data(), dr, (size_t)N * 8, cudaMemcpyDeviceToHost);
+    double num = 0, den = 0;
+    for (int k = 0; k < N; k++) { num += (hy[k] - hr[k]) * (hy[k] - hr[k]); den += hr[k] * hr[k]; }
+    *rel_err = sqrt(num / den);
+    cudaEvent_t e0, e1; cudaEventCreate(&e0); cudaEventCreate(&e1);
+    for (int r = 0; r < 3; r++) for (int c = 0; c < copies; c++) v.fn(dq[c], dh[c], dx, dy, N, K, 0);
+    cudaEventRecord(e0);
+    for (int r = 0; r < reps; r++) for (int c = 0; c < copies; c++) v.fn(dq[c], dh[c], dx, dy, N, K, 0);
+    cudaEventRecord(e1); cudaEventSynchronize(e1);
+    float ms; cudaEventElapsedTime(&ms, e0, e1);
+    *us = 1000.0 * ms / ((double)reps * copies);
+    cudaEventDestroy(e0); cudaEventDestroy(e1);
+    for (int c = 0; c < copies; c++) { cudaFree(dq[c]); cudaFree(dh[c]); }
+    cudaFree(dw); cudaFree(dx); cudaFree(dy); cudaFree(dr);
+    return cudaGetLastError() == cudaSuccess ? 0 : 4;
 }
 
 extern "C" int kg_count() { return (int)VARIANTS.size(); }
@@ -244,17 +380,40 @@ extern "C" void ironmule_kg_set_mask(uint32_t mask) { enabled_mask = mask; }
 extern "C" uint32_t ironmule_kg_get_mask() { return enabled_mask; }
 extern "C" const char *ironmule_kg_table() { return TABLE_JSON; }
 
+struct Repacked { uint4 *qs, *hdr; };
+static std::map<std::pair<int, const void *>, Repacked> repacked;  // (device, weights) -> MQ1's copy, made once
+static std::mutex repack_lock;
+
 // the hook's entry: 0 when this library computed y = w x, non-zero for llama.cpp's own kernels
 extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64_t N, int64_t K, int64_t B,
                                    cudaStream_t s) {
     if (type != 12 || K % 256 != 0 || B < 1 || B > 8 || !((enabled_mask >> (B - 1)) & 1u)) return 1;
-    launch_t fn = nullptr;
+    const Entry *hit = nullptr;
     for (const Entry &e : ENTRIES)
-        if (e.K == K && e.N == N && e.B == B) { fn = e.fn; break; }
-    if (fn == nullptr) return 1;
+        if (e.K == K && e.N == N && e.B == B) { hit = &e; break; }
+    if (hit == nullptr) return 1;
     int dev = 0;
     cudaGetDevice(&dev);
     if (dev < 0 || dev >= 16) return 1;
+    if (hit->mq != nullptr) {  // MQ1: the weights repacked on the GPU the first time this matrix is used
+        Repacked r;
+        {
+            std::lock_guard<std::mutex> guard(repack_lock);
+            auto it = repacked.find({dev, w});
+            if (it == repacked.end()) {
+                const size_t nblocks = (size_t)N * (K / 256);
+                if (cudaMalloc(&r.qs, nblocks * 128) != cudaSuccess) return 1;
+                if (cudaMalloc(&r.hdr, nblocks * 16) != cudaSuccess) { cudaFree(r.qs); return 1; }
+                repack_q4k<<<(unsigned)((nblocks + 127) / 128), 128, 0, s>>>((const block_q4_K *)w, r.qs, r.hdr, nblocks);
+                repacked[{dev, w}] = r;
+            } else {
+                r = it->second;
+            }
+        }
+        hit->mq(r.qs, r.hdr, x, y, (int)N, (int)K, s);
+        return cudaPeekAtLastError() == cudaSuccess ? 0 : 1;
+    }
+    launch_t fn = hit->fn;
     static int8_t *xq[16]; static float *xd[16]; static size_t cap[16];
     const size_t need = (size_t)B * K;
     if (cap[dev] < need) {
@@ -271,20 +430,27 @@ extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, floa
 """
 
 
+MQ_VARIANTS = tuple((W, R, U) for W in (2, 4, 8) for R in (1, 2, 4) for U in (1, 2))  # MQ1, one token
+
+
 def variants(batches=BATCHES) -> list[tuple[int, int, int, int]]:
     return [(L, R, W, B) for B in batches for L, R, W in itertools.product(LANES, ROWS, WARPS) if R * B <= 64]
 
 
 def tune_source(vs: list[tuple[int, int, int, int]]) -> str:
     rows = "\n".join(f"    {{{L}, {R}, {W}, {B}, launch<{L}, {R}, {W}, {B}>}}," for L, R, W, B in vs)
-    return DEVICE + "static const std::vector<Variant> VARIANTS = {\n" + rows + "\n};\n" + TUNE
+    mq = "\n".join(f"    {{{W}, {R}, {U}, launch_mq<{W}, {R}, {U}>}}," for W, R, U in MQ_VARIANTS)
+    return (DEVICE + "static const std::vector<Variant> VARIANTS = {\n" + rows + "\n};\n"
+            + "static const std::vector<MqVariant> MQ_VARIANTS = {\n" + mq + "\n};\n" + TUNE)
 
 
 def library_source(table: dict[str, Any]) -> str:
-    rows = "\n".join(f"    {{{e['K']}, {e['N']}, {e['B']}, launch<{e['L']}, {e['R']}, {e['W']}, {e['B']}>}},"
+    rows = "\n".join(f"    {{{e['K']}, {e['N']}, {e['B']}, nullptr, launch_mq<{e['W']}, {e['R']}, {e['U']}>}},"
+                     if e.get("kind") == "mq1" else
+                     f"    {{{e['K']}, {e['N']}, {e['B']}, launch<{e['L']}, {e['R']}, {e['W']}, {e['B']}>, nullptr}},"
                      for e in table["entries"])
     text = json.dumps(table, sort_keys=True).replace("\\", "\\\\").replace('"', '\\"')
-    return (DEVICE + "struct Entry { int K, N, B; launch_t fn; };\n"
+    return (DEVICE + "struct Entry { int K, N, B; launch_t fn; mq_launch_t mq; };\n"
             + "static const std::vector<Entry> ENTRIES = {\n" + rows + "\n};\n"
             + f'static const char *TABLE_JSON = "{text}";\n' + LIBRARY)
 
@@ -365,6 +531,9 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
         compile_cuda(tune_source(vs), lib_path, arch)
     compile_s = time.time() - started
     lib = ctypes.CDLL(str(lib_path))
+    lib.kg_measure_mq.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+                                  ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_double),
+                                  ctypes.POINTER(ctypes.c_double)]
     lib.kg_measure.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int,
                                ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
     rng = np.random.default_rng(0)
@@ -386,8 +555,18 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                 measured.append(row)
                 if code == 0 and err.value <= bound and (best is None or us.value < best["us"]):
                     best = row
+            if B == 1:  # MQ1 (ST2): Q4_K repacked for warp streaming, float32 activations
+                for i, (Wm, Rm, Um) in enumerate(MQ_VARIANTS):
+                    us, err = ctypes.c_double(), ctypes.c_double()
+                    code = lib.kg_measure_mq(i, w.ctypes.data, N, K, x.ctypes.data, copies, reps, ctypes.byref(us),
+                                             ctypes.byref(err))
+                    row = {"K": K, "N": N, "B": 1, "kind": "mq1", "W": Wm, "R": Rm, "U": Um, "us": round(us.value, 2),
+                           "rel_err": err.value, "code": code}
+                    measured.append(row)
+                    if code == 0 and err.value <= bound and (best is None or us.value < best["us"]):
+                        best = row
             if best is not None:
-                entries.append({k: best[k] for k in ("K", "N", "B", "L", "R", "W", "us")})
+                entries.append({k: best[k] for k in ("K", "N", "B", "L", "R", "W", "U", "kind", "us") if k in best})
                 log(json.dumps({"kg_tuned": entries[-1]}))
     return {"version": KG_VERSION, "fingerprint": fingerprint(), "arch": arch, "entries": entries,
             "error_bound": bound, "compile_s": round(compile_s, 1), "tune_s": round(time.time() - started, 1),

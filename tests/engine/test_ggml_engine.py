@@ -594,3 +594,18 @@ def test_st1_a_float32_kv_cache_ranks_first_only_well_ahead():
     assert [r["kv_f32"] for r in rank_settings(measured)] == [False, True, False]
     clearly = [dict(measured[0], score=30.0), measured[1]]
     assert rank_settings(clearly)[0]["kv_f32"] is True
+
+
+def test_kg1_the_gate_is_keyed_by_the_kernel_library_it_ran_with(tmp_path, monkeypatch):
+    from ironmule import ggml_engine as ge
+
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"GGUF weights")
+    monkeypatch.delenv("IRONMULE_KG_LIB", raising=False)
+    plain = ge.gate_key(str(gguf), str(gguf))
+    library = tmp_path / "kg.so"
+    library.write_bytes(b"one library")
+    monkeypatch.setenv("IRONMULE_KG_LIB", str(library))
+    with_library = ge.gate_key(str(gguf), str(gguf))
+    library.write_bytes(b"another library")
+    assert len({plain, with_library, ge.gate_key(str(gguf), str(gguf))}) == 3

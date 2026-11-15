@@ -320,7 +320,7 @@ ironmule serve --agent on --gpus all      # one agent per GPU
 
 ```bash
 python tools/build_ggml.py                 # once: llama.cpp with IronMule's kernels; prints two exports
-ironmule serve --agent on --gguf Qwen3-4B-Q8_0.gguf --model Qwen/Qwen3-1.7B  # a registered model with the GGUF's tokenizer
+ironmule serve --agent on --gguf Qwen3-4B-Q8_0.gguf  # the GGUF's own tokenizer and template; or --model to bind one
 ```
 
 `GET /health` and `GET /v1/ironmule/dispatch` show each agent: what serves and its measured gain, the world

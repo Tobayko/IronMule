@@ -242,7 +242,7 @@ def _ggml_agent_plan(width: dict[str, Any], root: Any, flash_only: bool = False)
 
 def serve(argv: list[str]) -> int:
     parser = _parser("serve", "Serve a registered local model through the OpenAI-compatible API.")
-    choice = parser.add_mutually_exclusive_group(required=True)
+    choice = parser.add_mutually_exclusive_group()  # one of --model, --no-model or --gguf (GG4), checked below
     choice.add_argument("--model", help="registered model to keep loaded")
     choice.add_argument("--no-model", action="store_true", help="control plane only; generation returns unavailable")
     parser.add_argument("--host", default="127.0.0.1")
@@ -256,10 +256,10 @@ def serve(argv: list[str]) -> int:
                              "answers are its own. Implies --speculate context. On a 4-vCPU Xeon one request ran 1.6x "
                              "faster with Qwen3-0.6B drafting for Qwen3-4B")
     parser.add_argument("--gguf", default=None,
-                        help="GG1 (with --engine ggml, CPU only): the GGUF llama.cpp serves for the registered model; "
-                             "it must give the model's token ids and pass the quality gate on this machine (its "
-                             "perplexity within 0.5 %% of the model widened to float32), or the server refuses. "
-                             "`tools/gguf_from_mlx.py` builds one from the registered MLX model")
+                        help="GG1: the GGUF llama.cpp serves. With --model, for that registered model: it must give "
+                             "the model's token ids. Without --model (GG4), on its own as `gguf/<file name>`, with the "
+                             "tokenizer and chat template it carries. Either way it serves only after its quality gate "
+                             "passed on this machine. `tools/gguf_from_mlx.py` builds one from a registered MLX model")
     parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "dense", "ggml", "stock", "ironmule"),
                         default=None,
                         help="default reference; with --agent on and no --compute-dtype the agent chooses the plan and "
@@ -331,6 +331,10 @@ def serve(argv: list[str]) -> int:
                              "unchanged, and only when no tune profile is stored; `reference` keeps the engine's "
                              "default knobs")
     args = parser.parse_args(argv)
+    if args.model is None and not args.no_model and args.gguf is None:
+        parser.error("one of --model, --no-model or --gguf is required")
+    if args.no_model and args.gguf is not None:
+        parser.error("--no-model starts no worker; --gguf serves one")
     if args.gguf is not None and args.engine is None:  # a GGUF names the ggml engine (GG1); AG10 is its agent
         args.engine = "ggml"
     if args.draft_gguf is not None:
@@ -380,6 +384,16 @@ def serve(argv: list[str]) -> int:
     signal.signal(signal.SIGTERM, stop)
     try:
         spec = store.model(args.model) if args.model else None
+        if spec is None and args.gguf is not None:  # GG4: the GGUF on its own: its tokenizer and template, no snapshot
+            from ironmule.gguf_tokenizer import gguf_model_id, gguf_revision
+
+            from .types import ModelSpec
+
+            path = Path(args.gguf).resolve()
+            if not path.is_file():
+                raise InvalidRequest("--gguf names no file")
+            spec = ModelSpec(gguf_model_id(str(path)), gguf_revision(str(path)), str(path), path.stat().st_size)
+            print(json.dumps({"gguf_model": spec.model_id}), flush=True)
         if spec is not None:
             lease = model_lease(store)
             try:
@@ -420,6 +434,24 @@ def serve(argv: list[str]) -> int:
                 reason = available()
                 if reason is not None:
                     raise InvalidRequest(f"--engine ggml: {reason}")
+                from ironmule.ggml_engine import gpu_layers as ggml_gpu_layers
+
+                if (ggml_gpu_layers() and not os.environ.get("IRONMULE_KG_LIB")
+                        and os.environ.get("IRONMULE_KG", "1") != "0"):
+                    # KG1 (ST2, 2026-11-15): kernels generated and tuned for this GPU and model, once, then cached;
+                    # the gate below runs with them, and the engine keeps them per token count where its step is
+                    # faster. On a T4 one request 1.27x the engine without them (docs/LAB.md, KG2). IRONMULE_KG=0: off
+                    try:
+                        from ironmule.kernel_gen import ensure
+
+                        library = ensure(str(Path(args.gguf).resolve()), Path(store.root) / "kernels",
+                                         log=lambda line: None)
+                        if library is not None:
+                            os.environ["IRONMULE_KG_LIB"] = str(library)
+                            print(json.dumps({"ggml_kernels": str(library)}), flush=True)
+                    except Exception as exc:  # noqa: BLE001 - llama.cpp's own kernels serve without them
+                        print(json.dumps({"ggml_kernels": None, "reason": f"{type(exc).__name__}: {exc}"[:300]}),
+                              flush=True)
                 checked = ggml_gate(spec.snapshot_path, args.gguf, cache=Path(store.root) / "ggml-gate")
                 print(json.dumps({"ggml_gate": {k: checked.get(k) for k in ("ratio", "interval", "passes", "reason")}}),
                       flush=True)

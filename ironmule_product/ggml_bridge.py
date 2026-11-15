@@ -99,6 +99,10 @@ class GgmlBridge:
             except Exception:  # noqa: BLE001 - the agent never stops the server; the incumbent keeps serving
                 self._agent.pending_switch = None
 
+    @property
+    def gguf_sha256(self) -> str:
+        return self._gguf_sha256
+
     def metadata(self) -> dict[str, Any]:
         """Safe startup metadata; no request data."""
         return {"configuration": "ggml", "plan": "strict_one_shot",

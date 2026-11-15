@@ -1482,14 +1482,29 @@ print(json.dumps({"nll": rows}))
 
 GATE_IDS = r"""
 import json, sys
-from mlx_lm.tokenizer_utils import load
 from pathlib import Path
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, _text_ids, gate_bos
-tokenizer = load(Path(sys.argv[1]))
+if sys.argv[1].lower().endswith(".gguf"):  # GG4: a GGUF served on its own tokenizes the gate's text itself
+    from ironmule.gguf_tokenizer import GgufTokenizer
+    tokenizer = GgufTokenizer(sys.argv[1])
+else:
+    from mlx_lm.tokenizer_utils import load
+    tokenizer = load(Path(sys.argv[1]))
 print(json.dumps({"ids": _text_ids(tokenizer)[:CHUNKS * CHUNK_TOKENS + 1], "bos": gate_bos(tokenizer)}))
 """
 DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
 SETTING_KEYS = ("flash_attn", "kv_unified", "kv_f32", "kv_q8")
+
+
+def gate_key(snapshot: str, gguf: str) -> str:
+    """The gate's cache key: the GGUF, the snapshot (or the GGUF itself, GG4), the gate rule, the engine, the machine,
+    and the generated kernel library the gate ran with (KG1: IRONMULE_KG_LIB), so that a new library is gated anew."""
+    from .numeric_choice import GATE_VERSION
+
+    kg = os.environ.get("IRONMULE_KG_LIB") or ""
+    return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
+                                     OPTION_BOUND, machine_key(), file_sha256(kg) if kg and Path(kg).is_file() else ""],
+                                    sort_keys=True).encode()).hexdigest()[:24]
 
 
 def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | None = None) -> dict[str, Any]:
@@ -1503,8 +1518,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     from .numeric_choice import GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
-    key = hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
-                                     OPTION_BOUND, machine_key()], sort_keys=True).encode()).hexdigest()[:24]
+    key = gate_key(snapshot, gguf)
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"{key}.json"
     if stored.exists():
