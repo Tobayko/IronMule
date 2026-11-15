@@ -238,10 +238,13 @@ def test_dreams_use_the_same_learner_stay_bounded_and_never_become_experience(tm
     plant = Plant(learner)
     for _ in range(400):
         plant.step()
+    # The plant's own idle calls dream for up to 50 ms of wall time each, so on a loaded machine they can spend the whole
+    # allowance (seen in the parallel suite: "waiting for new experience"); one expected observation's grant restores it.
+    learner._dream_allowance = max(learner._dream_allowance, CONTRACT["dreaming"]["grant_expected"])
     before = learner.status()
     learner.idle(lambda: False)
     after = learner.status()
-    assert after["dreaming"]["synthetic_updates"] > before["dreaming"]["synthetic_updates"]
+    assert after["dreaming"]["synthetic_updates"] > before["dreaming"]["synthetic_updates"], learner.dream_state
     assert after["learning"]["real_transitions"] == before["learning"]["real_transitions"]
     assert after["learning"]["real_updates"] == before["learning"]["real_updates"]
     stops = after["dreaming"]["stopped_outside_support"] + after["dreaming"]["stopped_uncertain"]
