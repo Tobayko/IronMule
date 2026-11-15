@@ -99,11 +99,13 @@ def main():
         for s in OUT["shapes"]:
             n = counts[("Q4_K", s["K"], s["N"])]
             g = [r["us"] for r in s["rows"] if r.get("ggml") and r["B"] == B]
-            v = [r for r in s["rows"] if "L" in r and r["B"] == B and r["rel_err"] < 1e-4]
+            gerr = [r["ggml_rel_err"] for r in s["rows"] if "ggml_rel_err" in r and r["B"] == B]
+            bound = 1.25 * gerr[0] if gerr else 1e-4  # no less exact than llama.cpp's own kernel
+            v = [r for r in s["rows"] if "L" in r and r["B"] == B and r["rel_err"] <= bound]
             if not g or not v:
                 continue
             top = min(v, key=lambda r: r["us"])
-            best[f"{s['K']}x{s['N']}"] = {k: top[k] for k in ("L", "R", "W", "us", "GBps", "rel_err", "rel_to_ggml")}
+            best[f"{s['K']}x{s['N']}"] = {k: top.get(k) for k in ("P", "L", "R", "W", "us", "GBps", "rel_err", "rel_to_ggml")}
             best[f"{s['K']}x{s['N']}"]["ggml_us"] = g[0]
             g_us += n * g[0]
             v_us += n * top["us"]

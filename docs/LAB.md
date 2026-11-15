@@ -1360,3 +1360,27 @@ Idle, separate processes put it 1.6-3.8 % below the defaults at the same 4 threa
 attached and detached in turn (4 rounds each, `e.pilot = None`) shows no cost: 10.04 against 10.05 tok/s for one
 request and 65.6 against 65.0 for eight (decisions 0.38 ms a step), so that gap was the spread between processes.
 With two busy processes the Pilot is 32x the defaults for one request and 21x for eight (short answers, one block).
+
+## 2026-11-15 KG1 v1: generated Q4_K CUDA kernels against llama.cpp's, on a T4
+
+Goal (owner, 2026-11-15): kernels the agent writes and tunes for each machine, as one more lever beside threads and
+batching. First step: `lab/kg1/gen.py` generates one CUDA kernel per parameter set for llama.cpp's Q4_K weights times
+float32 activations (lanes per 256-weight block L, rows per warp R, warps per block W, tokens per call B: 105
+variants), `lab/kg1/kaggle_kg1.py` runs each on the real Q4_K weights of Qwen3-4B Q4_K_M on a Kaggle T4 against
+llama.cpp's own kernel (`ggml_mul_mat` on the CUDA backend, `lab/kg1/ref_ggml.c`) and a float64 reference that
+decodes the format element by element. 8 weight copies per timing (no cache reuse), 50 repetitions.
+
+| shape (K x N), tokens | llama.cpp us (GB/s) | best variant us (GB/s) | variant |
+| --- | --- | --- | --- |
+| 2560 x 1024, 1 / 2 / 4 / 8 | 20.9 (71) / 22.1 / 33.1 / 54.2 | 20.8 / **15.2** / **20.8** / **35.5** | L16R1W4, L32R1W4, L32R1W2, L16R4W2 |
+| 2560 x 9728, 1 / 4 / 8 / 16 | 71.4 (196) / 140.4 / 251.7 / 107.3 | 88.6 (158) / 158.5 / 286.5 / 626.7 | L8R2W2, L16R4W8, ... |
+| 9728 x 2560, 1 / 4 / 8 / 16 | 62.0 (226) / 113.9 / 243.3 / 109.1 | 89.3 (157) / 143.9 / 280.3 / 581.7 | L8R4W8, L16R4W8, ... |
+
+Errors against float64: every variant 1.4-2.4e-7, llama.cpp 4.8-5.6e-3 (1-8 tokens) and 1.1-1.5e-2 (16), because it
+rounds the activations to 8 bits first. All Q4_K matmuls of one token (the model's counts per shape): llama.cpp 9.69
+ms at 1 token, the best variants 12.05 ms (0.80x); 0.71x / 0.87x / 0.90x at 2 / 4 / 8 tokens, 0.21x at 16, where
+llama.cpp switches to its tensor-core kernel. Read: llama.cpp's one-token kernel reads up to 226 GB/s, 70 % of the
+T4's 320 GB/s; the float32 variants win on the small 2560 x 1024 matrices and lose on the large ones, and from 4 tokens
+they are bound by float32 arithmetic. llama.cpp's own small-batch path is weakest at 4-8 tokens (55-57 GB/s on the
+large matrices, slower than its 16-token path). v2 adds variants with 8-bit activations and `__dp4a` (four
+multiply-adds per instruction) for that range.
