@@ -1489,3 +1489,29 @@ the bytes and is slower (7.24 tok/s): it is bound by its decoding (18 GB/s, stil
 With 8 rows compute decides (ROW1 1.42x). So for one request the lever is fewer bytes at Q8_0's compute speed: a 4-bit
 weight read at 40 GB/s would allow up to about 16 tok/s; llama.cpp's Q4_K kernels on this CPU reach 7.2. A 4-bit
 format changes the answers and goes through the quality gate. Not more SIMD for Q8_0's one-row case.
+
+## 2026-11-15 ST2 (GPU): MQ1, Q4_K repacked for warp streaming, on a T4
+
+`lab/mq1/kaggle_mq1.py` at f2128a9, Kaggle T4 (SG1 v2's llama.cpp build for llama.cpp's own kernels), Qwen3-4B
+Q4_K_M. MQ1 (`lab/mq1/mq1.cu`): the Marlin principle (arXiv 2408.11743) as far as a Turing GPU allows (no cp.async):
+the Q4_K quants reordered once so that lane j of a warp reads sub-block j's 16 bytes (512 contiguous bytes per warp
+and iteration), the same 4.5 bits a weight, the block headers beside them, float32 activations as they are. The
+repacking decodes to exactly the weights gguf-py's dequantize gives (max difference 0.0, checked locally). Rule fixed
+before the data: on to an end-to-end run only if one request's step would be at least 15 % shorter.
+
+| Q4_K shape (K x N, count) | llama.cpp us (GB/s), 1 token | MQ1 best us (GB/s) | variant W/R/U |
+| --- | --- | --- | --- |
+| 2560 x 1024 (54) | 24.6 (60) | **16.1** (91) | 4/4/2 |
+| 2560 x 4096 (36) | 62.8 (94) | **39.4** (150) | 4/4/1 |
+| 2560 x 9728 (72) | 103.0 (136) | **77.2** (182) | 4/4/1 |
+| 4096 x 2560 (36) | **29.7** (199) | 35.6 (166) | 4/4/1 |
+| 9728 x 2560 (18) | **62.4** (225) | 77.5 (181) | 4/4/1 |
+
+Errors against float64: MQ1 2.4-3.1e-7, llama.cpp 4.8-5.5e-3. Q6_K (llama.cpp only): 4.06 ms a token, the output
+matrix 2.07 ms of it. At 2 and 4 tokens MQ1 is 0.3-0.7x llama.cpp (float32 arithmetic per row). All Q4_K matmuls of
+one token: llama.cpp 13.19 ms, the faster of the two per shape 10.04 ms. The engine's step was not measured on this
+GPU (its probe printed nothing; llama-server did not start at the end, which stopped the run); with the 18.7 ms one
+request's step measured on other T4 sessions (KG1 v3, SG1) the projection is 18.7 to 15.5 ms, +20 %; with this
+session's slower llama.cpp matmuls (13.2 + 4.1 ms of matmuls alone) it is about +16-18 %. llama.cpp's own times differ
+between T4 sessions by up to 1.8x on one shape (2560 x 4096: 34.5 us in KG1 v2, 62.8 us here), so only an
+end-to-end run on one session decides. By the rule: on to the end-to-end run, MQ1 for one token only.
