@@ -97,8 +97,10 @@ the integration tests only (OPT3-D (a): protocol 2 vetoed a stalled run, referen
 
 ## The IronMule agent (`--agent on`, AG1, opt-in)
 
-No hardware result yet: nothing here claims that the agent makes a server faster. What has run is the agent's
-code against a simulated server and on this repository's tests (BACKLOG AG1, S). It decides two things only:
+Two hardware results so far: its own setup at startup (AG4) and the serving mode it learns while it serves on two
+paths (AG6), both below. The online part that orders and sizes groups, the order and width it learns while it
+serves, has no hardware gain yet: what has run is its code against a simulated server, on this repository's
+tests and in hardware runs that qualified nothing (BACKLOG AG1, S, V to V5-CPU). That online part decides two things only:
 order and group width. Placement across GPUs, engine, plan, knobs and output are outside it. Its world model
 assumes one group at a time with members prefilled one after another, so it refuses the dense plan's slot reuse
 and runs on one worker. Its replays use recorded arrival times, prompt lengths and output limits (capped at 512
@@ -106,6 +108,86 @@ tokens) with a filler prompt, skipping only stretches in which the server is idl
 answers longer than 512 tokens are therefore not represented. A schedule it qualifies is proven only for the binding it was measured under, and on
 the traffic that machine saw. Where idle spells are shorter than a replay window, nothing qualifies and the
 server's own schedule keeps serving.
+
+### Its own setup at startup (AG4)
+
+AG4-C run 3 (BACKLOG AG4) is the one measured gain: on one cloud CPU (x86_64, 4 cores), with
+`mlx-community/SmolLM2-135M-Instruct-8bit`, the agent chose `dequantize` by itself. Through the product it then
+served 24.5x the default path's tokens per second (95 % 12.3x to 31.3x), with first tokens about 20x sooner, on
+RL2-H2's bursts and spike traffic (4 blocks, 16 requests per path and run, 16-token answers). The default path
+missed the 3,600 s deadline on 22 of its 32 requests; those were counted as finished at the deadline, in its
+favour. `dequantize` changes answers within its quality gate (logits within 0.28 % of the float32 plan; 1 of
+5 comparable answers bit-identical). Nothing here covers another CPU, another model, quiet traffic, a GPU, the
+stacked engine or the router (AG4-R run 1 was cut by Kaggle's time limit and is invalid).
+
+CPU6-M (BACKLOG CPU6) measured two opt-in CPU paths a caller names, not the agent's choice: on the same kind of
+cloud CPU (x86_64, 4 cores, mlx 0.32.4) with `mlx-community/SmolLM2-135M-Instruct-8bit`, 8 requests offered at
+once with 64-token answers, `--cpu-blas openblas` with `--compute-dtype dequantize` served 2.93x the tokens per
+second of `--compute-dtype dequantize` alone (95 % 2.82x to 3.06x), and `--engine dense` (the CPU stacked plan)
+with `--cpu-blas openblas` 12.5x (95 % 11.9x to 13.0x), first tokens about 3x and 40x sooner. OpenBLAS passed the
+perplexity gate (ratio 1.0000004) and every answer matched on that workload, but a different summation order can
+change answers, so both stay opt-in. Nothing here covers another CPU, a larger model, other traffic, macOS (whose
+MLX uses Accelerate, not this shim) or a machine without a C compiler (there the stock BLAS serves and `/health`
+says why). Under `--agent on` with nothing named, the agent now measures both on a CPU (CPU6 step 3). In
+CPU6-A2 (plan version 2) it chose the CPU stacked engine on OpenBLAS by itself, each behind its own gate, and through
+the product served 12.7x the tokens per second of AG4's earlier CPU choice (95 % 12.2x to 13.1x), first tokens about
+43x sooner, every answer equal on that workload; the same machine, model and traffic as CPU6-M. On a second
+machine, a Kaggle CPU session (CPU6-A2-K), it made the same choice by itself and served 9.34x (95 % 9.30x to
+9.38x), first tokens about 33x sooner, every answer equal. With `mlx-community/Qwen3-0.6B-4bit` on this container
+(CPU6-Q) it chose `dequantize` on OpenBLAS but refused the stacked engine (one request alone at 0.73x), and served
+4.36x (95 % 4.25x to 4.50x), every answer equal; nothing beyond those two x86 CPUs, those two models and that
+traffic is covered. These gains are against IronMule's own earlier CPU path. Against llama.cpp on the same CPU and model
+(LC1, `llama-server` with the Q8_0 GGUF), IronMule's best CPU setup was about 5x slower with 8 requests at once
+(95 % 4.4x to 5.8x) and about 14x slower for one request (12.6x to 14.4x); on a CPU, llama.cpp is much faster. With
+`--engine ggml --gguf PATH` IronMule serves through llama.cpp's own kernels in process: on this CPU and model (GG2-H) as
+fast as `llama-server` with 8 requests at once (1.00x, 95 % 0.94x to 1.07x) and 1.14x for one request (1.09x to 1.20x),
+first tokens 10-20 ms later, answer quality gated against llama.cpp's default setting. With llama.cpp's own options
+admitted (GG3, perplexity within 0.5 % of its default) and `llama-server` given the same options, it made 1.16x
+under load and 1.52x alone on Qwen3-0.6B and 1.11x and 1.04x on Qwen3-1.7B (Qwen's Q8_0 GGUFs), and 0.87x and 0.98x on
+SmolLM2-135M; against `llama-server`'s defaults Qwen3-0.6B reached 1.33x under load. Nothing beyond that CPU, those
+models and that traffic is covered, and the agent does not choose this engine by itself yet. Speculation from the context (`--speculate context`, SP2) is opt-in: through the product on
+this CPU it changed no answer and made one request at a time 1.40x the tokens per second on average (95 % from
+1.21x), short of its bound of 1.3, and 1.04x under load (SP2-H); the agent does not turn it on by itself. In
+CPU6-A, before that revision, it refused the stacked engine on 14 ms of one request's first token.
+
+On two T4s with `mlx-community/gemma-3-12b-it-4bit` the agent chose the Gemma stacked engine at width 6 by itself
+(AG5-G run 6, at `5f064c3`, before the review fixes of 2026-11-08). Its worker then failed under a spike: 8
+requests got `backend_unavailable`, and its service answered no request for the next 3 hours, so each one waited
+out its 3,600 s deadline. With fresh workers on the swapped cards it served 4 blocks with no failure. The cause
+is not known and the fault is not reproduced; the run gives no gain (invalid by its rule). STAB3 (BACKLOG) fixed on
+this branch what its pattern points to, with local fault tests only: the service let 8 requests into a group
+while that plan had 6 slots, a stuck worker held its group up to twice the request timeout, and recovery could
+restart for good. Until AG5-R passes on the card, that setup is not shown to be stable. STAB4 checked the slot pool,
+admission, joining, cancellation and failure handling through the product's own service, client, worker
+process and pool on MLX's CPU, with a tiny random Gemma 3 and the reference attention in place of the CUDA
+kernels; that covers the control logic, not the card's kernels, memory or speed.
+
+### The serving mode it learns while serving (AG6)
+
+AG6-H (BACKLOG AG6) is the measured gain from learning while serving: on one Kaggle T4, with
+`mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, the agent's setup was two paths on the card, the float16 single path
+and the stacked engine at width 8. Dreaming over the traffic it served, the agent moved from routing each request
+to stacking every request after its first 32, and it then made 1.51x the tokens per second of the router it
+replaces (95 % 1.33x to 1.64x), with mean first tokens at 0.55x (95th percentile 0.49x). That was on RL2-H2's
+bursts and spike states at 0.8 and 3.0 times the single path's capacity, 16 blocks of 32 requests with
+256-token answers, through the product at `c58fb4b`. Every answer was one of the two gated paths' own. Its gain is
+one switch it learned by itself; the run did not show it switching back, since stacking won in every state there,
+and the forced stacked engine was 0.75 % faster still. Nothing here covers quiet traffic, another model, card or
+card count, answers of other lengths, or a setup other than `route`. On quiet traffic the agent also moves to the mode
+with the earliest first tokens at the same throughput (REV1, 2026-11-08). Quiet is observed, never estimated: of
+the last 64 finished requests (at least 32), at most 1 in 16 arrived while another was being served, none is in
+flight, and none in that span ended without its answer. That choice is a replay of its learned single-request
+prices, not measured on hardware. Replayed on AG4-R and AG6-H it changed no decision.
+
+It does not follow a fast load change (AG6-Q, 2026-11-08: same card and model, 64-token answers, 3 repetitions).
+Through a 48-request spike it stayed in `route`, at 0.58x the forced stacked engine's tokens per second. It
+switched to `stacked` only at the spike's last request, in two repetitions, and never in the third. It then served
+the next 64 quiet requests stacked and switched back to `route` 190 s into that quiet phase, with mean first tokens
+there 1.9x the single path's. A one-line rule on the card's observed state (stacked while anything is outstanding,
+else single) came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first token in
+every phase. So with a `route` setup under `--agent on`,
+traffic that changes within the agent's 64-request window can give later first tokens than the router it replaces.
+Each dream took about 15 ms, on the thread of the request that had just finished.
 
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 
@@ -183,7 +265,9 @@ measured it as it ships: version 2 prefill, freed slots refilled by newcomers, e
 token, at its default width of eight (width four cost 8.3 % more). Without slot reuse it had cost 24.0 % less
 (H9). It is recommended on exactly that setup (two Tesla T4s, `mlx-community/Qwen3-1.7B-bf16` at `9cd66928`), as
 an opt-in numeric plan: about half of its answers differ from `--engine tuned` (258 of 576 compared were the
-same). It passed the numeric plans' quality gate.
+same). It passed the numeric plans' quality gate. Until a fix on 2026-11-07 (BACKLOG AG6-H), the worker rejected a
+request that joined a batch after the batch's first run as too long for the engine; runs before then measured that
+worker.
 
 It needs unquantized Qwen 3 bf16 on CUDA below compute capability 8 and takes about two minutes to start. The
 recommendation covers prompt plus answer up to 2,048 tokens, the slot size it was measured with and still
@@ -198,8 +282,9 @@ STAB1 that stopped serving for good; now the server replaces the worker (at most
 identity only, old process reaped first): through three overload replays it served every window, the group in flight
 got explicit errors (5 requests), each replacement took about 13 s and no accepted request was lost. A SIGKILLed
 worker was replaced in 17.6 s with identical answers afterwards. Not changed: the memory growth (MEM2); a queued
-request can time out behind a group that holds the worker until its own deadline, and a grouped request's completion
-waits for its engine run (HOL1); past the accept limit a refused client often sees a connection reset instead of the
+request can still time out behind a group that holds the worker, and a grouped request's completion
+waits for its engine run (HOL1); since STAB3 a worker that sends nothing for 300 s while generating is retired then,
+and recovery ends after three restarts without a served request, in tests with stand-in workers only; past the accept limit a refused client often sees a connection reset instead of the
 429 (HTTP1). Not measured: other GPUs and models, the Metal path, `--engine rust2`, real user traffic.
 
 MEM2 (CUDA, one T4): MLX's cache of freed buffers, not held requests or CUDA graphs, filled the device under

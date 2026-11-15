@@ -22,7 +22,7 @@ import subprocess
 import threading
 from typing import Any, Callable, Iterator
 
-from .errors import BackendUnavailable, InvalidRequest, Overloaded
+from .errors import BackendUnavailable, EngineLimitExceeded, InvalidRequest, Overloaded
 from .service import STABILITY_LOG
 from .serving_policy import ServingLog
 from .types import GenerationRequest
@@ -100,7 +100,11 @@ class DevicePool:
     """The `ProductService` surface the HTTP server uses, over one service per device."""
 
     learning = None
+    agents: list[Any] | None = None  # AG2: one agent per device, attached by the CLI; placement stays the pool's
     dispatch = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; attach() also hands it to each device
+    router = None  # AG4 step 2: a path_router.PathRouter over two serving paths on one card (the shards, in order)
+    router_faults = 0  # decisions the router failed to make; placement order served those requests
+    path_fallbacks = 0  # routed requests a path could not hold, served by the next path instead
 
     def __init__(self, shards: list[Any], devices: list[str]):
         if not shards or len(shards) != len(devices):
@@ -144,13 +148,53 @@ class DevicePool:
             order = self._order(request)
             if not order:
                 raise BackendUnavailable("no model worker is ready")
+            router = self.router
+            outstanding = [shard.outstanding() for shard in self.shards]
+            if router is not None and len(order) == len(self.shards):
+                try:
+                    chosen = router.choose(outstanding, request.max_tokens)
+                    order.remove(chosen)
+                    order.insert(0, chosen)
+                except Exception:  # noqa: BLE001 - a router fault never fails a request: placement order serves
+                    self.router_faults += 1
             overloaded: Overloaded | None = None
             for index in order:
                 try:
-                    return self.shards[index].stream(request)
+                    events = self.shards[index].stream(request)
+                    if router is None:
+                        return events
+                    return self._held(request, index, router.watch(index, outstanding[index] + 1, events),
+                                      [other for other in order if other != index], outstanding)
                 except Overloaded as exc:  # this device's queue is full; a longer one may not be
                     overloaded = exc
             raise overloaded
+
+    def _held(self, request: GenerationRequest, index: int, events: Iterator[dict[str, Any]], others: list[int],
+              outstanding: list[int]) -> Iterator[dict[str, Any]]:
+        """A routed request whose path cannot hold it (EngineLimitExceeded, before any token: the stacked
+        engine's slot, AG4-R run 1) goes to the next path in order; the router learns nothing from the refusal."""
+        streamed = False
+        try:
+            for event in events:
+                streamed = streamed or event.get("type") == "token"
+                yield event
+            return
+        except EngineLimitExceeded:
+            if streamed or not others:
+                raise
+        with self._lock:
+            self.path_fallbacks += 1
+            fallback = None
+            for other in others:
+                sharing = self.shards[other].outstanding() + 1  # as it stands now, not when the request came
+                try:
+                    fallback = self.shards[other].stream(request)
+                    break
+                except Overloaded:
+                    continue
+            if fallback is None:
+                raise Overloaded("no other path can take this request now; retry later")
+        yield from self.router.watch(other, sharing, fallback)
 
     def cancel(self, request_id: str) -> bool:
         return any(shard.cancel(request_id) for shard in self.shards)
@@ -164,6 +208,12 @@ class DevicePool:
         for key in ("last_batch_size", "batch_count", "worker", "in_flight", "groups_started",
                     "oldest_queued_s", "learning"):
             result.pop(key, None)
+        if self.router is not None:
+            try:
+                paths = self.router.status()
+            except Exception as exc:  # noqa: BLE001 - health answers even when the router cannot
+                paths = {"status_error": f"{type(exc).__name__}: {exc}"[:300]}
+            result["paths"] = {**paths, "fallbacks": self.path_fallbacks, "router_faults": self.router_faults}
         result["devices"] = [{"cuda_device": device, "ready": health["ready"], "device": health.get("device"),
                               "worker": health.get("worker"), "in_flight": health.get("in_flight"),
                               "queued_requests": health.get("queued_requests"),
@@ -174,6 +224,9 @@ class DevicePool:
         result["dispatch"] = "learned" if dispatch is not None and dispatch.active else "join_shortest_queue"
         if dispatch is not None:
             result["learned_dispatch"] = dispatch.status()
+        if self.agents:
+            result["agents"] = [{"cuda_device": device, **agent.status()} for device, agent in zip(self.devices,
+                                                                                                 self.agents)]
         return result
 
     def learning_status(self) -> dict[str, Any]:
@@ -192,12 +245,19 @@ class DevicePool:
 
     def dispatch_status(self) -> dict[str, Any]:
         from .learned_dispatch import status_of
+        if self.agents:
+            return {"agents": [{"cuda_device": device, **agent.status()}
+                               for device, agent in zip(self.devices, self.agents)]}
         return status_of(self.dispatch)
 
     def dispatch_control(self, action: str) -> dict[str, Any]:
-        """One dispatch object serves every device, so withdrawing it once withdraws it everywhere."""
+        """One dispatch object serves every device, so withdrawing it once withdraws it everywhere; with an agent
+        per device (AG2), the operator's action reaches every one of them."""
         from .learned_dispatch import control
         try:
+            if self.agents:
+                return {"agents": [{"cuda_device": device, **agent.control(action)}
+                                   for device, agent in zip(self.devices, self.agents)]}
             return control(self.dispatch, action)
         except ValueError as exc:
             raise InvalidRequest(str(exc)) from exc
@@ -211,6 +271,14 @@ class DevicePool:
     def close(self) -> None:
         for shard in self.shards:
             shard.close()
+
+
+def start_paths(store: Any, spec: Any, makers: list[Callable[[], Any]], labels: list[str],
+                service_type: Callable[..., Any], router: Any) -> DevicePool:
+    """AG4 step 2: several serving paths of one model on one card (each its own worker), placed by `router`."""
+    pool = start_pool(store, spec, labels, lambda label: makers[labels.index(label)](), service_type)
+    pool.router = router
+    return pool
 
 
 def start_pool(store: Any, spec: Any, devices: list[str], make_backend: Callable[[str], Any],
@@ -243,5 +311,6 @@ def start_pool(store: Any, spec: Any, devices: list[str], make_backend: Callable
     for device, backend in zip(devices, backends):
         shard = service_type(store, backend=backend, spec=spec)
         shard.make_backend = (lambda device=device: make_backend(device))  # STAB1, on the same card
+        shard.label = device  # STAB3: names this shard in the stability log the shards share
         shards.append(shard)
     return DevicePool(shards, devices)

@@ -204,14 +204,19 @@ class DenseStackedMode:
     name = "dense_stacked"
     groups = True
 
-    def __init__(self, plan, max_width: int = 8):
+    def __init__(self, plan, max_width: int = 8, speculate: bool = False):
         self.plan, self.max_width = plan, max_width
+        # SP2: speculation from the context, only on a plan whose probe found its verify window bit-identical
+        self.speculate = bool(speculate) and bool(getattr(plan, "verifies_windows", False))
         self._backend = None
 
     def backend(self, engine, eos_ids):
         from .dense_plan import DenseBackend
         if self._backend is None:
             self._backend = DenseBackend(self.plan, eos_ids)
+            if self.speculate:
+                from .speculation import WindowPolicy
+                self._backend.policy = WindowPolicy(self.plan.rows)
         return self._backend
 
     def executor(self, backend, telemetry):

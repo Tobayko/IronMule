@@ -1,0 +1,8 @@
+2952c2952,2956
+<         if (ggml_cuda_info().devices[cuda_ctx->device].cc < GGML_CUDA_CC_AMPERE) {
+---
+>         // GR1 (IronMule): IRONMULE_CUDA_GRAPHS=1 keeps CUDA graphs on GPUs older than Ampere (a T4 is Turing): a
+>         // one-token decode step is then one graph launch instead of hundreds of kernel launches.
+>         static const bool graphs_on_old_gpus = getenv("IRONMULE_CUDA_GRAPHS") != nullptr
+>                                                && strcmp(getenv("IRONMULE_CUDA_GRAPHS"), "1") == 0;
+>         if (ggml_cuda_info().devices[cuda_ctx->device].cc < GGML_CUDA_CC_AMPERE && !graphs_on_old_gpus) {

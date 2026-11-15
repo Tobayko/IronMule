@@ -363,6 +363,19 @@ def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
     saw and the wait between the calls would vanish from the record.
     """
     sessions = []
+    held = []  # STAB4: states prefilled by this call; their slots go back if a later prefill fails
+    try:
+        _build(requests, backend, telemetry, dispatch_ns, sessions, held)
+    except BaseException:
+        release = getattr(backend, "release", None)
+        if callable(release):
+            for state in held:
+                release(state)
+        raise
+    return sessions
+
+
+def _build(requests, backend, telemetry, dispatch_ns, sessions: list, held: list) -> None:
     for request in requests:
         metrics = RequestMetrics(rid=request.rid,
                                  arrival_ns=now() if dispatch_ns is None else dispatch_ns,
@@ -381,6 +394,7 @@ def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
             continue
         own = backend.capacity_for([len(request.prompt_ids)], request.max_tokens)
         state, first = backend.prefill(request.prompt_ids, request.plan, own)
+        held.append(state)
         session = Session(rid=request.rid, prompt_ids=list(request.prompt_ids),
                           max_tokens=request.max_tokens, plan=request.plan,
                           arrival_ms=request.arrival_ms, base_state=state,
@@ -390,4 +404,3 @@ def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
         telemetry.requests.append(metrics)
         telemetry.plan_kinds.append(getattr(request.plan, "kind", "unknown"))
         sessions.append(session)
-    return sessions

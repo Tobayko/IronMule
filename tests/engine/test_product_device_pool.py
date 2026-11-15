@@ -271,3 +271,63 @@ def test_health_names_the_knobs_each_card_serves_with_and_whether_they_are_class
         assert "knobs" not in plain.health()  # the fake reports no knobs unless asked; nothing is invented
     finally:
         plain.close()
+
+
+def test_an_agent_per_device_reports_and_obeys_the_operator_while_placement_stays_the_pools(tmp_path):
+    """AG2: on several GPUs each card gets its own agent, bound to its card; health, status and the operator's
+    off/on reach every one, and placement stays join-the-shortest-queue."""
+    from ironmule_product.agent import Agent
+
+    binding = {"hardware": {"chip_name": "test", "gpu_devices": 2}, "device": "gpu", "model": {"id": "m"}}
+    agents = [Agent(tmp_path / "agent", {**binding, "card": card}, capacity=1,
+                    reference={"width": 1, "sjf": False, "gather_ms": 0}) for card in ("0", "1")]
+    assert agents[0].path != agents[1].path  # their learning never mixes
+    first, second = _Shard("a"), _Shard("b")
+    pool = DevicePool([first, second], ["0", "1"])
+    pool.agents = agents
+    assert [entry["cuda_device"] for entry in pool.health()["agents"]] == ["0", "1"]
+    assert pool.health()["dispatch"] == "join_shortest_queue"
+    assert len(pool.dispatch_status()["agents"]) == 2
+    assert all(entry["paused"] for entry in pool.dispatch_control("off")["agents"])
+    assert all(agent.paused for agent in agents)
+    assert not any(entry["paused"] for entry in pool.dispatch_control("on")["agents"])
+    for index in range(2):
+        list(pool.stream(_request(f"r{index}")))
+    assert first.admitted == ["r0"] and second.admitted == ["r1"]
+    for agent in agents:
+        agent.close()
+
+
+@pytest.mark.parametrize("count", [1, 3, 4, 100])
+def test_any_number_of_devices_is_placed_overflowed_refused_and_summed_like_two(count):
+    """MG1: the pool's control logic does not depend on there being two devices."""
+    devices = [str(i) for i in range(count)]
+    shards = [_Shard(f"s{i}") for i in range(count)]
+    pool = DevicePool(shards, devices)
+    for index in range(3 * count):  # join the shortest queue, ties to the lower index: round robin when idle
+        list(pool.stream(_request(f"r{index}")))
+    assert [shard.admitted for shard in shards] == [[f"r{i + k * count}" for k in range(3)] for i in range(count)]
+    loaded = [_Shard(f"s{i}", load=count - i) for i in range(count)]  # the last device is the least loaded
+    assert [e["shard"] for e in DevicePool(loaded, devices).stream(_request("x"))] == [f"s{count - 1}"]
+    full = [_Shard(f"s{i}", full=i < count - 1) for i in range(count)]  # all but the last full
+    assert [e["shard"] for e in DevicePool(full, devices).stream(_request("y"))] == [f"s{count - 1}"]
+    with pytest.raises(Overloaded):
+        DevicePool([_Shard(f"s{i}", full=True) for i in range(count)], devices).stream(_request("z"))
+    health = DevicePool([_Shard(f"s{i}", load=1) for i in range(count)], devices).health()
+    assert health["queued_requests"] == count and len(health["devices"]) == count
+    assert [d["cuda_device"] for d in health["devices"]] == devices
+    pool.close()
+    assert all(shard.closed for shard in shards)
+
+
+@pytest.mark.parametrize("count", [3, 4])
+def test_the_pool_starts_every_one_of_n_devices_or_none(tmp_path, monkeypatch, count):
+    store, spec, started = _fake_workers(tmp_path, monkeypatch)
+    pool = start_pool(store, spec, [str(i) for i in range(count)],
+                      lambda device: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=device),
+                      ProductService)
+    try:
+        assert sorted(row["visible"] for row in started) == [str(i) for i in range(count)]
+        assert pool.health()["ready"] is True and len(pool.shards) == count
+    finally:
+        pool.close()

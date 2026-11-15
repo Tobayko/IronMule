@@ -13,8 +13,104 @@ costs nothing to keep and can be refuted by anyone.
 The owner made one entry the project's main goal: a working IronMule agent. It decides on its own how the
 model's requests run on the hardware, reaches a measured gain there, keeps learning by reinforcement learning
 while it serves, and decides as fast as a small decision model. Every rule below still applies to it: it
-changes no answer, a gain counts only when it is measured, and it serves nothing it has not proven on the
-machine it runs on.
+keeps answer quality (since 2026-11-10 the same answer quality, not identical tokens; see below), a gain counts only
+when it is measured, and it serves nothing it has not proven on the machine it runs on.
+
+**What "gain" means (owner, 2026-11-03).** Tokens per second come first. Waiting time counts too, but less, and
+the time to the first token must not get worse. AG1 and AG2 so far judge a schedule by each request's time in
+the system plus its time to the first token. Ordering lowers that, but at a fixed capacity it moves no tokens per
+second: the same work runs on the same engine. Tokens per second move only through what the engine can run at
+once (width, true batching) and how fast its kernels are (AG3).
+
+**The agent sets up what was found by hand (owner, 2026-11-03).** "Things we already found out, the AI should
+learn and set on its own." The settings found by hand runs so far are the numeric plan (`native` about 6x on 4-bit
+checkpoints of an emulating GPU), the stacked engine (H10: 48 % cheaper), the width (w8 on the dense plan, w2 on
+the tuned engine), the order and the class-A knobs. The owner was asked whether the agent may also choose plans
+that change answers slightly. The answer was **yes, always**: under `--agent on`, a plan that passes the agent's
+own on-machine gate may serve without a further switch. The gate is the numeric plans' perplexity gate against
+the reference path (bound 1.005), the plan's load probe, and a speed check. This replaces "it changes no answer"
+for plan choice inside agent mode (AG4). It is never silent: the chosen plan, its gate and its reason are in
+`/health` and the agent's status. The agent stays opt-in. Without `--agent on`, the caller's plan is kept as
+before.
+
+**The CPU is enough to build the agent (owner, 2026-11-10).** "The CPU is fully sufficient for this project to make
+an AI that optimises itself; so we can keep training without limit." What that means under the rules above: the
+agent's training (its simulator, planner, dreaming and replay) needs no accelerator, and a Kaggle CPU session or
+this container spends no GPU quota, so training and proving the agent may run entirely on CPUs. A serving gain
+still counts only on the machine it was measured on: a CPU result holds for that CPU and model, and says nothing
+about a T4 or a Mac. CPU6 makes the CPU fast enough for that.
+
+**Every number of devices (owner, 2026-11-10).** "Mind multi-GPU, the same as a single GPU: whether three, four or
+a hundred GPUs are there, everything is to be covered." Whatever the agent can do on one device it must do on N
+devices, and the product must neither refuse nor silently drop a setting because a machine has more than one.
+MG1 lists where that does not hold today.
+
+**Answer quality, not identical tokens (owner, 2026-11-10).** "We change the token-identical rule. What matters is that
+the answer is correct, factually correct; it need not be identical. If the answer is still right, that is fully
+enough. Change that for this project: we go for full performance optimisation with the same answer quality." What
+that means from now on, for the whole project and not only for `--agent on`:
+- A path, plan, kernel, batching or speculation may change tokens. Bit-identity is no longer a requirement and no
+  longer a reason to reject a lever.
+- It serves only after its answer quality was shown to be the same on the machine: the perplexity gate against the
+  reference (bound 1.005, as NUM1 and AG4), and, once built, a correctness check on questions with checkable answers
+  (QG1, below). It is never silent: `/health` names the path and its gate.
+- A gain still counts only when measured as before; a quality loss beyond the gate disqualifies it, as a correctness
+  failure did before.
+- Tier 0 entries rejected only because tokens changed may be reopened under this rule with a quality gate (for
+  example HW3's prompt-lookup speculation on CUDA and TB1's true tensor batching on the T4), under a new protocol.
+
+**The quality bar is llama.cpp's, speed is what counts, the model stays as it is (owner, 2026-11-10, later the same
+day).** "Continue with IronMule so that the hardware is used better without changing the model; only speed counts,
+and for quality take the same quality as llama or somewhat better." Read as: (1) the main line is hardware
+optimisation of a given model, no retraining and no changed weights; (2) the measure is speed; (3) a path's answer
+quality must be at least llama.cpp's on the same model: on the perplexity gate's text its perplexity must not be
+higher than that of llama.cpp's default setting on the same GGUF (ratio at most 1.000, both numbers deterministic).
+This replaces the float32-on-MLX reference for the ggml engine; a GGUF llama.cpp itself serves is by definition at
+llama.cpp's quality. The owner was told this reading and may correct it.
+
+**llama.cpp's own options count as llama.cpp's quality; the three ways are taken (owner, 2026-11-11).** After GG2-H
+the owner was offered three ways past parity: (1) let flash attention serve, an option of llama.cpp itself (`-fa`),
+0.17 % worse in perplexity than its default on SmolLM2's GGUF, with `llama-server` given the same option for a fair
+comparison; (2) a larger model on this CPU; (3) LC2 on a Kaggle T4, about 2 GPU hours. The owner's answer: "Setzt das
+um" (implement it), read as all three and as the approval of LC2's GPU hours. Read for (1): a setting of the ggml
+engine that is one of llama.cpp's own options (flash attention, one unified KV cache, an f32 KV cache) is at
+llama.cpp's quality when its perplexity on the gate's chunks is within NUM1's bound of llama.cpp's default on the same
+GGUF (the ratio's 95 % upper end at most 1.005); a comparison then gives `llama-server` the same options. GG3 and LC2
+below carry it out. The owner was told this reading and may correct it.
+
+### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
+
+**Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers
+stay factually correct. QG1 adds that check: a fixed set of questions with checkable answers (arithmetic, facts,
+extraction from a given context), each answered greedily by the reference path and by the candidate; the candidate
+passes when its share of correct answers is not lower than the reference's by more than the reference's own A/A
+noise. It joins the perplexity gate for every path that changes tokens; its protocol is fixed before it serves a
+decision.
+
+### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
+
+`ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among
+the configurations SEQ1 measured (width x attention setting, all within the gate) by dreaming recorded traffic through
+a learned step-cost model, switches in idle time and reverts when the live steps disagree. Simulated in
+`training/ag10_sim.py` (LAB.md, AG10 S). Open: a hardware run where the traffic changes regime under a real server,
+and actions beyond configurations (thread count, admission) where a measurement shows headroom.
+
+### FA1 — IronMule's flash-attention kernel for llama.cpp on AVX-512 (2026-11-13, fast mode; shipped as a patch)
+
+`native/ggml_patches/fa1`, built by `tools/build_ggml.py`. 2.69x a decode step at 16 x 1,024 tokens against
+llama.cpp's flash attention, gate ratio 1.00001; end to end 1.19x-1.75x the better stock `llama-server` setting with a
+long system prompt (LAB.md, KV1 and FA1). Open: an AMX-BF16 or AVX512-FP16 variant, prefill with blocks of queries,
+other families' head layouts on hardware (Gemma 3, Llama 3.2, Mistral checked on this CPU, LAB.md).
+
+### MG2 — The ggml engine on GPUs, one or many (2026-11-13; first numbers 2026-11-14)
+
+GPU offload, split modes and one engine per GPU (`--gpus all --gguf`). `lab/mg2/kaggle_gpu.py` measures it on a Kaggle
+T4 x2 against `llama-server` (one GPU, split, one server per GPU) and vLLM on Qwen3-4B, Gemma 3 4B, Mistral 7B
+and Llama 3.1 8B. v4 (docs/LAB.md, 2026-11-14 MG2 v4), Qwen3-4B at 32 requests: one per GPU IronMule 1037-1059 tok/s
+against 797 for llama-server (ahead on Mistral 7B and Llama 3.1 8B too); on one GPU IronMule 748, llama-server 520,
+vLLM with AWQ 4-bit 893. At 8 requests on one GPU IronMule 150, llama-server 153, vLLM AWQ 431: vLLM is ahead on one
+GPU, and CUDA's small-batch kernels make 5-8 rows dear (PAD1, measured in v5). Gemma 3's answers failed through the
+harness (no BOS, fixed in v5); one-request numbers were inflated by SP4 on repeated prompts (off in v5). v5/v6 (2026-11-15): the shared pool with PAD1 on one GPU 1.32-1.41x the best `llama-server` arm at 8 requests on all four models, the same facts, 47-50 of 50 answers token for token unchanged; the server opens the pool on GPUs now. vLLM AWQ stays ahead on one GPU at 8 and 32 requests; one request is level with `llama-server` (SG1).
 
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
@@ -59,7 +155,7 @@ the pool model may misprice an engine (the dense plan's slot reuse is not modell
 learner found no gain on a T4 (P3).
 
 **Tests.**
-- **S, the loop in simulation (`tools/ag1_online.py`, local, no GPU).** The agent unchanged against a simulated
+- **S, the loop in simulation (`training/ag1_online.py`, local, no GPU).** The agent unchanged against a simulated
   server priced by RL8's H9 fit (a window slowdown of 3 % and a round slowdown of 2 %, lognormal), 300 live traces
   cycling through RL2-H2's quiet, bursty and spike states (seed 90,000, 240 s pauses), 1,500 planner episodes per
   seed; and the same with the machine changed at trace 150 to a price where a further session costs a whole step
@@ -72,7 +168,7 @@ learner found no gain on a T4 (P3).
   observed, plans, explorations, replayed triplets and that every replayed answer matched. No gain is decided: a
   CPU makes about one token a second here.
 - **V, the gain on hardware (Kaggle T4, after the weekly GPU quota resets).** *(Fixed 2026-10-30, before its data;
-  the pass rule amended from LD1-V's to KP1's, the rule qualification uses.)* `tools/rl2_headroom.py --plan ag1`,
+  the pass rule amended from LD1-V's to KP1's, the rule qualification uses.)* `training/rl2_headroom.py --plan ag1`,
   kernel `ironmule-rl2-headroom-ag1` pinned to a pushed commit, "GPU T4 x2" with one worker on the first card,
   `mlx-community/Qwen3-1.7B-bf16`, the product's own `ProductService` with `--engine tuned`, the agent attached as
   `--agent on` attaches it, reference schedule `w8/fifo` (the default where no schedule is qualified). About
@@ -90,6 +186,322 @@ learner found no gain on a T4 (P3).
     - **Validity:** every request completes, with the same tokens in all three cells of its block.
   - If nothing qualified in the online phase, V reports "nothing qualified online" and compares nothing. That
     is a result about idle time and noise on this setup, not a gain.
+  - **Result (2026-11-01, kernel `tobayko/ironmule-rl2-headroom-ag1` v1 at `3cb1e8f`, about 2.2 session hours):
+    nothing qualified online, so there is no hardware gain and no comparison.** The run is valid as far as it went:
+    all 36 online traces completed, 0 answers mismatched, and the analysis found no problems.
+    - The agent planned one candidate, the best fixed schedule (`c63bf219337e`), and explored twice.
+    - Its 36 traces gave 17 replay triplets of that candidate. At 17 triplets the candidate's gain was +3.5 % (95 %
+      -6.5 to +15.5 %) against 5.2 % replay noise. The looks at 6 and 12 were inconclusive, and the run never
+      reached the look at 18.
+    - The reference served throughout. The world model fit 1,138 groups at widths 1-8 to a median relative error of
+      4.0 %, and never reopened.
+    - By the Kill rule, `--agent` stays opt-in and experimental.
+    - *Descriptive, not part of the verdict.* V-CPU and V both gave about 0.47 triplets per trace. On the T4, one
+      triplet's noise (5.2 %) is wider than the candidate's point gain. Enough triplets to resolve a few-percent
+      gain needs either far more idle replay per trace or a lower-noise replay, such as pairing at the group level
+      instead of the window. Either is a mechanism change, to be fixed here before any rerun.
+    - Ledger entry owed.
+- **V2, the gain on hardware with enough triplets (fixed 2026-11-01, after V's result and before any of its own
+  data).** This protocol is shaped by V's data, and is labelled so. V and V-CPU each gave one replay window per
+  16-request trace. On the T4 a triplet's gain spread about 23 %, which you can read back from the 95 % interval
+  at 17 triplets, so the looks up to 24 could not resolve a gain of a few percent. Two things change:
+  - **The agent's judge** (`agent.py`). The looks move from (6, 12, 18, 24) to (12, 24, 48, 96), and the one-sided
+    alpha spent at them from (0.1, 0.2, 0.4, 1.8 %) to (0.05, 0.2, 0.6, 1.65 %), 2.5 % in all. `MAX_TRIPLETS` is
+    96, and the futility rule and the audit's looks follow. Nothing else in the agent changes.
+  - **The harness**, as `--profile t4b`. Each online trace has 64 requests, so four replay windows. There are 24
+    online traces on fresh seeds 195-218, with 480 s idle after each so that four triplets fit. The held-out
+    comparison uses 4 traces per state on seeds 219-222, also of 64 requests. Everything else is V's: model,
+    engine, one worker, reference `w8/fifo`, states, cost, decisions (1) and (2), and validity.
+  - **Three tiers (maintainer request, 2026-11-01).** Each held-out block runs the default (`w8/fifo`) twice as
+    its A/A pair, plus the best fixed schedule earlier runs found (RL6's `w2/sjf`, through the product's dispatch
+    hooks) and the agent, in rotated order. The fixed tier gives no answer of its own, and its tokens join the
+    validity check. Recorded, not decided:
+    - fixed over the default;
+    - the agent over the default;
+    - the agent over fixed.
+
+    Any gain of the agent over the fixed tier is what RL added. If the agent qualified nothing online, the tiers
+    are still measured, and its tier is the default schedule it served. The verdict stays "nothing qualified
+    online".
+  - **Gate:** S and S2 are rerun at the commit, and must pass (a)-(c) and (a')-(c') as before.
+    - Passed: S run 9 and S2 run 5, local.
+    - S: at trace 50, every world-model parameter is within 1.1 %. At trace 50 `w8/sjf` qualified (+6.6 %, 95 %
+      3.7-9.6 %, floor 0.8 %), and two later candidates were rejected. Learned windows cost 6.2 % less than the
+      reference.
+    - S2: 50 traces after the change, every parameter is within 2.9 %. At trace 182, 32 traces after the change,
+      `w1/sjf` qualified (+44.7 %, 95 % 37.2-50.7 %), and its audit confirmed it (+53.3 %). After the change,
+      windows cost 43.0 % less than the reference.
+  - **Cost:** about 8.5 session hours on one Kaggle T4, within the 12-hour session limit.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup. It
+    ships only opt-in.
+  - **Result (2026-11-02, kernel `tobayko/ironmule-rl2-headroom-ag1-t4b` v1 at `e18cd96`, 9.75 session hours):
+    invalid, and nothing qualified online.**
+    - **Why invalid.** The fixed validity rule says every held-out request completes. In `bursts` and `spike`, 10 to
+      27 of a trace's 64 requests hit the 120 s request deadline, in every arm, on all four held-out traces. Sixty-four
+      requests per trace overload the T4 in those states. A spike puts all 64 arrivals inside one second; V's 16 never
+      timed out. Sixteen requests differ across arms, all of them only in whether they finished before the deadline.
+      Every request that completed in all arms answered with the same tokens.
+    - **Online.** 24 traces, 617 groups, 3 plans, 0 explorations, 36 triplets, 0 qualified, 0 rejected; the reference
+      served throughout. The world model reached a 2.1 % median relative error over 1,684 groups and reopened 3
+      times. At arrival 192 (trace 198) the planner proposed `w4/sjf` (`1c205576ee02`, model gain +3.0 %). Not the
+      RL6 schedule `w2/sjf`: its model priced that at 17.20 against `w4/sjf`'s 16.52 and the reference's 17.06.
+    - At the look at 12 triplets the corrected bound was below the floor. At 24 it did not pass either: the bound
+      at the look's 0.2 % is not in the report, which shows the bound at 1.65 % between looks. At the last trace,
+      36 triplets gave +3.0 % (95 % +0.7 to +5.6 %, floor 0.03 %, noise 3.0 %). The run ended before the look at
+      48.
+    - **Three tiers**, *descriptive only, since the run is invalid*. They are bootstrap 95 % intervals over 4 traces
+      per state with the states weighted equally, and the A/A control is +0.2 % (95 % -0.3 to +0.6 %):
+      - fixed `w2/sjf` over the default `w8/fifo`: -2.7 % (95 % -3.9 to -1.7 %);
+      - the agent over the default: -0.03 % (95 % -0.4 to +0.3 %). The agent served the default, as the protocol
+        says when nothing qualified;
+      - the agent over fixed: +2.6 % (95 % +1.6 to +3.8 %). That is the default against `w2/sjf`, not anything RL
+        added.
+    - *Descriptive.* The agent made 1.5 triplets per trace, not the four the protocol assumed. A replay arm of an
+      overloaded window takes about 90 s, so a triplet takes about 270 s, and 480 s of idle holds one or two. The
+      triplets were about three times less noisy than V's: the 95 % width at 17 triplets was 6.7 points, against
+      V's 22.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
+- **V3, V2 with completable traces and room for the look at 48 (fixed 2026-11-02, after V2's result and before any
+  of its own data).** Shaped by V2's data, and labelled so. The agent does not change: `agent.py` is the code that
+  passed V2's gate (S run 9, S2 run 5). The harness runs as `--profile t4c`, which is V2's `t4b` with four changes:
+  - **The request deadline is 900 s**, through the product's own `request_timeout_s`, for the whole run. A spike of
+    64 requests takes about 250 to 300 s to drain on the T4, so every request can complete. Validity, the cost and
+    its failure penalty are unchanged, priced at the new deadline. The agent's replays already ran without a
+    deadline failure in V2.
+  - **1,200 s idle after each online trace**, so the four windows of a trace fit at about 270 s a triplet.
+  - **At most 16 online traces on fresh seeds 223-238.** The online phase ends after the trace in which the agent
+    qualified a schedule, since the held-out comparison needs nothing more from it.
+  - **Held-out: 3 traces per state on fresh seeds 239-241.** Each block runs the same four arms as V2: the default
+    twice, fixed `w2/sjf` and the agent, in rotated order.
+  - Everything else is V2's: model, engine, worker, states, cost, decisions (1) and (2), validity, the three
+    recorded tiers and "nothing qualified online".
+  - **Gate:** the harness tests and the CPU smoke of `--profile t4c` pass. The agent is unchanged, so S and S2
+    need no rerun.
+    - Passed 2026-11-02, before any V3 data. On this container the T4 profile's worker (`current_engine`) did not
+      start within its startup deadline, so the smoke ran `t4c` with V-CPU's worker (reference engine,
+      dequantized) and SmolLM2-135M.
+    - Every step ran: deadline 900 s, warmup, calibration, three online traces, then one held-out block per state
+      with all four arms. All 36 requests completed and none differed across arms. The smoke reads "invalid" only
+      because it has one held-out trace and the rule needs two.
+  - **Cost:** at most about 10.5 session hours on one Kaggle T4. That is 16 traces of about 320 s serving and
+    1,200 s idle (6.8 h), held-out blocks at V2's rate of about 330 s a cell (3.3 h) and setup. The 12-hour limit
+    is the binding constraint, so there is no slack for more traces.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup: the T4,
+    Qwen3-1.7B bf16, these states and this cost. It ships only opt-in.
+  - **Result (2026-11-02, kernel `tobayko/ironmule-rl2-headroom-ag1-t4c` v1 at `2762ef8`, 10.3 session hours):
+    valid, and nothing qualified online.** Every held-out request completed in every arm, 0 answers mismatched,
+    3 complete traces per state, no problems.
+    - **Online.** All 16 traces ran (no early stop): 481 groups, 2 plans, 0 explorations, 41 triplets, 0 qualified,
+      0 rejected; the reference served throughout. The world model reached a 4.6 % median relative error over 1,551
+      groups and reopened 4 times. The first plan (32 arrivals) proposed nothing. The second (108 arrivals)
+      proposed the best fixed schedule, here `w2/sjf` (`c63bf219337e`, model gain +2.9 %; model costs `w2/sjf`
+      7.18, `w4/sjf` 7.20, `w8/fifo` 7.41).
+    - Neither look reached passed: at 24 triplets the bound at the look's 0.2 % was -0.1 %, below the floor of
+      0.1 %. At the last trace, 41 triplets gave the candidate +6.8 % over the reference (95 % +3.6 to +9.7 %, floor
+      0.1 %, noise 0.7 %). The run ended 7 triplets before the look at 48.
+    - **Decisions.** (1) fails: +0.1 % (95 % +0.03 to +0.2 %), with the bound below the A/A floor of 0.1 %. The
+      agent served the default, so this is an A/A difference. (2) passes. A/A control +0.1 % (95 % -0.06 to +0.2 %),
+      noise 1.2 %.
+    - **Three tiers** (recorded, not decided; 3 traces per state, states weighted equally):
+      - fixed `w2/sjf` over the default `w8/fifo`: -6.5 % (95 % -7.7 to -4.7 %);
+      - the agent over the default: +0.1 % (95 % +0.03 to +0.2 %). It served the default;
+      - the agent over fixed: +6.3 % (95 % +4.5 to +7.4 %). That is the default against `w2/sjf`, not anything RL
+        added.
+    - *Descriptive, the finding that matters:* the agent's replay judge and the served comparison disagree in
+      sign. On replay, `w2/sjf` beat `w8/fifo` by +6.8 %. Served end to end on held-out traffic, it lost by 6.5 %.
+      Per state, the mean request cost was: quiet even (2.87-3.07 s in every arm); bursts 22.8 / 108.4 / 68.0 s
+      under `w2/sjf` against 22.5 / 92.0 / 60.6 s under the default; spike 214.5 / 275.3 / 231.0 s against
+      203.9 / 263.9 / 219.9 s. The world model mispriced it the same way (+3.1 % in the model).
+    - Had the run reached the look at 48, the candidate would probably have qualified, and the agent would have
+      served a schedule that costs more on the traffic it was proposed for. Decision (2) would then have been
+      the guard. The replay is what the planner's proposal is checked against, so this is a defect in the
+      mechanism (step 3), not in the noise.
+    - Candidate causes, not tested:
+      - filler prompts instead of the recorded prompt lengths' content;
+      - output limits capped at 512;
+      - idle stretches skipped;
+      - windows of 16 arrivals cut from 64-request bursts, so the queue a schedule leaves behind for the next window
+        is never paid for.
+    - Fixing it is a mechanism change. It needs its own entry before any rerun.
+    - **Diagnosis (2026-11-02, post hoc, descriptive; it changes no verdict above).** The script
+      `v3_window_sim.py`, not committed, rebuilds the held-out traces from their seeds with each request's
+      measured prompt and output tokens. It prices them with the world model the agent ended V3 with. Gains are
+      `w2/sjf` against `w8/fifo`, as the mean over the 9 traces:
+
+      | Priced | Gain |
+      | --- | --- |
+      | Served | -5.1 % |
+      | Model, on whole 64-request traces | -4.8 % |
+      | Model, on the same traces cut into 16-arrival windows | +3.5 % |
+      | Model, 16-arrival windows with outputs capped at 512 | +3.5 % (the cap is irrelevant here) |
+
+      Per trace, the whole-trace model tracks the served result: bursts 240 -16.2 % against -17.8 %, spike 239
+      -4.9 % against -5.2 %. The 16-arrival window turns spike from about -5 % to +6 to +14 %.
+
+      So the world model was right, and the window was wrong. Both the planner (`resample`, windows of `TRACE`)
+      and the replay judge (`_trace`, windows of `TRACE`) score a schedule on 16 of a burst's 64 queued
+      requests. That leaves out the backlog a low-throughput schedule builds up for the requests behind them,
+      which is where `w2/sjf` loses.
+
+      On whole traces the model ranks the fixed schedules by gain over `w8/fifo` (quiet / bursts / spike /
+      equal weight):
+
+      | Schedule | Quiet | Bursts | Spike | Equal weight |
+      | --- | --- | --- | --- | --- |
+      | `w8/sjf` | 0.0 % | +0.3 % | +1.1 % | +0.5 % |
+      | `w4/sjf` | 0.0 % | -5.2 % | -1.5 % | -2.2 % |
+      | `w2/sjf` | 0.0 % | -9.7 % | -4.5 % | -4.8 % |
+
+      The scheduling headroom over the default on this setup is therefore about half a percent, which matches
+      RL8's 0.1-1 %. The fix is entry V4 below.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
+- **V4, busy-period windows (fixed 2026-11-02, after V3's result and its post hoc diagnosis, before any V4 data).**
+  Shaped by V3's data, and labelled so.
+  - **Mechanism change** (`agent.py`, commit `6b2d661` and the covariance bound below):
+    - The planner's windows (`resample`) and the replay judge's windows (`_trace`) start at an arrival that finds
+      the server empty, under the reference schedule in the world model.
+    - Each window runs to the next such arrival: at least 16 arrivals, at most 128.
+    - A replay window stays fixed in the triplet's state until its triplet ends.
+    - Exploration keeps its 16 arrivals.
+    - Everything else in the agent is unchanged: looks, alphas, floor, veto and decisions.
+  - **Covariance bound** (`_RLS.update`): each parameter's variance stays at or below its starting spread. S2 run 6,
+    the first gate run with busy windows, failed (a'): at trace 200 the prefill term read -11.8 % and the per-group
+    term +0.021 s against a truth of 0, while their sum was within 2.3 %. Groups of one cannot separate the two
+    terms. Forgetting regrew the per-group term's variance up to the whole trace bound, so the split wandered.
+  - **Harness, `--profile t4d`:** V3's `t4c` with these changes:
+    - at most 12 online traces on fresh seeds 242-253, with 800 s of idle after each;
+    - 2 held-out traces per state on fresh seeds 254-255;
+    - the fixed tier is `w8/sjf`, the best fixed schedule on whole traces in V3's world model, instead of
+      `w2/sjf`.
+
+    Everything else is V3's: model, engine, worker, the 900 s deadline, states, cost, decisions (1) and (2),
+    validity (two complete traces per state suffice), the three recorded tiers, early stop on qualification and
+    "nothing qualified online".
+  - **Gate:**
+    - the agent and harness tests pass;
+    - S passes (a) and (b);
+    - S2 passes (a') and (c').
+
+    All three run on the commit the kernel pins.
+    - **Passed 2026-11-02** (S run 11, S2 run 7, local, on the tree committed with this entry). S2 run 6 failed
+      (a'), as above.
+    - S: at trace 50, every world-model parameter is within 1.2 %. At trace 50 `w8/sjf` qualified (+6.6 %, floor
+      0.8 %). Later, two learned candidates were rejected.
+    - S2: at trace 200, 50 traces after the change, every parameter is within 0.8 %, and the per-group term reads
+      0.0004 s. At trace 207 a learned candidate qualified (+2.9 %). At trace 223, 73 traces after the change,
+      `w1/sjf` qualified (+42.3 %, floor 1.1 %). After the change, windows cost 31.5 % less than the reference.
+    - *Descriptive:* over traces 200-299 the largest single parameter error was 12.2 %, so the split still moves
+      at times while groups of one serve.
+  - **Cost:** at most about 6.2 session hours on one Kaggle T4. That is about 0.3 h of setup, 12 traces of about
+    300 s serving and 800 s idle (3.7 h), and 24 held-out cells at V3's rate of about 330 s (2.2 h). It fits the
+    7.3 h of weekly quota left after V3.
+  - **What V3 predicts, descriptively:**
+    - In the model, `w8/sjf` gains about +0.5 % over `w8/fifo` on whole traces (+1.1 % in spike), and every
+      narrower schedule loses.
+    - Replay windows are about 16 arrivals in quiet traffic and up to the whole 64 in bursts and spikes, about 2
+      triplets a trace, so the look at 24 is reachable only near the end of the 12 traces.
+    - A gain this small may not resolve. If the agent qualifies `w8/sjf`, its tier and the fixed tier are the same
+      schedule. That shows the agent finding the best fixed schedule on its own, not RL adding to it.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup: the T4,
+    Qwen3-1.7B bf16, these states and this cost. It ships only opt-in.
+  - **Result (2026-11-03, kernel `tobayko/ironmule-rl2-headroom-ag1-t4d` v1 at `a7dc097`, 6.1 session hours):
+    valid, and nothing qualified online.** Every held-out request completed in every arm, 0 answers mismatched,
+    2 complete traces per state, no problems.
+    - **Online.** All 12 traces ran (no early stop): 324 groups, 2 plans, 1 exploration, 9 triplets, 0 qualified,
+      0 rejected; the reference served throughout. The world model reached a 1.5 % median relative error over 813
+      groups and reopened 6 times. The first plan (32 arrivals) proposed nothing. The second (128 arrivals)
+      proposed the best fixed schedule, here `w8/sjf` (`5aaabf717ed4`, model gain +2.5 %; model costs `w8/sjf`
+      16.93, `w8/fifo` 17.39, `w4/sjf` 17.83, `w2/sjf` 19.46).
+    - No look was reached: the run ended with 9 triplets, 3 before the look at 12. At that point the candidate read
+      +1.4 % over the reference (95 % +0.7 to +2.1 %, bound 0.7 %, floor 0.03 %, noise 2.2 %), verdict open.
+    - **Decisions.** (1) fails: -1.5 % (95 % -2.9 to -0.03 %). The agent served the default, so this is an A/A
+      difference. (2) passes (quiet -0.1 %, bursts -4.0 %, spike -0.6 %; bursts' interval reaches -7.1 %, within
+      the rule because the agent served the default). A/A control -0.8 % (95 % -1.7 to +0.2 %), noise 9.9 %.
+    - **Three tiers** (recorded, not decided; 2 traces per state, states weighted equally):
+      - fixed `w8/sjf` over the default `w8/fifo`: +0.9 % (95 % +0.6 to +1.2 %);
+      - the agent over the default: -1.5 % (95 % -2.9 to -0.03 %). It served the default;
+      - the agent over fixed: -2.4 % (95 % -3.5 to -1.2 %). That is the default against `w8/sjf`, not anything RL
+        took away.
+    - *Descriptive.* V3's defect is gone in this run: replay (+1.4 % at 9 triplets) and the served fixed tier
+      (+0.9 %) agree in sign and roughly in size, and the model's +0.5 % prediction on whole traces is in the same
+      range. The run was short of triplets, not of signal. Busy windows in bursts and spike span most of a
+      64-request trace, so a triplet replays about 3 windows of 100-250 s each, and 800 s of idle held 0.75
+      triplets a trace instead of the predicted 2.
+    - *Descriptive.* The agent arm's bursts deficit is noise between two runs of the same schedule: in bursts block
+      4 the two reference arms read 48.3 and 52.6 s mean request cost and the agent, also serving the reference,
+      53.8 s.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
+- **V5-CPU, V4's agent on a Kaggle CPU session (fixed 2026-11-03, after V4's result and before any of its own
+  data).** V4 left about 1.2 of the week's GPU hours, too few for a T4 rerun with enough triplets. A Kaggle CPU
+  session spends no GPU quota and, unlike this cloud container (whose restart lost V-CPU-2), runs to its end.
+  - **Agent:** `agent.py` exactly as V4 ran it, which passed S run 11 and S2 run 7. No mechanism change.
+  - **Harness, `--profile cpu3`:** V-CPU's `cpu` (SmolLM2-135M 8 bit rev `0f0d9b8`, the reference engine with
+    weights dequantized to float32, capacity 1, outputs of 4 or 32 tokens, short prompts, 1,800 s deadline, 360 s of
+    idle after each online trace) with these changes:
+    - V4's agent and V3's early stop: at most 30 online traces on fresh seeds 256-285, ending after the trace in
+      which the agent qualified a schedule;
+    - V2's three tiers on 4 held-out traces per state, fresh seeds 286-289: the default (twice), the fixed `w1/sjf`
+      and the agent, in rotated order. At capacity 1 the order is the only decision, so `w1/sjf` is the best fixed
+      schedule the agent's action space holds;
+    - the kernel is a Kaggle CPU session that installs `ironmule[cpu]` (`write_kernel(..., cpu=True)`).
+  - Everything else is V's and V3's: states, cost, decisions (1) and (2), validity (two complete traces per state
+    suffice), the recorded tiers and "nothing qualified online".
+  - **Gate:**
+    - the harness tests pass;
+    - a CPU smoke of `--profile cpu3` passes, both locally and as a Kaggle CPU kernel. The Kaggle smoke checks the
+      install and the session, and measures nothing.
+    - **Passed 2026-11-03, before any V5-CPU data**, at `a608921`, both smokes with SmolLM2-135M:
+      - harness tests green;
+      - local: every step ran, all 36 held-out requests completed and none differed across the four arms;
+      - Kaggle CPU kernel `tobayko/ironmule-rl2-headroom-ag1-cpu3-smoke` v1: x86_64, 4 CPUs, Python 3.13, mlx 0.32.4,
+        35 minutes, the same outcome.
+      - Both read "invalid" only because a smoke has one held-out trace.
+      - *Cost check:* the Kaggle CPU is about 2x slower than this container today (about 7 s against 3.5 s per
+        smoke request, calibrated capacity 0.13 against 0.27 requests a second). Priced from the smoke rather than
+        from V-CPU-2, the run takes about 30 x 560 s (4.7 h) online plus 48 held-out cells of about 180 s (2.4 h)
+        plus setup, about 7.5 h. That is inside the 12 h session.
+  - **Cost:** no GPU hours. V-CPU-2 ran about 580 s of this container's CPU per online trace, and V-CPU about 50 s
+    per held-out cell. So at most about 30 x 580 s (4.8 h) plus 48 cells (0.7 h) plus setup (0.3 h), about 6 h.
+    That is inside a Kaggle session's 12 h if its CPU is no more than about 2x slower than this container's.
+  - **What earlier runs predict, descriptively:**
+    - V-CPU and V-CPU-2 planned the same candidate, `w1/sjf`.
+    - V-CPU-2's looks at 6 and 12 triplets were inconclusive. So the order-only gain on this traffic may be small
+      against the noise, and the run may again end before a look passes.
+    - If the agent qualifies `w1/sjf`, its tier and the fixed tier are the same schedule. A pass then shows the
+      agent finding, proving and serving that schedule on its own, not RL adding to it.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to that Kaggle CPU, this
+    model, this traffic and this cost; it says nothing about a GPU. It ships only opt-in.
+  - **Result (2026-11-03, kernel `tobayko/ironmule-rl2-headroom-ag1-cpu3` at `451e282`, no GPU hours): the
+    session was cut by Kaggle's 12 h limit, the analysis reads invalid, and nothing qualified online.**
+    - **Cut by the time limit.** 43 of 48 held-out cells ran. Block quiet/289 is complete. Bursts/289 lacks the
+      reference's second run, and spike/289 never started. The online phase took about 6 h, not the 4.7 h priced:
+      about 730 s a trace against 560 s. The held-out cells took about 480 s each, not 180 s.
+    - **Verdict by the fixed analyser: invalid** (`block 1/289 is incomplete`). 0 answers mismatched, every run
+      request completed, and traces 286-288 are complete in every state.
+    - *Discrepancy, reported and not resolved here.* The protocol's prose says two complete traces per state
+      suffice. `analyse_ag1` counts any incomplete block as a problem. The verdict above is the analyser's. Read by
+      the prose instead, the run would be valid with 3 traces per state. The outcome would not change: (1) fails at
+      +0.05 % (95 % -0.5 to +0.6 %), and (2) passes (quiet +0.5 %, bursts +0.1 %, spike -0.04 %; every bound above
+      minus the noise of 3.3 %). The agent served the default throughout, so all of this is an A/A difference.
+    - **Online.** All 30 traces ran (no early stop): 480 groups, 2 plans, 0 explorations, 7 triplets, 0 qualified,
+      0 rejected. The reference served throughout. The world model reached a 2.7 % median relative error over 1,290
+      groups and never reopened. The first plan (32 arrivals) proposed nothing. The second (96 arrivals, after
+      about 1.4 h) proposed the best fixed schedule, `w1/sjf` (`633ceda2cdce`, model gain +0.5 %; model costs
+      `w1/sjf` 59.38, `w1/fifo` 59.74).
+    - No look was reached: the run ended with 7 triplets, 5 short of the look at 12. At that point the candidate
+      read +0.6 % over the reference (95 % +0.1 to +1.2 %, bound 0.05 %, floor 1.2 %, noise 4.4 %), verdict open.
+    - **Three tiers** (recorded, not decided; traces 286-288, states weighted equally):
+      - fixed `w1/sjf` over the default: +1.0 % (95 % -0.1 to +1.6 %);
+      - the agent over the default: +0.05 % (95 % -0.5 to +0.6 %). It served the default;
+      - the agent over fixed: -1.0 % (95 % -2.1 to +0.2 %). That is the default against `w1/sjf`, not anything RL
+        took away.
+    - *Descriptive.* As on the T4 (V4), replay (+0.6 % at 7 triplets) and the served fixed tier (+1.0 %) agree in
+      sign and roughly in size with the model's +0.5 %. The order-only gain on this traffic is about 0.5-1 %. The
+      noise of a single trace is 3-4 %. At 7 triplets in the 23 traces after the plan, the 12-triplet look needs
+      about 40 traces. Like V4, the run was short of triplets, not of signal. This action space (order by limit, at
+      capacity 1) holds too little gain to qualify within one session, which is why AG2 changes the key the order
+      sorts by instead.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
@@ -303,7 +715,7 @@ four criteria pass on one commit, so V's gate is open.**
   - The planner preview (2 x 3,000 episodes) took 15 CPU-seconds.
   - Simulated wall time per 300-trace run: 3-7 minutes.
 
-**V's harness as a CPU smoke (2026-10-30, mechanics only, no gain claim).** `tools/rl2_headroom.py --plan ag1 --smoke` ran
+**V's harness as a CPU smoke (2026-10-30, mechanics only, no gain claim).** `training/rl2_headroom.py --plan ag1 --smoke` ran
 on this cloud container's CPU with `Qwen/Qwen3-0.6B` (rev `c1899de`, bf16, about one token a second), through the
 product's own service and worker. The harness file was loaded at `7558cdb` and the agent module after `f850704`, so
 mixed code ran; this checks the tool, nothing more.
@@ -316,6 +728,2648 @@ mixed code ran; this checks the tool, nothing more.
 - The analysis reads "invalid", as the rule requires two complete traces and a smoke has one.
 - With 7 groups of near-equal prompts the fitted prices were meaningless (14.9 s per group), and the agent was right
   not to plan on them.
+
+### AG2 — The agent learns how long an answer will be, and orders by it (opened 2026-11-03, before hardware data)
+
+**Why (owner request, 2026-11-03: beat the fixed rules, with ideas from the literature).** Through V4, the agent never
+beat the best fixed schedule. Its actions so far are a group's order (output limit first, or arrival) and width,
+and in every measured setup the fixed rule is close to optimal for them: RL8 put the headroom at 0.1-1 %, below
+replay noise. Two exploratory simulations on 2026-11-03 asked where a learner could do better. Both ran after V4's
+data and are labelled so; they decide nothing on hardware. Script: the AG1 simulator's machine (`training/ag1_online.py`),
+600 traces of RL2-H2's states per cell, run outside the repository.
+- **A schedule per traffic state** against the best single fixed schedule: +0.02 % on the T4 price with 16-request
+  traces, +0.18 % with 64, 0.00 % on the CPU price. *Closed by this simulation:* a state-dependent schedule has no
+  headroom worth an experiment here.
+- **Ordering by a predicted answer length.** Our test traffic so far sets an output limit that every answer
+  reaches: of V4's 768 online requests, 761 ended at their limit. Then "shortest limit first" is the true shortest
+  job first, and nothing is left to learn. In chat traffic, clients often send one limit (or none), and answers end
+  at EOS, so "shortest limit first" falls back to arrival order. The literature's largest scheduling gains come from
+  predicting the answer length instead: Fu et al. (NeurIPS 2024, arXiv 2408.15792) rank by a learned predictor, and
+  so do SSJF (arXiv 2404.08509), ELIS (arXiv 2505.09142) and TIE (arXiv 2604.00499). In the simulator, with every
+  limit 512 and lognormal answers (median 150 tokens, sigma 1, capped at the limit), ordering by a predictor whose
+  correlation with the log length is rho, against ordering by the limit, at load 1.0:
+
+  | rho | width 1 (T4 / CPU price) | width 4 | width 8 |
+  | --: | --: | --: | --: |
+  | 0.0 | +0.7 % / +1.0 % | -0.2 % / +0.3 % | -0.2 % / -0.2 % |
+  | 0.3 | +8.2 % / +9.2 % | +5.1 % / +6.5 % | +3.1 % / +3.3 % |
+  | 0.5 | +12.6 % / +14.3 % | +8.9 % / +10.6 % | +4.8 % / +6.0 % |
+  | 1.0 (oracle) | +24.4 % / +27.5 % | +16.4 % / +18.8 % | +8.8 % / +10.1 % |
+
+  At load 0.6 the gains are within 1 point of these.
+- **How large rho gets online.** An online learner with no prior, run as the agent would run it: SGD on hashed word
+  unigrams and bigrams of the prompt's first 64 words plus its log length, predict then learn, 6,000 shuffled
+  requests. Spearman correlation with the answer's log length, over requests 500-2,000 and then 2,000-6,000:
+  - Dolly 15k (human answers, CC BY-SA 3.0): 0.30, then 0.45;
+  - Alpaca (model answers, CC BY-NC 4.0): 0.45, then 0.60;
+  - prompt length alone: -0.10 to -0.24.
+
+  A prediction cost 16-54 µs in pure Python. It is made once when a request arrives, so the decision at a group
+  start still only reads a number.
+
+**Mechanism.** The agent gains a second order key: the predicted answer length, capped at the request's limit, in
+place of the limit itself.
+- A length model is learned online from every finished request (label: completion tokens). Its features are
+  hashed word unigrams and bigrams of the last user message (at most its first 64 words), log prompt characters
+  and log output limit. It is updated by SGD, with weights only, and stores no text.
+- The agent's policy carries which key it orders by. The planner proposes "shortest predicted first" as a
+  candidate when the model is fit, and the candidate is proven by the same replay triplets and judge as AG1. A
+  replayed arrival keeps its recorded prediction and replays its recorded answer length as its limit.
+- Like every AG1 action, it changes the order of requests only, never an answer. State stays bound to the
+  machine, model and plan, and the length model's weights live under `<state-dir>/agent/`.
+
+**Kill criterion.**
+- **S-LP in simulation:** the agent, unchanged except for this key, on the simulator with EOS-ended answers
+  (Alpaca-like rho, learned online, not given) qualifies the predicted order within 150 traces, and its windows cost
+  at least 5 % less than ordering by the limit. Anything less stops AG2 before hardware.
+- **On hardware:** AG1 V's qualification rule and decisions. The workload uses real instruction prompts (Dolly 15k,
+  fetched at run time, not committed), one limit for all, and answers ending at EOS. The protocol is fixed here
+  before its data. Planned order:
+  1. a Kaggle CPU session, which spends no GPU quota;
+  2. Gemma 3 12B under the owner's `--compute-dtype native` plan on a T4 once the weekly quota resets. There the
+     plan runs one request at a time, which is where this lever is largest in the simulation.
+
+  If the online model's Spearman correlation after 500 requests of the hardware workload is below 0.2, the run
+  reports "no signal" and AG2 is closed for that workload.
+- A pass ships opt-in only, bound to the measured setup.
+
+**Implementation (2026-11-03, `ec78d03`).**
+- `ironmule_product/length_model.py` holds the length model.
+- An order key in the LD1 policy format (`order_key`, absent means the limit, so every earlier digest holds). LD1
+  refuses a predicted policy, because only the agent serves one.
+- The planner gains `w{1,2,4,8}/pred` arms once at least 32 recorded arrivals, and 90 % of them, carry a prediction.
+- Replays make each answer its recorded length and sort by the arm's recorded key. *(This also changes AG1's
+  replays, which ran every answer to its capped limit. In V4 that made no difference: 761 of 768 answers ended at
+  their limit.)*
+- `training/ag1_online.py --prompts` replays real prompts with one limit for all, and adds hindsight comparators.
+- `--profile cpu-lp` in the harness.
+- Tests in `test_agent.py` and `test_rl2_headroom.py`.
+
+**S-LP result (2026-11-03, at `ec78d03`'s agent and simulator, local): passed on both prices.**
+- *Setup:* 300 traces of RL2-H2's states, seed 90,000, limit 512 for every request. Prompts and answer lengths
+  come from 20,000 Alpaca rows (answer tokens taken as 1.3 per word: median 39, mean 57, 90th percentile 129). The
+  length model learns online from nothing.
+- *T4 price:*
+  - The agent planned `w8/pred` at trace 34 and qualified it at trace 130 (replay gain +4.6 %), inside the 150
+    allowed.
+  - While it served (170 windows), windows cost 6.74 s against 7.24 s for the best limit-ordered fixed schedule in
+    hindsight (`w8/fifo`): **6.9 % less**.
+  - Before it served, the gap was 0.2 %.
+- *CPU price:*
+  - The agent planned `w8/pred` at trace 2 and qualified it at trace 99 (replay gain +6.6 %).
+  - While it served (201 windows), windows cost **8.2 % less** than the best limit-ordered fixed schedule in
+    hindsight (`w8/fifo`).
+- *The length model:* Spearman 0.63 over its last 512 predictions on both prices.
+- Both runs clear "at least 5 % less than ordering by the limit". AG2 goes to hardware.
+- This is a simulation, so no hardware claim follows from it.
+
+**The Kaggle CPU run is dropped (2026-11-03, from a pre-check of the workload, before any gain data).**
+- *The pre-check:* SmolLM2-135M (dequantized, this container's CPU, greedy), the CPU profile's model, answered 16
+  Dolly prompts under a limit of 128. Eleven answers reached the limit; the others took 42 to 113 tokens.
+- That gives the length model almost nothing to separate. Each answer also took about 25 s here, about 50 s on a
+  Kaggle CPU.
+- So `--profile cpu-lp` would spend a session where little answer-length variance exists, and the CPU step of the
+  planned order is dropped. The profile stays for smokes.
+- The hardware test of AG2 is a T4 with a model whose answers end at EOS.
+
+**Multi-GPU (owner request, 2026-11-03).**
+- *Exploratory simulation, after V4's data:* two cards on the AG1 simulator's T4 price, the pool placing each
+  request at arrival, 300 traces of 32 requests at the two cards' capacity, one limit, lognormal answers. The table
+  gives each policy's gain over today's pool (least outstanding requests, arrival order):
+
+  | Correlation rho | Order by prediction, width 1 | Also place by predicted work, width 1 | Order by prediction, width 8 | Also place by predicted work, width 8 |
+  | --: | --: | --: | --: | --: |
+  | 0.5 | +15.0 % | +15.3 % | +7.2 % | +8.1 % |
+  | 0.63 | +18.7 % | +19.2 % | +8.7 % | +10.4 % |
+  | 1.0 (oracle) | +30.5 % | +31.5 % | +13.2 % | +15.4 % |
+
+  Placement by predicted work alone gains +0.7 to +2.8 %, about what RL2 and RL3 found for placement. The ordering
+  carries the lever on two cards as on one. So AG2 keeps the pool's placement and orders each card's queue.
+- *Change:* `ironmule serve --agent on --gpus all` was refused on several GPUs. It now attaches one agent per card
+  (bound to its card, so its learning and evidence never mix). The pool reports and controls all of them, and keeps
+  join-the-shortest-queue placement. The harness gains `cards`: one agent per card, and each card's frozen policy and
+  length model in the held-out arm.
+
+**T4 gate: a Gemma 3 12B smoke (fixed 2026-11-03, before its data).** This is the owner's requested model, under
+the owner's `--compute-dtype native` plan.
+- *Profile:* `--profile t4-g12-lp`, a `--smoke` run on both T4s of a Kaggle "GPU T4 x2" session, one agent per card:
+  - `mlx-community/gemma-3-12b-it-4bit` (its `native` plan is gated at rev `86cc6a8`; the run records the revision
+    it downloads);
+  - the reference worker with `--compute-dtype native`, at capacity 1;
+  - Dolly prompts and one limit of 512;
+  - a 1,800 s deadline;
+  - the fixed tier `w1/sjf`.
+- *What it records* (it measures no gain):
+  - whether the plan runs through the product and the agent's harness;
+  - the calibration burst's 16 answer lengths and how they ended;
+  - the calibrated capacity and the tokens per second.
+- These fix the full T4 protocol's limit, trace count, idle time and session hours, written here before that
+  run's data.
+- *Cost:* about 0.7 session hours (an 8 GB download loaded once per card, a 32-request calibration burst and the
+  smoke's small traces). That fits the roughly 1.2 GPU hours V4 left this week. A session cut by the quota is
+  reported as such, and nothing is inferred from it.
+- *Local smoke first (2026-11-03, at `e6b5d82`, `--profile cpu-lp --smoke` with SmolLM2-135M on this container's
+  CPU):* the harness's AG2 path ran end to end:
+  - Dolly's 15,011 prompts were fetched (sha256 `2df90833...`);
+  - the 16-request calibration burst on Dolly prompts completed;
+  - three online traces fed the length model;
+  - all 36 held-out requests completed, with 0 answers differing across the four arms and no problems.
+  - It reads "invalid" only because a smoke has one held-out trace.
+- **Gate result (2026-11-03): passed.** Kaggle kernel `tobayko/ironmule-rl2-headroom-ag1-t4-g12-lp-smoke` v1, pinned
+  to `e6b5d82`.
+  - *Setup:* two Tesla T4s (driver 580.178.04), Python 3.13, mlx 0.32.4, mlx-lm 0.31.3, Gemma 3 12B at rev
+    `86cc6a8` (the gated revision), and one agent per card. The harness took 16.4 minutes.
+  - *Calibration:* all 32 requests completed in 237 s, a capacity of 0.135 requests a second for both cards. That is
+    about 15 s per answer on one card, at about 21 tokens a second (the fitted 47 ms per decode step).
+  - *Answers:* the 45 answers to the smoke's five distinct Dolly prompts took 40, 121, 129, 305 and 512 tokens; the
+    longest reached the limit.
+  - *Validity:* all 36 held-out requests completed, with 0 answers differing across the four arms. The run reads
+    "invalid" only because a smoke has one held-out trace.
+  - It measures no gain.
+  - Ledger entry owed.
+
+**V-G12, AG2's gain on hardware (fixed 2026-11-03, after the gate and before any of its own data).**
+- *Profile:* `--profile t4-g12-v`. It is the gate's setup (Gemma 3 12B, `native`, both T4s with an agent per card,
+  Dolly prompts, a 1,800 s deadline, the fixed tier `w1/sjf`), with these sizes, set from the gate:
+  - **one limit of 256**, which halves the time per answer and keeps 40 to 256 tokens of spread;
+  - **32 requests a trace**, about 16 per card, so one replay window per card per trace;
+  - **360 s of idle time** after each online trace, enough for a triplet of about 16 answers of about 7 s;
+  - at most **40 online traces** on fresh seeds 358-397, ending after the trace in which every card qualified;
+  - **2 held-out traces per state** on seeds 398-399.
+- *One change, made before any of this run's data* (`fcefb29`): the cards' agents share one length model
+  (`agent.share_lengths`), so each card learns from both cards' answers. An answer's length depends on the model
+  and the prompt, not on the card. Each card's policy, world model, replays and evidence stay its own.
+- *Decisions:* AG1 V's decisions (1) and (2), its validity rule, and the three tiers, recorded and not decided. Under
+  one limit the fixed `w1/sjf` orders by arrival, so it is the default's schedule. That is the point of the test: the
+  hard rule has no information that the agent learns.
+- *No signal:* if the shared length model's Spearman correlation is below 0.2 once it has seen 500 requests, the run
+  reports "no signal" for this workload.
+- *Cost:* about 0.4 h of setup, 40 traces of about 5 min of serving plus 6 min of idle (7.3 h), and 24 held-out
+  cells of about 5 min (2.0 h). That is about **9.7 session hours** on one "GPU T4 x2" session, inside the 12-hour
+  limit.
+- It runs after the weekly GPU quota resets. The gate left about 0.9 hours this week.
+- **Replaced before any of its data (owner, 2026-11-03): V-G12 does not run.** The owner set tokens per second as
+  the agent's first measure ("The main goal"). At capacity 1 the order moves no tokens per second, so V-G12 could
+  show none by construction. A dry run of its online phase in the simulator then found it would most likely not
+  qualify in time either:
+  - *Setup:* `training/ag1_online.py --profile v-g12`, per card: the gate's Gemma 3 12B price on a T4, capacity 1,
+    16 requests a trace at half the two cards' calibrated rate, limit 256, 360 s idle, 40 traces, and a twin
+    card's answers teaching the shared length model. Answer lengths are a proxy (an assumption): Dolly's
+    reference answers in tokens, scaled by 3 or by 6. Scaled by 6, the mean at a limit of 512 is 277 tokens,
+    near the gate's calibrated 300.
+  - *Result, 3 seeds per scale:* the agent qualified nothing in all 6 runs. The length model reached a Spearman
+    correlation of 0.31-0.44, against S-LP's 0.63. Two runs reached 12 triplets, and each was rejected.
+  - The weekend's GPU hours go to KB2-0 instead.
+- *Kill and ship:* as AG1 V. A pass is the agent's gain measured on two T4s, bounded to this model, plan, workload and
+  cost. It ships opt-in only.
+
+**Other routes from the same search, not yet entries (kept so they are not re-derived):**
+- *preemption with a re-predicted remaining length* (TRAIL; ELIS's iterative shortest-remaining-time-first). This
+  needs the engine to pause a session and resume it exactly.
+- *prefix-aware grouping* (arXiv 2605.06046), grouping requests that share a cached prefix. Its gain depends on
+  shared system prompts in the traffic.
+- *load-adaptive prefill chunking* (DRLServe). The engine has no chunked prefill to adapt.
+
+### AG3 — The agent knows the machine's architecture (opened 2026-11-03, owner request)
+
+**Question (owner, 2026-11-03).** Would the agent adapt better if it knew the computer's hardware architecture, and
+what else could then be optimised? The agent already learns the machine empirically: its world model fits what
+prefill, a decode round and a further session cost on this card. Knowing the architecture can add three things:
+1. a starting point for that fit (a prior from the hardware), so the agent plans sooner;
+2. the gap between the measured costs and the hardware's limit, which shows where speed is left;
+3. a guard on what the card can hold (memory). This one is not built, because no measured run has hit it.
+
+**Mechanism (2026-11-03).** `ironmule_product/hardware_profile.py` reads the device's name (`nvidia-smi` per card,
+or the Apple chip). It looks the name up in a table of published peak memory bandwidths; an unknown device gets no
+value, never a guess. With the checkpoint's weight bytes it gives the decode floor: a memory-bound step reads every
+weight once, so it takes at least `weight bytes / bandwidth`. The agent's status (`/health`, `agent.hardware`) reports:
+- the profile;
+- once the world model has fitted 12 groups:
+  - the share of bandwidth a measured decode step uses;
+  - the most a bandwidth-bound kernel could gain;
+  - how much of a whole step a further session in a round adds.
+
+It changes no decision and no answer.
+
+**What the measured fits already say** (derived from earlier runs' world models, not a new measurement):
+
+| Setup | Weights | Floor | Measured step | Bandwidth used | Kernel headroom at most | Further session costs |
+| :-- | --: | --: | --: | --: | --: | --: |
+| T4, Qwen3 1.7B bf16, tuned engine (V4, 813 groups) | 3.44 GB | 10.8 ms | 19.6 ms | 55 % | 1.8x | 0.91 of a step |
+| T4, Gemma 3 12B 4 bit, `native` (gate, 5 groups only) | 8.03 GB | 25.1 ms | 47.2 ms | 53 % | 1.9x | not fitted |
+
+- *Kernels:* decode on the T4 uses about half the card's memory bandwidth. Up to about 1.8x is left in kernels,
+  not in scheduling.
+- *Batching:* a further session in a grouped batch-1 round costs 91 % of a step, so every session reads the
+  weights again. That is why the dense plan, which shares a round's weight reads, served 48 % faster (H10).
+- Both levers sit outside the agent's actions. Its actions change only the order and width of exact grouped work.
+  A kernel change goes through the controlled worker, with its own correctness and evidence gates.
+
+**The prior, tested in simulation (2026-11-03, exploratory, after AG2's data).** The setup is S-LP's (300 traces,
+Alpaca prompts, one limit of 512), with the world model starting from the machine's own price instead of the
+generic prior.
+- *Kept if:* it qualifies the agent's schedule at least 10 traces earlier than S-LP run 1 on both prices.
+- *Otherwise:* AG3 stays report-only.
+- **Result (2026-11-03): not kept; AG3 stays report-only.**
+  - *T4 price:* the agent planned `w8/pred` at trace 10 (S-LP run 1: trace 34), but replay rejected it at trace
+    106. Two later candidates were also rejected, nothing qualified in the 300 traces, and the reference served
+    throughout. S-LP run 1, with the generic prior, qualified at trace 130.
+  - *CPU price:* it qualified `w8/pred` at trace 99, as S-LP run 1 did, and served 8.2 % below the best fixed
+    schedule.
+  - Neither price qualified 10 traces earlier.
+  - *Descriptive:* the world model leaves its generic prior within a few groups. What holds the agent back is how
+    fast the length model learns and how many replay triplets it collects, not what it knows about the machine.
+    The T4 rejection, one seed each, shows how noisy a single simulated run's verdict is, not that the prior
+    harms.
+
+### AG4 — The agent chooses the plan and the engine itself (opened 2026-11-03, owner decision, before data)
+
+**Why.** Every large tokens-per-second gain so far was a setting a person found by hand on Kaggle:
+- the `native` plan for a 4-bit checkpoint on an emulating GPU (about 6x);
+- the stacked engine (H10: 48 % cheaper on two T4s);
+- its width (w8);
+- for Gemma 3 at 4 bit, KB2.
+
+The agent (AG1, AG2) decides only order and width, and it starts from whatever plan and engine the operator
+named. The owner wants the agent to learn and set these itself ("The main goal"), and allowed output-changing plans
+that pass its own gate.
+
+**Mechanism (step 1, at startup).** `ironmule serve --agent on` with no `--engine` and no `--compute-dtype` chooses
+both itself on this machine, before it serves. The choice is made once per hardware fingerprint and model identity,
+and stored with its evidence like NUM1's.
+- *Candidates:*
+  - the reference path (always eligible, the incumbent);
+  - NUM1's numeric plans (`ironmule/numeric_choice.py`, which already gates each plan on the device with the
+    perplexity gate and a speed check; consent is now implied by agent mode);
+  - a stacked engine where its `refuse` lets the model through:
+    - `dense` for Qwen 3 bf16 on pre-Ampere CUDA;
+    - KB2's Gemma plan for Gemma 3 at 4 bit on the `native` plan.
+- *A stacked engine's gate, all measured in a child process on this card:*
+  - its load probe (every stacked width bit-identical to one row);
+  - the perplexity gate against the reference path (16 x 512 tokens, the 97.5 % bound of the ratio below 1.005);
+  - tokens per second at width 1 and width 8 against the reference path's single-request decode;
+  - the time to the first token of a short and a long prompt.
+- *Decision rule (fixed now):* the candidate with the most tokens per second at width 8 among those that pass
+  their gate, if:
+  - its single-request tokens per second are at least 0.9x the reference path's (quiet traffic must not
+    regress);
+  - and its time to first token is no worse than the reference path's by more than 10 %.
+  Otherwise the reference path serves. The online agent then learns width and order inside the chosen engine,
+  as before.
+- *Visible:* `/health` and the agent's status carry the chosen plan and engine, every candidate's gate and speeds,
+  and the reason.
+
+**Kill (fixed now).** On a Kaggle T4 with Gemma 3 12B at 4 bit, the agent's own choice must reach at least 2x the
+tokens per second of today's default (`--engine reference` without a plan), with time to first token no worse,
+measured through the product. Otherwise AG4 does not ship as the agent's default setup. The product run's full
+protocol (traffic, arms, cost) is fixed here after KB2-0 and before that run's data.
+
+**Step 2 (later).** Re-choose while serving, when the measured traffic or the software changes. This needs a
+second worker to switch engines without dropping requests.
+
+**Step 2a: both paths on one card, routed per request (built 2026-11-03, after AG4-Q run 2; labelled as shaped by
+that run's data).** AG4-Q run 2 showed the stacked engine winning under load (5x at width 8) and losing alone
+(0.82x, a later first token). So the choice depends on the load, and a fixed choice at startup leaves one side's
+gain unused.
+- *Mechanism.* `ironmule_product/path_router.py`. Where the stacked engine passes its gate and wins at width 8 but
+  fails the quiet floor or the first-token rule, and two copies fit the card (two copies of the weights, the pool
+  and 3 GiB in 90 % of the card), the agent's setup is `route`. Both paths serve on one card, each its own worker:
+  NUM1's single path and the stacked engine.
+- For each request the router predicts its finish time on each path from what is outstanding there, and sends it
+  to the earlier one. Ties go to the single path, so a quiet server behaves as the single path alone.
+- *Online learning:* recursive least squares on each path's seconds per token against how many requests share it
+  (forgetting 0.995), plus running means of the first token and of the tokens per request. It starts from the
+  AG4 measurement on this card and learns from every finished request. A decision takes a few microseconds (test:
+  under 100 µs in pure Python, measured as `decision_us` in `/health`'s `paths` block).
+- *Simulation (`training/ag4_routing.py`, priced by AG4-Q run 2's T4 numbers; descriptive, no hardware claim):*
+  - Traffic: RL2-H2's three states, 30 traces of 32 requests per load, answers from Dolly's lengths (scale 3,
+    capped at 256).
+  - The table gives tokens per second and the mean and 95th-percentile first token.
+
+  | Load (over the single path's capacity) | Single path alone | Stacked alone | Router |
+  | --: | --: | --: | --: |
+  | 0.3 | 7.5, 13.8 s, 63.5 s | 7.7, 3.1 s, 16.1 s | 7.8, 2.4 s, 12.0 s |
+  | 0.8 | 19.1, 15.4 s, 65.7 s | 20.9, 3.2 s, 16.2 s | 21.1, 2.5 s, 12.1 s |
+  | 1.5 | 30.9, 16.5 s, 64.4 s | 37.2, 3.1 s, 15.9 s | 37.4, 2.7 s, 12.2 s |
+  | 3.0 | 46.0, 19.6 s, 61.6 s | 67.0, 3.3 s, 15.6 s | 68.7, 2.7 s, 11.8 s |
+
+  - The router is at least as fast as the better path at every load, with the earliest first tokens. At load 3 it
+    makes 49 % more tokens per second than the single path the agent chose alone.
+  - RL2-H2's bursts and spike queue the single path even at low mean load, which is why its first token waits.
+- **AG4-R, the hardware test (fixed now, before its data; it runs after KB2-0, when the quota allows).**
+  - *Setup:* one Kaggle T4, `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, served by `ironmule serve --agent on`
+    with the agent's own setup. It is `route` if AG4's rule says so; otherwise the run reports that and stops.
+  - *Arms, on the same traces through the product:* the router; the single path alone (NUM1's `float16`, what the
+    agent chose before step 2a); the stacked engine alone.
+  - *Traffic:* RL2-H2's states at loads 0.8 and 3.0, on fresh seeds, 6 traces per state and load.
+  - *Pass:* both, on the pooled traces:
+    - the router's tokens per second over the single path's has a 2.5 % bound above 0 (paired by trace, 2,000
+      resamples);
+    - its mean and 95th-percentile first token are no worse than the single path's beyond the A/A noise of two
+      runs of the single path.
+  - *Otherwise:* the router does not ship as the agent's setup.
+  - *Harness (built 2026-11-03):* `training/rl2_headroom.py --plan ag4r`. It runs the product's `choose_setup`, then
+    both paths in their own workers on one card, and all three arms through the same two loaded workers. The
+    single path and the stacked engine are forced by a fixed route, and the router keeps learning across blocks.
+    Each block runs single, router and stacked (rotated), then single again, on the same arrivals. A calibration
+    burst on the single path sets the loads. `analyse_ag4r` applies the rule above.
+  - *Cost:* about 3.5 session hours (36 blocks of 4 cells of about 80 s, plus setup). It runs after KB2-0 in the
+    week's quota.
+  - *Smoke first:* a `--smoke` kernel checks that both workers fit and run together on one T4, and measures
+    nothing.
+  - **Amended 2026-11-05, before any AG4-R data: a fourth arm, the router frozen at its startup prices.** The
+    pass rule above decides whether routing ships. It cannot say whether *learning while serving* adds anything,
+    because a router with AG4's startup prices alone might route as well. That is the main goal's open part (LIMITS:
+    online learning has no hardware gain yet).
+    - *Arm:* `frozen`, a copy of the router taken before its first finished request. It decides exactly as the router
+      does but never learns. Each block runs single, then router, stacked and frozen in cyclic rotation, then single
+      again, on the same arrivals.
+    - *Learning decision (recorded, it does not change the router's ship rule):* learning while serving shows a
+      measured gain on this card if the router's tokens per second over the frozen router's, paired by block, has a
+      2.5 % bound above 1 (2,000 resamples), and its mean and 95th-percentile first token are no worse than the
+      frozen router's beyond the same A/A noise. Otherwise: "no measured gain from learning while serving" on this
+      setup, and LIMITS keeps saying so. The later half of the blocks is reported too, descriptively, since the
+      router keeps learning across blocks.
+    - *Expected:* if AG4's startup prices are already accurate, the two routers decide alike and the learning
+      decision fails. That would be an honest result, not a fault of the run.
+    - *Cost:* 36 blocks of 5 cells of about 80 s, plus setup, about **4.4 session hours** instead of 3.5.
+  - **Smoke 1 (2026-11-03, kernel `tobayko/ironmule-rl2-headroom-ag4r-smoke` v1 at `526934d`, Kaggle T4, 9
+    minutes): stopped before serving, on a product gap.**
+    - The agent's own setup, made again from scratch on the card, was `route`: NUM1's `float16`, and the dense
+      engine 0.82x alone.
+    - The product's worker then refused `float16`. It knew only `float32`, `native` and `dequantize`, although
+      NUM1 can choose `float16`.
+    - *Fixed:* the worker, its client and `--compute-dtype` take `float16` (the checkpoint's floating weights in
+      float16, as `ironmule.tune` already loads that plan). Smoke 2 repeats it.
+  - **Smoke 2 (2026-11-03, the same kernel v2 at `321d116`, Kaggle T4, 14 minutes): the tool works end to end; it
+    measures nothing.**
+    - The agent chose `route` again on its own.
+    - Both workers (`float16` and the dense engine) loaded and served together on one T4.
+    - All 3 blocks of 4 cells completed with no failed request.
+    - The router split its 12 requests 6 and 6, in 17 µs per decision.
+    - *Descriptive, a smoke measures nothing (4 requests of up to 16 tokens):* the stacked engine's learned
+      per-row cost was 106 ms. In answers this short, a newcomer's prefill stalling the running rows dominates the
+      per-token time. The full run's 256-token answers price that stall per token, as it should be.
+  - **Run 1 (2026-11-07, kernel `tobayko/ironmule-rl2-headroom-ag4r` v1 at `b1c2382`, one Kaggle T4, Qwen 3 1.7B
+    bf16 at `9cd6692`): cut by Kaggle's 12-hour limit after 22 of 36 blocks, invalid by the fixed rule.**
+    - The agent chose `route` on its own again: NUM1's `float16`, and the stacked engine at 0.82x for one request
+      alone. Setup took 8 minutes.
+    - **Why it ran out of time.** The cells measured all 11.8 hours; nothing waited idle. The protocol priced a cell
+      at about 80 s, but a cell lasts as long as its 32 arrivals are spread. The median cell took 791 s in the quiet
+      state at load 0.8, 301 s in bursts, 62 s in a spike, and 215 s quiet at load 3.0. All 36 blocks would have
+      needed about 25 hours. Load 0.8 ran in full; load 3.0 reached only its quiet state, and its bursts and spike
+      never ran.
+    - **Problems (the rule voids the run):** block 22 is incomplete, and in blocks 13 and 14 (spike, load 0.8)
+      the stacked engine rejected 8 of 32 requests alone, and the frozen router's cell lost 7. The rejection reads
+      "the prompt and max_tokens exceed the ...-token limit of this server's engine": some Dolly prompts plus 256
+      tokens do not fit the stacked engine's slot. The forced stacked arm cannot avoid them. The frozen router sent
+      such requests there, so **the router does not check whether a path can hold a request**. That is a product
+      defect, fixed before run 2.
+    - *Descriptive only (20 complete blocks, no verdict; pooled ratios against the single path, 95 % in brackets):*
+      - the router: 1.44x the tokens per second (1.13-1.68), its mean first token 0.35x (0.32-0.37), its 95th
+        percentile 0.43x. By load, 1.57x at 0.8 and 1.000x at 3.0, where only the quiet state ran;
+      - **the stacked engine alone: 2.10x the tokens per second (1.32-2.70), its mean first token 0.19x
+        (0.14-0.21)**, although AG4's rule set it aside for its 0.82x on one request alone;
+      - learning while serving: the router over the frozen router 1.007x the tokens per second (0.998-1.013), its
+        first token later (mean 1.16x, 95th percentile 1.30x), and the late half 1.011x (1.003-1.017). No gain from
+        learning is shown, and it cost first-token time;
+      - A/A noise of the single path's two runs: 0.06 % tokens per second, 4.7 % mean first token.
+    - *What it says (post hoc, it changes no verdict):* on this traffic the agent's own measurement of one request
+      alone misled it. The stacked engine it set aside made 2.10x where its routed setup made 1.44x. Its router
+      learned too little, too slowly, to find that out while serving. That is where a learning agent should gain.
+      Run 2 needs a protocol that fits a session, and the router has to respect each path's request limit.
+    - The ledger entry is still owed. About 12 session hours were spent.
+**AG4-C, the agent's own setup against today's default on a CPU (fixed 2026-11-03, before its data).** No GPU
+hours are left this week, and a Kaggle CPU session spends none. Does the agent's own setup, chosen on that machine
+with nothing given to it, serve more tokens per second than today's default through the product?
+- *Setup:* `training/rl2_headroom.py --plan ag4c` on a Kaggle CPU session at a pushed commit, with
+  `mlx-community/SmolLM2-135M-Instruct-8bit` (V-CPU's model). The product's `choose_setup` runs first. NUM1's CPU
+  check decides between the checkpoint's 4-bit weights and `dequantize` (CPU3 found `dequantize` about 6x faster
+  by hand). If the agent keeps the default, the run reports that and stops.
+- *Arms, both paths loaded side by side through the product:* the default (the reference worker, no plan) and the
+  agent's chosen path. Each block runs default, agent, default on the same arrivals.
+- *Traffic:* RL2-H2's three states at 0.8 of the default path's calibrated capacity, fresh seeds 410-413 (4 traces
+  per state), 8 requests per trace, an output limit of 32.
+- *Sized after a local tool smoke, before any data:* on this container `Qwen3-0.6B-4bit` took about 9 s a token
+  on its 4-bit weights. The agent's CPU check chose `dequantize` there by itself (0.124 of stock time, logits
+  within 1.45 % of the float32 plan). At that speed the run would not fit a 12-hour session, so it uses V-CPU's
+  smaller model and an output limit of 32 instead of 64.
+- *Amended again before any data (2026-11-03), after a second local tool smoke:*
+  - On this container the agent's own CPU check, on its first sight of `SmolLM2-135M-Instruct-8bit`, measured
+    260.4 s for a 16-token answer on the 8-bit weights and 7.3 s with `dequantize` (0.028 of stock time, logits
+    within 0.28 % of the float32 plan, the same top token). It chose `dequantize` by itself.
+  - At 16 s a token on the default path, the sizes above would take more than a day.
+  - So the run uses 2 traces per state (seeds 410-411), 4 requests per trace, an output limit of 16, and a 7,200 s
+    request deadline.
+  - It runs on this cloud container's CPU. A Kaggle CPU was about 2x slower in V5-CPU, and the run would not fit
+    a 12-hour session there. A container restart loses the run, and is reported as such.
+  - Expected: about 4.5 hours, nearly all of it the default path's cells.
+- **Run 1 (2026-11-03, this container's CPU, x86_64 with 4 cores, at `b0030fa`): lost to a container restart after
+  1 of 6 blocks. Invalid by the rule (fewer than two complete blocks).**
+  - *The agent's own setup:* `dequantize` on the reference engine (no stacked engine on a CPU).
+  - Calibration on the default path: 0.0044 requests a second, 918 s for 4 answers of 16 tokens.
+  - *The one complete block (quiet, trace 410), descriptive only:*
+    - first token: 3.8 s on the agent's path against 155.7 s and 156.8 s on the default's two runs;
+    - a whole answer: 5-8 s against 222-254 s;
+    - tokens per second over the block's span: 0.019 against 0.018;
+    - 3 of the 4 answers were bit-identical to the default's.
+  - *Why the tokens per second did not move (descriptive):* in RL2-H2's quiet state the arrivals are about 20
+    minutes apart here, so a block's span is set by the arrivals, not by how fast the path computes. This metric can
+    show a speed-up only in bursts and spike.
+- **Run 2, labelled post hoc to run 1 (fixed 2026-11-03, before its own data).**
+  - *What changes:* only RL2-H2's bursts and spike states, where requests overlap and the span is set by
+    computing, on fresh seeds 412-413 (2 traces per state, 4 blocks).
+  - *What stays:* everything else, the pass rule included.
+  - *Expected:* about 2.5 hours on this container. Another restart is reported as such.
+  - *Duration, recorded while it runs (2026-11-04):* the estimate was wrong. A 1,034-token prompt in bursts
+    takes about 70 minutes to its first token on the default path, and every block runs that path twice (the A/A
+    control). Block 0 took about 2.6 hours, so the four blocks need about 10-13 hours. The run and its rule are
+    unchanged; only the time estimate was wrong.
+  - *Result (2026-11-04, this container's CPU, at `745b6f7`, 15.2 hours): invalid by the fixed rule.* The
+    default path missed the 7,200 s deadline in blocks 1 and 2 (bursts trace 413: 2 of 4 requests in both of its
+    runs; spike trace 412: 3 of 4 in both), so only blocks 0 and 3 are complete, and a block with a failed request
+    makes the run invalid. The agent's path answered every request in every block.
+  - *The agent's own setup:* `dequantize` on the reference engine again (the stored choice, not re-measured).
+  - *On the two complete blocks, descriptive only:* the agent's tokens per second were 37.8x the default's
+    (95 % 37.3x to 38.2x), its mean first token 0.026x (95 % 0.026x to 0.027x), and the A/A noise of the default's
+    two runs 1.2 %. Both parts of the pass rule would hold there.
+  - *What went wrong (a flaw of the protocol, not of either path):* a block whose baseline is too slow for the
+    deadline is dropped, so the slower the default, the less the run can show. The rule was fixed before the data
+    and stands for this run.
+  - *Post hoc, descriptive only, not a verdict:* with run 3's censoring (below) applied to run 2 at its 7,200 s
+    deadline, all 4 blocks count (10 default requests censored): 30.5x tokens per second (95 % 19.8x to 37.8x),
+    mean first token 0.035x.
+- **Run 3, labelled post hoc to run 2 (fixed 2026-11-04, before its own data).**
+  - *What changes:*
+    - a default-path request that misses the deadline counts as if it had produced its whole token limit, its
+      first token and its last, at the deadline. That is never later than it really would have, so it can only
+      flatter the default (`_cell`'s `censor`, `censor_default` in the report);
+    - an agent-path failure still makes its block incomplete, and an incomplete block still makes the run invalid;
+    - the deadline is 3,600 s instead of 7,200 s, which shortens the run and flatters the default further;
+    - fresh seeds 414-415, bursts and spike again (4 blocks).
+  - *What stays:* the agent's setup is chosen by `choose_setup` as before, the pass rule (tokens per second
+    with a 2.5 % bound above 1, first token no worse beyond the A/A noise), 2,000 resamples, the model and the
+    sizes.
+  - *Expected:* 7-10 hours on this container (a default run is at most 3,600 s plus the time its worker needs to
+    finish a request it was working on). A restart loses the run and is reported as such.
+  - *Result (2026-11-04, this container's CPU, x86_64 with 4 cores, at `19c3d0a`, 8.0 hours): valid, pass.*
+    - *The agent's own setup:* on a fresh store it measured again and chose `dequantize` by itself (0.0247 of stock
+      time for a 16-token answer, logits within 0.28 % of the float32 plan), on the reference engine.
+    - *All 4 blocks complete:* the agent's path answered all 16 of its requests; 22 of the default path's 32 missed
+      the 3,600 s deadline and were censored in its favour.
+    - *Tokens per second:* the agent's path 24.5x the default's (95 % 12.3x to 31.3x), paired by block, 2,000
+      resamples. The bound is far above 1.
+    - *First token:* mean 0.048x the default's (95 % 0.042x to 0.052x), 95th percentile 0.068x; the A/A noise of
+      the default's two runs was 1.5 % and 1.1 %. No worse, by a wide margin.
+    - *Answers:* `dequantize` is an output-changing plan (the owner allows it under `--agent on` behind its own
+      quality gate, which it passed); of the 5 requests both paths finished, 1 answer was bit-identical.
+    - *What it shows:* the agent, unasked, on a machine and model it had not seen, picks its own numeric plan, and
+      through the product that choice serves about 24x the tokens per second of today's default with first
+      tokens about 20x sooner. The setting itself is NUM1's, found by hand first; the gain is the agent's to
+      choose and is measured on this CPU, this model (`SmolLM2-135M-Instruct-8bit`) and RL2-H2's bursts and spike
+      traffic only. The ledger entry is still owed.
+- *Pass (both):*
+  - the agent's tokens per second over the default's (the mean of its two runs), paired by block, has a 2.5 %
+    bound above 1 (2,000 resamples);
+  - its mean and 95th-percentile first token are no worse than the default's beyond the A/A noise of the
+    default's two runs.
+- *A pass* is the agent's own measured gain on that CPU, model and traffic. The setting itself (`dequantize`) is
+  NUM1's, found by hand first. What AG4-C shows is the agent choosing it, unasked, on a machine it had not seen,
+  and that the choice pays through the product. *Otherwise* AG4's CPU setup does not ship.
+- *Cost:* no GPU hours; about 2-3 hours of a Kaggle CPU session (12 blocks of 3 cells).
+
+- **Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
+`_agent` refuses an engine with slot reuse. Until it models joins, the stacked engine serves its measured
+schedule (w8 with joins, H10), and `/health` says so.
+
+**Implementation (2026-11-03).**
+- `ironmule/plan_choice.py` (`choose_setup`, `measure_stacked`, `decide`).
+- `ironmule serve --agent on` without `--engine` and `--compute-dtype` applies the choice. A named one is kept.
+- `--engine dense` serves a 4-bit Gemma 3 through KB2's plan (`engine_bridge.install_dense`).
+- `/health` carries `agent_setup`.
+- Tests: `tests/engine/test_plan_choice.py`, and the CLI wiring in `tests/agent/test_agent.py`.
+- No hardware run yet: the stacked Gemma engine waits for KB2-0, and AG4's kill run for its protocol.
+
+**AG4-Q, the agent's own setup on a T4 (fixed 2026-11-03, before its data).** Does the agent find on its own, on
+the hardware, the setup that people found by hand for Qwen 3 1.7B bf16 on a T4 (H10: the dense engine, 48.3 %
+cheaper than the default)?
+- *Run:* `tools/cuda_probe.py --plan ag4` on one Kaggle T4 at the pushed commit. It runs the product's own
+  `choose_setup` for `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, with nothing given to it, and records the
+  decision with every gate, speed and reason.
+- *Expected (descriptive, from H9/H10 and NUM1's table):* NUM1 keeps the checkpoint's bf16 or takes a plan its
+  table recommends. The stacked engine passes its gate, at about 1x alone and several times the tokens per second
+  at width 8 (KB1-2: 0.93-0.99x alone, about 3 ms per further row).
+- *Pass:* the agent chooses the dense engine by AG4's rule, and its gate passed on the decode path. Then the
+  product-level gain of that choice on this setup is H10's measurement (a hand-chosen run of the same engine).
+  That holds for the setup only and is no new measurement.
+- *Otherwise:* the decision and its reason are recorded, and AG4's rule or gate is re-examined before KB2.
+- *Cost:* about 0.5 session hours (a 3.4 GB download, NUM1's candidates in children, the gate's 16 x 512 decode
+  steps). That fits the roughly 0.75 hours left this week. A session cut by the quota is reported as such.
+- **Run 1 (2026-11-03, kernel `tobayko/ironmule-cuda-probe-ag4` v1 at `29fd91a`, Kaggle T4, 3 minutes): the
+  chooser had a bug, so no stacked engine was compared.**
+  - NUM1 took `float16` from its measured table (0.310 of stock time, quality inside 1.005).
+  - `choose_setup` then measured the stacked engine on top of that plan. The dense plan refused it ("serves bfloat16
+    weights only"), so the agent kept the reference engine with `float16`.
+  - *Implementation fix, not an analysis change:* a stacked engine now runs on the plan it was built on (KB1's on
+    the checkpoint's bf16, KB2's on `native`, `stacked_base`). It is then compared against the path that would
+    serve instead: NUM1's choice, measured alone in its own child (`measure_base`, `against`). The rule and gate are
+    unchanged. Run 2 repeats AG4-Q at the fixed commit.
+- **Run 2 (2026-11-03, kernel `tobayko/ironmule-cuda-probe-ag4` v2 at `cd31095`, Kaggle T4, 8 minutes): the agent
+  chose by itself, on the hardware, and by AG4's rule it kept `float16` on the reference engine. That is not the
+  dense engine.**
+  - *NUM1:* `float16` from its measured table (0.310 of the stock bf16 time). Alone it made 57.7 tokens a second
+    here.
+  - *The dense engine (on the checkpoint's bf16):*
+    - load probe passed: stacked rows identical, row kernel within 0.0025;
+    - **gate passed on the decode path**, ratio 0.9997 (95 % 0.9983-1.0011);
+    - **290.9 tokens a second at width 8, 5.0x the `float16` path's single request**;
+    - but 47.3 tokens a second alone, 0.82x. That fails the quiet floor of 0.9, so the agent did not take it.
+  - *First token, recorded:* on the 300-token prompt the dense engine took 0.36 s against `float16`'s 0.06 s. The
+    dense plan prefills with MLX's bf16, which the T4 emulates. On the short prompt the base path's 7.8 s
+    included its first compile; the timing had no warm-up. *Fixed after this run:* both paths are warmed before
+    the clock. This does not change the decision, which failed on the quiet floor alone.
+  - *Reading.* Neither engine wins everywhere on this card, and the agent's rule saw that:
+    - the dense engine makes 5x the tokens per second under load;
+    - it is 18 % slower for a request alone, and its first token comes much later on longer prompts.
+    That makes the choice load-dependent. Two levers follow:
+    - serve both paths and route by queue length (AG4 step 2, with two workers on one card: 2 x 3.4 GB fits a
+      T4);
+    - prefill the dense plan in float16 (a numeric change with its own gate), so its first token stops waiting
+      on bf16 emulation.
+    Neither is built yet. Ledger entry owed.
+
+### AG5 — The agent learns the stacked engine's width, and keeps learning it while it serves (opened 2026-11-07, owner request, before data)
+
+**Why (owner, 2026-11-07).** The owner wants a self-learning AI that makes the decisions, pursued with dreaming
+and RL, and fast visible gains in tokens per second. The decision with the largest measured lever that nothing
+learns yet is the stacked engine's width.
+- AG4's rule judges the engine at width 8 only (`plan_choice._plan_speed` times widths 1 and 8), and the product
+  always stacks up to 8 (`engine_bridge.DENSE_WIDTH`).
+- KB2-0 run 2 measured the Gemma plan's step: 48.8 ms at 1 row, 67.8, 85.1, 113.0, 122.1, 141.3 at 6, 190.3 at 7
+  and 394.1 at 8. Today's native step is 47.3 ms.
+- At width 8 the plan makes 20.3 tokens per second, below today's 21.1, so AG4's rule would refuse it. At width 6
+  it makes 42.5, which is 2.006x.
+- The best width depends on the model and the card: Qwen 3's dense plan is best at 8 (AG4-Q: 290.9 tokens/s).
+
+Recent work points the same way. In batching, RL's edge over hand-tuned heuristics comes from combinatorial,
+multi-resource decisions rather than single-resource timing (arXiv 2607.05272). Nightjar (arXiv 2512.22420) uses a
+contextual bandit to pick a decode-side setting per batch size, scored by tokens per second.
+
+**Mechanism.**
+1. *Startup, the agent measures:* `plan_choice` times the stacked step at every width from 1 to the pool's slots,
+   and judges the engine at its best width, the one with the most tokens per second on that curve. AG4's other
+   conditions are unchanged. The setup records the curve and the width.
+2. *Serving at the learned width:* the product builds the stacked engine with that many slots (`--dense-width`),
+   so neither a starting group nor a joiner exceeds it, and its pool is smaller.
+3. *Online, AG5-L (fixed before its data, once 1 and 2 have a hardware result):* the agent keeps a step-cost
+   model per width from the steps it serves and re-chooses the width by replaying its logged traffic in that
+   model (dreaming, as RSI4's `dream` does for group width) and by trying a neighbouring width now and then (a
+   bandit). This is the part that keeps learning.
+
+Width changes no answer: within the plan every row is bit-identical alone or stacked (KB1-1, KB2 (a)), so this
+decision needs no quality gate of its own.
+
+**Amendment to AG4's rule (2026-11-07, before AG5-G's data).** "More tokens per second at its best width"
+replaces "at width 8". AG4-Q, AG4-R and AG4-C measured under the width-8 rule and stay as recorded; AG4-R runs at
+`b1c2382` and is not touched.
+
+**Kill.** AG5 is closed, and the agent keeps width 8, if AG5-G fails by its rule below or the agent at its own width
+makes fewer tokens per second than at width 8 on the same card.
+
+**AG5-G, the hardware test (fixed now, before its data; it runs only if KB2-G passes).** *Not run:* KB2-G did not
+pass (2026-11-07), so the Gemma plan has no gate to serve under. The width rule and its wiring (1 and 2) stand for
+every stacked engine; AG5-G waits for a stacked engine whose gate passes. *KB2-L passed the same day, and KB2's
+verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path fallback.*
+- **AG5-G run 1 (2026-11-07, kernel `tobayko/ironmule-rl2-headroom-ag5g` v1 at `b8231b7`, two T4s, 20 minutes):
+  stopped before serving, on a defect in the agent's own measurement. No data.**
+  - The agent's `measure_stacked` installed the stacked plan, with its 3.2 GB pool, and only then timed today's
+    native path. That path prefills a whole prompt through a 2 GB float16 copy of the head, and the card ran out
+    of memory. KB2-0 run 1 had found the same in the probe. The measurement's child process failed, so the agent
+    saw "no stacked engine", kept the native path, and the run stopped as its rule says.
+  - *Fixed (no protocol change):* the base path is timed before the plan exists, and freed buffers are returned
+    first. A model no stacked plan serves is now refused before anything is timed (`stacked_refusal`).
+  - Run 2 is the same AG5-G at the fixed commit.
+- **AG5-G run 2 (2026-11-07, kernel v2 at `fd576f4`, two T4s, 2.1 session hours): stopped before serving, again
+  in the agent's own measurement. No data.**
+  - NUM1 chose `native` within its gate 3 minutes into the session. The stacked measurement's child process then
+    ran for its whole 7,200 s timeout without a result, and the timeout crashed the run. It printed nothing, so
+    where the time went is not recorded.
+  - *Likely cause (an inference, not a measurement):* the gate's reference still ran on the native path after the
+    plan's pool existed. That path's prefill of each of the 16 chunks builds the 2 GB float16 head copy beside the
+    weights and the 3.2 GB pool. KB2-G's probe computed the same reference before any pool, and it gated the same
+    plan, weights and card in 26 minutes. For scale: AG6-H's measurement of Qwen 3 1.7B on a T4 took 355 s.
+  - *Fixed (no protocol change):*
+    - the gate's reference on the base path now also runs before the plan exists, as in the probe;
+    - the child logs each stage with its elapsed seconds to the session log;
+    - a measurement past `MEASURE_TIMEOUT_S` (3,600 s) is killed and ends as "no stacked engine", with the reason;
+    - a failed measurement of the competing path is refused instead of raising a `KeyError`.
+  - Run 3 is the same AG5-G at the fixed commit. If its measurement again passes 3,600 s, the stage log shows
+    where, and the run stops by its rule.
+- **AG5-G run 3 (2026-11-07, kernel v3 at `f737494`, two T4s, 0.35 session hours): stopped before serving, at
+  the measurement's last stage. No data.**
+  - The reordering worked. The stage log read: base path timed at 30 s, gate reference on the native path
+    (16 chunks) at 448 s, plan installed at 595 s, gate on the plan at 995 s, and every width timed on the short
+    prompt at 1,031 s.
+  - Then the long prompt's first prefill on the plan (about 300 tokens) failed in
+    `cudaMallocAsync ... out of memory`. The child exited, the agent read "no stacked engine", and the run
+    stopped by its rule. The gate's numbers were lost with the child.
+  - *Cause:* not identified. The log carried no allocator figures, and the plan writes every prefill into its
+    pool at once, so nothing piled up there.
+  - *Fixed (no protocol change):*
+    - freed buffers go back to the device at every stage boundary, as KB2's probe does;
+    - a step that runs out of memory runs once more after that and is recorded (`retried_out_of_memory`), and a
+      second failure is raised as before;
+    - each stage's log line carries the allocator's active, cached and peak gigabytes.
+  - Run 4 is the same AG5-G at the fixed commit.
+- **AG5-G run 4 (2026-11-07, kernel v4 at `b076efd`, two T4s, 0.4 session hours): valid stop by the rule. The
+  agent measured everything and chose not to stack; no serving data.**
+  - The measurement ran to its end in 1,115 s, with no step retried and a peak of 13.28 GB. The stage log read:
+    | stage | seconds | active | cached | peak |
+    | :-- | --: | --: | --: | --: |
+    | base path timed | 32 | 7.19 | 6.11 | 11.61 |
+    | gate reference (16 chunks) | 463 | 7.19 | 6.65 | 11.61 |
+    | plan installed | 616 | 10.41 | 0.90 | 11.61 |
+    | gate on the plan | 1,029 | 10.41 | 1.01 | 11.61 |
+    | every width, short prompt | 1,067 | 10.41 | 3.05 | 13.28 |
+    | every width, long prompt | 1,115 | 10.41 | 2.80 | 13.28 |
+  - The gate passed: ratio 0.9988, 95 % 0.9967-1.0008, as in KB2-G.
+  - The width curve, tokens per second: 18.6 at 1 row, 29.2, 33.0, 36.2, 40.7, **43.9 at 6**, 37.2 at 7 and
+    20.4 at 8. The native path alone made 20.7, so AG5's rule picked width 6 (2.12x).
+  - AG4's rule then refused the engine. One request alone on the plan would run at 0.897x the native path, below
+    the 0.9 floor. Two paths do not fit the card either: 2 x 7.19 GB of weights plus the 3.2 GB pool and the
+    reserve exceed it. So the agent kept the native path, and AG5-G stopped as its rule says.
+  - *Where the 10 % goes:* the plan's one-row step was 50.4 ms on the short prompt and 57.8 ms on the long one
+    (about 300 tokens), against the native path's 48.2 and 48.4 ms. The rise with context, 7.4 ms against 0.2 ms
+    natively, is the plan's attention (KB3).
+  - AG5 stays open. The width rule chose a width, but a stacked engine the agent chooses on this card is still
+    missing. KB3 targets that.
+- **AG5-G run 5 (2026-11-07, kernel v5 at `91610fb`, two T4s, 0.4 session hours): valid stop by the rule, on
+  the other condition. No serving data.** It was identical to run 4 except for the FA2 kernel: only
+  `ironmule/dense_gemma.py` differed, and the harness file was the same.
+  - The plan served FA2 version 3 (kernel `622a8bfe...`, plan version 2). The gate read 0.9988020931047558, the
+    same value to the last digit as run 4, so the plan's answers were unchanged.
+  - One request alone now made 0.914x the native path (19.14 tokens per second against 20.94), above the 0.9
+    floor. Width 6 made 44.18 tokens per second (2.11x).
+  - The rule refused on the first token instead. On the long prompt the plan's first token took 0.810 s against
+    the native path's 0.685 s, 1.18x, above 1.1. In run 4 the same two prefills had read 0.781 s and 0.742 s
+    (1.05x). FA2 does not run in a prefill, so nothing in the kernel change touched these times.
+  - *Post hoc (after run 5's data, labelled so; run 5's verdict stands):* both first-token times were single
+    timings. The native path's own prefill moved by 8 % between the two sessions, enough to flip the rule.
+    - Each side is now the median of several prefills: 5 fresh ones on the native path, and the plan's 8 slot
+      prefills, which it ran anyway and of which it kept only the first.
+    - Every sample is recorded (`base_first_samples_s`, `plan_first_samples_s`).
+    - The rule itself is unchanged: 1.1x, on the worse prompt.
+  - Run 6 is the same AG5-G at the commit with that measurement, run once. If the plan's prefill is really about
+    15 % slower, the medians show it, and the rule refuses again.
+- **AG5-G run 6 (2026-11-07/08, kernel v6 at `5f064c3`, two T4s, 11.3 session hours): invalid by the analysis
+  implemented before its data. The agent chose the stacked engine by itself for the first time. Its worker then
+  failed in phase 0's block 1, and phase 0 served nothing more.** It is valid only for `5f064c3`: it ran before
+  REV1 (`3ae183c`, `3808343`, `4ba5550`) and every fix after it, and confirms none of them.
+  - *Identifiers:* as the artifacts number them (report `phases[].phase`, `rows[].block`). Phase 0 ran the
+    default path on card 0 and the agent on card 1, phase 1 the reverse; this entry's protocol text below calls
+    them phases 1 and 2. Blocks 0-3 are phase 0 (load 0.8 bursts, 0.8 spike, 3.0 bursts, 3.0 spike), blocks 4-7
+    phase 1 in the same order.
+  - *The agent's setup:*
+    - the numeric plan `native` (0.200 of stock, quality inside 1.005);
+    - the stacked measurement ran to its end in 1,102 s, peaking at 13.28 GB;
+    - the gate read 0.9988 (95 % 0.9967-1.0008), as in runs 4 and 5.
+  - *First token, by run 5's post hoc median method:* on the long prompt 0.718 s on the plan against 0.705 s
+    natively, 1.02x (samples 0.714-0.725 s and 0.700-0.706 s). That is one measurement in one session. It does not
+    show that run 5's 1.18x, two single timings in another session, was noise alone.
+    - One request alone made 0.959x the native path (19.41 against 20.24 tokens per second).
+    - Width 6 made 46.76, 2.31x; the curve was 19.4, 32.0, 36.0, 39.3, 44.6, **46.8**, 39.7 and 21.2 for widths 1
+      to 8.
+    - So the agent took the stacked engine at width 6.
+  - *What failed (phase 0, the agent's engine on card 1):*
+    - Block 0 (load 0.8, bursts) was complete.
+    - In block 1 (load 0.8, spike) request 0 was answered, 256 tokens in 12.1 s, at the speed of one row alone.
+      Requests 1-8, which arrived in the next 0.7 s, got no token and failed with `backend_unavailable` at
+      11.8-12.4 s, as request 0 ended. Requests 9-11 waited out their 3,600 s deadline.
+    - In blocks 2 and 3 (load 3.0) all 24 agent requests waited out their deadline.
+    - The default path never failed, so none was censored.
+    - In phase 1, with fresh workers and the cards swapped, blocks 4-7 were complete with no failure, on the same
+      arrivals.
+    - The run took 11.3 session hours where about 1.6 were planned; the artifacts hold no per-block times.
+  - *Cause: not in the run's artifacts.* The harness kept each request's outcome; the product's stability log
+    (with each worker exit's last stderr) stayed in a temporary state directory. STAB3 below takes the cause
+    apart on today's code and adds what the next run exports.
+  - *Verdict: invalid, unchanged.* The analysis implemented before the data (`analyse_ag4c`, and its test of a
+    voided block) makes any failed agent request invalidate the run. This entry's text read more loosely ("a failed
+    agent request voids its block; fewer than two complete blocks make the run invalid"); for later runs it now
+    says what the code does (below). That change does not loosen run 6's verdict.
+  - *Recorded, a descriptive subset only:* over the 5 complete blocks (block 0 of phase 0 and blocks 4-7 of
+    phase 1), not a result of the run:
+    - the agent made 1.742x the default's tokens per second (95 % 1.358-2.103), 1.876x over blocks 4-7;
+    - its mean first token was 0.227x the default's, and its 95th percentile 0.321x;
+    - the default's A/A noise was 0.4 % in tokens per second and 1.0 % in the mean first token.
+  - *Next for AG5:* STAB3's local fixes, then its bounded repro on the card (AG5-R), then AG5-G at the fixed
+    commit. The ledger entry is still owed.
+- *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
+  `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
+- *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
+  chunks). If it does not choose the stacked engine, the run stops and records why.
+- *Arms, through the product, as AG4-C:*
+  - `default`: today's reference worker with `--compute-dtype native`, one request at a time;
+  - `agent`: the agent's setup, the native plan with the Gemma stacked engine at the agent's width.
+  Each block (state, load, trace) runs default, agent, default on the same arrivals.
+- *Traffic:* AG4-C's bursts and spike states at AG4-R's loads, 0.8 and 3.0 of the default path's calibrated
+  capacity, one fresh trace each, 12 requests, a 256-token limit. Prompts are short (the question alone): a
+  1,024-token slot cannot hold the long variant's roughly 1,200-token context plus 256 tokens.
+- *Cards:* phase 1 runs default on card 0 and the agent on card 1; phase 2 swaps them, on the same traces. That
+  makes 8 blocks.
+- **Decision (AG4-C's analysis, unchanged):** pass if the agent's tokens per second over the default's (the mean of
+  its two runs), paired by block, has its 2.5 % bound above 1, and the mean and 95th-percentile first token are no
+  worse than the default's beyond the default's A/A noise.
+  - Any failed agent request makes the run invalid, as `analyse_ag4c` does and its test checks (aligned
+    2026-11-08 for runs after run 6; this wording replaced "a failed agent request voids its block; fewer than two
+    complete blocks make the run invalid"). Incomplete blocks are listed, and the complete blocks' ratios are
+    reported only as a labelled descriptive subset (`subset`). The default path's failures are censored at the
+    3,600 s deadline, as in AG4-C run 3. Fewer than two complete blocks give no subset either.
+- *Recorded, no decision:* the width the agent chose and its curve, the ratios per load and per phase, and the
+  requests that joined a running group.
+- A pass is the agent's gain on this card, model and traffic. It ships opt-in (`--agent on`).
+
+### AG6 — The agent learns its serving policy from the traffic it serves, by dreaming (opened 2026-11-07, owner request, before data)
+
+**Why (AG4-R run 1, descriptive).** On one T4 with Qwen 3 1.7B, the stacked engine alone made 2.10x the single
+path's tokens per second and the agent's router 1.44x. The router decides one request at a time: each goes where
+it would finish first. A request alone finishes sooner on the single path, so the router sends it there while that
+path is free. Requests arriving meanwhile are left to the stacked engine, which then runs with few rows, so its
+stacking advantage goes unused. Its online learning (recursive least squares on each path's prices) moved its
+tokens per second by 1.007x over a frozen copy. The owner wants a self-learning agent that decides, pursued with
+dreaming and RL (2026-11-07).
+
+**Mechanism (`ironmule_product/path_router.py`, `PolicyRouter`).**
+- *Modes:* `route` (today's router), `stacked` (every request to the stacked engine; one it cannot hold goes to
+  the single path, as the pool now does) and `single`.
+- *World model:* the router's learned prices for each path, plus an event replay of each path:
+  - the single path serves one request at a time, its first token then a fixed price per token;
+  - the stacked engine steps all its rows together at the learned price for that many rows, up to its width, and a
+    newcomer waits for a free row and pays its first-token time;
+  - both run on one card and share its time (repaired after the check below).
+- *Dreaming:* every 16 finished requests, with at least 32 logged, the agent replays the arrivals and token counts
+  of its last 64 finished requests in that model under each mode. It moves to the mode with the most replayed tokens
+  per second whose replayed mean first token is at most 1.1x the current mode's. It moves only if the gain is at
+  least 5 %. The replay runs after a request finishes, never inside a routing decision; a decision stays a lookup
+  plus, in `route`, the router's arithmetic, a few microseconds.
+- *No answer changes:* each path serves its own answers, and both passed their gates (AG4).
+
+**Check in simulation (fixed now, before it runs; AG4-R run 1's data already exists, so this is a model check,
+not evidence for a claim).**
+- On run 1's 20 complete blocks, the dreamer starts from the prices the agent measured at startup.
+- For each block it replays the block's arrivals and token counts under the three modes and names its best mode
+  by the rule above. That mode is compared with the measured arms: `single`, `router` and `stacked` on the same
+  arrivals.
+- **Pass:** the named mode is the measured best arm by tokens per second, or within 5 % of it, in at least 80 % of
+  the blocks. Its replayed stacked-over-single tokens per second, pooled, must lie within 25 % of the measured 2.10.
+- If it fails, the world model is repaired before any hardware run, as V3's replay was before V4.
+- **Check, first result (2026-11-07): a pass by the rule, hollow where it counts.** Sixteen of 20 blocks hit, and
+  the replayed stacked-over-single ratio was 2.07 against the measured 2.10. Only the 4 spike blocks separate the
+  modes, though: there the stacked engine measured 228-236 tokens per second and the router 131-136. On all 4 the
+  dreamer named `route`, which it replayed at 236-244. The other 16 blocks are arrival-bound, and every mode
+  serves them alike.
+- **Post hoc repair (after the check's data, labelled so; no hardware data yet).** The frozen router, which kept
+  its startup prices, also made only 129-133 in those spikes, so learning was not the cause. The replay had
+  treated the two paths as two free servers, but both run on one card. While both have work, they share its time.
+  The world model now gives the card to the two paths a unit each in turn: a newcomer's first token, or one decode
+  step of all of a path's rows.
+- **Check, re-run on the repaired model:** 20 of 20 blocks hit, and in all 4 spike blocks the dreamer names
+  `stacked`. The replay there reads route 124-126, stacked 211-212 and single 57, against measured 131-136, 228-236
+  and 65. Pooled, stacked over single replays at 2.07 against the measured 2.10. Since the repair followed the data,
+  this shows only that the repaired model fits run 1. The evidence is AG6-H.
+
+**AG6-H, the hardware test (fixed now, before its data).**
+- *Setup:* one Kaggle T4, `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, `training/rl2_headroom.py --plan ag6h`
+  at a pushed commit. The product's `choose_setup` runs first; if it is not `route`, the run stops and records why.
+- *Arms, through the product on the same two loaded workers:*
+  - `single`, forced;
+  - `router`, today's agent, learning as in AG4-R;
+  - `agent`, the `PolicyRouter`, starting in `route` from the same prices, learning and dreaming across blocks;
+  - `stacked`, forced, with the pool's fallback;
+  - then `single` again, for the A/A noise.
+  The middle three rotate by block.
+- *Traffic:* RL2-H2's bursts and spike states at loads 0.8 and 3.0 over the single path's calibrated capacity, 4
+  fresh traces each (16 blocks), 32 Dolly requests, a 256-token limit, as AG4-R.
+- *Cost, from run 1's measured cells:* about 300 s a cell in bursts and 62 s in a spike at load 0.8, and an assumed
+  150 s at load 3.0. That gives about 4 session hours. The harness starts no new block after 10 hours and records
+  a time cut as such.
+- **Decision:** the agent passes if its tokens per second over the router's, paired by block, have a 2.5 % bound
+  above 1 (2,000 resamples), and its mean and 95th-percentile first token are no worse than the router's beyond
+  the A/A noise of the two single runs. A failed request voids its block; fewer than 4 complete blocks make the run
+  invalid.
+- *Recorded, no decision:* the agent over the single path and over the forced stacked engine, both with 95 %
+  intervals; which mode the agent held in each block, and when it switched; the pool's fallbacks.
+- A pass is a hardware gain from learning while serving on this card, model and traffic. LIMITS' agent section
+  then says so, and the policy learner ships opt-in under `--agent on`.
+- *Harness (built 2026-11-07, before any AG6-H data):* `measure_ag6h` and `analyse_ag6h` in
+  `training/rl2_headroom.py`. Blocks run trace by trace, each trace's four load-and-state blocks before the next
+  trace, so a time cut leaves every load and state measured. The stacked worker serves at the width AG5's rule
+  chose. Before the hardware run, the tests cover the arms, the rotation, the mode record, the time guard and the
+  decision rule with stand-in workers.
+- **AG6-H result: passes (2026-11-07; kernel `tobayko/ironmule-rl2-headroom-ag6h` v1 at `c58fb4b`, one Kaggle T4,
+  3.2 session hours).** The agent's own setup was `route`: the float16 single path beside the stacked engine at
+  width 8, because one request alone ran at 0.81x on the stacked engine. All 16 blocks completed, no request
+  failed, and no time cut was needed. The A/A noise of the two single runs was 1.3 % in tokens per second and 2.7 %
+  in the mean first token.
+  - **Decision:** the agent over the router, paired by block, made 1.512x the tokens per second (95 %
+    1.335-1.639). Its mean first token was 0.553x the router's (95 % 0.445-0.622), its 95th percentile 0.487x
+    (95 % 0.336-0.613). Both conditions hold, so AG6 passes by its rule.
+  - *Recorded:*
+    - the agent over the single path, 2.58x (95 % 2.08-3.03), with first tokens at 0.19x (mean) and 0.21x (p95);
+    - the agent over the forced stacked engine, 0.9925x (95 % 0.9877-0.9967);
+    - the router over the single path, 1.70x, and the stacked engine over it, 2.59x;
+    - the agent over the router by load and state: 1.019x (0.8, bursts), 1.551x (0.8, spike), 1.294x (3.0, bursts)
+      and 1.734x (3.0, spike).
+  - *What it learned:* its first dream, after block 0's 32 requests, moved it from `route` to `stacked`, and its 30
+    later dreams kept `stacked`. Its gain over the router is that switch, learned from the traffic it served.
+    Afterwards it served as the forced stacked engine does. Block 0, served wholly in `route`, read 0.965x the
+    forced arm, and blocks 3 and 13 read 0.980x and 0.967x; the other 13 blocks were 0.993-1.002x. The run does not
+    show it moving back where another mode wins, because on this card, model and traffic `stacked` won in every
+    load and state. A decision took 0.85 us, against the router's 11.7 us.
+  - *Correctness:* each of the 128 prompts was answered 20 times (4 blocks by 5 arm runs). Every prompt had at
+    most two distinct answers, the single path's and the stacked engine's, both gated (AG4); 8 prompts had one. The
+    single path's answers were identical in every block and in both of its runs.
+  - *A product defect, found in this run's data:* the pool fell back to the single path 15 times. In block 13 the
+    forced stacked arm handed 8 short requests to the single path, which served them one after another. The
+    worker's result loop rebound the dense plan's slot limit to the last member's output limit
+    (`ironmule_product/worker.py`, since `562ccd25` on 2026-10-30). So from a batch's second run on, a request
+    joining it was rejected as too long for the engine (prompt plus 256 tokens against 256). In this route setup
+    the single path then served it. Under `--engine dense` alone the client would have got a 400, and under
+    `current_profile` the same happened once a batch had a second run. It is fixed with tests after this run (`359f8d6`). All
+    arms ran on the same worker, so the comparison stands. The fix can only keep more rows on the stacked engine.
+  - *Ships:* the policy learner serves opt-in under `--agent on` wherever the agent's setup is `route`. The claim
+    is bounded to one T4, Qwen 3 1.7B bf16 at `9cd6692`, these four load-and-state cells, 32-request blocks with
+    256-token answers and the product at `c58fb4b`. The ledger entry is still owed.
+
+### AG6-Q — Quiet, a spike, quiet again: does the agent follow a load change on hardware? (owner request 2026-11-08; fixed now, before its data)
+
+**Why.** AG6-H measured blocks of one state each, and REV1's first-token rule for quiet traffic is unmeasured on
+hardware. The owner asked for one continuous load change: does the repaired agent decide right in each phase,
+and do its guards hold?
+
+**Setup.** One Kaggle T4, `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, `training/rl2_headroom.py --plan ag6q`
+at a pushed commit carrying REV1, the cursor fix and the observed quiet guard (`f2d82e5` or later). The product's
+`choose_setup` runs first; if it is not `route`, the run stops and records why. Both paths are loaded once, and
+every arm uses the same two workers. Before the first repetition, 16 calibration prompts go at once through each
+path to warm it; that is not measured.
+
+**Trace** (one per repetition, seed 450 + r; held-out Dolly prompts as AG4-R; `max_tokens` 64):
+1. *Quiet:* 32 requests at a constant 3.0 s. Alone, one takes about 1.2 s on the single path and 2 s on the
+   stacked engine, so in every mode no request overlaps another.
+2. *Spike:* 48 requests 3.0 s after the last quiet one, all within 0.5 s.
+3. *Quiet again:* 80 requests at 3.0 s, from 90 s after the spike's first arrival. By then even the forced single
+   path has served the spike, about 48 x 1.2 s.
+
+**Arms**, each run once per repetition on the same trace, in an order rotated by repetition, the card idle between
+them:
+- `agent`: the `PolicyRouter`, fresh from the startup prices, starting in `route`;
+- `route`: the `PathRouter`, fresh, per-request routing (a fixed mode);
+- `stacked`, forced;
+- `single`, forced;
+- `busy`, a simple adaptive rule: the stacked engine while any request is outstanding on the card, else the single
+  path.
+
+There are 3 repetitions, and the harness starts none after 3 hours.
+
+**Measured per phase and arm** (pooled over repetitions, and each repetition's value):
+- tokens per second over the phase (from its first arrival to the end of its last request);
+- mean and 95th-percentile first token;
+- requests, failures and cancellations;
+- the agent's mode at each request;
+- its switches (time, request, from, to and the rule);
+- the time to adapt: from a phase's first arrival to the agent's first switch into `stacked` in the spike and back
+  into `route` or `single` in the second quiet phase, censored at the phase's end;
+- the cost of a decision (mean and maximum µs), apart from the cost of the dreams (count, mean and maximum ms).
+
+**Uncertainty.**
+- First-token ratios come with a paired bootstrap over requests: the same request of the same repetition under
+  both arms, 2,000 resamples, 95 %.
+- Tokens per second come as the ratio in each repetition, with their mean.
+
+**Decision (fixed now).** The agent passes if, in each of the three phases:
+1. its mean first token is at most 1.1x that of the best fixed mode in that phase, the one with the earliest mean
+   first token among `single`, `stacked` and `route`; and
+2. its tokens per second are at least 0.95x the best fixed mode's in that phase, the one with the most.
+
+Both are pooled over the valid repetitions: the mean first token over all their requests in the phase, and tokens
+per second as all their tokens over the sum of their spans. A phase's span runs from its first arrival to the end of
+its last request.
+
+A failed request voids its repetition, and fewer than 2 valid repetitions make the run invalid. Every answer must
+be one of the two gated paths' own: per prompt at most two distinct answers across arms.
+
+**Recorded, no decision:** the simple rule's same ratios; the best fixed mode per phase and over the whole trace;
+the adaptation times; the switches; the decision and dream costs.
+
+**Expected risk, stated before the data.** The agent dreams after 32 finished requests and then every 16, on its
+last 64, and it scores tokens per second over the window's whole span.
+- In the spike, a window that still holds most of the first quiet phase may dilute the spike's gain below the 5 %
+  switch, so the agent may serve the spike in `route`.
+- If it does switch to `stacked`, it can return only once the spike has left its 64-request window. That is at the
+  144th finished request, the second quiet phase's 64th: about 190 s after that phase's first arrival, with about
+  64 of its 80 requests served stacked. Its mean first token there would then be far above the single path's.
+- If a fixed mode or the simple rule wins a phase, that is the result, and it names the next step.
+
+**Offline prediction (world model only; computed 2026-11-08 at 02:08 UTC and committed at 02:09, after the kernel
+started at 02:06 and before any of its data was read; a scratch script, not a claim).** The world model in `path_router.replay` served AG6-Q's trace in
+closed loop, with AG6-H's startup prices as both the card and the agent's model and the mode in force at each
+arrival. All three seeds gave the same result:
+- The agent serves the quiet phase in `route`, as the single path does (first token 0.063 s).
+- It serves the spike in `route`, at 0.81x the stacked engine's tokens per second, with mean first tokens 1.12x
+  later. It switches to `stacked` only at the 80th finished request, the spike's last, after the spike.
+- It returns to `route` at the 144th finished request, 191 s into the second quiet phase. There its mean first token
+  is 3.8x the single path's.
+- So the prediction is a fail in the spike (both conditions) and in the second quiet phase (first tokens).
+- The simple rule passes every phase: 0.97x the stacked engine's tokens per second in the spike, first tokens 1.04x
+  later, and the single path's first tokens when it is quiet.
+
+**Cost:** about 0.15 session hours of setup and warm-up, and 7.1 minutes per arm and repetition (the trace spans
+425 s), about 2 session hours in all.
+
+*Harness (built 2026-11-08, before any AG6-Q data):* `trace_ag6q`, `BusyRule`, `measure_ag6q`, `analyse_ag6q`
+and `run_ag6q` in `training/rl2_headroom.py`; AG6-H and AG6-Q now share one start (`_route_paths`). The router
+reports what the run records: each switch's time and rule, the mean and maximum cost of a decision, and the count,
+mean and maximum cost of its dreams. Before the hardware run, the tests cover the trace, the simple rule, the arms
+and their rotation, a fresh agent per repetition, the decision record, the time guard, the decision rule and the
+adaptation times on stand-in workers. The dream runs on the thread of the request that finished, before that
+request's last event goes out, so its cost also delays that request's end; the run records it.
+
+**AG6-Q result: fails (2026-11-08; kernel `tobayko/ironmule-rl2-headroom-ag6q` v1 at `cc76d3f`, one T4 of a Kaggle
+T4 x2 session, 1.96 session hours, 1.78 of them measuring).**
+- *Setup and validity:* the agent's own setup was `route`, the float16 single path beside the stacked engine at
+  width 8 (one request alone ran at 0.82x on the stacked engine). The warm-up of 16 requests at once took 19.6 s on
+  the single path and 10.4 s on the stacked engine. All 3 repetitions were valid: no request failed, no request
+  moved to the other path, no router fault, no time cut. Each of the 440 prompts had at most two distinct answers
+  across arms and repetitions, 264 had one.
+- **Decision, pooled over the 3 repetitions:**
+  - *Quiet:* passes. The agent's mean first token was 1.004x the single path's (95 % 1.000-1.007), its tokens per
+    second 1.000x.
+  - *Spike:* fails both conditions. The best fixed mode was the stacked engine: 181.9 tokens per second and a mean
+    first token of 7.32 s. The agent made 105.8 tokens per second, 0.582x (by repetition 0.602, 0.578 and 0.564),
+    with mean first tokens 1.609x later (95 % 1.572-1.650).
+  - *Quiet again:* fails on first tokens. Its mean first token was 0.119 s, 1.884x the single path's 0.063 s (95 %
+    1.753-2.015; 95th percentile 3.10x). Its tokens per second matched `route`'s, the best (1.000x).
+- *What it did:*
+  - It served all 48 spike requests in `route`, which sent 14 of them to the single path.
+  - In repetitions 1 and 2 it switched to `stacked` at the 80th finished request, the spike's last (28.5-28.6 s
+    after the spike's first arrival). It switched back to `route` at the 144th, by the first-token rule on observed
+    quiet traffic, 190.2 and 190.3 s into the second quiet phase. So it served 64 of that phase's 80 requests stacked.
+  - In repetition 0 it never switched.
+- *Why repetition 0 did not switch (found in the data, not tested further):* at the end of that run its learned
+  price of the stacked engine read 131.7 ms a token with no per-row term (startup: 21.6 ms and 1.3 ms a row). In the
+  other two it read 20.7-21.1 ms and 11.1-12.4 ms a row. A likely cause, not tested: a price is learned against the
+  load a request found when it was routed, while it decoded beside the rows that joined it later and beside the
+  other path's share of the card.
+- *Recorded, the simple rule:*
+  - It sent each spike's first request to the single path and the other 47 to the stacked engine.
+  - In the spike it made 0.937x the stacked engine's tokens per second (0.947, 0.932, 0.932), with first tokens
+    1.117x later (95 % 1.102-1.132). In both quiet phases it matched the single path (first tokens 1.000x and
+    0.998x).
+  - Against the agent, it made 1.61x the tokens per second in the spike, with 0.53x the first tokens after it. It
+    would narrowly miss the agent's own spike bounds.
+- *Recorded, the rest:*
+  - Over the whole trace, the arrivals set tokens per second (all within 0.1 %; `route` 24.15). The stacked engine
+    had the earliest mean first token (2.31 s), from the spike's queue.
+  - *Costs:* in the agent, a decision took 13.7 us on average and 61.8 us at most, mostly in `route`'s arithmetic;
+    in the route arm 20.2 us on average and 141.7 us at most. Each repetition had 9 dreams, which took 15.3 ms on
+    average and 20.6 ms at most, each on the thread of the request that had just finished.
+- *Against the offline prediction:* the switch at the 80th request and the return at the 144th, 191 s in, were
+  predicted; they came 190.2-190.3 s in, in two repetitions of three. The model overrated `route` in the spike
+  (0.81x predicted, 0.58x measured) and the simple rule (0.97x predicted, 0.94x measured).
+- **So:** a fixed mode wins each phase: the single path when it is quiet, the stacked engine in the spike. The
+  simple rule came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first token in
+  every phase. The agent lost 42 % of the spike's throughput
+  and nearly doubled first tokens after it, where it was also behind the router it replaces. Dreaming every 16
+  requests over the last 64 is too slow for this load change. That names the next step, AG7. The claim is bounded to
+  one T4, Qwen 3 1.7B bf16 at `9cd6692`, this trace, 64-token answers and the product at `cc76d3f`. The ledger entry
+  is still owed.
+
+### AG7 — The serving mode follows the card's observed state, request by request (proposed 2026-11-08 from AG6-Q; not started)
+
+**Why.** In AG6-Q the dreaming agent missed a 48-request spike: it switched to the stacked engine at the spike's last
+request, or never. It then held the stacked engine for 64 quiet requests, 190 s. A rule that looks only at the
+card's observed state came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first
+token in every phase. The decision has to react to each
+request; learning should refine it, not gate it.
+
+**Mechanism.** A new serving mode `reflex` for a `route` setup. It is a lookup on what the pool already passes to
+`choose`, with no prices:
+- an arrival that finds any request outstanding on the card goes to the stacked engine;
+- one that finds the card idle goes to the single path only if the previous arrival also found it idle, else to the
+  stacked engine. The first arrival counts its missing predecessor as idle.
+
+The agent starts in `reflex` and keeps dreaming. It leaves `reflex` only by today's rules: 5 % more tokens per
+second, or the first-token rule on observed quiet traffic.
+- *World model only (offline, 2026-11-08, not a claim):* on AG6-H's 16 blocks served back to back, this rule
+  matched the forced stacked engine (1.000x), where the plain busy rule made 0.944x. On AG6-Q's trace it served like
+  the busy rule.
+- *Not addressed:* the card-sharing bias in the learned prices (AG6-Q, repetition 0). The reflex uses no prices; the
+  dreams still do.
+
+**Kill criterion (fixed now, before any data).** One hardware run on one T4 with the same model: AG6-Q's trace (3
+repetitions) and AG6-H's bursts and spike at loads 0.8 and 3.0 (4 traces each), with the new agent, the busy rule
+and the forced modes.
+1. In each AG6-Q phase, the new agent's mean first token is at most 1.02x the busy rule's, and its tokens per second
+   at least 0.98x.
+2. On AG6-H's blocks, its tokens per second, paired by block, are at least 0.98x the forced stacked engine's (AG6's
+   agent: 0.9925x).
+
+If either fails, AG7 goes to Tier 0 and the dreaming agent stays as LIMITS bounds it. *Cost:* about 3 session
+hours, to be stated again before a kernel is pushed.
+
+### AG8 — The agent learns and qualifies for tokens per second, the first token no worse (owner request 2026-11-09, item A2; fixed before its data)
+
+**Why.** The owner's measure of gain (2026-11-03, "The main goal") is tokens per second first, with the time to the
+first token no worse. The agent's planner, its replay qualification and its audit still minimise each request's
+time in the system plus its time to the first token (AG1's cost). That cost rewards ordering, which at a fixed
+capacity moves no tokens per second, and does not reward a width that finishes the same work sooner.
+
+**Change (objective `throughput`, the agent's default from this entry on; `latency`, AG1's cost, stays
+selectable).** Both scores are read from the same runs as before; the actions (order, width) are unchanged.
+- *A window's score:* seconds per token, `s` = the span from its first arrival to its last end over the tokens
+  made; lower is more tokens per second. Its first token, `f`, is the mean time from arrival to first token.
+- *Tolerance on the first token:* `tau` = 0.02, the 1.02x bound AG6-Q and AG7 use.
+- *Planner (simulation):* an episode's return is `-(s/s_g) - h * max(0, s/s_g - 1) - h * max(0, f/f_g - 1 - tau)`,
+  with the guard schedule `g` on the same traffic and the planner's harm weight `h` (5). A schedule's price over
+  windows is the pooled `s` (sum of spans over sum of tokens); a schedule whose pooled `f` exceeds `(1 + tau)`
+  times the reference's is not eligible as the guard or the best fixed schedule, nor the incumbent's for a
+  proposal. A candidate is proposed only if its pooled `s` is below the incumbent's and its pooled `f` at most
+  `(1 + tau)` times the incumbent's.
+- *Qualification (replay, A/B/AA):* each triplet carries `s` and `f` per arm. At a look, *pass* needs both: the gain
+  on `s` (`1 - sum(s_B) / sum(mean(s_A, s_AA))`) with its lower bound at the look's alpha above zero and above the
+  A/A floor on `s`, as now; and the change in `f` with its upper bound at the same alpha at most `max(tau, floor
+  on f)`. *Fail* at a look: the gain's upper 97.5 % bound cannot reach the floor, or the first token's lower bound
+  is above `max(tau, floor on f)` (clearly later), or the last look. Otherwise open.
+- *Audit (the serving schedule against the reference):* *harm* at a look when the gain on `s` has its corrected
+  upper bound below zero, or the first token's corrected lower bound is above `max(tau, floor on f)`.
+- *State:* the objective is part of the agent's binding, so a state learned or qualified under another objective
+  never serves under this one: learning starts fresh. Evidence names its objective.
+- *Not changed:* answers (every replay still compares them), the LD1 dispatch, RSI3's live learner, the router and
+  the dreaming modes (AG6).
+
+**Simulation gate, before any hardware (`training/ag1_online.py --objective`, fixed now):** the same 300 traces
+(seed 90,000, the T4 price), once under `latency` and once under `throughput`. Recorded per phase: the agent's and
+the reference's tokens per second and mean first token on the same windows. Read as:
+- the throughput agent's tokens per second, pooled over the windows where its learned schedule serves, at least
+  the reference's (no loss), and its mean first token there at most 1.02x the reference's;
+- and against the latency agent: whether it serves more tokens per second. That is recorded, not a gate, since at
+  this machine's price a wider group may make none.
+- *Kill:* if the throughput agent loses tokens per second to the reference, or its first token exceeds 1.02x, in
+  the windows its schedule serves, the default goes back to `latency` and AG8 goes to Tier 0.
+- A simulation is not a hardware gain. A hardware run needs its own protocol and the owner's approval.
+
+**Simulation result (2026-11-09; `training/ag1_online.py`, 300 traces, seed 90,000, the T4 price; a simulation, not
+a hardware result).**
+
+| Objective | What served | Tokens per second vs the reference | Mean first token vs the reference | AG1's cost |
+| --- | --- | --- | --- | --- |
+| `latency` | its learned shortest-first schedule from trace 50 (250 windows) | 1.0009x | 0.871x | 6.2 % lower |
+| `throughput` | the reference, all 300 windows | 0.9999x | 1.0002x | 0.07 % higher |
+
+- *By the rule fixed above:* the kill does not apply. The throughput agent lost nothing to the reference in the
+  windows its learned schedule served, because it served none. Its planner found no width that makes more tokens
+  per second at this price (learned, best fixed and reference all 0.1236 s a token): on grouped batch-1 a further
+  session costs 91 % of a step (AG3), so width 8 is already the most. It qualified the latency agent's
+  shortest-first schedule once and rejected it (tokens per second 0.6 %, 95 % -0.2 % to 1.5 %, not above the A/A
+  floor), as the rule says. The default stays `throughput`.
+- *Post hoc, it changes no verdict:* this objective leaves out part of the owner's measure, "waiting time counts
+  too, but less". On this price the throughput agent gives up the 13 % earlier first tokens the latency agent
+  served at the same tokens per second. A revision would be lexicographic: a candidate qualifies by more tokens per
+  second within the first-token bound, or by a lower AG1 cost at tokens per second no worse than the noise. That
+  is a new protocol with its own simulation, the owner's decision.
+- It also took 2.5x the planner time (51 plans against 12): with no candidate, it plans again every 64 arrivals.
+
+### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed, CPU6-A failed, CPU6-A2, CPU6-A2-K and CPU6-Q passed)
+
+**Why.** The owner decided that the CPU suffices to build the agent ("The main goal"). Every CPU run so far was
+bounded by how slowly MLX computes there: AG4-C's default path took about 70 minutes to the first token of a
+1,034-token prompt, and V5-CPU was cut by Kaggle's 12-hour limit short of triplets, not of signal. At capacity 1
+the agent's only decision on a CPU was the order (0.5-1 %).
+
+**Development data (2026-11-10, this container; exploration before this protocol, no claim).** x86-64, 4 vCPUs
+(Xeon at 2.1 GHz, AVX-512), 15 GiB, mlx 0.32.4 with the `mlx-cpu` wheel, NumPy 2.5.3 (bundled OpenBLAS 0.3.34).
+- The `mlx-cpu` wheel links a reference BLAS (`mlx_cpu.libs/libblas-*.so`, netlib 3.10): one thread, no vector
+  kernels. A 2,048-cube float32 product ran at 3.4 GFLOP/s there, against about 300 on NumPy's OpenBLAS (0.056 s).
+- Decode-shaped products (1 and 8 rows; SmolLM2-135M's 576 x 1,536 MLP, Qwen 3 0.6B's 1,024 x 3,072 and 1.7B's
+  2,048 x 6,144) were 19-32x slower on MLX than on OpenBLAS, the 151,936-row head 11x.
+- With a forwarding library preloaded (MLX's `cblas_sgemm` to NumPy's OpenBLAS), SmolLM2-135M dequantized to
+  float32 took 58 ms a decode step at one row (147 stock) and 77 ms at eight rows (903 stock), 12 steps each. On
+  its checkpoint's float16 weights after mlx-lm's own `dequantize_model` it took 375 ms: the float16 product does
+  not use the BLAS.
+- *Bit-identity.* On OpenBLAS a row's product alone and the same row stacked among 2-8 rows differed for K=1,536
+  (35 of 36 placements); with every product at a fixed width of eight rows (zero padding), none of 180 placements
+  over five shapes differed. The reference BLAS was identical either way.
+- *The CPU plan as a tool, before the product path existed:* SmolLM2-135M, OpenBLAS, 16 tokens: 15.9 tokens per
+  second at one row, 86.9 at eight; each of eight requests stacked got the tokens it got alone.
+- *Through the product, a smoke (8 requests offered at once, 32 tokens; the stock arms ran while the test suite
+  also used the CPU, so they are slower than alone):* today's CPU path (`--compute-dtype dequantize`) 3.5 tokens
+  per second and a mean first token of 33.8 s; with OpenBLAS 11.5 and 10.3 s; the stacked engine on OpenBLAS 42.7
+  and 1.2 s; the stacked engine on the stock BLAS 3.5. Every arm returned the same token counts.
+
+**Step 1, the fast BLAS (`ironmule/cpu_blas.py`, `--cpu-blas openblas`).** A small C library, built with the
+machine's compiler into the user cache, preloaded into the worker process. Its `cblas_sgemm` forwards to an
+OpenBLAS found on the machine (NumPy's bundled one first; ILP64 or LP64 by its symbol); a target it cannot resolve
+sends every call to MLX's own BLAS, so it can only be not faster, never fail. Before a worker gets it, a child
+process checks it: the optimised BLAS must serve and agree with a float64 reference within 1e-5; otherwise the
+worker runs on the stock BLAS. `/health` names the BLAS that serves and, if it is not the one asked for, why. Only
+`cblas_sgemm` is forwarded. A different summation order can change answers, so it is opt-in; the agent's and the
+learner's evidence binds to it. Not with `--gpus`.
+
+**Step 2, the stacked engine on a CPU (`ironmule/dense_cpu.py`, `--engine dense` on a machine without a GPU).**
+The dense plan's slot pool and executor (`DenseBackend`, `DenseStackedExecutor`) with a decode step for MLX's CPU:
+every weight widened to float32 (a quantised checkpoint dequantized), every linear layer at the pool's width with
+zero padding, attention row by row over the request's own slot up to its position, the model's own norms and
+rotary embedding. Llama, Qwen 2 and Qwen 3 shapes. The slot size is the largest of 8,192-512 tokens whose pool fits
+beside the weights in half the memory. Installed only after a probe on the model's own weights: every width from
+two to the slot count bit-identical to one row over three decode steps, and a step within 1e-3 of mlx-lm's own
+forward with the same top token. Opt-in like every numeric plan.
+
+**Tests** (`tests/engine/test_cpu_blas.py`, `tests/engine/test_dense_cpu.py`): the shim's check, its fallback with a
+missing library or symbol, the build cache, the refusal without a compiler or off Linux x86-64, the client's
+option checks, health with and without it; tiny random Llama and Qwen 3 models (a 1,536-wide down projection,
+where OpenBLAS was not row-invariant): the probe, dequantization, the same tokens stacked and alone through
+`DenseBackend`, on the stock BLAS and on OpenBLAS in a child process; and through the product (service, client,
+worker process, the bridge's own `install_dense`) eight requests at once that share stacked steps and get the
+answers each got alone.
+
+**CPU6-M, the measurement (fixed 2026-11-10, after the development data above and before its own data).**
+- *Machine:* this container, as above, with nothing else running; no GPU hours. The commit is the one that ships
+  this entry's code.
+- *Model:* `mlx-community/SmolLM2-135M-Instruct-8bit` (V-CPU's and AG4-C's), the cached snapshot. Qwen 3 0.6B 4-bit
+  is descriptive only.
+- *Arms, through the product (`tools/cpu6_measure.py`, the service and worker as `ironmule serve` starts them):*
+  A, today's CPU path: the reference worker with `--compute-dtype dequantize` on the stock BLAS (what AG4's agent
+  chose on its own in AG4-C); B, A with `--cpu-blas openblas`; C, `--engine dense` with `--cpu-blas openblas`.
+- *Workload:* 8 requests offered at once (fixed synthetic prompts, 64-token limit), each arm on a fresh worker.
+  5 repetitions in rotated arm order (A B C A, B C A A, C A A B, ...); A runs twice in each repetition, so its two
+  runs give the A/A noise.
+- *Metrics:* tokens per second over the span from the first offer to the last done, and the mean first token,
+  paired by repetition, 2,000 bootstrap resamples. Descriptive: how many answers equal A's.
+- *Quality:* the numeric plans' perplexity gate (`nll_per_chunk`, the gate text and chunks) on the dequantized model
+  on OpenBLAS against the same on the stock BLAS. C's decode step is held to mlx-lm's forward by its probe.
+- *Pass, each fixed now:* B over A, tokens per second with the 95 % lower bound above 1.5; C over A, above 3.0;
+  for both, the mean first token's 95 % upper bound at most 1 plus the A/A noise; the gate's upper bound at most
+  1.005; every request answered in every arm.
+- *Kill:* B fails, and `--cpu-blas` stays an option without a recommendation; C fails, and the CPU stacked engine
+  stays opt-in without a recommendation. Either way into Tier 0 with this entry. A passing arm becomes something
+  the agent may choose on a CPU behind its own gate (step 3, not started).
+- *Expected:* about 0.5-1 hour of this container's CPU.
+
+- **Result (2026-11-10, this container, at `a407e81`, about 0.7 hours, no GPU hours): valid; B and C pass.**
+  - *Setup as fixed:* SmolLM2-135M-Instruct-8bit rev `0f0d9b8`, x86-64 with 4 CPUs, mlx 0.32.4; 5 repetitions
+    of 8 requests offered at once with a 64-token limit, every request answered in all 20 runs. C's probe found
+    every width bit-identical to one row (reference error 1.3e-6), slots of 8,192 tokens; `/health` reported
+    OpenBLAS serving in B and C.
+  - *Means per arm:* A 4.37 tokens per second, mean first token 54.4 s, span 109.9 s; B 12.81, 18.7 s, 37.5 s;
+    C 54.83, 1.34 s, 8.8 s. A/A noise: first token 2.9 %, tokens per second 2.7 %.
+  - *B over A:* tokens per second 2.93x (95 % 2.82x to 3.06x; bound 1.5), mean first token 0.343x (95 % 0.328x to
+    0.360x). Pass.
+  - *C over A:* tokens per second 12.5x (95 % 11.9x to 13.0x; bound 3.0), mean first token 0.0245x (95 % 0.0228x
+    to 0.0263x), about 40x sooner. Pass.
+  - *Quality gate:* the dequantized model on OpenBLAS against the stock BLAS, 16 chunks: perplexity ratio
+    1.0000004 (95 % 0.9999999 to 1.0000009; bound 1.005). Pass. The 16 chunks of 512 tokens took 1,115 s on the
+    stock BLAS and 67 s on OpenBLAS (prefill 16.7x, descriptive).
+  - *Descriptive:* every answer in B and C (40 each) was identical to A's first run, and A's 80 to each other.
+  - *What it shows:* on this CPU and this model, today's CPU path through the product is BLAS-bound: OpenBLAS
+    alone gives about 2.9x, and the stacked engine on it about 12.5x the tokens per second with the first token
+    about 40x sooner, at the same answers on this workload. Not shown: another CPU (a Kaggle CPU was about 2x
+    slower in V5-CPU), a larger model, mixed or spaced arrivals, longer prompts, or the agent choosing either
+    (step 3). The ledger entry is still owed.
+
+**Step 3, the agent chooses both on a CPU (owner request 2026-11-10; fixed before its data).** AG4's `choose_setup`
+keeps the reference engine on a machine without a GPU (no stacked plan existed there). On such a machine it now
+also decides:
+- *The BLAS, after NUM1's plan:* where the shim is available and passes its check, the base path (NUM1's plan, for
+  example `dequantize`) runs once on each BLAS in its own child process: its short prompt's last-position logits
+  and one 16-token served answer, as NUM1's CPU check (CPU3) does for `dequantize`. OpenBLAS is chosen if the
+  logits are within NUM1's CPU bound of the stock BLAS's (5e-2 relative) with the same top token, and the answer
+  took at most 0.95 of the stock BLAS's time. Otherwise the stock BLAS, with the reason.
+- *The stacked engine:* CPU6's CPU plan, measured on the base path as it serves (NUM1's plan, on the chosen BLAS),
+  by AG4's rule unchanged (`decide`): the teacher-forced perplexity gate against the base path's own decode
+  (bound 1.005), the best width on the measured curve, at least 0.9 of the base path's single-request tokens per
+  second at one row, the first token at most 1.1x later. `route` is not offered on a CPU: its two workers would
+  share the cores (MG1 item 5).
+- A setup stored before step 3 on a CPU (none of these decisions) is measured again once; a GPU's is not.
+- The server then starts what was chosen: `--engine dense` and/or `--cpu-blas openblas`, shown in `/health` and
+  `agent_setup` with every number behind it.
+
+**CPU6-A, the agent's own CPU setup through the product (fixed 2026-11-10, before its data).**
+- *Machine and model:* as CPU6-M (this container, SmolLM2-135M-Instruct-8bit), a fresh state store, the commit
+  that ships step 3; no GPU hours.
+- *The decision:* `ironmule serve --agent on`'s own `_agent_setup` with nothing named; its choice, its numbers and
+  the seconds it took are recorded. If it keeps the stock BLAS and the reference engine, the run reports that and
+  fails.
+- *Arms through the product:* S, the setup the agent chose, started as the CLI starts it; A, AG4's earlier choice on
+  this machine (`--compute-dtype dequantize` on the stock BLAS, as CPU6-M's A).
+- *Workload and analysis:* CPU6-M's (8 requests at once, 64 tokens), 5 repetitions in rotated order of A S A, so A's
+  two runs give the A/A noise; 2,000 resamples.
+- *Pass:* the agent chose a setup other than A by itself; S over A, tokens per second with the 95 % lower bound above
+  3.0 and the mean first token's 95 % upper bound at most 1 plus the A/A noise; every request answered.
+- *Kill:* the agent's own choice is no faster than that, and step 3 is revised or removed, recorded in Tier 0.
+- *Expected:* about 1-1.5 hours of this container's CPU (the setup's measurements, about 30 minutes, then the arms).
+
+- **CPU6-A result (2026-11-10, this container, at `b71b1ce`, about 1 hour, no GPU hours): valid; fails.**
+  - *The agent's own setup, on a fresh store with nothing named (1,172 s):* NUM1 took `dequantize` (logits within
+    2.79e-3 of the float32 plan, 0.027 of stock time); the BLAS rule took OpenBLAS (logits within 2.13e-6 of the
+    stock BLAS, same top token, 0.218 of its time for a 16-token answer); the CPU stacked plan passed its probe and
+    its gate (ratio 0.99999993, 95 % up to 1.00000003) and made 68.1 tokens per second at width 8 against 14.7 on
+    the base path, 15.1 at one row (1.02x), but AG4's rule refused it: on the short prompt its first token took
+    0.0979 s against 0.0842 s, 1.16x, above 1.1 (the long prompt: 1.556 s against 1.608 s, 0.97x). So S served
+    `dequantize` on OpenBLAS with the reference engine.
+  - *Through the product (5 repetitions, every request answered):* A 4.41 tokens per second, mean first token
+    53.6 s; S 12.57 and 19.1 s. S over A: 2.85x (95 % 2.78x to 2.92x), below the bound of 3.0; first token 0.355x
+    (95 % up to 0.366x), A/A noise 2.1 %. All 40 of S's answers equal A's first run.
+  - *Verdict by the fixed rule: fail.* The agent chose a setup other than A by itself, and it is 2.85x faster, but the
+    bound was 3.0.
+  - *Post hoc, descriptive only (no rule or verdict changes):* the stacked engine lost on 14 ms of one request's
+    first token on a 10-token prompt. Under 8 requests at once, CPU6-M measured the same engine at 12.5x A's tokens
+    per second with first tokens 40x sooner. AG4's first-token check judges one request alone, a rule made for the
+    T4, where `route` serves single requests beside the stacked engine; on a CPU `route` is not offered, so nothing
+    takes that role. Where the 14 ms come from is not measured (the plan's padded head at prefill, its float32
+    norms, or noise: the plan's short-prompt prefills ranged 0.078-0.213 s).
+  - By the kill rule step 3 is to be revised (or removed) and the result goes to Tier 0. Its code stays: what the
+    agent chose (OpenBLAS) is faster and gated, and it chooses nothing it has not measured. The ledger entry is
+    still owed.
+
+**CPU6-A2, the revision of step 3 (owner decision 2026-11-10: way 1, the mechanism and not the rule; fixed after
+CPU6-A's data and before its own).**
+- *Development data behind it (2026-11-10, this container, SmolLM2-135M on OpenBLAS; no claim):* 25 prefills of the
+  short prompt (11 tokens) each: the base path 99 ms (median), the plan's version-1 prefill 107 ms, of which the
+  trunk 82 ms and the head 7.9 ms at eight padded rows against 6.0 ms at one row; the cache was evaluated on its
+  own before the head, the base path evaluates both in one graph. After the change below, 90 prefills of each:
+  base 104.4 ms, plan 96.5 ms; the first-token ratio over 5 prefills per side spread 0.72x-1.20x (1 of 18 above
+  1.1), over 15 per side 0.82x-1.03x (0 of 6). On the long prompt (328 tokens) the plan was faster throughout
+  (0.93x).
+- *What changes:*
+  - the CPU plan, version 2: its prefill's head runs at one unpadded row, in one lazy graph with the cache. A prefill
+    always runs one request alone, so no answer depends on it; the decode step keeps the fixed width. Its probe and
+    tests are unchanged and pass;
+  - on a CPU each first-token time in the agent's measurement is the median of 15 prefills per path
+    (`CPU_FIRST_SAMPLES`), not 5 (and the plan's, which were its 8 slots' prefills, likewise 15).
+- *What stays:* AG4's rule (`decide`, the first token at most 1.1x later included), the BLAS rule, every gate, and
+  CPU6-A's arms, workload, analysis, pass and kill, on a fresh store at the commit that ships this revision.
+- *Expected:* about 1 hour of this container's CPU. CPU6-A stays failed; this is a new run, not a re-reading.
+
+- **CPU6-A2 result (2026-11-10, this container, at `7271b7a`, about 1 hour, no GPU hours): valid; passes.**
+  - *The agent's own setup, on a fresh store with nothing named (1,173 s):* `dequantize` (NUM1), OpenBLAS (logits
+    within 2.13e-6 of the stock BLAS, same top token, 0.206 of its time), and the CPU stacked engine at width 8 (plan
+    version 2, probe passed, 8,192-token slots): gate ratio 0.99999993 (95 % up to 1.00000003); 78.0 tokens per
+    second at width 8 against 15.3 on the base path, 5.10x; 13.9 at one row (0.91x, above 0.9); first token 1.06x on
+    the short prompt (0.0931 s against 0.0877 s, 15 prefills each) and 0.94x on the long one. Every part of AG4's
+    rule held.
+  - *Through the product (5 repetitions, every request answered, `/health` reporting OpenBLAS serving):* A 4.30
+    tokens per second, mean first token 55.0 s; S 54.55 and 1.28 s. S over A: **12.7x (95 % 12.2x to 13.1x)**, bound
+    3.0; mean first token 0.0232x (95 % up to 0.0250x), A/A noise 5.6 %. All 40 of S's answers equal A's first run.
+  - *What it shows:* on this CPU and this model the agent, unasked and on a fresh store, chose OpenBLAS and the CPU
+    stacked engine by itself, each behind its own gate, and through the product that served 12.7x the tokens per
+    second of AG4's earlier CPU choice (and of the reference path `dequantize` already was 24.5x faster than in
+    AG4-C), with first tokens about 43x sooner, on 8 requests at once. Not shown: another CPU, a larger model,
+    quiet or spaced traffic, longer prompts. CPU6-A stays failed; step 3 as revised passed. The ledger entry is still
+    owed.
+
+**CPU6-A2-K, the same run on a second machine (owner approval 2026-11-10; fixed after CPU6-A2's result and before
+any of its own data).**
+- *Question:* does the agent's own choice on a CPU carry to a machine it was not developed on? CPU6-A2 is one CPU.
+- *Machine:* a private Kaggle CPU session (no accelerator; Kaggle CPUs were about 2x slower than this container in
+  V5-CPU), kernel `tobayko/ironmule-cpu6a2-kaggle`, pinned to the pushed full commit that carries this entry.
+- *Everything else is CPU6-A2's:* `tools/cpu6_measure.py --plan agent` unchanged, `mlx-community/SmolLM2-135M-
+  Instruct-8bit` at revision `0f0d9b8`, a fresh store, nothing named, arms A and S in rotated order A S A, 5
+  repetitions of 8 requests at once, and `analyse_agent`'s rule: pass when the agent chose a setup other than A, S
+  over A has its 95 % lower bound above 3.0, the mean first token's 95 % upper bound is at most 1 plus the A/A
+  noise, and every request is answered; fewer than 5 complete repetitions are invalid. Whatever BLAS and engine
+  the agent picks there is its choice; nothing is forced.
+- *What a result means:* a pass widens CPU6-A2's validity domain to a second x86 CPU; a fail is recorded in Tier 0
+  scoped to that machine, with what the agent chose and why, and does not undo CPU6-A2. An invalid run (Kaggle's
+  limit, a failed install) releases nothing and is said so.
+- *Cost:* about 2-3 hours of a Kaggle CPU session; no GPU or TPU quota.
+
+- **CPU6-A2-K result (2026-11-10, kernel `tobayko/ironmule-cpu6a2-kaggle` v1 at `2fe4912`, a Kaggle CPU session of 4
+  x86-64 CPUs, MLX 0.32.4, about 1.2 hours, no GPU or TPU quota): valid; passes.**
+  - *The agent's own setup, on a fresh store with nothing named (2,412 s):* `dequantize` (logits within 2.79e-3, 0.042
+    of stock time), OpenBLAS (logits within 2.64e-6 of the stock BLAS, same top token, 0.256 of its time), and the CPU
+    stacked engine at width 8: gate ratio 1.00000005 (95 % 0.99999993 to 1.00000017); 34.7 tokens per second at width
+    8 against 6.28 on the base path, 5.53x; 6.49 at one row (1.03x); first token 0.93x on the short prompt (0.182 s
+    against 0.197 s) and 0.93x on the long one. The same choice as in CPU6-A2.
+  - *Through the product (5 repetitions, every request answered):* A 2.95 tokens per second, mean first token 80.7 s;
+    S 27.6 and 2.46 s. S over A: **9.34x (95 % 9.30x to 9.38x)**, bound 3.0; mean first token 0.0305x (95 % up to
+    0.0312x), A/A noise 0.4 %. All 40 of S's answers equal A's first run.
+  - *What it shows:* on a second x86 CPU, slower than this container (its base path 6.3 against 15.3 tokens per
+    second), the agent made the same choice by itself and it paid through the product. The gain is smaller than
+    CPU6-A2's 12.7x; why is not measured (OpenBLAS's share was 0.256 of stock time there against 0.206 here). Not
+    shown: a larger model, other traffic, a CPU of another vendor or architecture. The ledger entry is still owed.
+
+**CPU6-Q, the same run with a larger model (owner request 2026-11-10; fixed before any of its data).**
+- *Question:* does the agent's own CPU choice, and its gain, carry from a 135M model to a model about four times
+  larger? CPU6-A2 and CPU6-A2-K both used SmolLM2-135M.
+- *Model:* `mlx-community/Qwen3-0.6B-4bit` rev `73e3e38` (Qwen 3, 4-bit, about 0.6B parameters; the CPU plan widens it
+  to float32 as it does the 8-bit SmolLM2). Chat template with thinking on, as the worker renders it by default.
+- *Everything else is CPU6-A2's:* `tools/cpu6_measure.py --plan agent --model mlx-community/Qwen3-0.6B-4bit`, this
+  container, a fresh store, nothing named; arms A (`dequantize` on the stock BLAS, AG4's earlier CPU choice) and S (the
+  agent's own setup), rotated A S A, 5 repetitions of 8 requests at once, 64 tokens; `analyse_agent`'s rule (pass
+  when the agent chose a setup other than A, S over A has its 95 % lower bound above 3.0, the mean first token's 95 %
+  upper bound is at most 1 plus the A/A noise, every request answered; fewer than 5 complete repetitions invalid).
+- *What a result means:* a pass widens CPU6-A2's validity domain to this larger model on this CPU; a fail goes to Tier
+  0 scoped to it, with what the agent chose and why, and does not undo CPU6-A2.
+- *Cost:* about 3-4 hours of this container's CPU (the setup's gates about four times CPU6-A2's 20 minutes; A at
+  roughly 1 token a second); no GPU hours. It runs after SP3-H, alone on the CPU.
+
+- **CPU6-Q result (2026-11-10, this container, at `20126ac`, about 1.9 hours, no GPU hours): valid; passes.** A first
+  start was stopped after seconds, before any arm ran, because the session's background limit would have cut it; the
+  run was started again from a fresh store and is the one reported.
+  - *The agent's own setup, on a fresh store with nothing named (2,303 s):* `dequantize` (logits within 1.45e-2 of the
+    float32 plan, 0.109 of stock time), OpenBLAS (logits within 2.0e-6 of the stock BLAS, same top token, 0.155 of its
+    time), and **not** the CPU stacked engine: it passed its probe (rows and verify windows bit-identical) and its gate
+    (ratio 0.99999998, 95 % up to 1.0000001) and made 29.9 tokens per second at width 8 against 6.82 on the base path
+    (4.39x), but one request alone ran at 5.01, 0.73x, below AG4's floor of 0.9. So S served `dequantize` on OpenBLAS
+    with the reference engine.
+  - *Through the product (5 repetitions, every request answered):* A 1.35 tokens per second, mean first token 177 s; S
+    5.90 and 42.0 s. S over A: **4.36x (95 % 4.25x to 4.50x)**, bound 3.0; mean first token 0.237x (95 % up to 0.244x),
+    A/A noise 1.6 %. All 40 of S's answers equal A's first run.
+  - *What it shows:* with a model about four times larger, the agent's own CPU choice still paid well beyond the bound,
+    every answer equal. Its gain is smaller than CPU6-A2's 12.7x because it refused the stacked engine.
+  - *Post hoc, descriptive only (no rule or verdict changes):* the refusal is AG4's single-request floor, made for the
+    T4 where `route` serves single requests beside the stacked engine; on a CPU `route` is not offered, so a choice
+    for 8 requests at once is judged by one request alone. The stacked engine's own measurement (29.9 against 6.82
+    tokens per second at 8 rows) suggests it would have served this workload several times faster again; that is not
+    measured through the product. Whether a CPU should then serve both paths (`route`) or switch by load is an open
+    design question for the owner. The ledger entry is still owed.
+
+**Not covered yet:** several workers on one CPU, each with its share of the
+cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
+
+### AG9 — The online agent inside the stacked engine: is there anything left to learn? (owner request 2026-11-10; step S: no headroom)
+
+**Why.** Since CPU6-A2 the agent chooses the CPU stacked engine by itself, and there it learns nothing while it
+serves: `_agent` refuses an engine with slot reuse (AG4 step 3, `cli.py`), because its world model prices one group
+at a time. The owner's goal is an agent that keeps learning on a CPU without end ("The main goal").
+
+**What it could decide there.** Read from the code on 2026-11-10:
+- *Width:* fixed at setup. The CPU plan pads every step to its width, and OpenBLAS is row-invariant only at a fixed
+  width (CPU6), so a different width is a different plan; AG4 already chooses it.
+- *Order:* when a slot frees, the service takes the oldest waiting request (`_stream_batch.joins`, FIFO). Which one
+  takes it changes no answer: at a fixed width the plan's rows are invariant to slot and company (0 of 180
+  placements differed, CPU6). This is the only decision left inside the engine. At a fixed capacity order moves no
+  tokens per second while every slot is full, but it decides how full the tail of a busy period is (longest first
+  keeps it full) and how soon short requests see their first token (shortest first).
+
+**Step S, headroom in simulation (`training/ag9_stacked_order.py`; local, no GPU; development evidence, no claim).**
+- *Engine model:* 8 slots; a request that takes a slot is prefilled before the next decode step, which every
+  member waits for; one decode step with `n` members costs the agent's own CPU6-A2 measurement (`plan_step_s` at
+  n = 1..8, the short-prompt row; a member whose prompt is long uses the long row); a prefill costs the plan's
+  measured first token, linear in prompt tokens between the short (11) and the long (328) prompt.
+- *Traffic, RL2-H2's three states (equal weight):* `quiet` (16 Poisson arrivals at 0.2 of the FIFO capacity, short
+  prompts, limits 64 or 128); `bursts` (four bursts of four within 0.2 s, burst starts Poisson at 0.6 of capacity /
+  4); `spike` (16 within 1 s). In `bursts` and `spike` half the prompts are long (328 tokens) and the limit is 32 or
+  256. Answer lengths in two variants: each runs to its limit, or stops at a uniform 0.25-1 of it. 40 traces per
+  state and variant, seeds 0-39.
+- *Orders:* `fifo` (today's); `sjf` and `ljf` by the output limit (known at arrival); `sjf*` and `ljf*` by the true
+  answer length (the bound a perfect length model could reach). Ties by arrival.
+- *Scores per trace (AG8's):* tokens per second (tokens over the span from first arrival to last end) and the mean
+  first token, each order over `fifo` on the same trace; per state, the mean ratio and a 95 % paired bootstrap
+  (2,000 resamples, seed 0).
+- *Headroom, fixed before the data:* an order has throughput headroom in a state when its tokens-per-second
+  ratio's 2.5 % bound is above 1.03 and its mean first token's 97.5 % bound at most 1.02; it has first-token
+  headroom when its mean first token's 97.5 % bound is below 0.80 and its tokens-per-second ratio's 2.5 % bound at
+  least 0.98.
+- *Decision:*
+  - no order has headroom in any state and variant: the order decision gives the online agent nothing to learn
+    inside the stacked engine; recorded in Tier 0 with this entry, and the agent keeps serving there on its
+    setup alone (no learner is built for it);
+  - an order with headroom that is also not worse than `fifo` (tokens-per-second 2.5 % bound at least 0.98, mean
+    first token 97.5 % bound at most 1.02) in every other state: a fixed rule, proposed for a hardware test, no
+    learner;
+  - otherwise (states want different orders): step 2, the agent's world model with slot reuse and an order
+    learned online, with its own protocol before any code.
+- *Limits:* a simulation of one CPU's prices for one small model; the real engine's join timing, the length model's
+  errors and other traffic are not in it. A hardware test is still needed before anything serves.
+
+- **Step S result (2026-11-10, this container, at `a655ac7`, 2 s of CPU; simulation, no claim): no headroom.**
+  - Capacity 0.843 requests per second. Each order over `fifo`, mean (95 %) over 40 traces:
+
+    | State / answers | `fifo` tokens/s | `sjf` tokens/s, first token | `ljf` tokens/s, first token |
+    | :-- | --: | :-- | :-- |
+    | quiet, either | 16.8 / 10.8 | 1.000, 1.000 | 1.000, 1.000 |
+    | bursts, to limit | 39.9 | 1.006 (0.999-1.013), 0.931 (0.888-0.970) | 1.026 (1.016-1.039), 1.187 (1.129-1.251) |
+    | bursts, early | 32.1 | 0.997 (0.992-1.001), 0.968 (0.939-0.996) | 1.011 (1.005-1.017), 1.124 (1.067-1.186) |
+    | spike, to limit | 45.3 | 1.020 (1.008-1.033), 0.890 (0.851-0.930) | 1.067 (1.051-1.084), 1.462 (1.366-1.565) |
+    | spike, early | 38.5 | 1.007 (0.997-1.019), 0.928 (0.903-0.953) | 1.049 (1.037-1.064), 1.347 (1.281-1.418) |
+
+    By the true length (`sjf*`, `ljf*`) the same picture: `ljf*` up to 1.085x tokens per second in `spike` with first
+    tokens 1.43x later, `sjf*` first tokens at best 0.93x.
+  - *Verdict by the fixed rule:* no order has headroom in any state. Longest first buys tokens per second only with
+    much later first tokens, beyond AG8's 1.02; shortest first brings first tokens at most 11 % sooner, short of
+    the 20 % the rule asks. So no learner is built for the order inside the stacked engine (Tier 0), and the agent
+    keeps serving there on its own setup.
+  - *Post hoc, descriptive only:* in `quiet` the eight slots never fill, so order never acts; under load, order only
+    trades the tail's fullness against short requests' wait. What an online agent could still learn on a CPU must
+    change the work itself, not its order: a lever whose best setting depends on the request, such as speculation
+    from the request's own context with a window learned online (HQ1's planned lever, Strata's), would be the next
+    candidate, under its own entry and protocol.
+
+### SP1-0 — Speculation from the context on the CPU plan: is it exact, and how much could it gain? (owner request 2026-11-10; exact, killed at 1.23x)
+
+**Why.** AG9 left the online agent nothing to learn inside the CPU stacked engine by order. SP1 (HQ1) is the planned
+lever that changes the work itself: drafts copied from the request's own prompt and answer, verified by the model,
+with the window learned online (Strata's draft policy). How much it pays depends on the request (a summary repeats
+its context, an open question does not) and on the engine's free rows (none when eight requests stream), which is
+what an online learner needs. This entry is its pre-measurement, before any product code.
+
+**Reopening (AGENTS, "Performance and evidence").** Two Tier 0 entries reject prompt-lookup speculation:
+- *E0c* (Apple Silicon, the predecessor's engine): "`2.9x` slower, acceptance `0.17` per drafted token. The workload
+  does not repeat itself enough." New here: another machine and engine (a CPU, where CPU6-A2 measured eight stacked
+  rows at 1.42x one row's step, 0.092 s against 0.065 s), and Dolly's prompts, 30 % of which carry a context
+  the answer may copy.
+- *HW3* (T4): every combination with `speculate_k` 3 changed tokens, because the verify rows took MLX's
+  non-invariant multi-row path; "Re-open with a verify path whose logits are bit-identical to the sequential step
+  (KB1)." New here: the CPU plan pads every product to its fixed width, where its rows are invariant (CPU6), and its
+  attention runs per row over the slot after the step's keys are written, so a window of positions of one slot can
+  be verified causally in one step. Whether that is bit-identical is step (a) below.
+
+**Protocol (`tools/sp1_probe.py`, this container; development evidence for SP1's go or kill, no product claim).**
+- *Model and plan:* `mlx-community/SmolLM2-135M-Instruct-8bit` rev `0f0d9b8`, widened to float32 as `install` does,
+  on OpenBLAS through the shim, the CPU plan at width 8 (CPU6-A2's setup); one request alone in slot 0.
+- *Prompts:* 48 from Dolly 15k (`training/rl2_headroom.dolly_prompts`, digest checked, the shuffled pool from index
+  12,000 on), rendered with the model's chat template; answers greedy, at most 128 tokens or to EOS.
+- *Drafts (prompt lookup):* at each step the longest suffix of the context (prompt and answer so far), 3 tokens
+  down to 1, that occurred earlier; its most recent earlier occurrence; the up to `k` tokens after it. No match, no
+  draft: a plain one-row step.
+- *Verify:* the last accepted token and the `k` drafts as `k + 1` rows of slot 0 at consecutive positions, one
+  forward; the longest prefix of drafts equal to the plan's own argmax is accepted, plus the argmax after it.
+- *Arms per prompt, in this order:* sequential, `k` = 2, 4, 7, sequential again (the A/A pair). Each arm decodes
+  the whole answer from the same prefill; its time is the decode only (first token to last), tokens per second its
+  tokens after the first over that time.
+- *(a) Exactness:* every speculative answer's tokens equal the sequential answer's, on every prompt and `k`.
+- *(b) Gain:* for each `k`, the mean over prompts of its tokens per second over the mean of the two sequential
+  arms, with a 95 % bootstrap over prompts (2,000 resamples, seed 0); the A/A noise is the mean absolute relative
+  difference of the sequential pair. Acceptance (accepted drafts over drafted tokens) and its spread across prompts
+  are reported.
+- *(c) Request dependence:* the per-prompt best of the arms (sequential included) against the best single `k`,
+  mean ratio with the same bootstrap.
+- *Decision, fixed before the data:*
+  - (a) fails on any prompt: speculation does not ship on this plan; Tier 0, scoped to the CPU plan, with the first
+    differing position;
+  - (a) holds and the best `k`'s 95 % lower bound is at least 1.3 (SP1's own bound): SP1 goes on to the product
+    (the plan's verify window, the worker, a window policy) under its own protocol, with SP1's kill through the
+    product;
+  - (a) holds, the bound is below 1.3: SP1 on this plan and model is killed; Tier 0, scoped to them;
+  - (c)'s lower bound above 1.05 says a window learned per request is worth it beyond a fixed `k`; otherwise a fixed
+    `k` (or off) is enough, and the agent's learning there would be the costs, not the window.
+- *Limits:* one CPU, one small model, one request alone, the probe's loop and not the worker's. Under load the
+  engine has no free rows to verify on; that state is not measured here.
+- *Cost:* about 30-45 minutes of this container's CPU; no GPU hours.
+
+- **SP1-0 result (2026-11-10, this container, at `59f26ff`, 28 minutes, no GPU hours): valid; exact; killed by its
+  bound.** OpenBLAS served (the shim, ILP64); Dolly digest `2df90833`; all 48 prompts timed, median answer 128
+  tokens, sequential median 14.2 tokens per second. Before the run a smoke of the tool decoded 2 of these 48 prompts
+  to 24 tokens; it is not counted and changed nothing.
+  - *(a) Exactness:* every speculative answer, at every `k`, equals the sequential one token for token on all 48
+    prompts. The verify window on the CPU plan is exact (HW3's reopening condition holds on this plan).
+  - *(b) Gain over the sequential pair (A/A noise 5.9 %):*
+
+    | `k` | Tokens/s ratio, mean (95 %) | Acceptance (spread over prompts) |
+    | --: | :-- | :-- |
+    | 2 | 1.315 (1.215-1.431) | 0.329 (0.05-1.00) |
+    | 4 | 1.381 (1.220-1.568) | 0.220 (0.03-0.94) |
+    | 7 | 1.475 (1.226-1.787) | 0.151 (0.02-0.99) |
+
+  - *(c) Request dependence:* the per-prompt best arm over `k` = 7 is 1.076x (95 % 1.056x to 1.098x), above 1.05.
+  - *Verdict by the fixed rule: kill.* The best `k`'s lower bound, 1.23, is below SP1's 1.3, so SP1 on this plan and
+    model goes to Tier 0, although every answer was exact and the mean gain is 1.48x. (c) says a window chosen per
+    request would be worth it beyond a fixed `k`.
+  - *Post hoc, descriptive only (no rule or verdict changes):* the gain is concentrated. At `k` = 7 the median prompt
+    gained 1.12x, 15 of 48 lost (down to 0.90x), 6 gained more than 2x (up to 5.67x). Prompts of at least 100 tokens
+    (16, mostly with a Dolly context) gained 2.14x on average, shorter ones 1.14x. The per-prompt best arm, off
+    included, averages 1.56x over the sequential pair. So the bound failed on the spread, not on the mean, and the
+    spread is the request dependence an online window policy (Strata's) is for: speculating only where it pays. Any
+    reopening needs a new protocol on fresh prompts. The ledger entry is still owed.
+
+### SP2 — Speculation from the context with a window the agent learns while it serves (owner request 2026-11-10; SP2-H failed its bound, opt-in)
+
+**Why.** SP1-0 (Tier 0) showed speculation from the context exact on the CPU plan and 1.48x on average at a fixed
+window, but killed by its bound because the gain depends on the request: 15 of 48 prompts lost, 6 more than doubled,
+and the per-prompt best arm, off included, averaged 1.56x. A window chosen per request and per step is SP1-0's
+reopening condition ("a changed mechanism"), and it is learning the agent does while it serves, on any CPU.
+
+**Mechanism (`ironmule/speculation.py`, the CPU stacked plan, `DenseStackedExecutor`).**
+- *Drafts:* SP1-0's prompt lookup over the request's prompt and answer so far (the longest repeated suffix of 3 down
+  to 1 tokens, its most recent earlier occurrence, up to 7 tokens after it). Its match length is the draft's bucket.
+- *Verify:* each step, every active request's last token plus the drafts chosen for it are rows of its own slot at
+  consecutive positions in one forward of the plan, together with the other requests' rows, at most the plan's width
+  in all. A request takes its drafts up to the first one that differs from the plan's own argmax, plus that argmax.
+  The plan verifies only after its probe found a verify window bit-identical to one row at a time (plan version 3);
+  otherwise speculation stays off.
+- *The window policy, learned online per machine (Strata's draft policy):*
+  - the time of a step by its rows, `t(r)`, an exponential average (weight 0.2) of measured steps; an unmeasured `r`
+    is priced from the measured ones by a line through them (before any, `t(r) = t(1) (1 + 0.06 (r - 1))`, CPU6-A2's
+    eight rows at 1.42x one);
+  - per bucket, the chance that a draft is accepted given that the ones before it were, counted from every verified
+    draft, with a prior of 0.3 worth 4 drafts;
+  - each step it gives drafts to requests greedily, the next draft where it adds the most expected tokens, while the
+    expected tokens per second of the step rises; it speculates only where that beats a plain step of the same requests
+    (the plain path keeps its chained readback) by at least 2 %;
+  - under load (no free rows) it adds nothing, so the plain stacked step serves.
+- *Who turns it on:* `ironmule serve --agent on` when the agent's setup is the CPU stacked engine and the plan
+  verifies; `--speculate context` for any CPU stacked engine; `--speculate off` keeps it off. `/health` shows its
+  steps, drafts, accepted drafts and learned prices under `speculation`.
+- *Answers:* a request's tokens are the plan's own argmax at every position, as without speculation (the verify window
+  is bit-identical, checked by the probe at every start and in the tests, stacked and alone).
+
+**SP2-H, the hardware test through the product (this container; fixed before any SP2 data).**
+- *Model and setup:* `mlx-community/SmolLM2-135M-Instruct-8bit` rev `0f0d9b8`, the agent's CPU6-A2 setup
+  (`dequantize`, OpenBLAS, the CPU stacked engine at width 8), named so both arms start it the same way.
+- *Arms:* A, that setup with `--speculate off`; S, the same with `--speculate context` (the learned policy, starting
+  from its priors at each start). Each on a fresh worker started as `ironmule serve` starts it.
+- *Prompts:* Dolly 15k (digest `2df90833`), the shuffled pool from index 13,000 on (SP1-0 used 12,000-12,047), chat
+  template, answers greedy, at most 128 tokens.
+- *Quiet:* 3 blocks of 16 prompts each, one request at a time; each block runs A, S, A in that order on the same
+  prompts.
+- *Load:* 3 blocks of 8 prompts at once (from index 13,100 on), A, S, A.
+- *Scores:* quiet, per prompt, S's tokens per second (completion tokens over the request's time from its first token
+  to its end) over the mean of the two A runs; its mean over the 48 prompts with a 95 % bootstrap over prompts (2,000
+  resamples, seed 0); first token per prompt likewise. Load, per block, the block's tokens per second (tokens over the
+  span from first arrival to last end) and its mean first token, S over the mean of the two A runs, the mean over
+  blocks with the lowest and highest block as its range. A/A noise: the mean absolute relative difference of the two
+  A runs, per score.
+- *Pass (all of):*
+  - every answer of S equals A's first run token for token, quiet and load;
+  - quiet tokens per second: the 95 % lower bound at least 1.3 (SP1's bound);
+  - quiet first token: the 95 % upper bound at most 1 plus its A/A noise;
+  - load: every block's tokens-per-second ratio at least 0.98 and mean first token at most 1.02 plus the A/A noise;
+  - every request answered.
+- *Kill:* otherwise SP2 does not serve by default under `--agent on` (Tier 0, scoped to this CPU and model), and
+  `--speculate context` stays opt-in only if every answer was equal.
+- *Cost:* about 1 hour of this container's CPU; no GPU hours.
+- *Not covered:* other CPUs, models, the GPU stacked plans (their attention is not checked for verify windows), and
+  mixed traffic where requests arrive while others speculate.
+
+- **SP2-H result (2026-11-10, this container, at `ee6f9d8`, about 50 minutes, no GPU hours): valid; fails.** Every
+  arm reported OpenBLAS serving and plan version 3 with its verify window bit-identical; Dolly digest `2df90833`.
+  Before the run a smoke of the harness read 4 prompts the run never uses (indices 14,000 on); not counted.
+  - *Answers:* all 72 of S's answers (48 quiet, 24 under load) equal A's first run token for token.
+  - *Quiet (48 prompts, one at a time):* S over A **1.40x (95 % 1.21x to 1.63x)** the tokens per second, below the
+    bound of 1.3; first token 1.01x (95 % up to 1.05x; A/A noise 10.0 %). A/A noise on tokens per second 6.8 %.
+  - *Load (3 blocks of 8 at once):* tokens per second 1.04x (blocks 0.998x to 1.096x, floor 0.98), mean first token
+    0.99x (up to 1.016x): no harm.
+  - *Verdict by the fixed rule: fail* (quiet tokens per second only). So SP2 does not serve by default: `--speculate
+    auto` leaves it off, also where the agent chose the stacked engine; since every answer was equal,
+    `--speculate context` stays as an opt-in. Tier 0, scoped to this CPU and model. The ledger entry is still owed.
+  - *Post hoc, descriptive only (no rule or verdict changes):* per prompt the median was 1.095x, 13 of 48 lost (down to
+    0.83x) and 8 more than doubled (up to 3.87x); pooled over time, 15.97 against 13.63 tokens per second (1.17x).
+    What the policy learned (per quiet block's S worker): drafts of match length 3 were right 0.78-0.83 of the time,
+    length 2 0.39-0.49, length 1 0.07-0.35; its step prices by rows were noisy and not monotone (3 rows 91-109 ms, 8
+    rows 99-115 ms, 1 row 69-77 ms), so some steps it judged worth speculating cost more than they made. That, and the
+    acceptance of single-token matches, are where a reopening would start (a mechanism change under a new protocol):
+    no drafts from 1-token matches, step prices from more samples or a fitted line only. SP1-0's fixed window `k` = 7
+    made 1.475x (95 % from 1.23x) on other prompts one at a time in a probe loop; the learned window here, through the
+    product, is not better than that on these numbers.
+
+### SP3 — SP2 with two changes to its window policy (owner request 2026-11-10; SP3-H failed)
+
+**Reopening (AGENTS, "Performance and evidence").** Tier 0 holds SP2-H: speculation with a learned window made one
+request at a time 1.40x (95 % 1.21x to 1.63x) against the bound of 1.3; its kill: "otherwise SP2 does not serve by
+default under `--agent on` (Tier 0, scoped to this CPU and model), and `--speculate context` stays opt-in only if
+every answer was equal". The Tier 0 entry allows a reopening "with a changed mechanism (for example no drafts from
+1-token matches, step prices from more samples) ... under a new protocol on prompts not used here". SP2-H's post hoc
+reading, which designed these changes, is labelled there; the changes are fixed here before any SP3 data.
+
+**Mechanism changes (policy version 2, `ironmule/speculation.py`); everything else is SP2's.**
+- *No drafts from 1-token matches.* A draft needs a repeated suffix of at least 2 tokens. In SP2-H's S workers
+  1-token matches were right 0.07-0.35 of the time, 2- and 3-token matches 0.39-0.83.
+- *Plain and speculative steps priced apart.* A plain step's price is an exponential average per row count of its
+  chained steps (a host read every 4 steps), as before. A speculative step (a host read every step) is priced by a
+  line through all speculative steps measured so far (least squares of seconds on rows, each new step weighing as
+  much as the last 50 together, slope at least 0), not by an average per row count; before it has two row counts, by
+  the plain price of its requests times 1 + 0.06 per added row. In SP2-H both kinds shared one average per row count,
+  which was not monotone (3 rows 91-109 ms against 8 rows 99-115 ms), and a speculative step was compared with plain
+  steps that read the host 4 times less often.
+- The margin stays 2 %, the acceptance prior 0.3 worth 4 drafts.
+
+**SP3-H (this container; fixed before any SP3 data).** SP2-H's arms (A, `--speculate off`; S, `--speculate context`
+with policy version 2), model, setup, workload shape, scores, pass rule and kill, on prompts no earlier run used:
+quiet from Dolly index 13,200 (3 blocks of 16), load from 13,300 (3 blocks of 8). A pass makes `--speculate auto` turn
+speculation on where the agent chose the CPU stacked engine; a fail keeps it opt-in and goes to Tier 0. A smoke of the
+harness reads prompts from index 14,000 on. *Cost:* about 1 hour of this container's CPU; no GPU hours.
+
+- **SP3-H result (2026-11-10, this container, at `5517512`, policy version 2, about 50 minutes, no GPU hours): valid;
+  fails.** OpenBLAS and plan version 3 served in every arm; a smoke read 4 prompts from index 14,000 on (not counted).
+  - *Answers:* all 72 of S's answers equal A's first run token for token.
+  - *Quiet (48 prompts):* tokens per second **1.14x (95 % 1.05x to 1.25x)**, below 1.3; first token 1.01x (up to
+    1.05x). A/A noise 20.6 % on tokens per second (block 0's first A took 181 s against 125 s for its second).
+  - *Load:* tokens per second 1.03x on average but one block at 0.936x, below the floor of 0.98; first token 1.07x
+    (up to 1.12x, within 1.02 plus its A/A noise of 10.5 %).
+  - *Verdict by the fixed rule: fail* (quiet tokens per second, and one load block). Speculation stays opt-in
+    (`--speculate context`, every answer equal) and `auto` leaves it off. Tier 0. The ledger entry is still owed.
+  - *Post hoc, descriptive only (no rule or verdict changes):* in quiet block 0 the policy speculated in 104 steps and
+    accepted 299 drafts (2-token matches right 0.58, 3-token 0.86 of the time); S took 107 s against A's 125-182 s.
+    In blocks 1 and 2 it speculated in only 2 and 3 steps: its line of speculative step prices was fitted from those
+    first 2-3 steps, whose times were noisy, and came out at 22-30 ms per added row (block 0's line, from 104 steps:
+    2.8 ms). With that slope no step was worth speculating, so no further step corrected the line. Strata probes a
+    size a few times before its guessed cost may veto it; SP3's policy has no such exploration. That, not the
+    acceptance, is where a further revision would start.
+
+### LC1 — IronMule against llama.cpp on the same CPU and model (owner request 2026-11-10; done: llama.cpp far faster)
+
+**Why.** CPU6's gains are measured against IronMule's own earlier CPU path. The owner asked where that stands against
+common software: llama.cpp is the usual way to run a small model on a CPU.
+
+**Protocol (this container; descriptive, no pass or kill: it places IronMule, it qualifies nothing).**
+- *IronMule (arm I):* `mlx-community/SmolLM2-135M-Instruct-8bit` rev `0f0d9b8`, the agent's CPU6-A2 setup named
+  (`dequantize` weights in the CPU stacked plan at width 8, OpenBLAS), speculation off, through `ProductService` on a
+  fresh worker as `ironmule serve` starts it.
+- *llama.cpp (arm L):* `llama-server` built with CMake's Release defaults (its own CPU backend, this machine's
+  instruction set) from the llama.cpp vendored in `llama-cpp-python` 0.3.16's source package; the same model as
+  `bartowski/SmolLM2-135M-Instruct-GGUF` rev `09816ac`, `SmolLM2-135M-Instruct-Q8_0.gguf` (sha256 `5a139571`); 4
+  threads, 8 parallel slots of 2,048 tokens, continuous batching (its default), greedy (temperature 0); requests to
+  `/v1/chat/completions` on localhost with streaming, so the model's own chat template applies on both sides.
+- *Workloads:* load, CPU6's 8 fixed prompts offered at once, 64 tokens (as CPU6-A2); quiet, 16 Dolly prompts from index
+  13,400 one at a time, 128 tokens.
+- *Order:* 5 blocks of load and 1 block of quiet, each run I, L, I on fresh servers (I's two runs give the A/A noise).
+- *Scores:* load, a block's tokens per second (tokens over the span from offer to last end) and its mean first token,
+  L over the mean of I's two runs, the mean over blocks with a 95 % bootstrap over blocks (2,000 resamples, seed 0);
+  quiet, per prompt, tokens per second from first token to end and first token, L over I's mean, with a 95 % bootstrap
+  over prompts. Answers are compared and counted, not required equal: the two run different 8-bit formats and kernels.
+- *Not covered:* llama.cpp's other options (other quantisations, threads, batch sizes), other models and CPUs; HTTP
+  adds a little to L's times (localhost).
+- *Cost:* about 1 hour of this container's CPU, after CPU6-Q; the build about 10 minutes before it. No GPU hours.
+
+- **LC1 result (2026-11-10, this container, at `008ed41`, about 20 minutes plus a 10-minute build, no GPU hours):
+  complete.** `llama-server` version 4227c9b, built with gcc 13.3 (Release); GGUF sha256 `5a139571`. A smoke of the
+  harness read 2 Dolly prompts from index 14,400 and ran CPU6's prompts at 16 tokens; not counted.
+  - *Load (5 blocks of CPU6's 8 prompts at once, 64 tokens):* IronMule 62.3 tokens per second, llama.cpp 319.5:
+    **llama.cpp 5.13x IronMule (95 % 4.42x to 5.85x)**, mean first token 0.139x (95 % 0.126x to 0.149x). IronMule's
+    A/A noise 3.2 %.
+  - *Quiet (16 Dolly prompts one at a time, 128 tokens):* IronMule 14.4 tokens per second, llama.cpp 195.0: **13.6x
+    (95 % 12.6x to 14.4x)**, first token 0.169x.
+  - *Answers:* 0 of 56 equal; llama.cpp ended earlier under load (419 tokens against 480). Different 8-bit formats and
+    kernels give different greedy answers, as the protocol expected; it is not a quality judgement.
+  - *What it shows:* on this CPU and this model, IronMule's best CPU setup (CPU6-A2's) is far slower than llama.cpp:
+    about 5x under 8 requests at once and about 14x for one request. CPU6's gains are real against IronMule's own
+    earlier CPU path, whose MLX CPU wheel ships a reference BLAS, but they close little of the gap to common software.
+  - *Post hoc, descriptive only:* the gap is in the per-token work itself. IronMule's single-request step on this CPU
+    is about 65-70 ms (CPU6-A2, SP2-H); llama.cpp made 195 tokens per second alone, about 5 ms a token, with its Q8_0
+    integer kernels in place of IronMule's float32 matrices on OpenBLAS through MLX. A CPU route that matters for the
+    main goal would need such kernels (or llama.cpp's ggml as a CPU backend the agent can choose), under its own entry.
+    The ledger entry is still owed.
+
+### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG1-H: goal not reached)
+
+**Why.** LC1: on this CPU and model llama.cpp is 5.1x IronMule's best CPU setup under load and 13.6x for one request.
+The owner's goal: IronMule 20 % above llama.cpp, that is at least 1.2x `llama-server` as LC1 ran it (same build, GGUF,
+4 threads, 8 parallel slots, defaults otherwise), on the same CPU and model, through the product.
+
+**Mechanism.** Same kernels, more on top. ggml's CPU kernels (here with AVX-512 VNNI and AMX-INT8, which MLX's CPU
+backend does not use) become an engine the agent can choose on a CPU, behind its quality gate (a Q8_0 model changes
+answers against the float32 plan). On those kernels alone IronMule can at best match llama.cpp; the 20 % has to come
+from what IronMule adds: speculation from the context (SP1-0 to SP3: 1.14x-1.48x for one request on MLX), batching
+and scheduling under load, and settings the agent measures on the machine. Stages, each with its protocol before data:
+GG0 (pre-measurement, below), GG1 (the engine in the product), GG1-H (through the product against `llama-server`).
+
+**GG0, pre-measurement (this container; development evidence for go or stop, no product claim).**
+- *Library:* llama.cpp 4227c9b (vendored in `llama-cpp-python` 0.3.16), the Release build LC1's server came from,
+  through that package's own ctypes bindings in process (not installed: the library and bindings from the unpacked
+  source); the GGUF of LC1 (sha256 `5a139571`); 4 threads, one context of 8 sequences of 2,048 tokens.
+- *Prompts:* 16 Dolly prompts from index 14,600 (no run used them), the MLX snapshot's chat template; greedy.
+- *(a) Parity:* one request at a time, 128 tokens, one token per decode call; its tokens per second (first token to
+  end) over `llama-server`'s on the same prompts in the same run (order server, probe, server).
+- *(b) Verify cost:* after one prompt's prefill, the time of one decode of `r` positions of that sequence, `r` = 1-8
+  (median of 20 each, the positions removed after each), and of 8 sequences one position each.
+- *(c) Exactness:* each prompt decoded one token at a time and with prompt-lookup drafts (repeats of at least 2 tokens,
+  as SP3) verified as windows of `k` = 2, 4, 7 positions; how many prompts' tokens differ, per `k`.
+- *(d) Speed with speculation:* the speculative decodes' tokens per second over the server's, per `k`.
+- *(e) Load:* CPU6's 8 prompts at once, 64 tokens, as one batch of 8 sequences per decode call, tokens per second over
+  the server's on the same prompts (order server, probe, server).
+- *Decision, fixed before the data:* GG1 is built if (a) is at least 0.95 and either (d)'s best `k` reaches 1.2 with
+  every prompt's tokens equal in (c) for that `k`, or (b) shows a verify window of 5 or more positions costing at most
+  1.5x one position (room for 1.2x under a learned window). If (c) finds differing tokens, speculation on ggml changes
+  answers: that goes to the owner before GG1 (it would need a gate of its own). Otherwise GG stops here, recorded in
+  Tier 0 with what was missing.
+- *Cost:* about 30 minutes of this container's CPU; no GPU hours.
+
+- **GG0 result (2026-11-10, this container, at `5431766`, about 5 minutes, no GPU hours).** llama.cpp 4227c9b reported
+  AVX-512 VNNI and AMX-INT8 and repacked the Q8_0 weights for AMX. A smoke read 2 prompts from index 14,700 (16 tokens);
+  not counted.
+  - *(a) Parity:* in process, one request decoded one token per call made 182.8 tokens per second against the
+    server's 162.2 on the same prompts: **1.13x** (above 0.95). The server's HTTP and streaming cost is the
+    difference; LC1 had measured the server at 195 on other prompts.
+  - *(b) Verify cost:* one position 6.16 ms; 2 positions 9.88 ms (1.60x), 4 10.68 ms (1.73x), 5 10.53 ms (1.71x),
+    8 14.66 ms (2.38x); 8 sequences one position each 17.22 ms (2.80x). No window of 5 or more positions within 1.5x.
+  - *(c) Exactness:* 7 of 16 prompts' tokens differ from one token per call, at every `k` (2, 4 and 7), each first at
+    the same position (19-84) whatever `k`: any decode of more than one position takes another kernel path, so its
+    logits are not bit-identical to one position alone. Speculation on ggml as built changes answers.
+  - *(d) Speed:* over the server, `k` = 2 1.19x, `k` = 4 **1.30x**, `k` = 7 1.29x (over one token per call 1.08x,
+    1.18x, 1.16x); acceptance 0.61, 0.48, 0.35.
+  - *(e) Load:* 8 sequences batched one position each made 319.7 tokens per second against the server's 333.5 and
+    265.3 (its two runs): 1.07x their mean.
+  - *Verdict by the fixed rule:* GG1 is not built on this rule. (a) holds, but (d)'s 1.30x comes only with differing
+    tokens and (b) leaves no room for an exact learned window. The entry says differing tokens go to the owner before
+    GG1, and the probe's coded decision read "stop"; both mean nothing is built without the owner. Not yet Tier 0:
+    the owner decides first.
+  - *The owner's choice (asked 2026-11-10):* (1) allow speculation on ggml as an output-changing path behind its own
+    quality gate (the perplexity gate on the verify path against one position at a time), as AG4 allows gated numeric
+    plans; then GG1 is built and GG1-H decides against 1.2x; or (2) require exact speculation: every decode padded to
+    one fixed number of positions so the kernel path never changes, which costs single requests about 1.6x a step
+    and very likely ends below 1.2x; or (3) stop GG.
+
+**Owner decision (2026-11-10): (1).** Speculation on ggml may change answers when the engine passes its quality gate on
+the machine, and `/health` says so, as AG4 allows gated numeric plans.
+
+**GG1, the engine in the product (fixed 2026-11-10, after GG0 and before any GG1 code or data).**
+- *`--engine ggml --gguf PATH`* (CPU only): the worker serves the GGUF through llama.cpp in process
+  (`ironmule/ggml_engine.py`), with up to 8 requests in flight, each in its own sequence of 2,048 tokens; a request
+  that arrives while others run takes a free sequence at the next step (as the dense plan's slot reuse). It refuses
+  to start if the GGUF's tokenizer gives other ids than the registered model's on a fixed text, or other end tokens.
+  The bindings come from an installed `llama-cpp-python` or a directory named in `IRONMULE_GGML_BINDINGS` (with the
+  library in `LLAMA_CPP_LIB_PATH`); nothing is installed for the user.
+- *Quality gate, at every start (fail-closed):* the GGUF's negative log-likelihood on the numeric gate's 16 chunks of
+  512 tokens (GATE2, with BOS), each chunk evaluated as one multi-position decode (the verify path), against the
+  registered model widened to float32 on MLX (`dequantize`), ratio of means with its 95 % interval; it serves only if
+  the interval's upper end is at most 1.005 (NUM1's bound). Otherwise it refuses and says why; it never falls back
+  silently. `/health` shows the gate and that answers can differ from the MLX plans.
+- *Speculation, policy version 3:* SP3's drafts (repeats of at least 2 tokens, up to 7 drafts); a step's price by its
+  total rows is the median of its last 16 measured steps of that size (plain and speculative alike: on ggml both are
+  one decode call), and a size with fewer than 3 measurements is priced from the nearest measured size by the prior
+  slope (exploration, the step SP3 lacked); greedy drafts while the step's expected tokens per second rises, and only
+  2 % above the plain step; at most 16 rows a step, so it can speculate under load too. On with `--speculate context`
+  or `auto` for this engine (the owner's decision); `off` serves one row per request.
+- *Not in GG1:* the agent choosing ggml by itself (GG2), building a GGUF from the registered model (named for now).
+
+**GG1-H, through the product against `llama-server` (fixed before any GG1 data).** LC1's arm L unchanged (same build,
+GGUF, 4 threads, 8 slots, greedy, HTTP), against arm G: `ProductService` with the ggml engine on the same GGUF,
+speculation on, 4 threads. Load: CPU6's 8 prompts at once, 64 tokens, 5 blocks L G L. Quiet: 16 Dolly prompts from
+index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1's, G over the mean of L's two runs.
+- *Goal reached (the owner's 20 %):* quiet tokens per second with its 95 % lower bound at least 1.2, and load tokens per
+  second with its 95 % lower bound at least 1.2; the gate passed; mean first token no later than L's (upper bound at most
+  1 plus L's A/A noise); every request answered. Each half is reported on its own, so a partial result is visible.
+- *Otherwise* the goal is not reached on this CPU and model; what reached what goes to the entry and Tier 0, and the
+  engine stays opt-in if its gate passed.
+- *Cost:* about 1 hour of this container's CPU; no GPU hours.
+- **Gate on LC1's GGUF (2026-11-10, this container, development; the engine's own first start):** bartowski's Q8_0
+  (made from the original bf16 weights) against the registered `mlx-community/SmolLM2-135M-Instruct-8bit` widened to
+  float32 on OpenBLAS: ratio 1.0033 (95 % 1.0006 to 1.0060), above 1.005: **refused**, fail-closed as fixed. Two
+  different 8-bit quantisations of one original, not a fault of the engine.
+- **Amendment before any GG1-H data (2026-11-10, labelled):** the GGUF both arms serve is built from the registered
+  model itself (`tools/gguf_from_mlx.py`: its MLX weights widened to float32 and quantised to Q8_0 into LC1's GGUF as a
+  template, with llama.cpp's own tensor names, metadata, tokenizer and query/key layout), so the gate measures only
+  Q8_0's own rounding. Arm L serves that GGUF too (same format and size as LC1's, so llama.cpp's speed is unchanged in
+  kind); everything else in GG1-H stays as fixed. If this GGUF also fails the gate, GG1-H does not run and GG stops in
+  Tier 0 with that result.
+- **Gate on the GGUF built from the registered model (2026-11-10, development):** ratio 1.0030 (95 % 1.0011 to 1.0048):
+  passes.
+- **Development before any GG1-H data (2026-11-10, Dolly prompts 14,900-14,907, which no protocol uses; no claim):**
+  in process, 8 requests at once, 64 tokens: the engine made 207-266 tokens per second against `llama-server`'s
+  283-295 on the same prompts and GGUF, with one decode call per step and new prompts batched into it; one request at a
+  time 190-207 (prompt to end) against the server's 160-167. The time is in llama.cpp's own decode calls. llama.cpp's
+  flash attention (off by default in this `llama-server` and context) raised the engine's load rate to 299-320, and
+  with one unified KV cache for the 8 sequences to 321-337; one request alone 190-206. Speculation did not help on these
+  prompts (acceptance 0.38-0.51).
+- **Amendment of GG1 before any GG1-H data (2026-11-10, labelled):** at its first start on a machine the engine measures
+  llama.cpp's flash attention (on, off) times one unified KV cache (on, off) on a fixed synthetic workload (8 sequences of
+  a fixed 64-token prompt, 24 steps each, and one sequence alone, 24 steps; median of 3) and serves the setting with the
+  highest geometric mean of the two rates; the quality gate runs on that setting (flash attention changes the
+  numerics), and both are cached per GGUF, model and machine. These are settings the agent measures on the machine, as
+  the mechanism above names; arm L keeps `llama-server`'s defaults as LC1 ran them, as fixed. GG1-H is otherwise
+  unchanged.
+- **Tuning and gate under the first amendment (2026-11-10, development):** the synthetic workload chose flash
+  attention without a unified KV cache (8 sequences 762 tokens per second against 532 without flash attention; one
+  sequence 319 against 207), and the gate on it failed: ratio 1.0047 (95 % 1.0021 to 1.0072). Without flash attention
+  the same GGUF had passed (1.0030, up to 1.0048).
+- **Second amendment of GG1 before any GG1-H data (2026-11-10, labelled):** the tuning also measures the KV cache in full
+  precision (f32 against llama.cpp's default f16), so 8 settings; the engine serves the fastest setting (by the same
+  score) whose gate passes, the gates tried in order of speed against one reference run, and every setting tried is
+  recorded. If none passes, GG1-H does not run. GG1-H is otherwise unchanged.
+- **GG1-H result (2026-11-10, this container, at `2793352`, about 20 minutes, no GPU hours): valid; goal not reached.**
+  Both arms served the GGUF built from the registered model (sha256 `edc4a163`); the engine's tuning chose flash
+  attention first, its gate failed (1.0047, up to 1.0072) as did the next, and it served the default setting (no flash
+  attention, f16 KV), whose gate passed (1.0030, up to 1.0048). A smoke of the harness ran before on prompts from
+  index 14,900 (not counted). Every request answered.
+  - *Load (5 blocks of 8 at once, 64 tokens):* G over L **0.81x (95 % 0.74x to 0.89x)** the tokens per second; mean first
+    token 4.13x later (95 % 3.93x to 4.33x; L's A/A noise 16 %).
+  - *Quiet (16 Dolly prompts one at a time, 128 tokens):* **1.05x (95 % 0.94x to 1.20x)**; first token 2.18x later (about
+    50 ms against 25 ms).
+  - *Verdict by the fixed rule: goal not reached* (both tokens-per-second halves below 1.2, first tokens later).
+    Recorded in Tier 0. The engine stays opt-in (`--engine ggml`), its gate having passed.
+  - *Post hoc, descriptive only:* with the same kernels and the setting the gate allows, the engine in process was at
+    about llama.cpp's speed (GG0, development data); through the product it lost under load, mostly at the start of a
+    block: every request's first token waited for one decode call that prefilled all 8 prompts together (about 0.55
+    s), while `llama-server` answered its first request after one prompt and the rest together. Speculation found
+    little to do on these prompts (13 of 1,551 steps drafted, acceptance 0.37). The lever that made the engine faster
+    than llama.cpp, flash attention, failed the quality gate on this model by 0.2 % of perplexity. 1 of 56 answers
+    equal to L's (different numeric paths, as expected under the owner's quality rule).
+
+### GG2 — The ggml engine's path around the kernels: warm-up, staggered prompts, llama.cpp as the quality bar (2026-11-11; GG2-H: parity under load, 1.14x alone, goal not reached)
+
+**Reopening.** Tier 0 holds GG1-H ("0.81x under load ... 1.05x one request at a time ... first tokens later"); its
+entry allows a reopening "with a product path that streams a request's first token before the rest of its block is
+prefilled ... under a new protocol". The owner's bar of 2026-11-10 (quality at least llama.cpp's; speed counts; the
+model unchanged) is the second change.
+
+**Development data behind it (2026-11-11, Dolly prompts 14,900-14,907 cut to 80 characters, no protocol uses them; no
+claim).** One request through the product: first token after 30-35 ms, then about 270 tokens per second; the worker
+client and the service add a few milliseconds. Eight at once on a fresh worker: first tokens after 531 ms and 213
+tokens per second in the first block, 236 ms and 298 in the second: the first call that carries eight prompts pays
+about 0.3 s once (GG1-H started a fresh worker for every block, so it paid that in every block), and every request's
+first token waits for one call that prefills all eight prompts.
+
+**Mechanism (engine version 2).**
+- *Warm-up at the start:* besides GG1's, one call of 8 sequences with 64 prompt tokens each, then one step of 8 rows,
+  so no request pays for the first multi-sequence prompt call.
+- *Staggered prompts, running requests first:* a step carries the running requests' rows and at most `PROMPT_BUDGET`
+  (96) prompt tokens of requests that start now, whole prompts, at least one; among the requests waiting, the shortest
+  prompt first, and one that was passed over 8 times goes first. So early requests stream while later prompts are
+  prefilled, instead of all waiting for one call.
+- *The quality gate against llama.cpp itself (the owner's bar):* the reference is llama.cpp's default setting on the
+  same GGUF, through the same multi-position decode; a setting passes when its perplexity on the gate's 16 chunks is
+  not higher (ratio of means at most 1.000; both numbers are deterministic). The default passes by definition; a
+  faster setting (flash attention, a unified or f32 KV cache) serves only if it is not worse. The float32-on-MLX
+  reference is no longer used for this engine, so any GGUF of the registered model that gives its token ids may serve.
+- *Amendment before any GG2-H data (2026-11-11, labelled; development on the same prompts as above):* with the engine's
+  warm-up the first block was still slow (first tokens 362-639 ms). The cause was the worker, not the engine: it built
+  a streaming detokenizer for each of the eight streams on demand, each a walk of the vocabulary. The worker now builds
+  eight at its start for every engine that streams grouped requests (`_DetokenizerPool.prepare`). After it, on the
+  development prompts: first block and second alike, first tokens 73-315 ms (staggered), about 293 tokens per second.
+  The gate against llama.cpp's default, on this GGUF: flash attention 1.0017 and an f32 KV cache 1.0004 are both
+  worse than the default, so the default serves.
+
+**GG2-H (fixed before any GG2 data).** GG1-H unchanged in arms (L: LC1's `llama-server`, its defaults; G: the product
+with the ggml engine, speculation on), GGUF (the one built from the registered model, as in GG1-H), workloads, scores
+and rule (goal reached when both tokens-per-second lower bounds are at least 1.2 and first tokens are no later), with
+quiet prompts from Dolly index 14,500 (unused) and a harness smoke from 14,550.
+- *Expected, said before the data:* about llama.cpp's tokens per second under load and alone, first tokens near its own.
+  The 1.2 is not expected from these changes: both sides run the same kernels at the same setting. The run places
+  the engine after its overheads are removed; what would be needed beyond that is in PL1.
+- *Cost:* about 20 minutes of this container's CPU; no GPU hours.
+
+- **GG2-H result (2026-11-11, this container, at `115090b`, about 15 minutes, no GPU hours): valid; goal not reached.**
+  Both arms served the GGUF built from the registered model; the engine served llama.cpp's default setting (flash
+  attention 1.0017 and an f32 KV cache 1.0004 against it, both refused). A smoke read prompts from index 14,550 (not
+  counted). Every request answered.
+  - *Load (5 blocks of 8 at once, 64 tokens):* G over L **1.00x (95 % 0.94x to 1.07x)** the tokens per second (GG1-H:
+    0.81x); mean first token 1.14x (95 % 1.12x to 1.15x; L's A/A noise 16 %), about 160 ms against 140 ms.
+  - *Quiet (16 Dolly prompts one at a time, 128 tokens):* **1.14x (95 % 1.09x to 1.20x)** (GG1-H: 1.05x), 284 against 249
+    tokens per second; first token 59 ms against 50 ms (per prompt 1.51x on average, 95 % 1.20x to 1.92x).
+  - *Verdict by the fixed rule: goal not reached* (both lower bounds below 1.2; the quiet first token later). As said
+    before the data. Tier 0 keeps the 1.2 goal as not reached; the engine stays opt-in.
+  - *What it shows:* through the product, on llama.cpp's own kernels and setting, IronMule now serves 8 requests at once
+    as fast as `llama-server` and one request 14 % faster, with first tokens about 10-20 ms later. GG1-H's loss was
+    the path around the kernels (detokenizers built on demand, every prompt of a block in one call), not the engine.
+  - *Post hoc, descriptive only:* in quiet the speculation policy drafted in 77 of 1,609 steps and 91 of 183 drafts
+    were right (0.49 for 2-token matches, 0.69 for 3-token); the rest of the 14 % is the server's own per-request cost
+    (HTTP, sampling chain). What is left for more is not in scheduling: both sides run the same kernels at the same
+    setting. The ledger entry is still owed.
+
+### GG3 — llama.cpp's options in the engine's gate, a fair `llama-server`, and larger models on this CPU (owner, 2026-11-11; goal not reached)
+
+**Reopening.** Tier 0 holds GG2-H ("parity under load, 1.14x alone, goal not reached"); the owner's decision of
+2026-11-11 above is the change: the gate admits llama.cpp's own options within NUM1's bound of its default, and
+larger models are measured. Nothing of the engine's scheduling changes.
+
+**Mechanism (engine version 3).** `gate` keeps its timed order of the 8 settings and its reference (llama.cpp's
+default setting on the same GGUF, through the same multi-position decode); a setting now passes when the 95 % upper
+end of its perplexity ratio against that reference is at most 1.005, and the default passes by definition. The
+fastest passing setting serves, every setting tried is recorded and `/health` names it. Cached by GGUF, snapshot,
+gate rule, engine version and machine.
+
+**Arms (all runs below).** G: the product with the ggml engine (version 3), speculation on, 4 threads, the setting its
+gate chose. L0: `llama-server` as LC1 ran it (same build 4227c9b, 4 threads, 8 slots, 8 x 2,048 tokens of context,
+greedy, its defaults otherwise). Ls: the same server with the options of G's setting (`-fa`, `-kvu`, `-ctk f32 -ctv
+f32`, whichever G's setting has); when G serves the default, Ls is L0 and runs as such. Each cell on a fresh server
+or worker; per block the order L0 Ls G Ls L0.
+
+**Runs (fixed before any GG3 data).**
+- *GG3-F, SmolLM2-135M:* the GGUF of GG1-H and GG2-H (built from the registered model). Load: CPU6's 8 prompts at
+  once, 64 tokens, 5 blocks. Quiet: 16 Dolly prompts from index 14,100 (unused), one at a time, 128 tokens, one
+  block. A smoke reads index 14,150 on (not counted).
+- *GG3-Q, larger models:* `Qwen/Qwen3-0.6B` and `Qwen/Qwen3-1.7B` registered from their original bf16 snapshots
+  (used for the tokenizer and template), each served from Qwen's own Q8_0 GGUF (`Qwen/Qwen3-0.6B-GGUF`,
+  `Qwen/Qwen3-1.7B-GGUF`) by every arm. The engine refuses a GGUF whose token ids differ from the snapshot's, as
+  built. The same workloads; quiet prompts from Dolly index 13,600 (0.6B) and 13,700 (1.7B), unused; smokes from
+  13,650 and 13,750.
+- *Scores,* as GG2-H, per run: load tokens per second per block (total tokens over the block's wall time), quiet
+  tokens per second per prompt (first token to end), mean first token; each G over the mean of the two cells of a
+  reference arm in its block, 95 % bootstrap over blocks or prompts (2,000 resamples, seed 0).
+- *The goal as fixed in GG (against L0, `llama-server` as LC1 ran it):* reached when the quiet and the load tokens per
+  second each have a 95 % lower bound of at least 1.2 over L0, first tokens no later (upper bound at most 1 plus L0's
+  A/A noise), the gate passed and every request answered.
+- *The fair comparison (against Ls, llama.cpp with the same options):* the same rule against Ls, reported beside it.
+  Where the two disagree, the report leads with the fair one: a gain over L0 that Ls removes is llama.cpp's option,
+  not IronMule's.
+- *Expected, said before the data:* GG3-F: G above L0 by flash attention, about even with Ls. GG3-Q: a step on a larger
+  model takes longer, so the per-request overhead weighs less and G's quiet lead over L0 shrinks; speculation's share
+  depends on the prompts. 1.2 over Ls is not expected.
+- *Cost:* about 1.5 hours of this container's CPU in all; no GPU hours.
+
+- **GG3-F result (2026-11-11, this container, at `d330998`, about 25 minutes, no GPU hours): valid; goal not reached,
+  against either reference.** The engine's gate chose flash attention (ratio 1.0017, 95 % 1.0000 to 1.0033 against
+  llama.cpp's default on the same GGUF), so Ls was `llama-server -fa`. A smoke read prompts from index 14,150 (not
+  counted). Every request answered.
+  - *Against L0 (`llama-server` as LC1 ran it, the goal as fixed in GG):* load **0.98x (95 % 0.93x to 1.03x)**, quiet
+    **1.08x (1.00x to 1.14x)**; first tokens later (load 1.03x, quiet 1.53x).
+  - *Against Ls (the same server with `-fa`, the fair comparison):* load **0.87x (0.81x to 0.96x)**, quiet **0.98x
+    (0.92x to 1.04x)**; first tokens later (load 1.31x, quiet 1.97x).
+  - *Verdict by the fixed rule: goal not reached* against L0 and against Ls. Flash attention helped `llama-server` more
+    than the engine: under load Ls made 310-422 tokens per second against L0's 260-378 in the same blocks, and the
+    engine 262-341. As said before the data, 1.2 over Ls was not expected; G above L0 by flash attention was expected
+    and did not show beyond noise.
+  - *Post hoc, descriptive only:* L0's own load rate spread from 260 to 378 tokens per second across blocks (in GG2-H
+    about the same arm read near 300), so this container was noisier than in GG2-H; the paired ratios carry that.
+    Speculation drafted in about a fifth of the quiet steps (acceptance 0.27-0.32 for 2-token, 0.66-0.68 for 3-token
+    matches). The ledger entry is still owed.
+- **GG3-Q result, Qwen3-0.6B (2026-11-11, this container, at `d330998`, about 35 minutes, no GPU hours): valid; goal
+  not reached against either reference, but under load above 1.2 against L0.** Qwen's own Q8_0 gave the snapshot's
+  token ids; the gate chose its fastest setting, flash attention with one unified f32 KV cache (ratio 1.0003, 95 %
+  0.9988 to 1.0018), so Ls was `llama-server -fa -kvu -ctk f32 -ctv f32`. A smoke read prompts from 13,650 (not
+  counted). Every request answered.
+  - *Against L0:* load **1.33x (95 % 1.31x to 1.35x)**, quiet **1.04x (0.99x to 1.10x)**; first tokens earlier (load
+    0.50x, quiet 0.77x).
+  - *Against Ls:* load **1.16x (1.12x to 1.19x)**, quiet **1.52x (1.33x to 1.66x)**; first tokens earlier (0.57x, 0.78x).
+  - *Verdict by the fixed rule: goal not reached* (against L0 the quiet half misses; against Ls the load half misses
+    1.2 by its lower bound). The first time a half clears 1.2 by its lower bound: 8 requests at once against
+    `llama-server` as LC1 ran it, with first tokens at half its time.
+  - *Post hoc, descriptive only:* Ls is not `llama-server`'s best setting for one request: the unified f32 KV cache
+    slowed its quiet rate to 33 tokens per second against L0's 45-46, so Ls's quiet half flatters G. Against the
+    better `llama-server` arm per half, G made 1.16x under load (Ls) and 1.04x alone (L0). In absolute terms, under
+    load G 148-165 tokens per second, Ls 128-141, L0 103-129; alone G 48, L0 45-46. The engine's lead under load with
+    the same options as Ls comes from serving every step as one decode call and starting requests as their prompts are
+    ready (GG2), which weighs more on a model four times SmolLM2's size. The ledger entry is still owed.
+- **GG3-Q result, Qwen3-1.7B (2026-11-11, this container, at `d330998`, about 40 minutes, no GPU hours): valid; goal
+  not reached against either reference.** Qwen's own Q8_0 gave the snapshot's token ids; the gate (377 s) chose
+  flash attention (ratio 0.9999, 95 % 0.9981 to 1.0015), so Ls was `llama-server -fa`. A smoke read prompts from 13,750
+  (not counted). Every request answered.
+  - *Against L0:* load **1.21x (95 % 1.15x to 1.27x)**, quiet **1.11x (1.05x to 1.17x)**; first tokens earlier under
+    load (0.66x), the same alone (0.97x, 0.93x to 1.01x).
+  - *Against Ls:* load **1.11x (1.05x to 1.16x)**, quiet **1.04x (0.99x to 1.10x)**; first tokens earlier under load
+    (0.76x), 3 % later alone (1.03x, 1.00x to 1.07x).
+  - *Verdict by the fixed rule: goal not reached* (no lower bound reaches 1.2; against L0 the load mean does).
+  - *Post hoc, descriptive only:* in absolute terms under load G 67-78 tokens per second, Ls 61-70, L0 57-63; alone G
+    22.2, Ls 21.3-21.4, L0 19.6-20.6. On this CPU a step of the 1.7B model takes about 45 ms, so the per-request cost
+    weighs less and both halves sit near llama.cpp's own speed with flash attention: what is left over `llama-server
+    -fa` is about 10 % under load and 4 % alone.
+
+**GG3 together (descriptive).** Against `llama-server` with the same llama.cpp options, the engine's lead under load
+was 0.87x on SmolLM2-135M, 1.16x on Qwen3-0.6B and 1.11x on Qwen3-1.7B; alone 0.98x, 1.52x (against a setting that
+slows `llama-server` alone) and 1.04x. The owner's 1.2 is reached on no model; the closest is Qwen3-0.6B under load
+against `llama-server` as LC1 ran it (1.33x, lower bound 1.31x), which `llama-server`'s own options bring to 1.16x.
+Beyond this, scheduling around llama.cpp's kernels has little left; more needs a lever below them (kernels of our
+own) or speculation that finds more on real traffic. The ledger entries are still owed.
+
+### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
+
+**The question.** IronMule is built on MLX. The owner asks whether MLX still makes sense on a server that runs on
+CUDA or a CPU, and to optimise for that, under the new rule that answer quality, not identical tokens, is what must
+hold.
+
+**What is measured so far.**
+- *CPU:* llama.cpp is 5.1x IronMule's best MLX CPU path with 8 requests at once and 13.6x for one request (LC1). MLX's
+  CPU wheel ships a reference BLAS, has no int8 or AMX kernels and no flash attention; CPU6 closed part of that and no
+  more. Through llama.cpp's kernels in process (GG1) IronMule reaches about llama.cpp's own speed (GG0, GG1-H).
+- *CUDA (T4):* MLX's CUDA backend needed IronMule's own kernels to serve well there (`native`, KB1, FA2, the Gemma
+  plan); against the CUDA servers in common use (vLLM, llama.cpp's CUDA build, TensorRT-LLM) nothing is measured.
+- *Apple Silicon:* MLX is Apple's own framework for its unified memory and Metal; IronMule's headline results (up to
+  1.82x with the same answers) are measured there.
+
+**Reading (descriptive, not a measured claim).** On a CUDA or CPU server MLX is not the fastest base: the engines
+built for those platforms have the kernels MLX lacks there (int8/AMX and flash attention on CPUs; paged attention,
+continuous batching, CUDA graphs and quantised kernels on GPUs). What IronMule adds is above the kernels: the agent
+that measures the machine, chooses, gates quality and learns while it serves. So the agent should sit on the fastest
+engine each platform has, chosen and gated on the machine, rather than on MLX everywhere:
+- *Apple Silicon:* MLX (as now).
+- *CPU:* llama.cpp's ggml (GG1, built); MLX stays as the fallback.
+- *CUDA:* to be measured: IronMule's best MLX-CUDA setup against llama.cpp's CUDA build and vLLM on the same T4 and
+  model (LC2, below); the agent then serves the fastest that passes the quality gate.
+
+**LC2, IronMule against `llama-server` and vLLM on one Kaggle T4 (approved by the owner 2026-11-11; fixed before any
+LC2 data; `tools/lc2_measure.py`).** One private Kaggle kernel on a T4 session, pinned to a pushed commit; every arm on
+GPU 0 only (`CUDA_VISIBLE_DEVICES=0`), one server at a time, each spoken to over HTTP at `/v1/chat/completions` with
+streaming, greedy (`temperature` 0), the same messages; the model is Qwen3-1.7B (AG4-Q, AG6-H), thinking as each
+server's template defaults.
+- *Arms:*
+  - I: `ironmule serve --agent on` on `mlx-community/Qwen3-1.7B-bf16` (the agent chooses plan, engine and mode
+    on the card, as AG6-H; installed from the pinned commit with its `cuda` extra).
+  - L: `llama-server` built on the session from llama.cpp 4227c9b (the source vendored in `llama-cpp-python`
+    0.3.16, as LC1) with CUDA for compute capability 7.5; `Qwen/Qwen3-1.7B-GGUF`'s Q8_0, every layer on the GPU,
+    8 slots of 2,048 tokens, its defaults otherwise.
+  - Lf: the same server with flash attention (`-fa`), llama.cpp's own option (the owner's decision above).
+  - V: vLLM 0.10.1.1 in its own virtual environment, `Qwen/Qwen3-1.7B` in float16 (the T4 has no bf16), at most 8
+    sequences of 2,048 tokens, 85 % of the card's memory, its defaults otherwise.
+- *Order:* I, L, Lf, V, then I again (its A/A: the agent's setup is cached, so the second I starts from it). After a
+  server is ready, 8 requests at once and one alone, unmeasured, on prompts no block uses.
+- *Workloads (LC1's):* load, CPU6's 8 prompts at once, 64 tokens, 5 blocks; quiet, 16 Dolly prompts from index
+  14,200 (unused), one at a time, 128 tokens. Before the push a local smoke runs the harness on this container's
+  CPU (`llama-server` and IronMule on SmolLM2, prompts from 14,250, not counted); there is no smoke kernel.
+- *Scores:* per arm as GG2-H (load tokens per second per block, quiet tokens per second per prompt from first token
+  to end, mean first token). I over each other arm: load paired by block, quiet by prompt; I's reference is the mean
+  of its two runs, whose difference is I's A/A noise; 95 % bootstrap (2,000, seed 0).
+- *Reading for PL1 (fixed before the data):* on this card and model, MLX under the agent "holds its own" against an
+  engine when I's load and quiet tokens per second both have a 95 % lower bound of at least 0.95 over it; the fastest
+  engine by the geometric mean of its load and quiet rates is named. If an engine other than I is the fastest by more
+  than I's A/A noise, PL1's next step on CUDA is the agent on that engine (as GG on the CPU), with its own entry; if I
+  is the fastest, MLX stays the CUDA base. The owner's 1.2 goal is reported for I against L.
+- *Quality:* not measured in LC2. By format, I and V serve 16-bit weights and L and Lf Q8_0; under the owner's bar
+  (at least llama.cpp's quality) that is assumed, not shown, until QG1 or a perplexity run covers it.
+- *Failure:* an arm that does not start or fails a request is recorded with its log's last lines, and the others run
+  on; no arm is retried with another version or setting within this protocol.
+- *Cost, said before the push:* about 2 GPU hours (building llama.cpp about 20 minutes, vLLM's install about 10, the
+  agent's setup about 15, each arm's blocks about 5-10); the kernel ends itself after 3 hours, its report saved after
+  every cell.
+- **Push refused (2026-11-11, at `d330998`):** a local smoke of the harness on this container's CPU passed (every arm
+  answered; the second I started from its cached setup in 17 s against 1,200 s); the kernel push was refused because
+  the owner's weekly Kaggle GPU quota (30 hours) is used up. No LC2 data exists; the kernel is pushed unchanged once
+  the quota renews.
+
+### CS1 — Contextual sparsity: computing only part of the feed-forward neurons per request (owner idea 2026-11-10; internal check: not on this model)
+
+**The idea (owner, from a text on DejaVu, MatFormer, Mixture of Depths and PowerInfer).** While it answers, the model
+computes only the part of its weight matrices the input needs. DejaVu needs trained predictors and was shown on ReLU
+models; MatFormer, Mixture of Depths and PowerInfer need models trained or retrained for them, which the owner's main
+line excludes (the model stays as it is). What fits without training is GRIFFIN's variant: the feed-forward neurons
+that respond most on the prompt are kept for the whole answer, the others are skipped (one mask per request, so the
+kernels run on smaller dense matrices). The owner asked to note it and check it internally; it is not the main line.
+
+**Internal check, fixed before its data (`tools/cs1_probe.py`; development evidence, no claim).** On
+`mlx-community/SmolLM2-135M-Instruct-8bit` widened to float32 (MLX, OpenBLAS), the numeric gate's 16 chunks of 512
+tokens: the first 256 tokens of a chunk are the prompt, computed in full; per layer the kept neurons are those with
+the largest norm over the prompt's positions of each position's unit-normalised feed-forward activation (GRIFFIN's
+statistic); the last 256 tokens are scored with only the kept neurons, at keep shares 0.9, 0.75 and 0.5, against the
+full model on the same positions (ratio of perplexities, 95 % bootstrap over chunks).
+- *Reading:* a keep share whose ratio's upper bound is at most 1.005 (NUM1's bound) is worth an entry of its own with
+  kernels and QG1; under the owner's bar (not worse than llama.cpp) any measurable loss rules it out for the main line.
+  If no share reaches 1.005, the idea stays noted here and is not pursued on this model.
+- *Cost:* a few minutes of this container's CPU.
+
+- **Internal check result (2026-11-10, this container, at `a2044c1`, development evidence):** 16 chunks, the full
+  model's perplexity on the scored halves 18.96. Kept neurons against the full model: keep 0.9 **1.167x** the
+  perplexity (95 % 1.135x to 1.205x); keep 0.75 1.68x (1.58x to 1.78x); keep 0.5 3.74x (3.44x to 4.07x). No share
+  comes near 1.005, and under the owner's bar (not worse than llama.cpp) none is admissible. Skipping a tenth of the
+  feed-forward neurons already costs 17 % of perplexity on this 135M model, which has little slack; the papers'
+  results are on models a thousand times larger, and nothing here speaks for or against those. Not pursued on this
+  model; a later check on a model of several billion parameters would need its own entry.
+
+### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
+
+**Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
+goal"). HW1 serves one worker per GPU behind join-the-shortest-queue for any number of GPUs, but several settings
+are refused or dropped on more than one, read from the code on 2026-11-10:
+1. `--engine route` (AG4 step 2: the single path and the stacked engine on one card, chosen by the agent) falls back
+   to the reference engine when the server runs on several GPUs (`cli.py`, "its two paths share one card"). The
+   agent's best setup is lost exactly where there is most hardware. Fix: one pair of paths per card, a router per
+   card, join-the-shortest-queue across cards.
+2. `--learning` refuses more than one worker; idle tuning runs only with one GPU.
+3. The agent's setup (`_agent_setup`) is measured once, on one card, and applied to all; with mixed cards
+   (`gpu_name` joins their names with `+`) a plan measured on card 0 is unmeasured on the others. Fix: measure once
+   per distinct card model and bind each worker's evidence to its card.
+4. HW1's throughput against one worker is still unmeasured. The pool's control logic is now tested at 1, 3, 4 and
+   100 stand-in devices (placement, overflow, refusal, health) and started for real at 3 and 4 stand-in workers
+   (2026-11-10, `test_product_device_pool.py`); before, only at two.
+5. On a CPU there is one worker; several workers on one CPU, each with its share of the cores (CPU6's thread cap),
+   are the CPU's counterpart of the pool.
+
+**Test:** each item above with its own test, at more than two devices. **Kill:** none for the requirement itself (an owner
+decision); each fix carries its own.
+
+### STAB3 — A worker lost under a spike ends in bounded recovery or a prompt 503 (owner request 2026-11-08; local part shipped, hardware gate pending)
+
+**Why.** AG5-G run 6 (AG5): the agent's Gemma stacked engine at width 6 failed under a spike, 8 joining requests got
+`backend_unavailable`, and its service then answered nothing for hours, each request waiting out its 3,600 s
+deadline. The product's logs, which would have named the cause, were not in the run's output. The owner set two
+questions apart: (A) what triggered the failure, (B) why requests then hung; and a stability gate before AG5-G or
+AG7 runs again.
+
+**A. What triggered `backend_unavailable`: narrowed, not proven.**
+- *How it arises (code, today and at `5f064c3`):* a joiner without a frame gets "worker stream ended without
+  completion" (`backend_unavailable`) when its group's `complete_batch` raises after other members finished. That
+  raise also marks the worker unusable and kills it. Request 0's done, then 8 such failures as it ended, is that
+  path. What raised is not in the artifacts. The candidates are a worker `error` event, a worker exit, or a
+  batch-protocol check.
+- *A defect that produces exactly this pattern, confirmed and fixed:*
+  - The service let up to 8 open members into a stacked-engine group (`STREAM_GROUP_REQUESTS`). The agent's
+    width gave the plan only 6 slots.
+  - A run that starts more rows than free slots raises "no free slot in the dense plan's pool" in prefill. The
+    worker reports `generation_error`, and the client retires the worker with its whole group.
+  - Requests 1-8 were exactly the 8 the service could hand over once request 0 had ended; requests 9-11 stayed
+    queued. The Qwen plan never met this, since its width was 8.
+  - Whether it was run 6's trigger is not shown. It needs the joiners to have waited for request 0's run to end,
+    which request 0's single-row speed suggests, but nothing explains why they did.
+- *Fixes:*
+  - a stacked engine's group holds no more members than its width (`MLXWorkerClient.batch_capacity`);
+  - a worker run starts at most the pool's free slots, and the rest run right after it, in order;
+  - a run with no free slot fails by name instead of waiting.
+  - Tests fail on the previous code: `test_a_dense_run_never_starts_more_rows_than_the_pool_has_free_slots` (8 rows
+    into 6 slots gave `generation_error`) and `test_the_stacked_engines_group_holds_no_more_members_than_its_width`.
+- A repaired recovery says nothing about this cause; AG5-R tests it on the card.
+
+**B. Why requests then hung: three confirmed defects, fixed.**
+- *B1, the restart budget gave itself back by time alone.* Recovery counted restarts in the last 600 s, while one
+  start may take up to 600 s (the dense startup timeout). Starts that failed slowly fell out of the window before
+  the next one counted, so recovery never gave up. Meanwhile admission stayed open and every admitted request
+  waited out its deadline.
+  - Counter-check on the previous code, a start failing after 0.5 s with a 0.3 s window and 8 s deadlines: 14
+    attempts in 8 s, still `restarting`, and the waiting request timed out.
+  - *Fix:* besides the window, at most 3 restarts in a row without a request served in between. Only a served
+    request gives the budget back, never time or a ready handshake alone.
+  - On the fixed code: refused after 3 attempts, and the waiting request got `503` after 1.6 s.
+- *B2, a live worker without progress held its group up to twice the request timeout* (its last deadline plus a
+  full request timeout), and the requests behind it waited out their deadlines. Counter-check on the previous
+  code: both requests stayed open their whole 8 s deadline.
+  - *Fix:* a generation that sends nothing for `STALL_TIMEOUT_S` (300 s) fails as `backend_unavailable`; the
+    worker is retired and replaced. 300 s is far above a long prefill or a new decode body's compile on the T4.
+- *B3, admission during recovery was implicit.* `ready` read true while a worker was being replaced. Now `ready`
+  is a worker that answered its handshake, and `accepting` says whether a request is admitted.
+  - *The rule:* during recovery requests are admitted up to the queue bound and wait at most until it ends. Once
+    it is refused, waiting and new requests get `503` at once.
+  - Recovery is bounded by 3 starts, each within its startup timeout (600 s for the stacked engine), plus pauses
+    of 0, 5 and 20 s.
+- *Tests (stand-in worker through the real client, transport, scheduler and admission; short timeouts):*
+  - a worker lost while requests join: each request ends exactly once, those in flight fail at once, a later one
+    is served by the replacement;
+  - a live worker without progress: retired at the stall limit (1 s in the test), the request behind it served;
+  - slow-failing restarts: the budget is used up, the waiting request fails at once, a new one is refused at
+    once;
+  - a successful restart: new requests are served, and four losses without a served request end recovery even
+    with a window too short to count.
+  - The three timing tests fail on the previous code. The join test passes on both: the stand-in has no slot
+    limit, so it shows the bounded ending, not cause A.
+- *Not changed:* a grouped request still completes with its engine run (HOL1), and a request may still wait for the
+  worker's startup during recovery.
+
+**Diagnostics, exported as they happen** (`training/rl2_headroom.py`, every plan through `main`):
+- `diagnostics/harness.jsonl` beside the report: run start with commit and versions, phase and block starts and
+  ends with each request's outcome, error and times, each shard's admission and worker state, idle-wait timeouts,
+  and a failed run's traceback. Each line is synced at once.
+- `diagnostics/ironmule-state/`: the product's own state for AG5-G, AG5-R, AG6-H and AG6-Q, so its
+  `stability-log.jsonl` is in the output. It holds admission, groups, joins, ends, worker exits with the worker's
+  last stderr (a failure's type and frames), each restart's start and outcome, and every line's shard and wall
+  time.
+- The kernel passes its commit, and the report keeps it.
+- *Checked with a deliberate failure:* a worker crash under a request, then the run itself raising. The output still
+  held every one of these (`test_diagnostics_reach_the_output_folder_when_the_worker_is_lost_and_the_run_then_aborts`).
+
+**AG5-R — the bounded repro on the card (fixed now, before its data; needs the owner's approval for GPU time).**
+- *Setup:* one Kaggle T4 x2 session, the agent's run-6 worker forced on card 1 (`dense_stacked`, width 6, the
+  checkpoint's own 4-bit weights, as run 6 started it), `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`, no setup
+  measurement, a 600 s request deadline, `--plan ag5r`.
+- *Blocks:*
+  - phase 0's block 0 (load 0.8, bursts) and block 1 (load 0.8, spike), rebuilt from trace 430 and phase 0's
+    capacity of 0.0871 requests a second. The rebuilt arrivals equal run 6's recorded ones to the microsecond, and
+    the prompts are the same short questions.
+  - Then block 1 four times more, for a sporadic fault, and 8 requests at once, more than the 6 slots.
+- *Deviations from run 6:* no default worker on card 0, no setup measurement before the start, a 600 s deadline
+  instead of 3,600 s, and the harness of this commit.
+- *R1, the cause, at the old product:* kernel `ag5r` installing `5f064c3` with this harness. Hypothesis A1: more
+  rows than slots retire the worker.
+  - *Expected if A1 holds:* `eight-at-once` fails with `backend_unavailable`, and the worker's exit tail shows a
+    `RuntimeError` raised in `dense_plan.py` `prefill`.
+  - Whether block 1 itself reproduces run 6 is recorded. A clean block 1 does not exclude a sporadic fault.
+- *R2, the gate, at the fixed commit:*
+  - *Accepted* only if every request of every block is answered (`analyse_ag5r`).
+  - *Controlled:* every failure ended with an error inside its deadline. It is recorded, and does not open AG5-G.
+  - *Hung:* a request waited out its deadline. STAB3 then fails.
+- *Bounds:*
+  - each kernel about 0.35 session hours (install, download, the worker's start of up to 600 s, about 8 minutes
+    of blocks);
+  - no block starts after an hour, so at most about 1.6 hours each;
+  - R1 and R2 together about 0.7 session hours expected, 3.2 at most;
+  - each one ends when its blocks are done, at its time limit, or when the worker does not start.
+- *Exported:* the report, `diagnostics/harness.jsonl` and `diagnostics/ironmule-state/stability-log.jsonl`.
+
+**AG5-R as approved (owner, 2026-11-08; fixed before the first kernel, these terms are binding):**
+- *Harness:* one harness commit for both, recorded in each report (`harness_commit`); product `5f064c3` for R1,
+  `b6d1f14` for R2 (`commit`). Kernel `tobayko/ironmule-rl2-headroom-ag5r`: v1 is R1, v2 is R2. Results go to
+  separate folders.
+- *Budget:* 3.2 session hours at most for both.
+  - R1: no new block after 2,160 s, and an absolute end at 3,960 s (`--hard-limit-s`), about 1.2 session hours
+    with the install.
+  - R2: no new block after 3,600 s, and an absolute end at 5,760 s, about 1.7 session hours.
+  - The absolute end saves the report and the diagnostics and stops the process even inside a hung block.
+- *Blocks, with their sections evaluated apart:*
+  - original: phase 0's blocks 0 and 1, rebuilt;
+  - repeats: block 1 four times more;
+  - eight: 8 requests at once;
+  - after: 3 normal requests 30 s apart once the load is over.
+- *Early end:* a block with a failure waits up to 900 s for the worker to serve again.
+  - If it does not, the run ends there: the failure is captured, and later blocks would show nothing.
+  - If it does, the remaining repeats are skipped and the eight and after sections still run.
+- *R1 is read, not forced:*
+  - A slot overflow counts as shown only if the worker's exit tail has a `RuntimeError` whose frame is
+    `dense_plan.py:510:prefill`, the "no free slot" raise at `5f064c3`. The failed group's members and joins in the
+    stability log must also add up to more than 6 rows.
+  - *If only the original section fails that way:* it supports the explanation for run 6.
+  - *If only the eight section fails that way:* the capacity fault is shown on the card, and run 6's cause stays
+    narrowed.
+  - *If nothing fails:* not reproduced, recorded as such.
+  - Run 6's missing logs are not replaced either way.
+- *R2 passes only if:*
+  1. every request of every block is answered (`analyse_ag5r` "accepted", no block skipped or cut);
+  2. no request ends with `backend_unavailable`, another 503 or a timeout;
+  3. each admitted request ends exactly once in the stability log;
+  4. no group ever holds more than 6 open members (`ag5r_log_checks`);
+  5. requests did join running groups;
+  6. no worker exits or restarts;
+  7. after the load, nothing is queued or active, the worker is ready, and the after section is answered.
+
+  A quick, bounded failure is recorded as `controlled`: it shows the failure handling and does not pass R2.
+- *Status (2026-11-08, 19:59 UTC): not started.* Kaggle refused R1's push: "Maximum weekly GPU quota of 30.00
+  hours reached". Both kernels are written from harness `1d038b0` and wait unchanged: R1 at `5f064c3`, R2 at
+  `b6d1f14`, with the budgets above. No hardware data exists for AG5-R yet.
+- *Version mapping, updated 2026-11-09 before any AG5-R data (STAB4):*
+  - *Harness:* both kernels are rewritten from `a985984` (was `1d038b0`). For AG5-R its one change is the width
+    check (criterion 4) as approved, implemented as meant: `ag5r_log_checks` closes a member at its
+    `member_done`, not at its `end`, which the service writes when the whole group ends. Found by a CPU dry run
+    of this harness against the real product (STAB4), where a correct run read 12 open members on 6 slots.
+  - *R1:* product `5f064c3`, unchanged, with the same budgets. Its log has no `member_done` rows, so the check
+    reports a group's members over its life there (`member_done_rows: false`), which is what R1's "more than 6
+    rows" reading counts.
+  - *R2:* product `a985984` instead of `b6d1f14`. `b6d1f14` writes no `member_done`, so criterion 4 could not
+    pass on it even when the product is right. `a985984` also carries STAB4's other fixes (a cancelled member's
+    done at once, slots back after a failed prefill, the fallback types in the failure note). The pass rule,
+    budgets and kernel versions (v1 R1, v2 R2) are unchanged.
+  - Earlier results keep their commits: run 6 describes `5f064c3`, the local tests the commits they ran on.
+  - *Then (decided):* R1's eight section does not put 8 rows into one run start (STAB4's dry run: 1 member and
+    7 joins within 14 ms, all served at `5f064c3`). The owner kept it and had a separate section added: revision 2
+    below.
+
+**AG5-R protocol revision 2 (owner request 2026-11-09; fixed before any AG5-R data; `AG5R_PROTOCOL = "ag5r-rev2"`,
+recorded in every report and diagnostics file):**
+- *Unchanged:* run 6's phase 0 blocks 0 and 1 with their rebuilt arrivals, the four repeats, `eight-at-once`,
+  `after-the-load`, the 600 s deadline, the budgets, the absolute end, the early end and the diagnostics export.
+- *What `eight-at-once` says:* it can run as one starting member with the other seven joining, and then tests
+  dynamic admission. A clean pass does not refute a fault of a group that starts too large.
+- *Added, `eight-at-start`, synthetic (section `start`):* the same 8 requests, after `eight-at-once`, with every
+  shard's serving policy at `gather_ms` 500 for this block only. The previous policy comes back in a `finally`,
+  also when the block raises, and the report records the value in force and the value after. The window only
+  makes 8 ready likely; what started is read from the stability log, never assumed. The same load and setting
+  hold for R1 and R2; the product's fix may give them different groups.
+- *Recorded for it:* the 8 offered ids; their admission and group; the members its first group handed to the
+  worker; the configured width, read before the block (the client's group capacity, the plan's width and slots
+  from the worker's ready event); joins and member ends (R2's product writes `member_done`); the worker's exit
+  tails. Slot occupancy itself is not observable on the card, only its consequences in these rows.
+- *Request ids:* every block's requests now carry fixed ids, `ag5r-<block>-<NN>`, so the log is read by id.
+- *What it tests:* one capacity mechanism, "8 requests ready to start, the engine has 6 slots". It does not
+  rebuild run 6's trigger. Two hypotheses stay apart:
+  - *A1:* a group that starts with more rows than slots overflows the pool. Read only from `eight-at-start`.
+  - *H5:* a joiner's prefill fails inside a run. STAB4 reproduced run 6's pattern with it locally; no section
+    reads it. Run 6's actual cause on the card stays open: its original diagnostics are missing.
+- *R1, the cause (`cause.a1` of the analysis):* A1 is tested only if the start group handed all 8 requests to the
+  old worker. Then `shown` if its exit tail has the `dense_plan.py:510:prefill` frame, `not shown` if all 8 were
+  answered, `failed otherwise` with the tails. Any other start reads "precondition not met" for A1.
+- *R2, the gate (`acceptance` of the analysis):* all 8 answered, at most 6 open members at once, the rest joined
+  or ran after, each request ended once, every member ended in the log. A start group of 8 is not required. The
+  precondition is a start group with as many of the 8 as the service's group capacity allows, and no other.
+- *Analysis, `analyse_ag5r` schema v2,* against `ag5r_expected()` (computed from `ag5r_blocks()`, never from
+  what a report says it ran) and the stability log beside the report:
+  - every expected block exactly once and not empty, every expected id exactly once in the report and admitted and
+    ended exactly once in the log, no unexpected block or id, no time cut, early end, skipped block or absolute end;
+  - the log present and readable, with `member_done` rows (without them the width check cannot be read);
+  - each section's precondition: `eight-at-once` had a request join a running group, `eight-at-start` as above;
+  - all requests answered, and R2's criteria 3 to 7 from the log.
+  - The verdict is the first that applies: `hung` (a request waited out its deadline), `controlled` (requests
+    failed inside their deadlines), `rule violated` (all answered, a log criterion broken), `incomplete`,
+    `precondition not met`, else `accepted`. Every reason is listed, so a controlled run that also lacks a block
+    shows both.
+- *A harness fix found by the local run:* the service state after a block is read once the service is idle, at
+  most 60 s (`idle_after`). A caller has its answer just before the service retires the request, so on a correct
+  run criterion 7 read one request still active.
+- *Local check (2026-11-09, CPU Gemma worker of STAB4, the harness of `4d10f49`; control logic only):*
+
+  | Product | Start group | Joined | `eight-at-start` | A1 (`cause`) | Whole run (`acceptance`) |
+  |---|---|---|---|---|---|
+  | `5f064c3` (R1's) | 8 of 8, service capacity 8, plan 6 slots | none | all 8 `backend_unavailable`, exit frame `dense_plan.py:510:prefill` | shown | controlled (8 failed; the replaced worker served the after section) |
+  | `4d10f49` (R2's) | 6 of 8, service capacity 6, plan 6 slots | the other 2 | all 8 answered | precondition not met (6 of 8) | accepted, 91 requests in 9 blocks, at most 6 open, 74 joins, no worker event |
+
+  The same start groups came both with the scheduler held until all 8 were admitted and with the 500 ms window
+  alone, at both products. The gather time read 500 during the block and 0 after it, each time.
+- *Commits:* harness `4d10f49` for both kernels; R1 installs `5f064c3`, R2 installs `4d10f49`, whose product
+  files equal `a985984`'s (rev 2 changes the harness and tests only). Budgets, hard limits, the pass rule's
+  criteria and the kernel versions (v1 R1, v2 R2) are unchanged; the new block adds about a minute per run on
+  the card.
+- *Status:* both kernels written, not pushed; GPU quota not available. No hardware data exists for AG5-R.
+
+**Then AG5-G again,** only after R2 is accepted: its protocol above at the fixed commit, with the aligned
+invalidity rule, failed requests and incomplete blocks kept visible, and the diagnostics exported, about 1.6
+session hours.
+- *Which version each piece of evidence belongs to:*
+  - run 6 describes `5f064c3`;
+  - the local fault tests check the fixed commit's failure handling;
+  - AG5-R checks this load case on the card;
+  - a new AG5-G checks the whole comparison.
+
+### STAB4 — Slots, admission, joining and recovery checked on the product's own path, without CUDA (owner request 2026-11-09; local, shipped)
+
+**Why.** Kaggle's weekly GPU quota was used up before AG5-R could start (above). The owner asked to close the local
+gaps in slot handling, admission, joining and recovery with the CPU test infrastructure already in the repository,
+and to say which statements that supports and which still need the card.
+
+**The test world** (`tests/engine/dense_cpu_worker.py`, `tests/engine/test_dense_slot_flow.py`,
+`tests/engine/test_dense_slot_plans.py`):
+- *The product's own:* the service (`ProductService`), the client (`MLXWorkerClient`) and its JSON-lines transport,
+  the worker process (`ironmule_product.worker.main`, its command loop and `_run_engine_batch`'s admission), the
+  bridge, the Runtime and its executor, and the plan's slot pool (`DenseBackend`).
+- *Replaced, because they need CUDA or a checkpoint:* the model (a tiny random 4-bit Gemma 3, the shape of
+  `test_dense_gemma.py`, weights unscaled so answers vary token by token), the plan's kernels (KB2's
+  `GemmaDensePlan` with the CPU reference attention, `native=False`, in place of `install_dense`'s CUDA install and
+  probe) and the snapshot identity (a stand-in). The worker's ready event says `kernels: cpu_reference`; nothing
+  is written to any evidence store, so no CUDA path can be qualified from it.
+- *Observed:* a ledger the worker writes of every slot taken and freed (with the pool's own free count), every
+  stacked step, join received and done sent. Order comes from holds, never sleeps: the scheduler waits behind a
+  gate until the requests a test offers are queued, and the worker pauses before a named stacked step until the
+  test has acted.
+- *What it cannot show:* CUDA's kernels, card memory, timing or throughput. No time from these runs is a
+  measurement.
+
+**Checked (each request's answer is compared with the same request alone in a fresh pool):**
+- *Eight requests offered at once to six slots,* both with the service told the width (six start, two join as
+  members end) and with run 6's constellation (the service admits eight into one group; the worker starts six and
+  serves two after). Never a seventh slot, every answer its own, every slot back, no worker lost.
+- *Joining mid-run, a full pool, a cancelled joiner:* a long and a short member run; five arrive, four take the free
+  slots and the fifth waits; a joined request is cancelled and the waiting one takes exactly the slot it freed.
+- *A slot's context is a per-request limit, not the pool's width:* a request one token over is refused alone and
+  takes no slot; one exactly at the limit is served.
+- *A failed admission:* two requests join in one round and the second one's prefill fails. The members keep their
+  own answers (the Runtime replays them), the joiners end failed, each once, every slot comes back, the worker is
+  replaced and the next request is answered as alone.
+- *A failed stacked step:* once, it is replayed inside the plan with no answer changed; for good, the healthy
+  members end with their own answers, the poisoned one fails, each once, and the worker is replaced.
+- *Run 6's arrivals as event plans* (control logic only): phase 0's blocks 0 and 1 from `ag5r_blocks`, ordered
+  against the worker's stacked steps (one chained readback of the 256-token answers scaled to 32 tokens at run 6's
+  0.128 s a step at width 6), in run 6's order and in seeded variations of nearby events (an arrival moved by up to
+  one step, arrivals at one step shuffled, lengths 8-40). The plans run in lockstep: the worker holds at the start
+  of every executor round, after finished requests have returned their slots and before newcomers are admitted;
+  there the service's open members and the worker's free slots must agree, and the round runs once every join
+  the service sent is in the worker's hands. (Holding before the stacked step instead let a join that the service
+  sent on a done arrive one round early or late, which under load broke the plans' bookkeeping.) Four plans are
+  kept; `IRONMULE_STAB4_SEEDS=1-20` adds 38 more, and all 42 passed in lockstep (2026-11-09). The same plan twice gives the same slots taken
+  and freed in the same rounds (5 of 5 under load).
+
+**Found and fixed (each test fails on the code before it):**
+- *A cancelled member's slot stayed empty until its run ended.* The engine stops a cancelled request at once and
+  frees its slot, but the worker sent its done only at the run's end, so the service counted it open and let no
+  waiting request take the slot (in the test, the fifth joiner waited for the long member's whole answer). The
+  worker now sends the done when the engine stops it (`_BatchStream.cancelled_now`).
+- *A failed prefill left the slots of requests prefilled before it in the same round taken* until the worker
+  process ended (`build_sessions` lost them). It now hands them back before it raises. With the worker retired
+  after such a failure this had no lasting effect, but the pool's count was wrong until then.
+- *The failure note hid a swallowed error.* When the Runtime's safety net catches an error and the run then fails
+  on its result count, the worker's stderr note named only that `RuntimeError` in `generate_many`, never what the
+  safety net caught. It now also lists each fallback's type, where it was caught and its memory flags (never a
+  message): `fallbacks` in the note.
+- *AG5-R's width check would have failed R2 on a correct product* (found by the CPU dry run below, before any AG5-R
+  data). `ag5r_log_checks` counted a member open until its `end` row, which the service writes when the whole
+  group ends, so a group of 6 slots that had served 12 requests read as 12 at once. The service now writes
+  `member_done` when a group stops counting a member, before any join that takes its place, and the check closes a
+  member there. A log without those rows (R1's product, `5f064c3`) still closes members at `end`, so there the
+  widest group is its members over its life; the check reports which (`member_done_rows`). The eight-at-once test
+  runs the check on the real log: within the width at width 6, 8 open in run 6's constellation.
+- *`test_a_crashed_worker_is_replaced…` was timing-dependent.* Its premise failed under load
+  (`[['r-0'], ['r-blocker', 'r-a'], ['r-b']]`). Cause: the caller of `r-0` has its answer before the scheduler
+  clears that group's in-flight state, so the old helper saw `r-0`'s group as the blocker and sent `r-a` before the
+  blocker was taken; widening that window reproduces it every time (the old premise check even accepted
+  `['r-blocker', 'r-a', 'r-b']`). Now the blocker waits at a gate (`gate:PATH` in the stand-in worker) until both
+  requests are queued; the test checks the blocker's own group number and its first token, the exact groups, that
+  the worker's exit follows `r-a`'s first token, and only then recovery. Under load (6 busy processes on 4 cores)
+  the old test failed none of 12 runs alone but did fail in the full suite; the new one ran 30 times alone and 20
+  times with its file, none failed (my first version read the exit row before the scheduler wrote it, and failed 22
+  of those 50; fixed before this count).
+
+**Run 6's trigger, examined locally on run 6's product (`5f064c3`), control logic only:**
+- *Eight rows started into six slots* fail there with exactly the frame AG5-R's R1 looks for:
+  `RuntimeError` at `dense_plan.py:510:prefill`. On today's code they are served.
+- *H1, a stacked step failing once for request 0, so its fallback admits no joiner:* refuted. After the fallback
+  the executor admits again in the same run, up to the free slots; all twelve requests were answered.
+- *H5, a joiner's prefill failing inside request 0's run:* reproduces run 6's pattern. The Runtime replays request 0
+  alone (one row's speed), and every joiner of that run fails with `backend_unavailable` as request 0 ends; if the
+  first joiner is the one that fails, none of them gets a token, as in run 6. What failed is swallowed: at
+  `5f064c3` the worker's note names only `RuntimeError` at `engine_bridge.py:440:generate_many` (the result count).
+  On the card a prefill allocation failing under memory growth (STAB1) would be such a cause. Not shown for run 6.
+- *For R1 this means:* the `dense_plan.py:510:prefill` frame and the result-count frame tell the two apart; under
+  H5, R1 at `5f064c3` cannot name the swallowed error. R2's product can.
+
+**Existing hardware data, for open questions** (development data; nothing here changes a rule or a verdict):
+- *Does the dream model rank the modes wrongly?* In AG6-Q's offline prediction (startup prices) the order of the
+  modes matched the measured order in every phase, by tokens per second and by mean first token. It misjudged
+  the gaps: in the spike it predicted `route` at 0.81x the stacked engine, measured 0.58x, and the stacked engine
+  at 120.7 tokens per second, measured 181.9. The decision errors came from when the agent re-decided (every 16
+  requests) and, in repetition 0, from a learned price (131.7 ms a token stacked) that did rank `route` first.
+- *Why the gaps: the two paths share the card.* Derived from AG6-Q's per-request times (first and last token,
+  tokens, path, arrival) with no model output: on the stacked arm alone a token took 18.5 ms plus 2.3 ms for each
+  other row decoding beside it (480 requests). Stacked requests that decoded while the single path also decoded
+  took 71.8 ms a token, 39 ms above that line (route arm, 102 requests; agent arm 102, the same); without the
+  single path beside them, 0.2 ms below it (agent arm, 128). A single-path token took 15.2 ms alone and 32.1 ms
+  beside stacked rows (route arm, 40 of 378). The startup prices, measured on each path alone, have no term for
+  the other path.
+- *What is missing for a sound decision:* a price term for the other path's load on the same card, measured, not
+  fitted to the data above; the load each request met while it decoded (the report keeps only its own times); and
+  every dream's replayed values and prices (the report keeps only the last dream).
+- *Run 6's 11.28 session hours* (started to finished): 0.37 to the agent's setup decision; 0.71 in the 21 complete
+  blocks (from each block's first arrival to its last end); 3.01 in the agent's three blocks with failures, of
+  which the service's own work took about 12 s and the rest were 3,600 s deadlines. The remaining 7.19 hours have
+  no per-block times in the artifacts. Consistent with the harness at `5f064c3` (not shown): before each arm it
+  waited up to the 3,600 s deadline for the pool to be idle, and seven such waits after the failure would make
+  about 7 hours. AG5-R waits at most 600 s and records each block's start and end.
+- Run 6 stays invalid.
+
+**AG5-R's harness against the real product on the CPU (a dry run, 2026-11-09; checks the harness, measures
+nothing):** `measure_ag5r` with all of `ag5r_blocks` at their real arrival times, `analyse_ag5r`,
+`ag5r_log_checks` and the diagnostics export, through `start_paths` and the CPU worker above (slots of 1,024
+tokens here, so the harness's own prompts fit).
+- *Today's product:* "accepted", 83 requests in 8 blocks, each ended once, 72 joins, no worker event; the width
+  check read 12 before the fix above and reads within 6 after it.
+- *R1's product (`5f064c3`):* also "accepted", the eight-at-once block included, with no worker event.
+- *So R1's eight section, as written, does not test the overflow it is meant to.* The harness starts the 8 requests
+  on 8 threads at one offset; the scheduler takes the first as it arrives, so the group starts with 1 member and
+  the other 7 join over the next 14 ms. Joiners are admitted only up to the free slots, at `5f064c3` too, so no run
+  starts with more rows than slots. The overflow needs more than 6 requests queued before a group or a run starts:
+  in the tests above the scheduler is held until all 8 are queued, and then `5f064c3` fails with the
+  `dense_plan.py:510:prefill` frame. On the card the threads start the same way, so R1's eight section will most
+  likely pass whether A1 holds or not; "nothing fails" there would not tell against A1. The owner kept that
+  section and had a separate start-group section added: AG5-R protocol revision 2, in the AG5-R entry above.
+
+**Validation (2026-11-09, at `b483d5f`):** `tests/engine` and `tests/agent` without the integration marker, runtime
+contract tests included: 1,615 passed, 14 skipped, none failed (MLX's CPU build, 4 cores). The new files 3 of 3 and
+the stability file 20 of 20 under 6 busy processes. Once, under that load, the unchanged client-transport test
+`test_cancellation_is_polled_while_waiting_and_finishes_once` (a 0.5 s timeout) failed; alone it passed 3 of 3. Not
+run: the integration marker (no model snapshot here), the other test directories (their 14 environmental failures
+are as before STAB4). The ledger entry is still owed.
+
+### STAB2 — The agent never stops the server or fails a request (owner decision 2026-11-07, shipped)
+
+The owner asked that aborts stop and that nothing crash. Today's runs had shown how the agent could stop work.
+In AG5-G run 1 its own measurement ran out of memory, so it lost the stacked engine; in run 2 the measurement
+timed out, and the timeout raised through `choose_setup` and ended the run. A chosen engine that did not start, or
+`route` on several cards, stopped `serve`, and a router or dream fault would have broken the response stream it ran
+in. None of it is a performance change, and no
+decision moves, so it needs no hardware evidence; each case has a test that injects the failure.
+- *Setup:* a failure anywhere in the agent's measurement (`cli._agent_setup`, `plan_choice.choose_setup`: the
+  numeric gate, the stacked measurement and its child, the rule, an unreadable child result, a store of another
+  shape or on a read-only disk) leaves the reference engine on the checkpoint's dtype, with the reason.
+- *Start:* when the engine the agent chose does not start (a card out of memory, a kernel that fails), or it chose
+  `route` on several cards, its gated numeric plan serves on the reference engine, else the checkpoint's dtype. It
+  is printed and shown as `agent_setup.fallback_from`. A plan the caller named is kept and its failure reported.
+- *Serving:* a router decision that fails serves the request in placement order (`router_faults`); a learning or
+  dream fault keeps the mode and lets the answer go out (`errors`, `last_error` in `/health`'s `paths`). A
+  rerouted request is now priced at its new path's load as it stands, not as it was when the request came: AG6-H
+  had taught the single path a 7.3 s first token from requests that waited there behind earlier refusals.
+- *Harness:* a Kaggle run that raises records the error and its traceback in its report, keeps what it measured
+  and ends in order (`training/rl2_headroom.py`), so no session ends without a result to read.
+- *Not covered:* a worker that dies mid-request is STAB1's (it is replaced, and the request fails as before); a
+  driver fault that takes the whole process down is outside Python's reach.
+
+### REV1 — An external review of 2026-11-08: eight findings, all reproduced and fixed (shipped)
+
+A review of PRs 21 to 23 and of this branch at `5f064c3` came with four read-only scripts. They run the
+repository's own functions on synthetic inputs, with no model, GPU or network. All four reproduced their
+findings here (each script exits 0 while its fault is present). Each fix below has a regression test that fails on
+the old code, and each script now fails its assertion. The serving faults are on `main` as well.
+- **P1, the agent's qualification stalled for good.** The triplet cursor counted used arrivals, but the traffic
+  memory keeps 2,048. Once 2,048 were used, no window was found again, and the open candidate blocked replanning.
+  *Fix:* the cursor is the last window's recorded end time (`Agent._next_window`).
+  - **Correction, ties at the cut (owner check, 2026-11-08, `d96a9dd`).** A window is cut at 128 arrivals inside a
+    spike, and arrivals recorded at one time can fall on both sides of the cut. A cursor of the cut's time alone
+    then skipped the tied arrivals beyond it: 6 of 12 in the new test.
+    - *Now:* every recorded arrival gets a monotone id, in recording order, saved with the state. Windows are
+      ordered and cut by (time, id), and the cursor is the last used arrival's (time, id). A candidate's or
+      audit's held-out boundary is an id too, so an arrival recorded after a plan at the plan's last time is held
+      out.
+    - *What the cursor means:* every arrival at or before it, by (time, id), was used by an earlier window, and
+      none after it. A cursor saved by older code as a time alone means every arrival at that time was used.
+    - *Interruption:* a started triplet records its window's end, and all its arms replay that same window, also
+      after a restart. The next window starts after it.
+    - *A full memory:* the memory keeps 2,048 arrivals. Held-out arrivals it drops before a window used them are
+      counted as `lost`, and qualification goes on with the next one it holds; none is used twice.
+    - *Tests:* ties across a cut, an interrupted triplet resumed across a restart, dropped arrivals, a legacy
+      cursor and ties at the held-out boundary. Four fail on the previous code; the legacy cursor's meaning holds
+      on both.
+- **P1, a candidate that loses could be promoted.** Eleven triplets against a schedule that was then withdrawn were
+  judged together with one against the reference that served next. That promoted a candidate costing 50 % more than
+  the reference. *Fix:* a candidate's evidence is bound to the incumbent it ran against, and starts over when the
+  incumbent changes.
+- **P1, early failures never withdrew a policy.** `_agent_observe` dropped any group with a request that failed
+  before its first token, so the live monitor never saw those failures. *Fix:* such a group's outcomes still
+  reach the monitor (`Agent.observe_outcomes`); so do those of groups a request joined.
+- **P1, cancelled joiners kept computing.** A joined row's stream had no cancel check, so a joiner whose client
+  had gone computed its whole limit. *Fix:* the worker's admission hands each joiner its own check (a fifth field),
+  and the bridge passes it to the executor.
+- **P1/P2, AG6 stayed stacked on quiet traffic.** On quiet traffic every mode's tokens per second is the arrival
+  rate, so the 5 % rule never left a mode whose first tokens came 10x later. *Fix (an amendment after AG6-H,
+  labelled so):* where no mode wins on throughput, the earliest mean first token wins among the modes with at
+  least 98 % of the current mode's tokens per second, if it is at most 0.8x the current mode's. This applies on
+  quiet traffic only: at most 1 in 16 requests may arrive while another is being served (`DREAM_QUIET`).
+  - Without that limit the rule would have broken AG6-H. In its bursts at load 0.8, with the startup prices, the
+    replay priced the router's first tokens 25 % earlier than stacking's, while the card measured stacking's 5x
+    earlier (0.36-0.40 s against 1.7-2.2 s). Under load the replay's first tokens are not reliable.
+  - *Checks, all replays:* AG4-R run 1's model check is unchanged (20 of 20 blocks, the same named modes). Replayed
+    on AG6-H's 16 blocks, no block leaves `stacked`, with the startup prices or with the agent's learned ones. The
+    review's quiet trace now moves to `route`.
+  - This changes nothing AG6-H measured. On quiet traffic the choice is a replay of learned single-request prices,
+    not measured on hardware (LIMITS).
+  - **Correction, the guard's data source (owner check, 2026-11-08).** As shipped in `4ba5550`, "quiet" counted
+    overlaps inside the replay. Whether a path was busy at a replayed arrival came from the model's prices, so the
+    guard rested on the very estimate it was meant to guard against. It now rests on observation alone
+    (`path_router.observed_quiet`).
+    - *Source:* the router's own served intervals. `PolicyRouter.watch` records each request's arrival (when the
+      pool hands it the stream) and its end (when its `done` passes), both on `time.monotonic()`. It also counts
+      requests in flight, and notes the arrival of any that ended without its answer: failed or cancelled, but
+      not rerouted on an engine refusal, which the other path serves and the router watches again.
+    - *Definition:* the window is the last 64 finished requests a dream replays, at least 32. Up to 64 earlier
+      finished ones are kept as possible overlappers. A request of the window overlapped if it arrived while
+      another observed request was being served, that is arrived_i <= arrived_j < ended_i (half-open: arriving
+      the instant another ends is not an overlap; two that arrive together both overlap).
+    - *Quiet:* at most floor(n / 16) of the window's n requests overlapped (4 of 64, 2 of 32). The observation must
+      be complete: at least 32 requests, none in flight, and none in the window's time span that ended without
+      its answer. A caller without observed intervals gets no first-token move.
+    - *Checks, rerun:* AG4-R run 1's model check, now fed the router arm's served intervals, is unchanged at 20 of
+      20 with the same named modes. None of its blocks is quiet by observation, not even the quiet state at load
+      0.8. Replayed on AG6-H's 16 blocks, no block is observed quiet and none leaves `stacked`, with the startup
+      prices, the learned ones, or prices made to favour routing 500x.
+    - The threshold of 1 in 16 is a heuristic for the hardware test (AG6-Q) to check.
+- **P2, a technical measurement failure was cached for good.** `choose_setup` stored the base path after a child
+  had crashed or run out of memory, and reused it after the cause was gone. *Fix:* such a setup serves once, marked
+  `measurement_failed`, and is measured again on the next start; a refusal by a rule or a gate is still stored.
+- **P2, constant predictions scored a perfect rank correlation.** Tied values got consecutive ranks. *Fix:* ties
+  share their average rank, and a constant input is undefined (None), as in SciPy. RL4's own copy of the function
+  had the same fault and now uses the product's.
+- **P2, the queue bound could be exceeded.** Admission bounded only the queue, while a shortest-first order moves
+  waiting work to the carry. *Fix:* the bound is on queue plus carry.
+- The review also read AG6-H as a limited positive selection result: 1.512x over the router it replaces, but
+  0.9925x the forced stacked engine, one switch and no switch back. A lasting advantage over the best fixed mode
+  is not shown. That agrees with AG6-H's record and LIMITS.
+
+### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
+
+The owner offered TPUs. Kaggle gives this account 20 TPU hours a week (TPU v5e-8 by default), apart from the 30
+GPU hours, and none of them has been used yet.
+- *The gap:* MLX, IronMule's runtime, has no TPU backend, so nothing in the product can use one today. A TPU path
+  would be a second runtime (JAX), with the model's own bf16 weights, never changed or shrunk (owner boundary,
+  HQ1). It would sit beside the T4 paths as one more path for the agent to measure and choose (AG4).
+- *Mechanism:* a TPU v5e chip does bf16 matrix products natively, with far more memory bandwidth than a T4 (which
+  emulates bf16, U1). Decode is bound by streaming the weights, so a decode step could be much shorter there.
+- *Kill:* TP1 is closed unless a JAX decode path for `Qwen3-1.7B` on one v5e chip makes more tokens per second
+  than the T4's best path measured so far (57.7 alone with float16, 290.9 at width 8 with the dense plan, AG4-Q
+  run 2), at the agent's quality gate. It is never built if TP0 shows that even its matrix products alone cannot
+  reach that.
+- **TP0, a probe before building anything (fixed 2026-11-05, before its data; descriptive only, no claim).**
+  `tools/tpu_probe.py` on one Kaggle TPU session records:
+  - the devices JAX sees, the host CPU and its memory;
+  - whether MLX's CPU build installs on the host;
+  - the median of 20 timed bf16 products, after 3 warm-ups, at one decode step's shapes of `Qwen3-1.7B` (q, k, v,
+    o, gate, up, down; 28 layers), for 1, 8 and 64 rows, on one TPU chip with JAX and on the host CPU with MLX.
+  - *Read as:* each runtime's matrix time for one decode step and the tokens per second that time alone would
+    allow (a ceiling, not a speed: attention, norms, sampling and the host are left out).
+  - *Decides:* if the TPU's ceiling at 1 row is not above 57.7 and at 8 rows not above 290.9, TP1 is closed in
+    Tier 0. Otherwise the next step is a JAX decode path, fixed here before it is built.
+  - *Cost:* about 0.3 TPU hours of this week's 20, which lapse on 2026-11-07 unused.
+  - **Queued, not run (2026-11-05).** The kernel `tobayko/ironmule-tpu-probe` at `08c96d4` was pushed at 04:58 UTC
+    and was still waiting at 16:35 UTC. It spent no TPU hours. When the owner tried a TPU session in Kaggle's web
+    editor that afternoon, Kaggle answered "TPUs are popular right now. You are #789 in the queue." So the wait is
+    Kaggle's shared TPU queue, not the API submission. The kernel stays queued; if it has not run by 2026-11-07
+    00:00 UTC, this week's TPU hours lapse and TP0 waits for the next week.
+  - **Still queued after more than 24 hours (2026-11-06, 07:00 UTC).** The kernel submitted through the API had not
+    been given a TPU 26 hours after its push. A status poll every 3 minutes from 23:00 to 01:01 UTC read `QUEUED`
+    all 40 times, as did the check at 07:00 UTC. It has still spent no TPU hours. The owner is waiting in the web
+    editor's TPU queue as well. No further check-in is scheduled this week; if neither run gets a TPU before
+    2026-11-07 00:00 UTC, TP0 moves to the next week's quota.
+  - **Result (ran 2026-11-06, about 20:35 UTC; kernel `tobayko/ironmule-tpu-probe` v1 at `08c96d4`; about 110 s,
+    roughly 0.03 TPU hours).** The session had a TPU v5 lite with 8 chips (JAX 0.11.0) and an x86_64 host with 224
+    CPUs and 377.8 GiB. MLX 0.32.4's CPU build installed there. Matrix time for one decode step and the ceiling it
+    allows:
+
+    | Runtime | 1 row | 8 rows | 64 rows |
+    | --- | --- | --- | --- |
+    | JAX, one v5e chip | 48.1 ms, 20.8 tokens/s | 44.2 ms, 180.8 tokens/s | 46.1 ms, 1,388 tokens/s |
+    | MLX, host CPU | 1,225 ms, 0.8 tokens/s | 5,049 ms, 1.6 tokens/s | 37,382 ms, 1.7 tokens/s |
+
+    *Verdict by the fixed rule:* the TPU's ceiling is 20.8 at 1 row (not above 57.7) and 180.8 at 8 rows (not
+    above 290.9), so **TP1 is closed in Tier 0**. The ledger entry in the research repository is still owed.
+  - *Post hoc reading (after the data; it does not change the verdict):* every JAX product took 0.20-0.29 ms
+    whatever its size, from 2048x1024 to 6144x2048 and from 1 to 64 rows, which is 58-64 GB/s of weights against
+    the chip's much higher memory bandwidth. Each product was jitted and timed alone to completion, so this is a
+    per-call floor (dispatch and host sync), not the chip's streaming speed, and the probe cannot say what a
+    decode step compiled as one program would reach. A reopening needs that changed implementation: a probe that
+    times a whole jitted decode step, fixed before its data.
+- **TP0b, the reopening probe (owner request 2026-11-09, item C1; fixed before its data).** Reopens TP1 under the
+  rule "Rejected is not forbidden": the old entry is TP1 above, closed by TP0 in Tier 0; its kill criterion reads "TP1
+  is closed unless a JAX decode path for `Qwen3-1.7B` on one v5e chip makes more tokens per second than the T4's best
+  path measured so far (57.7 alone with float16, 290.9 at width 8 with the dense plan, AG4-Q run 2), at the agent's
+  quality gate". The changed implementation is the one TP0's post hoc reading names: a whole decode step compiled as
+  one program.
+  - *Tool:* `tools/tpu_step_probe.py`, kernel `tobayko/ironmule-tpu-step-probe` on one Kaggle TPU v5e-8 session,
+    the session's own JAX, no checkpoint (random bf16 weights of `Qwen3-1.7B`'s shapes).
+  - *What one step is:* embedding; per layer, inside one `lax.scan`: RMSNorm, q/k/v with Qwen 3's per-head q/k
+    norms, rotary positions (theta 1,000,000), the step's key and value written into a fixed KV cache, grouped
+    attention over the cache up to the position, o, RMSNorm and the SwiGLU MLP; then the final norm, the tied head
+    over 151,936 tokens and the argmax. A test checks its logits against a plain NumPy float32 step (within 5 %
+    of the largest logit; the test fails if the rotation is left out) and that a compiled chain of steps equals
+    the same steps run one by one.
+  - *Cases:* 1 and 8 rows at position 1,024 of a 2,048-token cache, and 64 rows at 256 of a 512-token cache.
+  - *Timings, each the median after warm-up:* `per_call`, one step per call synced on the host (20 calls); and
+    `chained`, 32 steps inside one compiled loop, each fed the previous tokens, divided by 32. Compile times are
+    recorded apart.
+  - *Decides (by `chained`, the cost a decode path that reads back every 32 steps pays):* TP1 reopens only if 1 row
+    makes more than 57.7 tokens per second and 8 rows more than 290.9. Then the next step is a JAX decode path for
+    `Qwen3-1.7B` with its real weights, fixed here before it is built, and the agent's quality gate still applies.
+    Otherwise TP1 stays closed with this probe as its evidence. A case that does not run is recorded; without the 1
+    and 8 row cases there is no decision.
+  - *Not shown by it either way:* real weights, sampling, prefill, a serving path, quality.
+  - *Cost:* about 0.1 TPU hours of the account's 20 a week (separate from the GPU quota): compiles of 3 cases twice,
+    then seconds of timing.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 
@@ -460,7 +3514,7 @@ traces already do. **Test.** After HW1 and MEM2 exist: measure headroom first, t
 single setting on the same recorded traces (as OPT2-CAL did); train and qualify a learner only where that headroom
 exceeds the A/A noise. **Kill.** Headroom inside the A/A noise for every decision: a fixed policy ships, no learner.
 
-**RL2-H, the headroom measurement (protocol fixed 2026-10-28, before data).** `tools/rl2_headroom.py`, one
+**RL2-H, the headroom measurement (protocol fixed 2026-10-28, before data).** `training/rl2_headroom.py`, one
 Kaggle "GPU T4 x2" kernel, `mlx-community/Qwen3-1.7B-bf16` on the tuned engine, one HW1 worker per card.
 *Decisions measured:* placement (`shortest`, HW1's join-the-shortest-queue, against `fill`, the lowest-index card
 with fewer than `width` requests outstanding, else the shortest) and the live learner's schedule catalogue (width
@@ -508,7 +3562,7 @@ Poisson arrivals with 64-128-token answers kept about 2.4 requests in the system
 rarely formed and no request held a group long; the states where width, wait and placement could matter differently
 (bursts that build a queue, long answers holding a group while short ones wait, as in HOL1, and long prompts that make
 prefill matter) never occurred. Same model, cards, engine, pool, cost, order, headroom, noise, release rule and
-validity as RL2-H (`tools/rl2_headroom.py --plan h2`). *States:* `quiet` (run 1's light level: Poisson at 0.2 of
+validity as RL2-H (`training/rl2_headroom.py --plan h2`). *States:* `quiet` (run 1's light level: Poisson at 0.2 of
 capacity, short prompts, 64 or 128 tokens), `bursts` (four bursts of four arrivals inside 0.2 s each, burst starts
 Poisson at 0.6 of capacity / 4) and `spike` (all 16 arrivals inside 1 s); in `bursts` and `spike` half the prompts
 carry a fixed generic context of about 1,000 tokens and the output limit is 32 or 256 tokens; equal weights.
@@ -545,7 +3599,7 @@ requests and a reward weighting fast requests ten times more. Here the cost weig
 Shortest-job-first can starve long requests, so it ages: past 10 s a request starts by arrival. Placement by length
 can leave one card idle while the other queues, which `spill` guards against.
 
-**Test (RL3-H, `tools/rl2_headroom.py --plan h3`).** The same pool, model, engine, traffic (run 2's `quiet`,
+**Test (RL3-H, `training/rl2_headroom.py --plan h3`).** The same pool, model, engine, traffic (run 2's `quiet`,
 `bursts` and `spike` traces, the same seeds), cost, order of cells, headroom, noise, release rule and validity
 as RL2-H2. A request is `long` with an output limit of at least 128 tokens. Arms: placement `shortest`
 (reference), `segregate` (long to the last card, short to the first) or `spill` (`segregate` unless the preferred
@@ -598,7 +3652,7 @@ and `FixedKVCache` always passes one. Decode therefore runs the unfused path ove
 matmul. The reductions in that path can be ordered differently for different cache lengths, and that can flip a
 near-tied greedy token.
 
-**Test (`tools/rl2_headroom.py --plan x1`, Kaggle T4 x2, about half a session hour).** The model and revision are
+**Test (`training/rl2_headroom.py --plan x1`, Kaggle T4 x2, about half a session hour).** The model and revision are
 RL3-H's. Each card gets its own child process, pinned as HW1 pins a worker. The engine is the one a worker without
 a tuned profile runs (BASELINE knobs). (a) Request 14 is served alone and in its RL3-H burst (requests 12-15)
 through `Runtime.serve`, three times each. (b) Each of the 16 short prompts is decoded directly for 32 tokens at
@@ -659,7 +3713,7 @@ no better than RL3's best fixed arm, and every learned arm so far (P3, P4, OPT1)
   53 resolvable pairs as the hardware did; that preview is not RL4's gate, which is RL3-H.)
 - *Simulator gate:* on 200 held-out simulated traces per state, the learned policy must beat the best fixed arm
   by more than RL3-H's A/A noise.
-- *Hardware (RL4-H):* `tools/rl2_headroom.py` gains a `learned` arm that applies the frozen policy. It runs
+- *Hardware (RL4-H):* `training/rl2_headroom.py` gains a `learned` arm that applies the frozen policy. It runs
   against the reference and RL3-H's best fixed arm on RL3-H's states and traces, with the same cost, order, noise
   and validity as RL3-H. The policy is frozen and its digest recorded before the run.
 
@@ -693,7 +3747,7 @@ there. On RL4's 200 held-out spike traces it cost 34.64, against 36.15 for RL3-H
 `shortest/w8/g0/sjf` and 35.99 for the best simulator-only rule: a gain of 4.2 %, three times run 2's spike noise.
 Nothing is retrained or refitted for this entry.
 
-**Test (`tools/rl2_headroom.py --plan h5`, Kaggle T4 x2, about 1.5 session hours).** RL3-H run 2's pool, model,
+**Test (`training/rl2_headroom.py --plan h5`, Kaggle T4 x2, about 1.5 session hours).** RL3-H run 2's pool, model,
 revision, engine, cost, cell order and validity. Traffic: `spike` only, from run 2's generator. It uses 30 traces
 (indices 5-34) whose seeds no earlier run and no training, validation or held-out simulation used. Arms: the
 reference `shortest/w8/g0`, `shortest/w8/g0/sjf`, and `learned` with the frozen policy, whose digest the kernel
@@ -750,7 +3804,7 @@ refused together with `--learning`, and changes no answer. The RL4-S policy and 
 
 **Question.** Does the product's own learned dispatch (LD1), running RL6's width-learning policy (digest
 `fef74e9d1077`), beat the product's reference when quiet, bursty and spike traffic all count? RL6 measured that
-policy only in `bursts` and `spike`. **Test (`tools/rl2_headroom.py --plan h7`, Kaggle T4 x2, about 2 session
+policy only in `bursts` and `spike`. **Test (`training/rl2_headroom.py --plan h7`, Kaggle T4 x2, about 2 session
 hours).** Same pool, model, revision, engine, cost, cell order and validity as RL6. All three states are weighted
 equally, with 8 traces each (indices 47-54) whose seeds no earlier run, training or simulation used.
 
@@ -831,7 +3885,7 @@ rounds inside those groups, not from measured narrow arms. RL2-H2 measured width
 | `shortest/w4/g0/sjf` | 19.46 | 31.40 |
 | learned | 18.25 | 30.56 |
 
-**Test (`tools/rl2_headroom.py --plan h6`, Kaggle T4 x2, about 2 session hours).** RL3-H run 2's pool, model,
+**Test (`training/rl2_headroom.py --plan h6`, Kaggle T4 x2, about 2 session hours).** RL3-H run 2's pool, model,
 revision, engine, cost, cell order and validity. Traffic: `bursts` and `spike`, weighted equally, from run 2's
 generator. Each state gets 12 traces, indices 35-46, whose seeds no earlier run, training or simulation used. Arms:
 the reference `shortest/w8/g0`, `shortest/w1/g0/sjf`, `shortest/w2/g0/sjf`, `shortest/w4/g0/sjf`, and `learned`
@@ -1053,6 +4107,444 @@ revision, MLX, prompts and output length as HW3.
 - **Validity:** a set that errors is invalid and the others stand; the width part's answers must be identical
   across sets for each width (they are all class A).
 
+### HQ1 — Levers read from HyperQwen, Strata and vLLM, kept for the agent to use (opened 2026-11-03, owner request, before data)
+
+**Owner's boundary (2026-11-03): the model is never changed or made smaller.** No new quantisation of weights, no
+pruned or distilled models, no drafter trained in the model's place. Only how the given model runs on the hardware:
+kernels, batching, scheduling, memory layout, speculation that the model itself verifies. Every route below stays
+inside that boundary. The int8 head from the first version of this entry re-quantised weights, so it is dropped.
+
+**Source.** [syv-ai/HyperQwen](https://github.com/syv-ai/HyperQwen) (read 2026-11-03). It is a patch series on
+vLLM for Qwen3.8-27B on one RTX 3090. By its own measurements it takes one request from 46 to 127 tokens a second
+(2.8x), and 64 concurrent requests from 370 to 1,035 (2.8x). Every setting was tuned by hand for that one model and
+card. The owner asked that these levers be remembered, applied, and brought into the agent. The agent's lever list
+(`ironmule.plan_choice.LEVERS`, shown in `/health` under `agent_setup.levers`) names each one, built or not. A built
+lever passes the same gate and rule as every plan there (AG4).
+
+**Why it is fast, in its own numbers:**
+1. *Speculative decoding* (most of the single-request gain). A small drafter proposes 4-7 tokens, and the model
+   verifies them in one memory-bound step, so about 3 tokens land per step.
+   - The drafter was made cheap: int4, and a 40k-token draft vocabulary counted over the model's own outputs
+     (+10 % on its own).
+   - Drafts are also copied from the prompt when the answer repeats it: up to 381 tokens a second.
+2. *Tensor cores for batched decode* (most of the concurrent gain). At 40-64 rows a decode step is bound by
+   arithmetic, not by memory. int8 activations on int8 tensor cores run 4x the math.
+3. *Memory for more concurrent requests.* The embedding and head go to int8 (2.6 GB freed), and the recurrent state
+   goes to fp16: 37 resident requests became 64.
+4. *Verify-step kernels.* Split-KV attention for a few query rows (FA2 used 24 of 82 SMs there), and a sampler that
+   never sorts.
+
+**The routes for IronMule, in this order (none is built yet; each needs its protocol here before its data):**
+- **TC1, tensor-core rows for the stacked plans.**
+  - *Why:* KB2's smoke showed the same wall. The native row kernel's scalar float32 FMAs add about 15 ms per further
+    Gemma 3 12B row on a T4, so 8 rows give about 2x instead of the bandwidth bound's 8x.
+  - *Mechanism:* the T4 (sm75) has fp16 (65 TFLOPS) and int8 (130 TOPS) tensor cores. A row kernel on `mma.sync`
+    keeps each row's arithmetic independent of the others: fixed tile order, rows zero-padded to the tile. So the
+    plan stays batch-invariant.
+  - *Gate:* it changes numerics, so it is a numeric plan with the perplexity gate, which the agent may then choose.
+  - *Kill:* the stacked 8-row step must fall below half of KB2-0's measured 8-row step, with every row still
+    bit-identical alone and stacked.
+- **SP1, speculation from the context.**
+  - *Why:* AG4-Q showed the stacked engine losing for one request alone. Speculation is the single-request lever.
+  - *Mechanism:* drafts copied from the request's own prompt and earlier answer (no drafter to train), verified by
+    the stacked plan's rows. KB1's rows verify up to 8 positions bit-identically to one row, at 1.8x one row's cost
+    (KB1-0).
+  - *Why it is allowed now:* prompt-lookup speculation was dropped earlier because it changed tokens on the T4
+    (HW3). Under the owner's AG4 decision a plan may change answers if it passes the gate.
+  - *Kill:* a single request through the product must reach at least 1.3x the base path's tokens per second on
+    Dolly prompts, with time to first token no worse.
+- **KV8, an 8-bit KV cache in the stacked plans.**
+  - *Mechanism:* keys and values stored in int8 per token and head, and dequantized inside FA2's chunk loop. That
+    halves the pool, so Gemma 3 12B fits 16 slots instead of 8 on a T4, or longer slots.
+  - *Kill:* the perplexity gate, and AG4's rule on the larger pool.
+  - The cache holds the model's activations at run time, not its weights; the model is unchanged.
+- *Not carried over:*
+  - the int8 head (it re-quantises weights; the owner's boundary);
+  - HyperQwen's requantised drafter and its draft vocabulary (a second model);
+  - the recurrent-state precision (no such layer in our models);
+  - vLLM-specific patches.
+
+**From Strata ([mach10x/strata](https://github.com/mach10x/strata), read 2026-11-03).** It is llama.cpp-based, and
+runs a 125B mixture-of-experts model on a 12 GB card. What concerns running the model, not shrinking it:
+- *An online draft policy, which is a decision model of exactly the agent's kind* (`src/spec/draft_policy.cpp`):
+  - for each verify window size, an exponential moving average of the measured round time;
+  - for prompt-lookup drafts, an acceptance rate per match-length bucket, with a prior worth 4 observations that
+    real windows soon override;
+  - each round it picks the window size with the most expected tokens per millisecond, and drafts only where that
+    beats plain decoding by a margin;
+  - a size that has never been measured is probed a few times before its guessed cost may veto it.
+  - Measured there: code edits 6-11 % faster, other text unchanged, output the same (the model verifies).
+  - **SP1 takes this policy as its decision**, learned online per machine like the router's costs.
+- *An expert cache:* the most-used experts of a mixture-of-experts model fill spare VRAM, and the CPU computes the
+  rest in place at the same time; the cache adapts to the conversation.
+  - **EC1** (a route for when a mixture-of-experts model is served; `cuda_native` already runs Gemma 4 26B-A4B's
+    experts): the agent learns which experts are hot on this traffic and keeps them on the card.
+  - *Kill:* tokens per second over the plan without the cache, through the product.
+- *Prompts in chunks of 2,048-8,192 tokens* (see CP1).
+
+**From vLLM ([vllm-project/vllm](https://github.com/vllm-project/vllm) docs, read 2026-11-03).**
+- **CP1, chunked prefill with decode first** (`docs/configuration/optimization.md`). Long prefills are cut into
+  chunks and batched with the running decode steps, decodes scheduled first. A token budget per step trades
+  inter-token latency (small) against time to first token (large).
+  - *Why for us:* AG4-Q measured the dense engine's first token at 0.36 s on a 300-token prompt. A newcomer's
+    prefill stalls every running row (H10's joins), and AG4-R's smoke saw the stall dominate short answers.
+  - *Mechanism:* the stacked plan prefills a joiner in chunks between decode steps. The chunk size is a knob the
+    agent learns, like vLLM's `max_num_batched_tokens`, from measured step times.
+  - *Kill:* AG4-R-style traffic through the product: tokens per second no worse and running rows' inter-token
+    time lower, with time to first token no worse than one prefill at once.
+- **PK1, a paged KV cache** (`docs/design/paged_attention.md`). Keys and values live in fixed-size blocks allocated
+  as a request grows, not in a fixed slot per request. More requests and longer contexts fit the same memory, at the
+  same precision. This also answers H11's slot limit.
+  - *Kill:* concurrent requests that fit, and tokens per second at the product's context limit, no worse per step.
+- *Batch invariance* (`docs/features/batch_invariance.md`): vLLM offers it only from compute capability 8.0. KB1 and
+  KB2 give it on a T4 (7.5), which is why the stacked plans may take any width without moving an answer.
+- *Already here:* CUDA graphs (MLX's CUDA backend captures graphs) and prefix caching (the product's prefix reuse).
+
+### KB2 — Gemma 3 at 4 bit stacked into one decode step (opened 2026-11-03, owner decision, before data)
+
+**Why.** The owner's measure is tokens per second, with time to first token no worse. A 4-bit Gemma 3 under
+the `native` plan runs one request at a time on the reference worker. Gemma 3 12B makes about 21 tokens a second
+on a T4, because every step reads all 8 GB of weights for one token (AG3: about 53 % of the bandwidth). The
+dense plan showed the lever on Qwen 3 1.7B bf16: eight stacked rows decoded 3.8x faster than today's grouping
+(KB1-1), and through the product it cost 48.3 % less (H10). Order and width over batch-1 work cannot add tokens
+per second (AG1, AG2). Stacking can, and it gives the agent a width that moves them.
+
+**Mechanism.** `ironmule/dense_gemma.py`, a numeric plan of its own:
+- The linears run `ironmule/cuda_native.py`'s 4-bit row kernel. It already takes up to eight activation rows, each
+  in its own float32 chain with pinned roundings, and it is the native plan's decode path at one row.
+- Attention runs FA2 from `dense_plan.py`, with three changes:
+  - E = D / 32 values per lane, for Gemma 3's head dimension of 256;
+  - the score scale as a constant (`query_pre_attn_scalar`);
+  - a sliding window: a row reads [max(0, length - window), length).
+  A row reads only its own slot and length, so the other rows and the pool's capacity cannot move its answer.
+- RoPE runs per layer kind, with one position per row (local base, or global base with linear scaling). The
+  embedding, the RMS norms with `1 + weight`, and GELU are the model's own.
+- Prefill is MLX's own, one request at a time, with plain caches and mlx-lm's masks. Its keys come out in
+  position order and go straight into the request's slot.
+- *Off CUDA:* `tests/engine/test_dense_gemma.py` checks the plan against mlx-lm's Gemma 3 step by step, with
+  FA2's semantics in plain MLX on a tiny random 4-bit model and prompts shorter and longer than its window. It
+  catches a wrong window, RoPE scale or embedding scale (each mutation fails the test).
+
+**KB2-0 (`tools/cuda_probe.py --plan kb2`, one Kaggle T4, about 1 session hour).**
+- *Setup:* `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`, with the native plan installed as the product
+  installs it.
+- *Pools:*
+  - eight slots of 1,024 tokens (3.2 GB beside the weights), with eight chat prompts, alternately short and with
+    700 tokens of context;
+  - then four slots of 2,048 tokens for rows of 1,300 tokens, past the 1,024-token window.
+- *Runs:* 48 decode steps.
+- **(a) Exact within the plan (a failure is a bug, fixed before anything else).** Every row's logits at every step
+  are bit-identical between the row alone and stacked at 3 and 8 rows (main pool), and at 4 rows (long pool).
+- **(b) The lever, kill.** The plan's stacked step at eight rows, over eight of today's single-request native
+  steps:
+  - five rounds, alternating, each a median over 48 steps;
+  - a 2,000-resample bootstrap over the rounds;
+  - it must have its 97.5 % bound below 0.5, so stacking at least doubles tokens per second at width eight.
+  - Otherwise KB2 stops: the row kernel's weight reads do not amortise on this model.
+- **(c) The numeric plans' quality gate, kill.** `ironmule/quality_reference.txt` is teacher-forced through
+  today's native decode (mlx-lm's own model and caches) and through the plan, eight rows stacked. The perplexity
+  ratio by `numeric_choice.ratio_interval` must pass below 1.005 on both paths:
+  - the gate's 16 x 512-token chunks;
+  - a long variant, 4 chunks scoring 128 tokens after a 1,536-token prefix, so past the window. It runs in the
+    2,048-token pool, four rows stacked.
+- **Recorded, no decision:**
+  - (d) the plan at one row over today's native step. Quiet traffic would regress if it is slower;
+  - the step time at every width 1-8, the cost curve the agent's width decision will price;
+  - where the plan's greedy tokens first differ from today's.
+- **Verdict:** (a), (b) and (c) together make the plan a candidate opt-in numeric plan for 4-bit Gemma 3. The next
+  step is its stacked executor in the product (as `--engine dense` for Qwen 3 bf16), with the agent deciding its
+  width. A product run on two T4s then measures tokens per second and time to first token against today's
+  native reference worker, under a protocol fixed here before that run.
+- **Smoke first:** a `--smoke` kernel on a T4 before the run checks the install, the kernels' compilation and the
+  path. It measures nothing, and costs about 0.25 of the week's remaining 0.9 GPU hours.
+- **Smoke result (2026-11-03, kernel `tobayko/ironmule-cuda-probe-kb2-smoke` v1 at `54f1894`, Kaggle T4, 7 minutes):
+  the tool works end to end.**
+  - The native plan installed (338 modules, probe error 0.0028), and the FA2 kernels compiled.
+  - Every stacked row was bit-identical to the row alone, in both pools.
+  - The plan's greedy tokens matched today's on all 8 prompts over the smoke's 5 tokens.
+  - *Descriptive, a smoke measures nothing:*
+    - one round of 4 steps gave 52.9 ms a step at one row against 52.1 ms for today's native step;
+    - about 15 ms more for each further row up to 6 rows, 162 ms at 7 rows, and 354 ms at 8 rows;
+    - the gate on 4 chunks of 12 tokens read 1.20 and 1.01, too few tokens to say anything.
+- **Amended after the smoke, before KB2-0's data (post hoc to the smoke, not to the run):** (b) is read at the width
+  with the most tokens per second on the median curve over the five rounds, fixed before the bootstrap, instead of
+  at 8 rows. The ratio at 8 rows is recorded beside it. The agent would serve the best width, and the smoke's step
+  jumped at 8 rows (register pressure in the row kernel at eight activation rows is the suspect, not yet shown).
+  The bound (below 0.5) and (a), (c) are unchanged.
+- **Run 1 failed, no data (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2` v1 at `03617a0`, Kaggle T4, about
+  6 minutes).** It stopped with `cudaMallocAsync ... out of memory` before any measurement, and the tool's report
+  kept only the error. The likely cause, from the code (the report recorded no stage): the probe ran today's native
+  path, for (d) and for the gate's references, while the plan's 3.2 GB pool was already allocated. That path
+  computes the head at every prompt position through a float16 copy of the 262,144-row head (about 2 GB), which
+  `cuda_native.head_skip_needed` lets fit beside the 8 GB of weights alone, not beside a pool as well. The smoke's
+  pools were 64 and 128 tokens, so it could not show this.
+  - *Tool fix, no change to the protocol:* every native reference that needs the head runs before any pool exists,
+    and (b)'s native step fills its cache with the trunk alone (the same keys and values; the timed decode steps
+    are unchanged). The report now keeps the stage reached, the allocator at each stage and everything measured
+    before a failure.
+  - *Run 2* is the same KB2-0 under the same rules, (b) as amended above.
+- **Run 2: valid, does not pass; KB2 stops at its quality gate (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2`
+  v2 at `9d388e9`, Kaggle T4, MLX 0.32.4, mlx-lm 0.31.3, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`, about
+  26 minutes).** The run reached its end; the allocator peaked at 12.6 GB (11.1 GB during the native references
+  before any pool), so the fix held.
+  - **(a) passes.** Every row's logits were bit-identical alone and stacked: 144/144 steps at 3 rows, 384/384 at 8
+    (main pool) and 192/192 at 4 rows (long pool, past the window). The install probe matched as well.
+  - **(b) passes, narrowly.** The best width on the median curve is 6: six stacked rows cost 0.4985 of six of today's
+    single native steps (95 % 0.4979-0.4991, below 0.5), so **2.006x the tokens per second**. Five rounds agreed
+    within 1 ms. Step time by width, median ms: 48.8, 67.8, 85.1, 113.0, 122.1, 141.3, 190.3, 394.1 (widths 1-8);
+    today's native step 47.3. Recorded: at 8 rows the ratio is 1.042, slower than eight single steps (the smoke's
+    jump at 8 rows, now measured).
+  - **(c) fails on the main path.** Main, 16 x 512 tokens: ratio 0.984, 95 % 0.825-1.177, not below 1.005. Long, 4
+    chunks after a 1,536-token prefix: ratio 0.9994, 95 % 0.9950-1.0033, passes. The gate needs both.
+  - **(d), recorded:** at one row the plan's step is 1.033x today's native step (3.3 % slower). Its greedy tokens
+    matched today's for all 48 steps on 5 of 8 prompts and first differed at steps 14, 20 and 42 on the others.
+  - **Verdict by the fixed rule: does not pass as a whole. KB2 stops at (c) and goes to Tier 0.** The ledger entry
+    in the research repository is still owed.
+  - *Post hoc reading (after the data; it changes no verdict):* the main path's failure comes from 3 of 16 chunks.
+    13 differ from the reference by at most 0.12 nats a token, while chunk 1 is 0.95 worse, chunk 2 0.99 better and
+    chunk 4 0.25 better. Both signs is not a uniform loss of precision. The main chunks start mid-text with no prefix
+    and no BOS token, where Gemma 3's first position is known to carry outsized activations. The data cannot tell
+    whether that start makes both paths unstable, or whether the plan has a bug at a one-token prefill. Telling
+    them apart needs a diagnostic, not a re-gate: the per-token NLL of chunks 1, 2 and 4 under the plan, today's
+    native path and mlx-lm's unmodified bf16 path. A bug found there would be a new implementation, and that would
+    need a new gate, fixed before its data. The gate's text and chunking stay as fixed.
+- **KB2-D, the diagnostic of those chunks (owner approved 2026-11-07; fixed now, before its data; descriptive only,
+  it changes no verdict).** `tools/cuda_probe.py --plan kb2d` on one Kaggle T4, about 0.3 session hours, same model
+  and revision. It records the per-token NLL of the gate's main chunks 0-4 (1, 2 and 4 diverged; 0 and 3 are
+  controls) on seven paths:
+  - `stock_oneshot` and `stock_oneshot_bos`: mlx-lm unmodified (MLX's own quantized matmul), the whole chunk in one
+    forward, run before the native plan is installed;
+  - `native_oneshot`: the native plan, the whole chunk in one forward;
+  - `native_decode` and `native_decode_bos`: the native plan teacher-forced one token a step, the gate's reference;
+  - `plan_decode` and `plan_decode_bos`: the Gemma plan, one row, teacher-forced the same way, the gate's plan side.
+  The `_bos` paths put the tokenizer's BOS token before the chunk and score the same tokens.
+  - *Agreement:* two paths agree on a chunk when their mean NLL differs by at most 0.12 nats a token (the largest
+    gap among run 2's 13 close chunks).
+  - *Check first:* `native_decode` and `plan_decode` reproduce run 2's chunk means (same code); if they do not, the
+    run says nothing about run 2.
+  - *Read as, on chunks 1, 2 and 4:*
+    - **a plan bug is suspected** if `plan_decode` disagrees with `native_decode` while `native_decode` agrees with
+      `stock_oneshot` or `native_oneshot`. The first position where the plan's per-token NLL leaves the native one
+      by more than 1 nat is where to look. A fix is a new implementation and needs a new gate, fixed before its
+      data;
+    - **the starts are unstable for every path** if `native_decode` disagrees with both one-shot paths too, while
+      the controls agree. No plan bug is shown then;
+    - **the missing BOS is the trigger** if, on all five chunks, `plan_decode_bos` agrees with `native_decode_bos`.
+  - KB2 stays in Tier 0 whatever this shows. The gate's text and chunking are not changed after the fact.
+- **KB2-D result (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2d` v1 at `e763e31`, Kaggle T4, 20 minutes,
+  peak 11.1 GB).** The check holds: `native_decode` and `plan_decode` reproduce run 2's chunk means to four places.
+  Mean NLL a token:
+
+  | Chunk | stock one-shot | native one-shot | native decode | plan decode | stock + BOS | native + BOS | plan + BOS |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 0 | 2.923 | 2.914 | 2.921 | 2.917 | 3.037 | 3.049 | 3.042 |
+  | 1 | 5.246 | 5.419 | 5.317 | 6.267 | 2.712 | 2.712 | 2.706 |
+  | 2 | 6.445 | 5.977 | 6.688 | 5.696 | 2.748 | 2.738 | 2.739 |
+  | 3 | 4.222 | 4.337 | 4.297 | 4.280 | 2.476 | 2.475 | 2.478 |
+  | 4 | 4.992 | 4.907 | 5.142 | 4.897 | 2.669 | 2.675 | 2.670 |
+
+  - *Readings by the fixed rule:*
+    - **The missing BOS is the trigger: yes.** With BOS, the plan agrees with today's native path on all five
+      chunks, within 0.000-0.007 nats a token, and no token differs by more than 1 nat on chunks 1, 2 and 4.
+      Every path's NLL on chunks 1-4 falls from 4.2-6.7 to 2.5-2.7.
+    - **Chunks 2 and 4: unstable for every path.** Without BOS, `native_decode` disagrees with both one-shot paths
+      as well. On chunk 2, today's own one-shot and decoded paths differ by 0.71 nats a token.
+    - **Chunk 1: a plan bug is suspected by the rule.** The plan is 0.95 above `native_decode`, which agrees with
+      both one-shot paths (0.07 and 0.10). The plan first leaves it by more than 1 nat at token 14.
+  - *Post hoc reading (after the data; it changes no verdict):* without BOS the independent paths themselves spread
+    by up to 0.47 nats a token (stock one-shot against native one-shot, chunk 2), so chunk 1 may be the same
+    instability with the plan landing furthest out. With BOS the plan sits within 0.006 of the native path on
+    chunk 1 too. This run cannot rule a plan bug in or out on chunk 1. What it shows is that the gate's main
+    chunks, which start mid-text with no BOS, put Gemma 3 where every path, today's included, is unstable. Chat
+    prompts always start with BOS.
+  - *What follows, for the owner to decide:* the gate's text and chunking are shared by every numeric plan and by
+    the agent's on-machine gate (`ironmule/numeric_choice.py`), so changing them is a decision across plans, not
+    a fix for KB2. If the gate gets BOS-led chunks, KB2 can be re-gated under a protocol fixed before that run.
+    KB2 stays in Tier 0 until then. The ledger entry is still owed.
+
+- **KB2-G, KB2 reopened under gate 2 (owner decision 2026-11-07; fixed now, before its data).** It reopens the Tier 0
+  entry "KB2 Gemma 3 4-bit stacked decode plan", whose kill was (c): "The perplexity ratio by
+  `numeric_choice.ratio_interval` must pass below 1.005 on both paths." The new hardware evidence is KB2-D: without
+  BOS every path is unstable on the gate's chunks, and with BOS the plan is within 0.007 nats a token of today's
+  native path on all five chunks tested. The gate itself changes for every plan (GATE2 below), not for KB2 alone.
+  - *Run:* `tools/cuda_probe.py --plan kb2g` on one Kaggle T4, the same model and revision, about 0.5 session hours.
+    The plan's code is unchanged since run 2. The run checks this: its install must report run 2's kernel SHA-256
+    (`54b1d3a2...`) and plan version 1, or the run is invalid.
+  - **(c) decides, as fixed for KB2-0, on gate 2's chunks:** the main 16 x 512-token chunks, each after the BOS
+    (chunk 0 already starts with the text's own BOS), eight rows stacked; the long 4 x 128 tokens after a
+    1,536-token prefix that starts with the BOS, four rows stacked. Both paths' upper bounds must be below 1.005.
+  - **(a) decides again:** every row bit-identical alone and stacked, in both pools. A failure is a bug.
+  - **(b) stays decided by run 2** (width 6, ratio 0.4985, 95 % 0.4979-0.4991). This run records (b) and (d) again,
+    descriptive only. If the recorded ratio reads at or above 0.5, that is noted as a limitation, and the product
+    run decides, since it measures tokens per second itself.
+  - *Verdict:* (a) and (c) here, with run 2's (b), make the plan a candidate opt-in numeric plan for 4-bit Gemma 3.
+    The next step is then the one fixed under KB2's verdict above. Otherwise KB2 returns to Tier 0 with this run's
+    numbers.
+
+- **KB2-G result: valid, does not pass; KB2 returns to Tier 0 (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2g`
+  v1 at `4a01f49`, Kaggle T4, 26 minutes, peak 12.6 GB).** The plan was run 2's: kernel `54b1d3a2...`, version 1,
+  eight 1,024-token slots. Gate 2 led 15 of 16 main chunks with BOS; chunk 0 starts with the text's own.
+  - **(a) passes again:** 144/144, 384/384 and 192/192 steps bit-identical.
+  - **(c) main passes:** 16 x 512 tokens, ratio 0.9988, 95 % 0.9967-1.0008. Every chunk is within 0.010 nats a
+    token of the native path.
+  - **(c) long fails:** 4 x 128 tokens after a 1,536-token prefix, ratio 1.0003, 95 % 0.9944-1.0080, not below
+    1.005. The gate needs both paths.
+  - *(b) and (d), recorded:* at width 6 the ratio read 0.5074 (95 % 0.5022-0.5121, 1.97x tokens per second) on
+    this card, whose native step was 48.8 ms against run 2's 47.3. Run 2's (b) decided, so this changes nothing.
+    It is noted as a limitation: the margin over 2x does not hold on every T4. The ratio at width 8 read 1.039. At
+    one row the plan was 1.040x today's step.
+  - **Verdict by the fixed rule: does not pass. KB2 returns to Tier 0, and AG5-G, which needed KB2-G to pass, does
+    not run.** The ledger entry is still owed.
+  - *Post hoc reading (after the data; it changes no verdict):* the long path's chunk differences were -0.0073,
+    -0.0006, -0.0022 and +0.0114 nats a token, a mean of +0.0003. The bound fails on one chunk whose gap is as large
+    as the main path's widest (-0.0100). With 4 chunks of 128 scored tokens, 512 in all against the main path's
+    8,192, the bootstrap cannot clear a 0.5 % bound with this spread. So the long path's failure is a matter of power
+    as much as of quality: neither a loss nor its absence is shown past the window. In the product the plan at
+    width 6 gets 1,024-token slots, which never pass the 1,024-token window. Whether the plan may serve there, scoped
+    to the window, is a new claim; it needs its own protocol and fresh data, and the owner's decision.
+
+- **KB2-L, the long path with power (owner decision 2026-11-07; fixed now, before its data).** It reopens KB2's
+  Tier 0 entry once more. The kill it failed was (c), long path: "the perplexity ratio by
+  `numeric_choice.ratio_interval` must pass below 1.005" on 4 chunks of 128 tokens past the window. The new
+  evidence is KB2-G itself. Its main path passed, and its long path's mean was 1.0003, but 4 chunks, 512 scored
+  tokens, could not clear the bound with the per-chunk spread the main path shows (up to 0.010 nats).
+  - *Power, fixed before the data:* the bound is 0.005 nats a token (ln 1.005). The 95 % half-width of a mean over
+    n windows is about 1.96 x SD / sqrt(n). At KB2-G's long spread (SD 0.0079 nats) that is 0.0078 for 4 windows,
+    wider than the bound even at a true ratio of 1, and 0.0039 for 16. At the main path's spread (SD 0.0043) it is
+    0.0021 for 16.
+  - *Run:* `tools/cuda_probe.py --plan kb2l` on one Kaggle T4, the same model and revision, at a pushed commit,
+    about 0.2 session hours. The plan is run 2's (`dense_gemma.py` unchanged since `9d388e9`).
+  - *Windows:* 16, each a 1,536-token prefix led by exactly one BOS (gate 2), then 128 scored tokens past the
+    1,024-token window, spread over the quality text as H11 spreads its windows (scored tokens disjoint). The
+    plan runs four rows stacked in 2,048-token slots, against today's native decode teacher-forced on the same
+    windows.
+  - **Decides:** the long path passes if its ratio's 95 % upper bound is below 1.005 over all 16 windows, and the
+    long pool's rows are bit-identical alone and stacked. Fewer than 16 windows, or any exactness miss, fails it.
+  - *Verdict:* a pass, with KB2-G's (a) and main path and run 2's (b), makes KB2 a candidate opt-in numeric plan
+    for 4-bit Gemma 3, and AG5-G may then run as fixed. A fail keeps KB2 in Tier 0 with no further re-gate.
+
+- **KB2-L result: passes (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2l` v1 at `7f05b80`, Kaggle T4, 8
+  minutes, peak 12.6 GB). KB2 is a candidate opt-in numeric plan for 4-bit Gemma 3.**
+  - Long path, 16 windows of 128 tokens after a BOS-led 1,536-token prefix: ratio 0.9973, 95 % 0.9935-1.0012,
+    below 1.005. The differences per window ranged from -0.0161 to +0.0123 nats a token, mean -0.0027.
+  - The long pool stayed bit-identical, 192 of 192 steps alone and stacked at 4 rows.
+  - With KB2-G's (a) and main path (0.9988, 95 % up to 1.0008) and run 2's (b) (2.006x at width 6), KB2's verdict
+    is met. AG5-G may now run as fixed. The ledger entry is still owed.
+
+### KB3 — The Gemma plan's attention reads its keys coalesced, one warp per query head, arithmetic unchanged (opened 2026-11-07, before data)
+
+**Why (AG5-G run 4).** On a T4 with Gemma 3 12B at 4 bit, the agent's own measurement found the stacked plan 2.12x
+faster at width 6, but 0.897x for one request alone. AG4's floor is 0.9, so the agent refused the plan. The plan's
+one-row step rose from 50.4 ms to 57.8 ms between the short and the long prompt (about 300 tokens), while the
+native path's rose by 0.2 ms. That rise is FA2 (`dense_gemma.PARTIAL`):
+- at one row only one warp per KV head and 64-key chunk runs: 40 warps for 300 tokens on a 40-SM card;
+- each lane reads its own 512-byte key row in 2-byte loads, and does so again for each of the G query heads
+  that share a KV head (G = 2 for Gemma 3 12B).
+
+**Mechanism (FA2 version 2; it ran in KB3-0 and is removed since KB3-1, its source at `09db8ad`).**
+1. One warp per (row, KV head, query head, chunk) instead of per (row, KV head, chunk) looping over the G query
+   heads. That gives G times the warps at one row, and each warp does exactly the former loop body for its head.
+2. Each warp stages its chunk's keys in shared memory, 32 dimensions at a time, with coalesced loads: the 32 lanes
+   read 64 contiguous bytes of one key row. Each lane then forms the same products in the same order (dimension
+   0 to D-1) from shared memory.
+The combine kernel and every other step are unchanged. Every floating-point operation and its order stay the
+same, so v2's outputs must be bit-identical to v1's. That is why KB2's gate and exactness can carry over, and why
+the test below demands bit-identity.
+
+**KB3-0, the hardware test (fixed now, before its data).** One Kaggle T4, `tools/cuda_probe.py --plan kb3`, about
+0.4 session hours. The model, revision and plan are KB2's: native plan first, eight 1,024-token slots.
+- *(a) Exactness, bit for bit, v2 against v1 on the same inputs:*
+  - random pools at widths 1 to 8, with lengths from 1 to the capacity, with and without a window, and for 1, 2
+    and 4 query heads per KV head;
+  - and 64 real decode steps of the plan at widths 1, 6 and 8, run once with each version from the same
+    prefills: every step's logits identical.
+- *(b) Speed:* plan_choice's own timing, the native path's one-request step and the plan's step at every width
+  on its short and long prompts, with v1 and v2 alternated over 3 rounds (medians).
+- **Decision:**
+  - if any bit differs in (a), v2 is rejected (Tier 0);
+  - if (a) holds, v2's one-request ratio by AG4's formula (`stacked_one / base_one`) is at least 0.92, and its
+    best-width tokens per second are within 2 % of v1's or better, v2 becomes the plan's kernel (`PLAN_VERSION`
+    2). KB2's verdict then carries over by (a), and AG5-G runs again as fixed (run 5);
+  - if (a) holds but (b) falls short, the result is recorded and v1 stays.
+- *Recorded, no decision:* v1's ratio in the same session, each width's step under both versions, and the
+  attention's share of the one-row step.
+- **KB3-0 result: (a) passes, (b) does not; v1 stays (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb3` v1 at
+  `09db8ad`, Kaggle T4, 20.5 minutes, peak 12.3 GB).** The plan was KB2's: kernel `54b1d3a2...`, version 1,
+  eight 1,024-token slots, at revision `86cc6a8`.
+  - **(a) Bit-identical:** all 48 random cases (G of 1, 2 and 4; D of 256 and 128; widths 1 to 8; windows),
+    and every one of 64 real decode steps at widths 1, 6 and 8 (logits hashes and tokens).
+  - **(b) Not fast enough:** v2's one-request ratio by AG4's formula was 0.904, below 0.92 (v1 in the same
+    session: 0.889). The native path made 20.57 tokens per second alone.
+  - *Recorded:*
+    | step at one row | v1 | v2 |
+    | :-- | --: | --: |
+    | long prompt (314 tokens) | 60.28 ms | 54.29 ms |
+    | short prompt (12 tokens) | 50.04 ms | 53.25 ms |
+    - v2 helped the long prompt by 6.0 ms but cost the short one 3.2 ms.
+    - At the best width, 6, v2 made 47.81 tokens per second against v1's 45.93 (+4.1 %).
+  - *Why the short prompt lost (an inference from the kernels, not measured):* v2 stages all 64 key rows of a
+    chunk and forms both keys' products in every lane, valid or not. v1 skips a lane's invalid key. With 12
+    tokens, v2 does about five times v1's key work, and its second warp per KV head adds launch work that a short
+    context cannot use.
+  - By the rule, v1 stays and `FA2_VERSION` remains 1. AG5-G does not run again on KB3-0.
+- **KB3-1, version 3 (fixed now, before its data; a new implementation, so this is not a re-analysis of KB3-0).**
+  - *Mechanism:* v2, plus three changes that keep every operation and its order:
+    - the tile loads only the chunk's valid rows (its `count`, the same for the whole warp);
+    - the second half of a chunk's keys is computed only when the chunk has more than 32 of them (also the same
+      for the whole warp);
+    - the row loop is unrolled by 8, so more loads are in flight.
+  - *Test:* KB3-0's protocol unchanged, with v3 in v2's place. (a) is v3 against v1, bit for bit, on the same
+    random pools and decode steps. (b) uses the same thresholds: a one-request ratio of at least 0.92, and the
+    best width within 2 % of v1's.
+  - *Decision:* as KB3-0. If v3 passes, it becomes the plan's kernel (`FA2_VERSION` 3, `PLAN_VERSION` 2), and
+    AG5-G runs again (run 5). If not, v1 stays and KB3 closes in Tier 0 with both results.
+- **KB3-1 result: passes; v3 is the plan's kernel (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb31` v1 at
+  `191484c`, Kaggle T4, 19.9 minutes, peak 12.3 GB).** The plan was KB2's: kernel `54b1d3a2...`, version 1, eight
+  1,024-token slots, at revision `86cc6a8`. The protocol was KB3-0's, with v3 in v2's place.
+  - **(a) Bit-identical:** all 48 random cases, and every one of 64 decode steps at widths 1, 6 and 8.
+  - **(b) Fast enough:** v3's one-request ratio by AG4's formula was 0.928, at least 0.92 (v1 in the same
+    session: 0.884). Its best width, 6, made 46.09 tokens per second against v1's 44.87 (+2.7 %). The native path
+    made 20.93 alone.
+  - *Recorded:*
+    | step at one row | v1 | v3 |
+    | :-- | --: | --: |
+    | long prompt (314 tokens) | 57.98 ms | 52.61 ms |
+    | short prompt (12 tokens) | 50.56 ms | 50.36 ms |
+  - *Shipped:* `dense_gemma.FA2_VERSION` is 3 and `PLAN_VERSION` 2. By (a), the plan's answers are v1's, so
+    KB2's gate and exactness verdicts carry over, and the agent still gates the plan on its own card at startup.
+    v1 stays as the reference for this comparison. v2 is removed; its source is at `09db8ad`, where KB3-0 ran it.
+  - *Next:* AG5-G run 5, the same AG5-G at the commit that ships v3, run once. The ledger entry is still owed.
+
+### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
+
+**Why.** KB2-D showed that the gate's main chunks, cut from mid-text with no BOS, put Gemma 3 where every path,
+today's included, is unstable: without BOS today's own one-shot and decoded paths differed by up to 0.71 nats a
+token on one chunk. With BOS all seven paths agreed. Chat requests always start with BOS. The research gate has put
+BOS on every chunk since PORT2-K (2026-09-26), after Gemma 4's tokenizer, which adds none when it encodes, left the
+chunks without it. The product's gate (`ironmule/numeric_choice.py`) had not followed.
+
+**Rule (`GATE_VERSION` 2).** Each chunk is scored on the same tokens as before, after the tokenizer's BOS token as
+unscored context. A chunk that already starts with BOS gets no second one: Gemma 3's tokenizer puts BOS before the
+text, so chunk 0 is unchanged. The bound (1.005), the bootstrap, the text and the chunk sizes are unchanged. It
+applies everywhere the gate's chunks are built:
+- NUM1's one-shot gate (`nll_per_chunk`);
+- the agent's stacked-engine gate (`plan_choice.measure_stacked`);
+- `tools/kaggle_whole_machine.py`;
+- the CUDA probe's gate items for KB1, KB2 and H11, including the long prefixes.
+
+KB2-D's own tool keeps the lead-free chunks it ran on.
+
+**Scope, checked on the tokenizers in use:**
+- Qwen 3 declares no BOS (`bos_token` null), so its gate is unchanged. Every Qwen result stands as measured,
+  AG4-R's included.
+- Gemma 3 (`<bos>`, added when it encodes) gets BOS on chunks 1-15.
+- SmolLM2-135M-Instruct declares `<|im_start|>` and adds none when it encodes. All its chunks now start with it,
+  as each of its chat requests does.
+
+**Old evidence.** Results measured under gate 1 stay as recorded, scoped to that gate. A decision the product or the
+agent stored under gate 1 (`numeric.json`, `plan_choice.json`) no longer authorises anything. It is measured again
+on the next start, because both stores now record the gate version and read only their own.
+
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 
 **Mechanism.** TB1 found that MLX's bf16 product at 2 to 32 rows runs at 41-45 GB/s against 252 at one row on the
@@ -1197,7 +4689,7 @@ runs (i) with that loop (`DenseBackend.steps_group`, 4 steps per host read); com
 needs a functional pool update first, since `DensePlan.forward` writes its slots in place. It is open as a next
 step and is not shipped. Still owed: the ledger entry.
 
-**H8: the dense plan through the product (fixed 2026-10-29 before its data; `tools/rl2_headroom.py --plan h8`,
+**H8: the dense plan through the product (fixed 2026-10-29 before its data; `training/rl2_headroom.py --plan h8`,
 Kaggle T4 x2, about 2 session hours).** `--engine dense` serves the plan on the tuned engine's worker path. Its
 slot-pool executor and bridge are in `ironmule/dense_plan.py`, `ironmule_product/engine_bridge.py` and the worker,
 with contract tests on CPU stand-ins. The arms are:
@@ -1322,7 +4814,7 @@ product-level gain is unknown, because of what the probe did not see:
 - more traces instead, for power;
 - compile churn is recorded.
 
-**Test (`tools/rl2_headroom.py --plan kp1`, Kaggle T4 x2, about 2.3 session hours).**
+**Test (`training/rl2_headroom.py --plan kp1`, Kaggle T4 x2, about 2.3 session hours).**
 - **Preflight (kill 1):** in a process of its own on one card, the baseline and the KP knobs are compared bit for
   bit, HW4's method: prefill logits, then 24 decode steps fed the baseline's tokens. It runs on a short and a long
   prompt, at 16 capacities from 64 to 8,192 where the prompt fits, plus every capacity this run's traffic produces.
@@ -1404,7 +4896,7 @@ validity let `knobs.json` ship". What changed is the implementation: the first-t
 
 H9 measures all three engines in one run, so every combination meets the same traffic.
 
-**Test (`tools/rl2_headroom.py --plan h9`, Kaggle T4 x2).**
+**Test (`training/rl2_headroom.py --plan h9`, Kaggle T4 x2).**
 - **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally. 12 fresh traces (75-86) in three
   rounds of four.
 - **Engines:** `tuned` (the default: baseline knobs, RL6's qualified schedule `shortest/w2/g0/sjf`), `kp` (the
@@ -1554,7 +5046,7 @@ instead of failing it. RL8's dense model, fitted to H9 and passing its fidelity 
 off the plan's cost from that: w8/sjf 8.98 and w4/sjf 8.88, against 11.30 without joins. The recommendation
 covers the product only after this configuration is checked on hardware.
 
-**Test (`tools/rl2_headroom.py --plan h10`, Kaggle T4 x2, about 3 session hours).**
+**Test (`training/rl2_headroom.py --plan h10`, Kaggle T4 x2, about 3 session hours).**
 - **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally; 12 fresh traces (87-98) in four
   rounds of three. Each round starts both engines' pools in turn, the first one alternating.
 - **Arms:** `tuned:shortest/w2/g0/sjf` (the default, A/A per block), `dense:shortest/w8/g0/sjf` (H9's arm, A/A
@@ -1681,7 +5173,7 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
   - `nvidia-smi`'s memory in use;
   - the tier `slot_capacity` picks on the card.
 
-**Test, part (b): `tools/rl2_headroom.py --plan h11`, Kaggle T4 x2, about 1.8 session hours. It runs only after
+**Test, part (b): `training/rl2_headroom.py --plan h11`, Kaggle T4 x2, about 1.8 session hours. It runs only after
 (a) passes, at the commit that then admits the 8,192 tier (`SLOT_TIERS = H11_TIERS`) and changes nothing else.**
 - **Setup:** H10's pool, model, revision, cost and states, weighted equally; 8 fresh traces (99-106) in two
   rounds of four. Each round starts both engines' pools in turn, the first one alternating.
@@ -1715,6 +5207,21 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
 - **Status (2026-10-30):** (a)'s kernel (`tobayko/ironmule-cuda-probe-h11`, commit `35d082e` for the tools) was
   refused by Kaggle: the weekly 30-hour GPU quota is used up. It runs when the quota resets, at the commit that
   carries this status.
+- **Result, part (a) (2026-11-01, kernel `tobayko/ironmule-cuda-probe-h11` v1 at `3cb1e8f`, one Kaggle T4, 0.22
+  session hours): the 8,192-token slots do not ship. The plan keeps 2,048-token slots, and (b) does not run.**
+  - (a1) passes. Every row's tokens and logits are bit-identical between the slot sizes. The 8,000-token row
+    matched at all 256 logit steps beside seven short rows.
+  - (a2) `harm`. The larger slot costs 8.1 % per step (95 % 7.8-8.4 %, noise 0.9 %), with harm at every width:
+    7.2 % at width 1, 19.4 % at 2, 4.2 % at 4 and 1.7 % at 8. This is the empty-warp cost the mechanism named.
+  - (a3) passes. The peak was 13.68 GB, against a bar of 15.62 GB, with a CUDA context of 0.64 GB.
+  - (a4) fails, which is a kill. At 3,000-token prefixes the perplexity ratio is 1.0003 (95 % 0.9965-1.0035, a
+    pass). At 6,000 it is 1.0070 (95 % 1.0059-1.0078), above the 1.005 bound.
+  - Recorded: prefill takes 2.77 s, 5.84 s and 13.34 s at 2,000, 4,000 and 8,000 tokens. One 8,000-token row
+    makes an eight-row step 1.44 times as long as eight short rows.
+  - By the ship rule, `install` keeps `SLOT_TIERS` at 2,048, and `--engine dense` keeps refusing longer requests.
+    The FA2 grid cut that (a2)'s harm calls for is moot while (a4) fails. Reopening needs a changed mechanism
+    for long-context quality, not a rerun.
+  - Ledger entry owed.
 
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
@@ -1767,7 +5274,7 @@ cannot be enumerated on hardware. **The objective stays the product's request co
 to first content). Every phase's improvement is credited and reported per phase (prefill, decode, queueing).
 Clipping each phase at zero is rejected, because it would reward arms that are slower overall.
 
-**Plan, in `tools/rl4_agent.py`.**
+**Plan, in `training/rl4_agent.py`.**
 1. Give the pool model parameters per knob set from HW3 and HW4: prefill ms per prompt length per prefill set,
    decode ms per round and per further session per decode set, compile seconds per new body. Speculation and
    readback apply only at width 1.
@@ -2171,6 +5678,94 @@ processes again.
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
 
+- **The ggml engine at 1.2x `llama-server` with llama.cpp's options and on larger models (2026-11-11).** Experiments
+  GG3-F and GG3-Q (this container, commit `d330998`; see GG3 above): against `llama-server` with the same options,
+  SmolLM2-135M 0.87x under load (95 % 0.81x to 0.96x) and 0.98x alone, Qwen3-0.6B 1.16x (1.12x to 1.19x) and 1.52x
+  (against a setting that slows `llama-server` alone), Qwen3-1.7B 1.11x (1.05x to 1.16x) and 1.04x (0.99x to 1.10x);
+  against `llama-server`'s defaults Qwen3-0.6B reached 1.33x under load (1.31x to 1.35x) but 1.04x alone. No model
+  reaches 1.2 in both halves against either reference. Re-open with kernels of our own below llama.cpp's, speculation
+  that finds more on real traffic, or another machine, under a new protocol.
+
+- **The ggml engine at 1.2x `llama-server`, second attempt (2026-11-11).** Experiment GG2-H (this container, commit
+  `115090b`; see GG2 above): with the path around the kernels fixed, 1.00x under load (95 % 0.94x to 1.07x) and 1.14x
+  one request at a time (1.09x to 1.20x), first tokens 10-20 ms later; the 1.2 goal is not reached. Both sides run
+  llama.cpp's kernels at its default setting, which is the ceiling for scheduling. Re-open with a lever llama.cpp does
+  not have at the same quality (kernels of our own, or a quality criterion that admits flash attention with
+  `llama-server` given the same option), another model or machine, under a new protocol.
+
+- **The ggml engine at 1.2x `llama-server` on this CPU and model (2026-11-10).** Experiment GG1-H (this container,
+  commit `2793352`; see GG above): through the product, 0.81x under load (95 % 0.74x to 0.89x) and 1.05x one request
+  at a time (0.94x to 1.20x), first tokens later; the gate allowed only llama.cpp's default setting. Re-open with a
+  product path that streams a request's first token before the rest of its block is prefilled, a lever beyond
+  llama.cpp's kernels, a quality criterion that admits flash attention (the owner's to set, QG1), or another model or
+  machine, under a new protocol.
+
+- **SP3's speculation policy (version 2) as the agent's default (2026-11-10).** Experiment SP3-H (this container,
+  commit `5517512`; see SP3 above): every answer equal, but one request at a time 1.14x (95 % 1.05x to 1.25x) against
+  1.3, and one load block at 0.936x against 0.98. Post hoc: the policy stopped speculating once a line fitted from 2-3
+  noisy steps priced added rows at 22-30 ms each, and it never explored again. Re-open with a policy that keeps
+  probing (a minimum number of speculative steps per row count before the line may veto them), under a new protocol
+  on prompts not used here.
+
+- **Speculation from the context with a learned window as the agent's default on the CPU plan (2026-11-10).**
+  Experiment SP2-H (this container, commit `ee6f9d8`; see SP2 above): with SmolLM2-135M-Instruct-8bit, OpenBLAS and
+  the CPU stacked engine, every answer was equal and load was unharmed (1.04x), but one request at a time it made
+  1.40x the tokens per second (95 % 1.21x to 1.63x) against a bound of 1.3. `--speculate context` stays opt-in;
+  `auto` leaves it off. Re-open with a changed mechanism (for example no drafts from 1-token matches, step prices
+  from more samples), another model or CPU, under a new protocol on prompts not used here.
+
+- **Speculation from the context at a fixed window on the CPU plan (2026-11-10).** Experiment SP1-0 (this container,
+  commit `59f26ff`; see SP1-0 above): with SmolLM2-135M-Instruct-8bit on OpenBLAS, prompt-lookup drafts verified as
+  rows of one slot were exact on all 48 Dolly prompts at `k` = 2, 4 and 7, and made 1.315x, 1.381x and 1.475x the
+  sequential tokens per second, but the best lower bound was 1.23x against SP1's 1.3. Re-open with a changed mechanism
+  (a window chosen per request, which (c) measured at 1.076x over the best fixed `k`, or drafts from another source),
+  another model or workload, under a new protocol on prompts not used here.
+
+- **An online-learned join order inside the stacked engine (2026-11-10).** Experiment AG9 step S (simulation at
+  `a655ac7`, priced by the agent's CPU6-A2 measurement; see AG9 above): over `fifo`, no order had headroom in any of
+  RL2-H2's three states by the rule fixed before the data. Longest first made up to 1.067x the tokens per second in
+  `spike` with first tokens 1.46x later; shortest first brought first tokens at most 0.89x. Re-open with an engine
+  whose step cost depends on the order (a different width per state, a prefill that does not stall decode), a
+  different objective chosen by the owner, or hardware data contradicting the engine model, under a new protocol.
+
+- **CPU6 step 3 as fixed: the agent's own CPU setup at 3x (2026-11-10).** Experiment CPU6-A (this container, commit
+  `b71b1ce`; see CPU6 above): with SmolLM2-135M-Instruct-8bit the agent chose `dequantize` on OpenBLAS by itself and
+  refused the CPU stacked engine on AG4's first-token check (1.16x later on a 10-token prompt, 14 ms). Through the
+  product that served 2.85x AG4's earlier CPU choice (95 % 2.78x to 2.92x), below the bound of 3.0. Re-open with a
+  changed mechanism (a stacked plan whose single-request first token is no later) or a first-token rule fixed for
+  machines without `route`, under a new protocol on fresh data. **Reopened as CPU6-A2 (owner decision 2026-11-10: the mechanism, not the rule) and
+  passed** at `7271b7a`: the plan's prefill head at one row, 15 first-token samples per path on a CPU; the agent chose
+  the stacked engine on OpenBLAS by itself and served 12.7x (95 % 12.2x to 13.1x). This entry stays as its history.
+
+- **AG6 dreaming as the agent's only reaction to a load change (2026-11-08).** Experiment AG6-Q (kernel
+  `tobayko/ironmule-rl2-headroom-ag6q` v1, commit `cc76d3f`; see AG6-Q above): on one T4 with Qwen 3 1.7B bf16 at
+  `9cd6692`, quiet traffic, a 48-request spike and quiet traffic again, 3 repetitions. The agent served the spike at
+  0.582x the forced stacked engine's tokens per second, with first tokens 1.61x later. In the quiet phase after it,
+  its first tokens were 1.88x the single path's, because it held the stacked engine for 64 requests. The simple
+  busy rule came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first token in
+  every phase. A dream every 16 requests over the last 64
+  does not follow such a change. Re-open with a mechanism that reacts per request (AG7), or with new evidence on
+  the dreams' cadence and window.
+
+- **KB2 Gemma 3 4-bit stacked decode plan (2026-11-07).** KB2-0 run 2 (kernel `tobayko/ironmule-cuda-probe-kb2`
+  v2, commit `9d388e9`; see KB2 above): on one T4 with `gemma-3-12b-it-4bit` at `86cc6a8`, stacked rows were bit-exact
+  and six of them made 2.006x today's tokens per second (95 % bound 0.4991 against 0.5), but the quality gate's main
+  path read 0.984 with 95 % up to 1.177, not below 1.005 (three of 16 chunks diverge by up to 1 nat a token, in both
+  directions). KB2's rule stops it at (c). Re-open with a fixed implementation found by a diagnostic of those chunks,
+  re-gated under a protocol fixed before its data, or with a new model or card. **Reopened 2026-11-07 as KB2-G**
+  (see KB2): KB2-D's new evidence that the gate's lead-free chunks are unstable for every path, and GATE2.
+  **KB2-G (commit `4a01f49`): back in Tier 0.** Gate 2's main path passed (0.9988, 95 % up to 1.0008), but its long
+  path, 4 chunks past the window, read 1.0003 with 95 % up to 1.0080. Re-open only with a new mechanism or new
+  evidence, for example serving scoped to the window under its own protocol. **Reopened again as KB2-L (owner
+  decision, 2026-11-07) and passed:** the long path on 16 windows read 0.9973, 95 % up to 1.0012. KB2 is no longer
+  rejected; this entry stays as its history.
+
+- **TP1 Kaggle TPU as a decode device (2026-11-07).** Probe TP0 (kernel `tobayko/ironmule-tpu-probe` v1, commit
+  `08c96d4`; see TP1 above): on one TPU v5e chip, the bf16 matrix products of one `Qwen3-1.7B` decode step,
+  each jitted and timed alone, allowed at most 20.8 tokens/s at 1 row and 180.8 at 8 rows, below the T4's 57.7 and
+  290.9. TP1's rule closes it. Re-open with a probe that times a whole decode step compiled as one program (each
+  product cost a flat 0.2-0.3 ms, a per-call floor), or with a new model or TPU generation.
+
 - **RL2 learner for GPU placement and group schedule (2026-10-28).** Experiment `RL2-H-run1-20261028` (kernel
   `tobayko/ironmule-rl2-headroom` v1, commit `258ccbe`; see RL2-H above): on two T4s with Qwen 3 1.7B bfloat16 at
   0.2-0.95 of capacity, the oracle over 20 fixed arms beat the best single arm by -0.05 % held out (95 % bootstrap
@@ -2240,6 +5835,13 @@ processes again.
 - **KP's knobs after the first-token fix (2026-10-30).** Experiment `H9-run1-20261029` (see H9): +1.7 % weighted
   (95 % 0.39-3.15 %) against a 0.81 % A/A floor, no harm in any state, `quiet` +6.1 %. Too small to resolve in 12
   traces. Re-open with more traces, or once the default's own cost changes again.
+
+- **H11 dense slots of 8,192 tokens (2026-11-01).** Experiment `H11a-run1-20261101` (kernel
+  `tobayko/ironmule-cuda-probe-h11` v1, commit `3cb1e8f`; see H11). Tested on one T4 with Qwen 3 1.7B bf16.
+  Answers were bit-identical and memory fit. At 6,000-token prefixes, though, the plan's perplexity ratio was
+  1.0070 (95 % to 1.0078), above the 1.005 bound. The larger slot also cost 8.1 % per step. The dense plan keeps
+  2,048-token slots. Re-open with a changed mechanism for long-context accuracy, such as float32 accumulation in
+  the long-key combine, and with FA2's grid cut to live chunks.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:

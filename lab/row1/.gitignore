@@ -1,0 +1,6 @@
+bw
+peak
+gemm
+*.so
+*.o
+micro

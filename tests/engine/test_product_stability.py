@@ -115,6 +115,42 @@ def _grouped(service: ProductService, requests: list[GenerationRequest], gap_s: 
     return results[1:]
 
 
+def _held_group(service: ProductService, requests: list[GenerationRequest], gate: Path) -> list:
+    """STAB4: `requests` form one group behind a blocker the test holds, with every step observed, not timed.
+
+    1. The blocker's own group (the next group number, not the group before it: the caller of an earlier
+       request sees its answer before that group's in-flight state is cleared) runs and has streamed a token.
+    2. Each request is queued, in order, before the next is sent; the blocker cannot end meanwhile.
+    3. Only then the gate opens, and the scheduler takes the queued requests together as its next group.
+    """
+    results: list = [None] * (len(requests) + 1)
+    blocker = _request("r-blocker", f"gate:{gate}", max_tokens=2)
+    group = service.health()["groups_started"] + 1
+
+    def run(index: int, request: GenerationRequest) -> None:
+        results[index] = _call(service, request)
+
+    threads = [threading.Thread(target=run, args=(0, blocker))]
+    threads[0].start()
+
+    def blocker_streams() -> bool:
+        flight = service.health()["in_flight"]
+        return flight is not None and flight["group"] == group and flight["last_progress_age_s"] is not None
+
+    assert _until(blocker_streams), service.health()
+    for index, request in enumerate(requests, 1):
+        threads.append(threading.Thread(target=run, args=(index, request)))
+        threads[-1].start()
+        assert _until(lambda index=index: service.health()["queued_requests"] == index), service.health()
+    assert blocker_streams() and service.health()["queued_requests"] == len(requests)  # still held, all queued
+    gate.write_text("open")
+    for thread in threads:
+        thread.join(timeout=30)
+    assert not any(thread.is_alive() for thread in threads)
+    assert not isinstance(results[0], ProductError) and results[0][-1]["type"] == "done"  # the blocker ends well
+    return results[1:]
+
+
 def _log(store: ProductStore) -> list[dict]:
     return [json.loads(line) for line in (store.root / STABILITY_LOG).read_text().splitlines()]
 
@@ -171,12 +207,25 @@ def test_a_crashed_worker_is_replaced_and_no_partial_answer_is_continued_or_repe
     try:
         before = _call(service, _request("r-0", "steady"))
         pid = _pid(service)
-        # A three-second blocker: both must queue behind it to form one group, even on a loaded test machine.
-        crashed, neighbour = _grouped(service, [_request("r-a", "crash"), _request("r-b", "steady")],
-                                      blocker=("slow:1.0", 3))
-        groups = [row["ids"] for row in _log(store) if row["event"] == "group"]
-        # The premise: both ran in one group. If not, the scheduler grouped them otherwise, not a crash bug.
-        assert any({"r-a", "r-b"} <= set(ids) for ids in groups), groups
+        # STAB4: the blocker is held by a gate until both are queued, so they form one group by construction.
+        # A timed blocker let r-a start while r-0's group still showed as in flight, so r-a sometimes joined the
+        # blocker's group ([['r-0'], ['r-blocker', 'r-a'], ['r-b']]) under a loaded test run.
+        crashed, neighbour = _held_group(service, [_request("r-a", "crash"), _request("r-b", "steady")],
+                                         tmp_path / "gate")
+        # The callers see their errors before the scheduler records the worker's exit and their ends: wait for those.
+        assert _until(lambda: {"worker_exit"} <= {row["event"] for row in _log(store)}
+                      and {"r-a", "r-b"} <= {row.get("id") for row in _log(store) if row["event"] == "end"})
+        log = _log(store)
+        groups = [row["ids"] for row in log if row["event"] == "group"]
+        # The premise: both ran in one group, the blocker alone before it.
+        assert groups == [["r-0"], ["r-blocker"], ["r-a", "r-b"]], groups
+        # The fault where it was meant to be: r-a's first token, inside that group, then the worker's exit.
+        crash_group = next(row["group"] for row in log if row["event"] == "group" and row["ids"] == ["r-a", "r-b"])
+        exit_at = next(i for i, row in enumerate(log) if row["event"] == "worker_exit")
+        assert exit_at > next(i for i, row in enumerate(log) if row.get("group") == crash_group)
+        assert "fatal out of memory" in log[exit_at]["stderr_tail"]
+        assert [event["type"] for event in crashed.events] == ["token"]  # its one token, then the error
+        assert neighbour.events == []  # r-b's turn came after r-a's first token, so it streamed nothing
         for result in (crashed, neighbour):
             assert isinstance(result, ProductError) and result.code == "backend_unavailable"
             assert not any(event["type"] == "done" for event in result.events)
@@ -189,6 +238,7 @@ def test_a_crashed_worker_is_replaced_and_no_partial_answer_is_continued_or_repe
         assert [row["outcome"] for row in restart] == ["ready"] and "exited" in restart[0]["reason"]
         ends = {row["id"]: row for row in _log(store) if row["event"] == "end"}
         assert ends["r-a"]["error"] == ends["r-b"]["error"] == "backend_unavailable"  # served once, not retried
+        assert list(ends).count("r-a") == 1 and ends["r-blocker"]["outcome"] == "ok"
     finally:
         service.close()
 
@@ -281,5 +331,145 @@ def test_a_worker_generation_error_is_named_as_such_and_the_worker_replaced(tmp_
         exits = [row for row in _log(store) if row["event"] == "worker_exit"]
         assert exits[0]["reason"] == "BackendUnavailable: grouped engine generation failed (generation_error)"
         assert _call(service, _request("r-b", "steady"))[-1]["type"] == "done"
+    finally:
+        service.close()
+
+
+# ---------------------------------------------------------------- STAB3: AG5-G run 6, a worker lost under a spike
+
+def _ends(store: ProductStore) -> dict[str, list[dict]]:
+    ends: dict[str, list[dict]] = {}
+    for row in _log(store):
+        if row["event"] == "end":
+            ends.setdefault(row["id"], []).append(row)
+    return ends
+
+
+def _threads(service: ProductService, requests: list[GenerationRequest], results: dict) -> list[threading.Thread]:
+    threads = []
+    for request in requests:
+        threads.append(threading.Thread(target=lambda r=request: results.__setitem__(r.request_id, _call(service, r))))
+        threads[-1].start()
+    return threads
+
+
+def test_a_worker_lost_while_requests_join_ends_each_request_once_and_serves_the_rest_after_a_restart(
+        tmp_path, monkeypatch):
+    """The run-6 pattern: a group runs, newcomers join it, the worker dies. Each request reaches one terminal
+    state, the ones in flight fail at once, and a request that came after the loss is served by the replacement,
+    all far inside the 60 s request timeout."""
+    store, spec = _setup(tmp_path, monkeypatch, timeout=60)
+
+    def dense() -> MLXWorkerClient:  # the agent's stacked engine at width 6, which takes joiners (run 6)
+        return MLXWorkerClient(spec, execution_variant="current_engine", engine_configuration="dense_stacked",
+                               dense_width=6)
+
+    backend = dense()
+    backend.start()
+    service = ProductService(store, backend=backend, spec=spec)
+    service.make_backend = dense
+    results: dict = {}
+    try:
+        started = time.monotonic()
+        threads = _threads(service, [_request("r-a", "slow:0.3", max_tokens=8)], results)
+        assert _until(lambda: service.health()["in_flight"] is not None)
+        threads += _threads(service, [_request("r-b", "slow:0.3", max_tokens=8),
+                                      _request("r-c", "slow:0.3", max_tokens=8)], results)
+        assert _until(lambda: any(row["event"] == "join" for row in _log(store)))
+        threads += _threads(service, [_request("r-d", "crash")], results)
+        assert _until(lambda: any(row["event"] == "worker_exit" for row in _log(store)))
+        threads += _threads(service, [_request("r-e", "steady")], results)
+        for thread in threads:
+            thread.join(timeout=30)
+        assert time.monotonic() - started < 20, "nothing waited for the request timeout"
+        assert results["r-e"][-1]["type"] == "done", "a request after the loss is served by the replacement"
+        lost = [rid for rid in ("r-a", "r-b", "r-c", "r-d") if isinstance(results[rid], ProductError)]
+        assert "r-d" in lost and all(results[rid].code == "backend_unavailable" for rid in lost)
+        assert all(results[rid][-1]["type"] == "done" for rid in ("r-a", "r-b", "r-c") if rid not in lost)
+        assert _until(lambda: set(_ends(store)) == {"r-a", "r-b", "r-c", "r-d", "r-e"})
+        assert all(len(rows) == 1 for rows in _ends(store).values()), "exactly one terminal state each"
+        assert service.health()["active_requests"] == 0 and service.health()["queued_requests"] == 0
+    finally:
+        service.close()
+
+
+def test_a_live_worker_without_progress_is_retired_after_the_stall_limit_not_the_request_timeout(
+        tmp_path, monkeypatch):
+    """Before STAB3 a worker that stopped sending held its group until the deadline plus a full request timeout,
+    and every request behind it waited out its own deadline (run 6: an hour each)."""
+    store, spec = _setup(tmp_path, monkeypatch, timeout=60)
+    monkeypatch.setattr(backend_module, "STALL_TIMEOUT_S", 1.0)
+    service = _recovering(store, spec)
+    results: dict = {}
+    try:
+        pid = _pid(service)
+        started = time.monotonic()
+        threads = _threads(service, [_request("r-a", "hang")], results)
+        assert _until(lambda: service.health()["in_flight"] is not None)
+        threads += _threads(service, [_request("r-b", "steady")], results)
+        for thread in threads:
+            thread.join(timeout=30)
+        assert time.monotonic() - started < 15
+        assert results["r-a"].code == "backend_unavailable", "the hung member is told, not left to time out"
+        assert results["r-b"][-1]["type"] == "done" and _pid(service) != pid, "the one behind it is served"
+        exits = [row for row in _log(store) if row["event"] == "worker_exit"]
+        assert "no progress for 1 s" in exits[0]["reason"] and exits[0]["reaped"] is True
+    finally:
+        service.close()
+
+
+def test_slow_failing_restarts_use_up_the_budget_and_waiting_requests_fail_at_once(tmp_path, monkeypatch):
+    """Each attempt took longer than the restart window, so the window forgot the attempts before it and recovery
+    never gave up: admission stayed open and every request waited out its deadline. Now three restarts without a
+    served request end recovery whatever their duration, the request that waited is told at once, and new ones
+    are refused immediately."""
+    store, spec = _setup(tmp_path, monkeypatch, timeout=60)
+    monkeypatch.setattr(service_module, "RESTART_WINDOW_S", 0.3)
+    control = tmp_path / "control.json"
+    monkeypatch.setenv("FAKE_STAB1_CONTROL", str(control))
+    service = _recovering(store, spec)
+    results: dict = {}
+    try:
+        control.write_text(json.dumps({"fail_start": True, "start_delay": 0.5}))
+        started = time.monotonic()
+        assert _call(service, _request("r-a", "crash")).code == "backend_unavailable"
+        assert _until(lambda: service.health()["worker"]["state"] == "restarting", timeout=5)
+        health = service.health()
+        assert health["accepting"] is True and health["ready"] is False, "admitted while replaced, not ready"
+        threads = _threads(service, [_request("r-b", "steady")], results)
+        for thread in threads:
+            thread.join(timeout=30)
+        assert results["r-b"].code == "backend_unavailable" and time.monotonic() - started < 20
+        health = service.health()
+        assert health["worker"]["state"] == "refused" and health["accepting"] is False
+        assert "no request served" in health["worker"]["refused"]
+        attempts = [row for row in _log(store) if row["event"] == "worker_restart_start"]
+        assert len(attempts) == 3
+        quick = time.monotonic()
+        assert _call(service, _request("r-c", "steady")).code == "backend_unavailable"
+        assert time.monotonic() - quick < 1.0
+        assert all(len(rows) == 1 for rows in _ends(store).values())
+    finally:
+        service.close()
+
+
+def test_a_successful_restart_serves_new_requests_and_the_budget_returns_only_after_one_is_served(
+        tmp_path, monkeypatch):
+    """A replacement that starts but never serves does not prove recovery: with the window too short to count,
+    four losses in a row with no request served end recovery; one served request in between gives it back."""
+    store, spec = _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(service_module, "RESTART_WINDOW_S", 0.01)
+    service = _recovering(store, spec)
+    try:
+        assert _call(service, _request("r-1", "crash")).code == "backend_unavailable"
+        assert _until(lambda: service.health()["worker"]["state"] == "ready")
+        assert service._unproven_restarts == 1, "a replacement that is ready has not served yet"
+        assert _call(service, _request("r-2", "steady"))[-1]["type"] == "done"
+        assert service._unproven_restarts == 0, "a served request proves it"
+        for index in range(3, 7):
+            assert _call(service, _request(f"r-{index}", "crash")).code == "backend_unavailable"
+            assert _until(lambda: service.health()["worker"]["state"] in ("ready", "refused"))
+        assert service.health()["worker"]["state"] == "refused"
+        assert "no request served" in service.health()["worker"]["refused"]
     finally:
         service.close()

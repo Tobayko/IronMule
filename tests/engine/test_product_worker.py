@@ -660,8 +660,9 @@ def test_no_thinking_reaches_the_chat_template_only_when_set(monkeypatch):
     assert seen == [{}, {"enable_thinking": False}]
 
 
-def _join_world(monkeypatch, capacity):
-    """A grouped batch of two that admits a third request sent while it runs (SERVE8)."""
+def _join_world(monkeypatch, capacity, late=False, admitted=None):
+    """A grouped batch of two that admits a third request sent while it runs (SERVE8); `late` sends it after the
+    first run's last admission, so the batch's second run takes it."""
     import threading
     from types import SimpleNamespace
 
@@ -691,12 +692,16 @@ def _join_world(monkeypatch, capacity):
             calls.append(len(ids))
             names = ["c"] if len(ids) == 1 else ["a", "b"]
             emitters = list(on_tokens)
-            worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [
+            join = {"type": "join_batch", "batch_id": "batch-1", "requests": [
                 {"request_id": "c", "model": "m", "messages": [{"role": "user", "content": "xyz"}],
-                 "max_tokens": 8, "stream": True}]}) if len(calls) == 1 else None
+                 "max_tokens": 8, "stream": True}]}
+            worker.JOINS.put(join) if len(calls) == 1 and not late else None
             joined = admit(capacity)
+            if admitted is not None:  # each row, and what its cancel check says while the run is going
+                admitted.extend((row, row[4]() if len(row) > 4 else None) for row in joined)
+            worker.JOINS.put(join) if len(calls) == 1 and late else None
             names += ["c"] * len(joined)
-            emitters += [emit for _, _, emit, _ in joined]
+            emitters += [row[2] for row in joined]  # (ids, limit, emit, cuts, cancelled)
             for step in range(2):
                 for name, emit in zip(names, emitters):
                     emit(scripts[name][step])
@@ -731,6 +736,16 @@ def test_a_joined_request_too_long_for_the_run_is_served_right_after_it(monkeypa
     assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
     assert sent[-1]["request_ids"] == ["a", "b", "c"]
     assert len(built) == 2  # c reused a detokenizer a or b gave back
+
+
+def test_a_request_sent_after_the_first_run_is_judged_by_the_engines_limit_not_a_members(monkeypatch):
+    """AG6-H: the result loop rebound the engine's request limit to the last member's max_tokens, so a request
+    that came after a batch's first run was rejected as too long for the engine (3 prompt + 8 > 8)."""
+    sent, calls, built = _join_world(monkeypatch, capacity=64, late=True)
+    assert not [e for e in sent if e["type"] == "rejected"], sent
+    assert calls == [2, 1]  # the second run served it
+    assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
+    assert [e["token_id"] for e in sent if e["type"] == "token" and e["request_id"] == "c"] == [33, 0]
 
 
 def test_chat_reuse_reaches_the_engine_in_the_grouped_path(monkeypatch):
@@ -1107,3 +1122,183 @@ def test_a_grouped_request_beyond_the_context_limit_is_rejected_alone_on_either_
     assert [e["request_id"] for e in sent if e["type"] == "rejected"] == ["b"]
     assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a"]
     assert sent[-1] == {"type": "batch_done", "batch_id": "batch-2", "request_ids": ["a", "b"]}
+
+
+def test_a_cancelled_joiner_stops_at_its_next_token_instead_of_computing_its_limit():
+    """Review of 2026-11-08: the bridge gave a joined row a stream without its cancel check, so a joiner whose
+    client had gone computed all its tokens. The worker's admission now hands the check over, and the executor
+    stops the joiner as it stops the run's first rows."""
+    import threading
+
+    from ironmule.executor import AsyncGroupedB1Executor, build_sessions
+    from ironmule.service import ThroughputMode
+    from ironmule.telemetry import Telemetry
+    from ironmule_product.engine_bridge import CurrentEngineBridge
+
+    cancelled = threading.Event()
+    cancelled.set()
+    seen = {}
+
+    class Decoder:
+        eos_ids = (99,)
+
+        def capacity_for(self, prompt_lens, max_tokens):
+            return 64
+
+        def prefill(self, prompt_ids, plan, capacity):
+            return {}, 1
+
+        def reset_state(self, base, offset):
+            return {}
+
+        def step(self, state, token, capacity):
+            return state
+
+        def complete(self, handles):
+            pass
+
+        def read(self, handle):
+            return 1, handle
+
+    class Done(Exception):
+        pass
+
+    class Runtime:
+        mode = ThroughputMode()
+
+        def serve(self, requests, admit=None):
+            joined = admit(64)
+            seen["joiner_checks_cancel"] = joined[0].stream.cancelled is not None
+            decoder, telemetry = Decoder(), Telemetry()
+            sessions = build_sessions(requests + joined, decoder, telemetry, 64)
+            AsyncGroupedB1Executor(decoder, telemetry, max_width=2).run(sessions, 64)
+            seen["computed"] = [len(session.tokens) for session in sessions]
+            seen["stops"] = [session.stop_reason for session in sessions]
+            raise Done
+
+    bridge = object.__new__(CurrentEngineBridge)
+    bridge._closed, bridge._configuration, bridge._groupable, bridge._runtime = False, "current_profile", True, Runtime()
+    emit = lambda token: None  # noqa: E731
+    try:
+        bridge.generate_many([[1]], [8], on_tokens=[emit], cancelled=[cancelled.is_set],
+                             admit=lambda capacity: [([2], 8, emit, None, cancelled.is_set)])
+    except Done:
+        pass
+    assert seen == {"joiner_checks_cancel": True, "computed": [0, 0], "stops": ["cancelled", "cancelled"]}
+
+
+def test_the_workers_admission_hands_each_joiner_its_own_cancel_check(monkeypatch):
+    admitted = []
+    sent, calls, built = _join_world(monkeypatch, capacity=64, admitted=admitted)
+    assert calls == [2] and [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
+    (row, cancelled_now), = admitted
+    assert len(row) == 5 and callable(row[4]), "(ids, limit, emit, cuts, cancelled)"
+    assert cancelled_now is False, "c was never cancelled"
+
+
+def test_a_dense_run_never_starts_more_rows_than_the_pool_has_free_slots(monkeypatch):
+    """STAB3 (AG5-G run 6): the agent's Gemma stacked engine had 6 slots while the service let 8 requests into a
+    group. A run that prefills more rows than free slots raised "no free slot" and the worker was retired with
+    every member. Now a run takes at most the free slots and the rest run right after, in order."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    sent, runs = [], []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+
+    class Bridge:
+        slots = 6
+
+        def metadata(self):
+            return {"configuration": "dense_stacked"}
+
+        def eos_ids(self):
+            return (0,)
+
+        def request_limit(self):
+            return 1024
+
+        def free_slots(self):
+            return self.slots
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            if len(ids) > self.free_slots():
+                raise RuntimeError("no free slot in the dense plan's pool")
+            runs.append(len(ids))
+            for emit in on_tokens:
+                emit(72)
+                emit(0)
+            return [SimpleNamespace(tokens=[72, 0], text="", finish_reason="stop", token_count=2, metadata={})
+                    for _ in ids]
+
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": f"r{i}", "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True} for i in range(8)]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"]
+    assert runs == [6, 2], "six in the first run, the other two right after"
+    done = [event["request_id"] for event in sent if event["type"] == "done"]
+    assert sorted(done) == [f"r{i}" for i in range(8)] and len(done) == 8, "each answered once"
+    assert sent[-1]["type"] == "batch_done" and sent[-1]["request_ids"] == [f"r{i}" for i in range(8)]
+
+    sent.clear()
+    Bridge.slots = 0  # a pool with no free slot fails the batch by name instead of waiting for a slot
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert [event["type"] for event in sent] == ["error"] and sent[0]["code"] == "generation_error"
+
+
+def test_the_stacked_engines_group_holds_no_more_members_than_its_width():
+    from ironmule_product.backend import STREAM_GROUP_REQUESTS, MLXWorkerClient
+    from ironmule_product.types import ModelSpec
+
+    spec = ModelSpec("local/test", "revision", "/tmp/snapshot", 1)
+    def width(value):
+        return MLXWorkerClient(spec, execution_variant="current_engine", engine_configuration="dense_stacked",
+                               dense_width=value).batch_capacity
+
+    assert width(6) == 6 and width(None) == STREAM_GROUP_REQUESTS == 8 and width(8) == 8
+    assert MLXWorkerClient(spec, execution_variant="current_engine").batch_capacity == STREAM_GROUP_REQUESTS
+
+
+def test_the_failure_note_names_what_the_engines_fallbacks_caught_without_a_message():
+    """STAB4: when the Runtime's safety net catches an error and the run then fails on its result count, the worker's
+    stderr note also lists the caught errors' types, where they were caught and their memory flags (never a
+    message, which can quote input text)."""
+    import io
+    import sys
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+    from ironmule_product.engine_bridge import CurrentEngineBridge
+
+    reasons = ["executor: RuntimeError: CUDA error: out of memory while copying 'secret prompt'",
+               "ValueError: injected", "executor: weird thing without a colon"]
+    bridge = SimpleNamespace(_runtime=SimpleNamespace(telemetry=SimpleNamespace(fallback_reasons=reasons)))
+    kinds = CurrentEngineBridge.fallback_kinds(bridge)
+    assert kinds == [
+        {"where": "executor", "type": "RuntimeError", "out_of_memory": True, "illegal_memory_access": False},
+        {"where": "group", "type": "ValueError", "out_of_memory": False, "illegal_memory_access": False},
+        {"where": "executor", "type": "unknown", "out_of_memory": False, "illegal_memory_access": False}]
+    stderr, sys.stderr = sys.stderr, io.StringIO()
+    try:
+        try:
+            raise RuntimeError("IronMule returned an invalid result count")
+        except RuntimeError:
+            worker._note_failure("batch", SimpleNamespace(fallback_kinds=lambda: kinds))
+        note = sys.stderr.getvalue()
+    finally:
+        sys.stderr = stderr
+    assert json.loads(note)["fallbacks"] == kinds and "secret" not in note and "result count" not in note

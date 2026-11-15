@@ -228,6 +228,37 @@ measures the machine's own noise (1.0028, so anything inside ±0.6% is not a res
 
 </details>
 
+## Tuning by experiment (`ironmule learn`, RSI1b)
+
+`ironmule autopilot` and `ironmule learn` turn IronMule into a small learning system. It does not use a language model to make decisions; it uses statistics that update after every test it runs.
+
+1. **It tests.** It tries engine settings on your hardware and measures each one against the plain reference. A setting only counts if it gives exactly the same tokens.
+2. **It remembers.** Every test is stored: what was changed, how much faster or slower it was, and how long the test took. The memory survives restarts.
+3. **It decides what to test next.** A small Bayesian model written in Rust (`native/experiment_planner`) estimates, for every possible change, how much it will probably help and how long it takes to try. It runs the test with the best expected gain per second, and stops when nothing is worth the time. Every new result updates the estimates a little; nothing is retrained from scratch.
+4. **It dreams.** Between sessions it replays its old tests — like the *Dream-RSI* paper ([arXiv 2609.14858](https://arxiv.org/html/2609.14858v1)) — to tune how it plans. Replay never replaces a real test, and if replay shows that the simple fixed order would have done better, it switches itself off and uses that order instead.
+5. **It double-checks.** The best setting still has to win a paired A/B test against the reference before it is used. While serving, an online controller keeps comparing and falls back to the reference whenever something looks off.
+
+What this gave on a Kaggle Tesla T4, on five models it had never seen: 3–6 tests instead of 11, about 24 % less tuning time, and on average as much confirmed speed-up as the fixed order (20.2 vs 19.8 percentage points; more on four models, less on Gemma 3 1B). One machine, one run per method — treat it as a first result, not a promise.
+
+```bash
+ironmule learn --minutes 12                       # a bounded hardware session over your cached models
+ironmule autopilot --model mlx-community/gemma-3-1b-it-4bit
+```
+
+The learning parts are built from source and need Rust (`cargo`):
+
+```bash
+cargo build --release --manifest-path native/online_controller/Cargo.toml
+cargo build --release --manifest-path native/experiment_planner/Cargo.toml
+```
+
+Without the planner, tuning uses the fixed order; without the controller, `autopilot` stops with a message that says how to build it. Details and limits: [docs/LIMITS.md](LIMITS.md).
+
+
+### CPU only: unpacked float32 weights (CPU4)
+
+Without a GPU the installer takes MLX's CPU build and `ironmule start` picks Qwen3 0.6B and asks whether it may unpack the weights to float32, which made answers about 7.6× faster on a 4-core Kaggle CPU (one run). Expect about a minute for a short answer; the ggml engine (`--gguf`, README) is the faster CPU path.
+
 Every figure on this page is rendered from measurement data by `tools/make_figures.py`.
 The data is private, so `tools/make_figures.py --check`, which fails when a figure stops
 matching it, runs on the machine that measured it rather than in CI.

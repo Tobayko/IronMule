@@ -11,10 +11,13 @@ message selects a fault:
     hang       the worker stops emitting and ignores cancellation (alive, no progress)
     error      the worker reports a generation error for the group
     slow:S     S seconds per token for the whole group
+    gate:PATH  the first token at once, every later one only once the file PATH exists (STAB4: a blocker
+               the test holds until the requests it checks are queued, then releases)
 
 Anything else is served normally: max_tokens tokens whose text derives only from the message, so
 outputs are comparable across workers. `FAKE_STAB1_CONTROL` names a JSON file read at start:
-{"fail_start": true} exits before the handshake, {"digest": "<64 hex>"} changes the source identity.
+{"fail_start": true} exits before the handshake, {"start_delay": S} waits S seconds first (STAB3),
+{"digest": "<64 hex>"} changes the source identity.
 """
 
 from __future__ import annotations
@@ -77,6 +80,8 @@ def main() -> int:
                 control = json.load(stream)
         except (OSError, ValueError):
             control = {}
+    if control.get("start_delay"):  # STAB3: a start that takes this long before it succeeds or fails
+        time.sleep(float(control["start_delay"]))
     if control.get("fail_start"):
         sys.stderr.write("fake worker: start refused by control file\n")
         return 4
@@ -160,6 +165,9 @@ def main() -> int:
                 if content == "hang":
                     while True:
                         time.sleep(3600)
+                if content.startswith("gate:") and sent[request_id] >= 1:
+                    while not os.path.exists(content.split(":", 1)[1]):
+                        time.sleep(0.01)
                 index = sent[request_id]
                 text = hashlib.sha256(f"{content}/{index}".encode()).hexdigest()[:4] + " "
                 sent[request_id] += 1

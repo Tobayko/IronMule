@@ -11,6 +11,11 @@ class InvalidRequest(ProductError):
     status = 400
 
 
+class EngineLimitExceeded(InvalidRequest):
+    """The prompt and output limit exceed this server's engine (the stacked engine's slot), not the model's
+    context: another serving path may hold the request. Clients see the same `invalid_request`."""
+
+
 class ModelNotFound(ProductError):
     code = "model_not_found"
     status = 404

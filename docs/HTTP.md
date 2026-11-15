@@ -32,14 +32,17 @@ when it is ready:
 | `--tls-cert`, `--tls-key` | none | serve over TLS |
 | `--state-dir` | `IRONMULE_HOME` or `~/.ironmule/product` | product state directory |
 | `--compute-dtype` | none | opt-in numeric plan for GPUs that emulate bf16 (`float32`, `native`); changes output, see `ironmule plans` |
-| `--engine` | `reference` | `reference` (earlier name `stock`): mlx-lm's own generation, streamed token by token; `tuned` (earlier name `ironmule`): IronMule's engine with this machine's tuned profile, streaming up to eight requests as one group; `rust2`: the rust2 binary on CUDA (experimental); `dense`: the dense numeric plan, up to eight requests in one decode step with IronMule's own kernels (recommended on two Tesla T4s with `mlx-community/Qwen3-1.7B-bf16`: about half the cost of `tuned` on mixed traffic, answers differ, see LIMITS), unquantized Qwen 3 bf16 on CUDA below compute capability 8 only, refused elsewhere; prompt plus answer at most 2,048 tokens (larger slots wait for BACKLOG H11), and a longer request is answered `400` on its own while the rest of its group runs; a request that arrives while a group runs takes a slot a finished request freed, whatever the serving policy's `join` says (experimental, changes answers against `tuned`). All are greedy but compute the last prompt token differently, so answers can differ between engines |
+| `--cpu-blas` | `stock` | Linux x86-64 without `--gpus`: `openblas` runs MLX's float32 matrix products on an OpenBLAS found on the machine (NumPy's bundled one first) through a small preloaded library built with the machine's C compiler, instead of the single-threaded reference BLAS the `mlx-cpu` wheel ships; with `--compute-dtype dequantize`, `float32` or `--engine dense` on a CPU. Opt-in, a different summation order can change answers; `/health`'s `cpu_blas` says which BLAS serves and, if not the one asked for, why (BACKLOG CPU6) |
+| `--speculate` | `auto` | SP2, the CPU stacked engine: each step verifies drafts copied from the request's own prompt and answer as several positions of its slot at once, how many learned while the server runs from this machine's step times and this traffic's accepted drafts; every token is still the engine's own (the plan's probe checks the verify window bit for bit at every start, or it never speculates). Opt-in: `context` with `--engine dense` or the agent's stacked engine; `auto` and `off` leave it off, because its hardware test (BACKLOG SP2-H: one request at a time 1.40x on average, 95 % from 1.21x, against a bound of 1.3; under load 1.04x) did not pass. Under load, with no free row, the plain stacked step serves. `/health`'s `speculation` says what serves and what it has learned |
+| `--gguf` | none | GG1, with `--engine ggml` on a machine without a GPU: the GGUF llama.cpp serves for the registered model. It must give the model's token ids and end tokens, or the server refuses to start. At its first start on a machine the engine times llama.cpp's own options (flash attention, one unified KV cache, an f32 KV cache) and serves the fastest whose perplexity on the numeric gate's 16 chunks is within 0.5 % of llama.cpp's default setting on the same GGUF (the owner's bar: llama.cpp's quality, its own options included), cached per GGUF, model and machine; `/health`'s `ggml` block shows the setting and every one tried (BACKLOG GG, GG2, GG3). `tools/gguf_from_mlx.py` builds a GGUF from the registered MLX model. llama.cpp's bindings come from an installed `llama-cpp-python` or `IRONMULE_GGML_BINDINGS` |
+| `--engine` | `reference` | `reference` (earlier name `stock`): mlx-lm's own generation, streamed token by token; `tuned` (earlier name `ironmule`): IronMule's engine with this machine's tuned profile, streaming up to eight requests as one group; `rust2`: the rust2 binary on CUDA (experimental); `ggml` (GG1): llama.cpp's CPU kernels in process on the `--gguf` named, as many requests in flight as the engine chose at its first start on the machine (8, 16, 32 or 64 within the memory, SEQ1; `IRONMULE_GGML_SEQS` sets it by hand), reusing a finished request's KV for a shared prompt prefix, with learned speculation from the context (`--speculate off` turns it off); answers can differ from the MLX plans within its gate, and `/health` says `numeric@ggml`; `dense`: the dense numeric plan, up to eight requests in one decode step with IronMule's own kernels (recommended on two Tesla T4s with `mlx-community/Qwen3-1.7B-bf16`: about half the cost of `tuned` on mixed traffic, answers differ, see LIMITS), unquantized Qwen 3 bf16 or Gemma 3 at 4 bit on CUDA below compute capability 8; on a machine without a GPU, Llama, Qwen 2 and Qwen 3 checkpoints on the CPU stacked plan (float32 weights, every request's answer the same stacked as alone, best with `--cpu-blas openblas`, BACKLOG CPU6); refused elsewhere; prompt plus answer at most 2,048 tokens (larger slots wait for BACKLOG H11), and a longer request is answered `400` on its own while the rest of its group runs; a request that arrives while a group runs takes a slot a finished request freed, whatever the serving policy's `join` says (experimental, changes answers against `tuned`). All are greedy but compute the last prompt token differently, so answers can differ between engines |
 | `--learning` | `off` | `active` or `paused`: learn group width and gather wait from this server's traffic; see [live learning](LIVE_LEARNING.md) |
 | `--no-dreaming` | off | with `--learning`: the same learner without model rollouts |
 | `--gpus` | none | `all` or device indices such as `0,1`: one model worker per CUDA GPU, see [Several GPUs](#several-gpus-hw1) |
 | `--schedule` | `auto` | `auto`: a fixed schedule qualified on exactly this setup serves when one ships and no serving policy is stored (see [Qualified schedule](#several-gpus-hw1)); `reference`: the default schedule |
 | `--knobs` | `auto` | `--engine tuned` only. `auto`: a knob set qualified on exactly this model, revision, GPU and MLX and mlx-lm versions serves when one ships and no tune profile is stored; it may only change knobs that leave every answer unchanged (compiled step, projection fusion, fused argmax, readback interval). None ships yet (BACKLOG KP1). `reference`: the engine's own knobs |
 | `--dispatch-policy`, `--dispatch-evidence` | none | opt-in learned dispatch with the comparison that qualifies it (LD1, below) |
-| `--agent` | `off` | `on`: the IronMule agent decides each group's order and width and learns online (AG1, below); one worker; not with `--learning` or `--dispatch-policy` |
+| `--agent` | `off` | `on`: the IronMule agent decides each group's order and width and learns online (AG1, AG2, below); with no `--engine` and no `--compute-dtype` it first chooses the plan and engine itself (AG4, below); with `--gpus` one agent per card; not with `--learning` or `--dispatch-policy` |
 
 ## Routes
 
@@ -94,7 +97,7 @@ worker to that card. Not measured yet: the throughput gain on Kaggle's two T4s a
 both cards return the same tokens for the same request (BACKLOG HW1).
 
 **Learned dispatch (LD1, opt-in).** `--dispatch-policy POLICY.json --dispatch-evidence EVIDENCE.json`
-replaces three scheduling choices with a policy the RL agent learned (`tools/rl4_agent.py`):
+replaces three scheduling choices with a policy the RL agent learned (`training/rl4_agent.py`):
 the card a new request goes to, whether a group starts its shortest requests first, and, in a
 v2 policy, the group's width. It never changes what a request answers. Each request still runs
 alone on one worker at its own capacity, and the hardware comparisons checked that every answer
@@ -130,7 +133,34 @@ is recorded and never serves again under this setup. What it learned lives in `a
 bound to the hardware, device, model, revision, plan and software versions; any change starts fresh. `/health`
 shows an `agent` block: what serves and its measured gain, the fitted costs, the planner, the candidate and its
 comparison, decision counts and the mean decision time. It refuses the dense plan, whose freed slots it does not
-model yet, and runs on one worker. Its gain on hardware is not measured yet (BACKLOG AG1).
+model yet. Its gain on hardware is not measured yet (BACKLOG AG1, AG2).
+
+*Predicted answer lengths (AG2).* "Smallest first" may sort by the answer length a small online model predicts
+instead of the output limit, which says nothing when every client sends the same limit. The model learns from
+every finished request (hashed word features of the last message and the completion tokens; weights only, no
+text), and a schedule that orders by it is planned and qualified like any other. `/health`'s `agent` block shows
+`lengths`: requests learned from, the recent predictions' rank correlation with the truth, and the order key that
+serves. *Several GPUs.* With `--gpus all`, each card gets its own agent, bound to its card, and the cards share one
+length model. Placement stays join-the-shortest-queue. `/health` and `/v1/ironmule/dispatch` list every card's
+agent, and `{"action": "off"}` or `"on"` reaches all of them. *Its own setup (AG4).* With `--agent on` and neither
+`--engine` nor `--compute-dtype`, the agent chooses both on this machine before it serves, once per hardware and model:
+NUM1's numeric plan, then a stacked engine (`dense`) if one passes its decode-path quality gate and AG4's speed rule.
+It may choose a plan that changes answers slightly, by the owner's decision. `/health`'s `agent_setup` block shows
+the choice, every candidate's gate and speeds, and the reason. If the stacked engine wins only under load and both
+fit the card, both serve, and the agent routes each request to the path where it should finish first. `/health`'s
+`paths` block shows each path's learned costs, the decisions and the decision time (the last, `decision_us`, with
+its mean and maximum, `decision_us_mean` and `decision_us_max`); since AG6 also the serving mode the agent dreamed
+(`mode`, `dreams`, `switches` with each one's `rule` and monotonic time `at_s`, `last_dream` with the `rule` that
+chose it and its `dream_ms`, and the dreams' cost `dream_ms_mean` and `dream_ms_max`), the requests the
+pool moved to the other path
+(`fallbacks`), and any router fault (`errors`, `last_error`, `router_faults`). `agent_setup.levers` lists every
+lever the agent knows, and what happened to each on this machine, including the planned ones (BACKLOG HQ1). While the stacked engine serves, the online agent
+does not attach yet: it does not model slot reuse. A named `--engine` or `--compute-dtype` is always kept. *Never
+stopped by the agent.* A failed measurement serves the reference engine; a choice of the agent's that does not
+start (a card out of memory) serves its gated numeric plan on the reference engine, else the checkpoint's dtype,
+printed and shown as `agent_setup.fallback_from`; a router or dream fault serves the request on a path and is
+counted. A named engine that does not start is reported, not replaced. Details and the training workflow:
+[AGENT.md](AGENT.md).
 
 **Qualified schedule (RL6, confirmed by LD1-V).** On the setup the RL runs measured -- `--gpus all`
 on two Tesla T4s, `--engine tuned`, `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` -- the
@@ -152,17 +182,24 @@ The model runs in a separate worker process. When it dies, reports a generation 
 - every request in its group ends with an explicit error: `503 backend_unavailable`
   before the first token, or an SSE error frame and `[DONE]` after it. A partly streamed
   answer is never continued, restarted or repeated;
-- the server replaces the worker, but only after the old process has been reaped, at most
-  three times in ten minutes (0, 5 and 20 s apart), and only with a worker that reports the
-  same model, revision, device, variant, sources and engine profile. Requests arriving
-  meanwhile wait in the queue under their own deadlines;
-- when recovery is refused, `/health` says why, `ready` is false and requests get `503`
-  at once. Restart the server to try again.
+- the server replaces the worker, but only after the old process has been reaped, and only
+  with a worker that reports the same model, revision, device, variant, sources and engine
+  profile. It tries at most three times in ten minutes (0, 5 and 20 s apart), and at most
+  three times in a row without a request served in between, however long each start takes
+  (STAB3: before, a start slower than the window let recovery go on for good). Each start is
+  bounded by the worker's startup timeout (600 s for `dense`), so recovery ends within three
+  of them plus the pauses;
+- while it does, `/health` reports `ready: false` and `accepting: true`: requests are still
+  admitted, up to the queue bound, and each waits at most until recovery ends, served by the
+  replacement or answered `503` then;
+- when recovery is refused, `/health` says why, `ready` and `accepting` are false, waiting
+  requests get `503` at once and new ones too. Restart the server to try again.
 
 Each request's own deadline (`request_timeout_s`, 120 s by default) ends only that
-request. The worker is retired as unresponsive only when it has not finished a group a
-full request timeout after the group's last deadline; with no request timeout there is no
-such bound. In a group, a request's last token and completion arrive when the worker's
+request. A worker that is alive but sends nothing for 300 s while it generates is retired as
+without progress (STAB3), its group ends with `503` and it is replaced; before, it was retired
+only a full request timeout after the group's last deadline, and every request behind it waited
+out its own deadline. In a group, a request's last token and completion arrive when the worker's
 engine run ends, so a short request grouped with a long one can wait for it.
 
 `/health` adds `worker` (`state`: ready, restarting, lost, refused or unavailable; `pid`,
@@ -170,8 +207,12 @@ engine run ends, so a short request grouped with a long one can wait for it.
 and `scheduler_alive`), `in_flight` (the running group's width, open members, age and time
 since the worker's last event), `groups_started` and `oldest_queued_s`. The state
 directory keeps a bounded `stability-log.jsonl` (4 MiB, older half dropped): admissions,
-rejections, groups, every request's end and error code, how each HTTP response ended,
-worker exits with the last 4 KiB of the worker's stderr, and restarts. It holds ids, times
+rejections, groups, joins, the moment a group stops counting a member (`member_done`; its `end` is
+written when the whole group ends), every request's end and error code, how each HTTP response ended,
+worker exits with the last 4 KiB of the worker's stderr (a failure's type and frames, and the types and
+memory flags of errors the engine's fallbacks caught in that run, never a message), and each restart's start
+and outcome. Every line carries a monotonic and a wall time,
+and, when several workers share the state directory, the shard it comes from. It holds ids, times
 and codes, no prompt or answer text; the stderr tail can hold library messages, so keep the
 file private like the rest of the state directory.
 

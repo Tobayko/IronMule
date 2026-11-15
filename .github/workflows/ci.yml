@@ -37,7 +37,7 @@ jobs:
       - name: Static product and measurement checks
         run: |
           .ci-venv/bin/python -m pip install "ruff==0.16.6"
-          .ci-venv/bin/ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tools/export_evidence.py tests/engine tests/conftest.py tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py --select F
+          .ci-venv/bin/ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tools/export_evidence.py training tests/engine tests/agent tests/conftest.py tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py --select F
       # The engine package's own suite depends on nothing outside the repository, so
       # it runs anywhere. AGENTS.md keeps hardware/speed claims on the target device;
       # this runner establishes correctness, not performance.
@@ -53,6 +53,9 @@ jobs:
           cargo test --offline --release --manifest-path native/optimizer/Cargo.toml --lib
       - name: Engine test suite (no real-model integration)
         run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
+      # The agent (AG1/AG2), its simulator and its Kaggle harness (training/); no model, no GPU.
+      - name: Agent test suite
+        run: .ci-venv/bin/python -m pytest tests/agent -n 0 -m "not integration"
       # These two check public claims (README, docs/PROJECT_STATUS.md) against the redacted
       # summaries committed under evidence/ (see evidence/README.md), so they run in full on
       # a plain checkout. A handful of older claims still cite raw files that predate that

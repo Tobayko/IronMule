@@ -228,7 +228,8 @@ def _code_identity() -> tuple[str, dict[str, str]]:
         package_root = project_root / package
         paths.extend((path, package_root, "") for path in _tree_files(package_root, suffixes=python_suffix))
     try:
-        mlx_root = Path(importlib.metadata.distribution("mlx-lm").locate_file("mlx_lm"))
+        # resolved: site-packages can be a symlink to dist-packages (Debian/Ubuntu images)
+        mlx_root = Path(importlib.metadata.distribution("mlx-lm").locate_file("mlx_lm")).resolve()
     except importlib.metadata.PackageNotFoundError:
         mlx_root = None
     if mlx_root is not None and mlx_root.is_dir():

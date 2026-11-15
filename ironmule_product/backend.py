@@ -30,12 +30,15 @@ MAX_STDERR_BYTES = 256 * 1024
 STDERR_TAIL_BYTES = 4096  # STAB1: what a worker exit record keeps of the worker's last stderr
 DEFAULT_TIMEOUT = 120.0
 DENSE_STARTUP_TIMEOUT = 600.0  # KB1: the dense plan compiles and probes every kernel shape before it is ready
+# STAB3 (AG5-G run 6): a running generation that sends nothing for this long is a worker without progress; it is
+# retired then instead of at the request deadline plus its grace (up to twice the request timeout before).
+STALL_TIMEOUT_S = 300.0
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
 STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
-                                   "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
+                                   "baseline_throughput", "core_throughput", "rust2", "dense_stacked", "ggml"))
 CONTEXT_LIMIT = 8192
 # The worker rejects a grouped request alone when its prompt and output limit exceed the context limit or the
 # engine's own bound (KB1: the dense plan's slot).
@@ -68,17 +71,47 @@ class MLXWorkerClient:
                  engine_configuration: str = "current_profile",
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
                  compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
-                 cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None) -> None:
+                 cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None,
+                 dense_width: int | None = None, cpu_blas: str | None = None,
+                 cpu_threads: int | None = None, speculate: bool = False, ggml_gguf: str | None = None,
+                 ggml_gate: dict[str, Any] | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
+        if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
+                                        or engine_configuration != "dense_stacked"):
+            raise ValueError("dense_width must be 1-8 and needs the dense_stacked configuration (AG5)")
+        self.dense_width = dense_width
+        if type(speculate) is not bool or (speculate and engine_configuration not in ("dense_stacked", "ggml")):
+            raise ValueError("speculate is a bool and needs the dense_stacked or ggml configuration (SP2, GG1)")
+        self.speculate = speculate
+        # GG1: the ggml engine serves a named GGUF, after its quality gate passed (the owner's condition)
+        if (engine_configuration == "ggml") != (ggml_gguf is not None):
+            raise ValueError("the ggml configuration needs ggml_gguf, and ggml_gguf needs the ggml configuration")
+        if ggml_gguf is not None and (not isinstance(ggml_gate, dict) or ggml_gate.get("passes") is not True):
+            raise ValueError("the ggml engine serves only after its quality gate passed (GG1)")
+        self.ggml_gguf, self.ggml_gate = ggml_gguf, ggml_gate
+        self.speculation_status: dict[str, Any] | None = None  # SP2: the policy's last summary a request reported
+        self.pilot_status: dict[str, Any] | None = None  # PI1: the Pilot, as its last request saw it
+        self.draft_model_status: dict[str, Any] | None = None  # DM1: the draft model, as its last request saw it
+        self.ggml_agent_status: dict[str, Any] | None = None  # AG10: the ggml engine's agent, as its last request saw it
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
         if cuda_device is not None and (not isinstance(cuda_device, str)
                                         or re.fullmatch(r"[A-Za-z0-9-]{1,64}", cuda_device) is None):
             raise ValueError("cuda_device must be one CUDA device index or UUID")
         self.cuda_device = cuda_device
-        if compute_dtype not in (None, "float32", "native", "dequantize"):
-            raise ValueError("compute_dtype must be None, float32, native or dequantize")
+        # CPU6: MLX's float32 products on an optimised BLAS in this worker (opt-in, changes output); a worker that
+        # cannot get it serves on the stock BLAS and says why (`cpu_blas_record`).
+        if cpu_blas not in (None, "openblas"):
+            raise ValueError("cpu_blas must be None or openblas")
+        if cpu_blas is not None and cuda_device is not None:
+            raise ValueError("cpu_blas applies to a CPU worker, not one pinned to a CUDA device")
+        if cpu_threads is not None and (type(cpu_threads) is not int or cpu_threads < 1 or cpu_blas is None):
+            raise ValueError("cpu_threads must be a positive int and needs cpu_blas")
+        self.cpu_blas, self.cpu_threads = cpu_blas, cpu_threads
+        self.cpu_blas_record: dict[str, Any] | None = None
+        if compute_dtype not in (None, "float32", "float16", "native", "dequantize"):
+            raise ValueError("compute_dtype must be None, float32, float16, native or dequantize")
         if compute_dtype is not None and execution_variant != "reference":
             raise ValueError("compute_dtype is available on the reference worker only")
         # Opt-in numeric plan (PORT1): changes output, reported in health.
@@ -141,6 +174,7 @@ class MLXWorkerClient:
         self.last_generation_metadata: dict[str, Any] | None = None
         self.last_batch_metadata: list[dict[str, Any]] | None = None
         self.startup_timeout = None if startup_timeout is None else float(startup_timeout)
+        self.stall_timeout: float | None = STALL_TIMEOUT_S  # STAB3: None waits for the deadline alone
         self._process: subprocess.Popen[bytes] | None = None
         self._ready_payload: dict[str, Any] | None = None
         self._stderr_thread: threading.Thread | None = None
@@ -176,8 +210,13 @@ class MLXWorkerClient:
         if (self.execution_variant == "current_engine"
                 and self.engine_configuration in {"baseline_throughput", "core_throughput"}):
             return 32
-        if self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
-                                                                                        "dense_stacked"):
+        if self.execution_variant == "current_engine" and self.engine_configuration == "dense_stacked":
+            # STAB3 (AG5-G run 6): no more open members than the plan has slots; the agent's width may be below 8
+            return min(STREAM_GROUP_REQUESTS, self.dense_width or STREAM_GROUP_REQUESTS)
+        if self.execution_variant == "current_engine" and self.engine_configuration == "ggml":
+            # GG1: the ggml engine's sequences (8; SEQ1: the count the engine chose, or IRONMULE_GGML_SEQS)
+            return int(os.environ.get("IRONMULE_GGML_SEQS") or 0) or STREAM_GROUP_REQUESTS
+        if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
             return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
                 and self._ready_payload.get("automatic_batch_qualified") is True):
@@ -188,13 +227,13 @@ class MLXWorkerClient:
     def reuses_slots(self) -> bool:
         """KB1: whether a member that ends frees room a newcomer may take while its group runs (the dense
         plan's slot pool); every other engine counts members over the group's life."""
-        return self.execution_variant == "current_engine" and self.engine_configuration == "dense_stacked"
+        return self.execution_variant == "current_engine" and self.engine_configuration in ("dense_stacked", "ggml")
 
     @property
     def streams_batches(self) -> bool:
         """Whether grouped requests may stream (the engine-stream worker path, SERVE4)."""
         return self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
-                                                                                            "dense_stacked")
+                                                                                            "dense_stacked", "ggml")
 
     def can_batch_requests(self, requests: Any) -> bool:
         """Check metadata admission to the opt-in transport without model execution."""
@@ -376,6 +415,21 @@ class MLXWorkerClient:
         finally:
             selector.close()
 
+    def _read_progress(self, deadline: float | None, **kwargs: Any) -> dict[str, Any]:
+        """STAB3: the next event of a running generation, within the call's deadline and within `stall_timeout`
+        of the one before. A worker that is alive but sends nothing for that long fails as unavailable, so its
+        group and the requests behind it end now and the service replaces it."""
+        stall = self.stall_timeout
+        if stall is None:
+            return self._read_event(deadline, **kwargs)
+        limit = time.monotonic() + stall
+        try:
+            return self._read_event(limit if deadline is None else min(deadline, limit), **kwargs)
+        except RequestTimeout:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise
+            raise BackendUnavailable(f"backend worker made no progress for {stall:g} s") from None
+
     @staticmethod
     def _validate_startup_telemetry(event: dict[str, Any]) -> None:
         telemetry_keys = {
@@ -426,6 +480,11 @@ class MLXWorkerClient:
             })
             if self.cuda_device is not None:
                 environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device
+            if self.cpu_blas is not None:
+                from ironmule import cpu_blas
+
+                variables, self.cpu_blas_record = cpu_blas.environment(threads=self.cpu_threads)
+                environment.update(variables)
             try:
                 arguments = [sys.executable, "-I", "-u", str(worker), "--spec",
                              json.dumps(self.spec.as_dict(), separators=(",", ":"))]
@@ -440,6 +499,12 @@ class MLXWorkerClient:
                                   "--prefix-cache-max-bytes", str(self.prefix_cache_max_bytes)]
                 if self.execution_variant == "current_engine":
                     arguments += ["--engine-configuration", self.engine_configuration]
+                    if self.dense_width is not None:
+                        arguments += ["--dense-width", str(self.dense_width)]
+                    if self.speculate:
+                        arguments += ["--speculate"]
+                    if self.ggml_gguf is not None:
+                        arguments += ["--ggml-gguf", self.ggml_gguf, "--ggml-gate", json.dumps(self.ggml_gate)]
                     if self.chat_reuse:
                         arguments += ["--chat-reuse"]
                     if self.engine_knobs is not None:
@@ -751,7 +816,7 @@ class MLXWorkerClient:
                 poll_cancels()
                 while True:
                     try:
-                        event = self._read_event(deadline, on_tick=poll_cancels)
+                        event = self._read_progress(deadline, on_tick=poll_cancels)
                     except RequestTimeout:
                         self._mark_unusable()
                         raise RequestTimeout("batch generation timed out")
@@ -807,6 +872,14 @@ class MLXWorkerClient:
                         finish, prompt, completion = (event.get("finish_reason"), event.get("prompt_tokens"),
                                                        event.get("completion_tokens"))
                         engine = event.get("engine")
+                        if isinstance(engine, dict) and isinstance(engine.get("speculation"), dict):
+                            self.speculation_status = engine["speculation"]  # SP2: shown under /health
+                        if isinstance(engine, dict) and isinstance(engine.get("pilot"), dict):
+                            self.pilot_status = engine["pilot"]  # PI1: shown under /health
+                        if isinstance(engine, dict) and isinstance(engine.get("draft_model"), dict):
+                            self.draft_model_status = engine["draft_model"]  # DM1: shown under /health
+                        if isinstance(engine, dict) and isinstance(engine.get("ggml_agent"), dict):
+                            self.ggml_agent_status = engine["ggml_agent"]  # AG10: shown under /health
                         digest = event.get("prompt_ids_sha256")
                         if (finish not in {"stop", "length", "cancelled"} or type(prompt) is not int or prompt < 0
                                 or type(completion) is not int or not token_counts[request_id] <= completion <= request.max_tokens
@@ -939,7 +1012,7 @@ class MLXWorkerClient:
                 self._send(command, deadline)
                 while True:
                     try:
-                        event = self._read_event(deadline, cancel=cancel, on_cancel=request_cancel)
+                        event = self._read_progress(deadline, cancel=cancel, on_cancel=request_cancel)
                     except RequestTimeout:
                         self._mark_unusable()
                         raise RequestTimeout("generation timed out")

@@ -89,9 +89,11 @@ def test_every_configuration_that_advertises_grouping_is_accepted_by_its_worker(
     from ironmule_product.backend import ENGINE_CONFIGURATIONS
     from ironmule_product.worker import BATCH_CONFIGURATIONS
 
+    # GG1: the ggml configuration exists only with a GGUF whose gate passed
+    extra = {"ggml": {"ggml_gguf": "/x.gguf", "ggml_gate": {"passes": True}}}
     grouping = {configuration for configuration in ENGINE_CONFIGURATIONS
-                if MLXWorkerClient(_spec(), execution_variant="current_engine",
-                                   engine_configuration=configuration).batch_capacity > 1}
+                if MLXWorkerClient(_spec(), execution_variant="current_engine", engine_configuration=configuration,
+                                   **extra.get(configuration, {})).batch_capacity > 1}
     assert grouping == set(BATCH_CONFIGURATIONS)
 
 

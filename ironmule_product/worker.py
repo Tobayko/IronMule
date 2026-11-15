@@ -62,6 +62,18 @@ def _gpu_available(mx: Any) -> bool:
     return bool(mx.metal.is_available() or (cuda is not None and cuda.is_available()))
 
 
+def _cpu_blas_status() -> dict[str, Any]:
+    """CPU6: which BLAS serves MLX's float32 products here, only when the client preloaded the shim (else nothing,
+    so every other worker's ready event is unchanged)."""
+    if "IRONMULE_CPU_BLAS_LIBRARY" not in os.environ:
+        return {}
+    from ironmule import cpu_blas
+
+    status = cpu_blas.active()
+    return {"cpu_blas": {"serving": status["serving"], "integer_bits": status.get("integer_bits"),
+                         "library": status.get("library"), "threads": os.environ.get("OPENBLAS_NUM_THREADS")}}
+
+
 def _startup_telemetry(mx: Any, startup_started: float) -> dict[str, Any]:
     values: dict[str, Any] = {
         "startup_wall_seconds": time.monotonic() - startup_started,
@@ -160,10 +172,11 @@ def _safe_error(code: str, request_id: str | None = None) -> None:
     _emit(event)
 
 
-def _note_failure(where: str) -> None:
+def _note_failure(where: str, engine_bridge: Any = None) -> None:
     """STAB1: the handled exception's type, its frames and whether it reports exhausted memory, on
     stderr only (the parent keeps the tail when it retires this worker). Never its message: a library
-    message can quote input text."""
+    message can quote input text. STAB4: also what the engine's fallbacks caught in that run (`fallbacks`), since
+    an error the Runtime's safety net caught is otherwise hidden behind a later one."""
     import traceback
     error = sys.exc_info()[1]
     if error is None:
@@ -171,10 +184,15 @@ def _note_failure(where: str) -> None:
     frames = [f"{Path(f.filename).name}:{f.lineno}:{f.name}" for f in traceback.extract_tb(error.__traceback__)[-8:]]
     message = str(error).lower()
     try:
+        fallbacks = getattr(engine_bridge, "fallback_kinds", lambda: [])() if engine_bridge is not None else []
+    except Exception:  # noqa: BLE001 - a diagnostic never changes the protocol
+        fallbacks = []
+    try:
         sys.stderr.write(json.dumps({"worker_error": where, "type": type(error).__name__, "frames": frames,
                                      "out_of_memory": isinstance(error, MemoryError) or "out of memory" in message
                                      or "outofmemory" in message.replace(" ", ""),
-                                     "illegal_memory_access": "illegal memory access" in message}) + "\n")
+                                     "illegal_memory_access": "illegal memory access" in message,
+                                     **({"fallbacks": fallbacks} if fallbacks else {})}) + "\n")
         sys.stderr.flush()
     except Exception:  # noqa: BLE001 - a diagnostic never changes the protocol
         pass
@@ -588,7 +606,7 @@ def _generate(
                 raise ValueError("generation ended without a completion frame")
     except Exception:
         terminal = None
-        _note_failure("generate")
+        _note_failure("generate", engine_bridge)
         _safe_error("generation_error", request_id)
         error_emitted = True
     finally:
@@ -681,10 +699,12 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
 
 # Engine configurations whose worker accepts grouped requests: the historical throughput
 # candidates (buffered) and the current profile's streaming groups (SERVE4).
-BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile", "dense_stacked"})
+BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile", "dense_stacked", "ggml"})
 # The ones whose groups stream, take joins and stop on cancel (SERVE4, SERVE8): the client sends them lone
 # streamed batches too (`MLXWorkerClient.streams_batches`), so the two lists must agree.
-STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked"})
+STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked", "ggml"})
+STREAM_WIDTH = 8  # streams a grouped run holds at once (the client's STREAM_GROUP_REQUESTS)
+STREAM_WIDTH = max(STREAM_WIDTH, int(os.environ.get("IRONMULE_GGML_SEQS") or 0))  # ROW1: the ggml engine's sequences
 _DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
 JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
 
@@ -707,6 +727,12 @@ class _DetokenizerPool:
 
     def release(self, detokenizer: Any) -> None:
         self._free.append(detokenizer)
+
+    def prepare(self, count: int) -> None:
+        """GG2: build `count` detokenizers now, at the worker's start. Built on demand, the first block of eight
+        streams paid for eight walks of the vocabulary before its first tokens (about 0.3 s for SmolLM2's 49k)."""
+        while len(self._free) < count:
+            self._free.append(self._build())
 
 
 def _detokenizer_pool(tokenizer: Any) -> _DetokenizerPool:
@@ -768,6 +794,19 @@ class _BatchStream:
                 self.finished = finish
         except BaseException as exc:  # noqa: BLE001 - raised by finish()
             self.error = exc
+
+    def cancelled_now(self) -> None:
+        """STAB4: the engine ends this request at its cancel (RSI3-LIVE-P2), so its done goes out now. The
+        client then counts its place in the group free while the group runs on, and a waiting request takes the
+        slot the engine freed; before, the done waited for the run's end and the freed slot stayed empty."""
+        self.stopped = True
+        if self.finished is None and self.terminal is not None and self.error is None:
+            try:
+                self._release()
+                _emit(self.terminal("cancelled", self.sent, len(self.tokens)))
+                self.finished = "cancelled"
+            except BaseException as exc:  # noqa: BLE001 - raised by finish(), never inside the executor
+                self.error = exc
 
     def _release(self) -> None:
         if self.detokenizer is not None:
@@ -896,6 +935,17 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
             with lock:
                 skipped = {row[0] for row in report if cancellations[row[0]].is_set()}
             active = [row for row in report if row[0] not in skipped]
+            # STAB3 (AG5-G run 6): each row's prefill takes a slot of the dense plan's pool, so a run never starts
+            # more rows than are free; the rest run right after it, in order. A run with no free slot is an error,
+            # never a loop that waits for one.
+            free = getattr(engine_bridge, "free_slots", lambda: None)()
+            if free is not None and len(active) > free:
+                if free < 1:
+                    raise RuntimeError("no free slot in the dense plan's pool at the start of a run")
+                held = {row[0] for row in active[free:]}
+                leftovers.extend(row for row in report if row[0] in held)
+                report = [row for row in report if row[0] not in held]
+                active = active[:free]
             for row in active if live else ():
                 streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations, lock,
                                                tokenizer, eos=stop_ids, terminal=terminal_for(row))
@@ -917,13 +967,16 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
                                                    lock, tokenizer, eos=stop_ids, terminal=terminal_for(row))
                     joined.append(row)
-                    fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row)))
+                    fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row), cancelled_for(row[0])))
                 return fresh
 
             def cancelled_for(request_id: str):
-                def check() -> bool:
+                def check() -> bool:  # the engine asks this to stop a request; True ends it there
                     with lock:
-                        return cancellations[request_id].is_set()
+                        stop = cancellations[request_id].is_set()
+                    if stop and request_id in streams:
+                        streams[request_id].cancelled_now()
+                    return stop
                 return check
 
             with redirect_stdout(sys.stderr):
@@ -942,7 +995,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 raise RuntimeError("invalid grouped result count")
             result_by_id = {row[0]: result for row, result in zip(active + joined, results)}
             pre_cancelled = skipped
-            for request_id, prompt_ids, limit in report + joined:
+            # `max_tokens`, not `limit`: `admit` and `drain_joins` read the engine's slot limit in later runs
+            for request_id, prompt_ids, max_tokens in report + joined:
                 if request_id in pre_cancelled:
                     terminal = {"type": "done", "batch_id": batch_id, "request_id": request_id,
                                 "finish_reason": "cancelled", "prompt_tokens": len(prompt_ids),
@@ -962,7 +1016,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     stopped = result.finish_reason == "cancelled" and cancellations[request_id].is_set()
                 if (not isinstance(tokens, (list, tuple)) or type(result.token_count) is not int
                         or result.token_count != len(tokens)
-                        or not (0 if stopped else 1) <= result.token_count <= limit
+                        or not (0 if stopped else 1) <= result.token_count <= max_tokens
                         or (result.finish_reason not in {"stop", "length"} and not stopped)
                         or not isinstance(result.text, str) or not isinstance(result.metadata, dict)):
                     raise RuntimeError("invalid grouped engine result")
@@ -1005,10 +1059,10 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
             leftovers = []
         _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": all_ids, "memory": _memory_counters()})
     except ValueError:
-        _note_failure("batch")
+        _note_failure("batch", engine_bridge)
         _safe_batch_error("invalid_request", batch_id)
     except Exception:
-        _note_failure("batch")
+        _note_failure("batch", engine_bridge)
         _safe_batch_error("generation_error", batch_id)
     finally:
         with lock:
@@ -1226,11 +1280,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="current_engine: reuse KV state across chat turns (ChatTurnsPlan, SERVE7)")
     parser.add_argument("--engine-configuration", default="current_profile",
                         choices=("current_profile", "baseline_interactive", "core_interactive",
-                                 "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
+                                 "baseline_throughput", "core_throughput", "rust2", "dense_stacked", "ggml"))
+    parser.add_argument("--dense-width", type=int, default=None,
+                        help="dense_stacked: the stacked engine's width, 1-8 (AG5: the agent's measured best)")
+    parser.add_argument("--speculate", action="store_true",
+                        help="dense_stacked: speculation from the context with a learned window (SP2)")
+    parser.add_argument("--ggml-gguf", default=None, help="ggml: the GGUF this worker serves (GG1)")
+    parser.add_argument("--ggml-gate", default=None, help="ggml: its quality gate's record, which must pass (GG1)")
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
-    parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None)
+    parser.add_argument("--compute-dtype", choices=("float32", "float16", "native", "dequantize"), default=None)
     parser.add_argument("--engine-knobs", default=None)  # KP1: class-A knobs when no stored profile applies
     args = parser.parse_args(argv)
     global CHAT_REUSE, THINKING
@@ -1254,7 +1314,9 @@ def main(argv: list[str] | None = None) -> int:
             from friday_evidence.identity import assert_model_unchanged, runtime_identity
             identity = runtime_identity(spec)
         rust2 = args.execution_variant == "current_engine" and args.engine_configuration == "rust2"
-        model, tokenizer, stream_generate, device = _load(spec, lazy=rust2)
+        ggml = args.execution_variant == "current_engine" and args.engine_configuration == "ggml"
+        # GG1: llama.cpp holds the weights; MLX keeps only the tokenizer's model unloaded, as for rust2
+        model, tokenizer, stream_generate, device = _load(spec, lazy=rust2 or ggml)
         import mlx.core as mx
         cuda_cache_limit = _apply_cuda_cache_limit(mx)
         if args.compute_dtype is not None:
@@ -1263,6 +1325,8 @@ def main(argv: list[str] | None = None) -> int:
             import mlx.core as mx
             if args.compute_dtype == "float32":
                 model.set_dtype(mx.float32)  # floating parameters only; opt-in, changes output
+            elif args.compute_dtype == "float16":  # NUM1's plan for a bf16 checkpoint on an emulating GPU (AG4)
+                model.set_dtype(mx.float16)
             elif args.compute_dtype == "dequantize":  # CPU3: dense float32 weights; opt-in, changes output
                 from ironmule.numeric_plans import dequantize_model
                 dequantize_model(model)
@@ -1276,6 +1340,12 @@ def main(argv: list[str] | None = None) -> int:
             prefix_session = WorkerPrefixSession(model, tokenizer,
                 binding_sha256=identity["identity_sha256"], scope_nonce=secrets.token_hex(16),
                 max_entries=args.prefix_cache_max_entries, max_bytes=args.prefix_cache_max_bytes)
+        elif ggml:
+            from ironmule_product.ggml_bridge import GgmlBridge
+            gate = json.loads(args.ggml_gate) if args.ggml_gate else None
+            if not args.ggml_gguf or not isinstance(gate, dict) or gate.get("passes") is not True:
+                raise ValueError("the ggml engine serves a named GGUF after its quality gate passed (GG1)")
+            engine_bridge = GgmlBridge(args.ggml_gguf, tokenizer, speculate=args.speculate, gate=gate)
         elif rust2:
             from ironmule_product.rust2_bridge import Rust2Bridge
             engine_bridge = Rust2Bridge(os.environ.get("IRONMULE_RUST2_BINARY", ""), spec["snapshot_path"],
@@ -1285,7 +1355,8 @@ def main(argv: list[str] | None = None) -> int:
             from ironmule_product.types import ModelSpec
             engine_bridge = CurrentEngineBridge.from_loaded(
                 model, tokenizer, ModelSpec.from_dict(spec), configuration=args.engine_configuration,
-                class_a_knobs=json.loads(args.engine_knobs) if args.engine_knobs is not None else None)
+                class_a_knobs=json.loads(args.engine_knobs) if args.engine_knobs is not None else None,
+                width=args.dense_width, speculate=args.speculate)
         elif args.execution_variant == "automatic":
             from ironmule_product.automatic_runtime import AutomaticRuntime
             from ironmule_product.types import ModelSpec
@@ -1302,6 +1373,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     import mlx.core as mx
     try:
+        if engine_bridge is not None and args.engine_configuration in STREAMED_BATCH_CONFIGURATIONS:
+            _detokenizer_pool(tokenizer).prepare(STREAM_WIDTH)  # GG2: before the first request, not during it
         telemetry = _startup_telemetry(mx, startup_started)
     except Exception:
         _safe_error("backend_unavailable")
@@ -1318,6 +1391,7 @@ def main(argv: list[str] | None = None) -> int:
         **telemetry,
         "sources_sha256": _sources_digest(),  # RSI3-LIVE (f): every loaded source file of this worker
         "cuda_cache_limit_bytes": cuda_cache_limit,  # MEM2: None = MLX's default
+        **_cpu_blas_status(),
     })
     commands: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=8)
     cancellations: dict[str, threading.Event] = {}

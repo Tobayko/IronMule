@@ -10,7 +10,7 @@ greedy answer on the grouped batch-1 path, and a replayed comparison checks that
 
 1. *Observe.* Every finished group, real or replayed, updates a world model by recursive least squares:
    prefill seconds per member and per thousand prompt tokens, decode seconds per round and per further
-   session in a round, as the pool model of `tools/rl4_agent.py` (RL4, RL8) prices them. Every finished
+   session in a round, as the pool model of `training/rl4_agent.py` (RL4, RL8) prices them. Every finished
    request goes into a traffic memory of metadata (arrival, prompt tokens, output limit, tokens made);
    no prompt or answer text is kept.
 2. *Plan.* While the server is idle, a planner process (its own process, so serving threads keep the
@@ -29,13 +29,18 @@ greedy answer on the grouped batch-1 path, and a replayed comparison checks that
    policy's digest is recorded and never serves again under this binding. Learning goes on, and the next
    candidate must qualify again.
 
+**AG2.** "Shortest first" may sort by the answer length a small online model predicts
+(`length_model.LengthModel`) instead of the output limit. The model learns from every finished live request,
+each request's prediction is made once when it is first seen, and a schedule that orders by it is planned and
+qualified as any other: it changes the order only, never an answer.
+
 It is off by default (`ironmule serve --agent on`), refused together with `--learning` and
 `--dispatch-policy` (one decision owner), and keeps the reference schedule whenever it cannot prove better.
 """
 
 from __future__ import annotations
 
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 import hashlib
 import json
@@ -53,6 +58,8 @@ from typing import Any, Callable, Iterable
 
 from .learned_dispatch import (LONG_PROMPT_CHARS, LONG_TOKENS, ORDER_FEATURES, PLACEMENT_FEATURES, Policy,
                                SJF_AGE_S, View, WIDTH_CHOICES, order_features)
+from .hardware_profile import utilisation
+from .length_model import LengthModel, features as length_features
 
 STATE_SCHEMA = "ironmule.agent.state.v2"
 EVIDENCE_SCHEMA = "ironmule.agent.evidence.v1"
@@ -69,16 +76,24 @@ MAX_EXPLORATIONS = 2        # replay windows that may measure one unpriced width
 REPLAN_AFTER = 64           # new arrivals before a fresh plan when no candidate waits
 QUIET_S = 5.0               # idle seconds before a replay window may start (RSI3-LIVE)
 TRACE = 16                  # arrivals per replay window
+MAX_WINDOW = 128            # arrivals a busy-period window may span; a server that never empties is cut here
 MAX_REPLAY_TOKENS = 512     # a replayed output limit is capped here
 MAX_PREEMPTIONS = 3         # demand cut a held-out window this often: the next one is used instead
-MIN_TRIPLETS = 6
-MAX_TRIPLETS = 24
-LOOKS = (6, 12, 18, 24)     # a comparison is judged only at these numbers of triplets (group-sequential)
-ALPHAS = (0.001, 0.002, 0.004, 0.018)  # one-sided error spent at each look (O'Brien-Fleming-like), 2.5 % in all
+MIN_TRIPLETS = 12
+MAX_TRIPLETS = 96
+# A comparison is judged only at these numbers of triplets (group-sequential). On a T4 one 16-arrival triplet's gain
+# spread about 23 %, so 24 triplets could not resolve the few percent a schedule gains there (AG1 V).
+LOOKS = (12, 24, 48, 96)
+ALPHAS = (0.0005, 0.002, 0.006, 0.0165)  # one-sided error spent at each look (O'Brien-Fleming-like), 2.5 % in all
 RESAMPLES = 4000
 MONITOR_WINDOW = 24         # live requests per monitoring window
 MAX_ERRORS = 3
 SAVE_AFTER_S = 30.0
+MIN_PREDICTED = 32          # AG2: recorded arrivals with a prediction before "shortest predicted first" is planned
+LENGTH_CACHE = 4096         # AG2: requests whose features and prediction are kept until they finish
+OBJECTIVES = ("throughput", "latency")  # AG8: tokens per second first (the owner's), or AG1's request cost
+OBJECTIVE = "throughput"
+TTFT_TOLERANCE = 0.02       # AG8: how much later the mean first token may come (AG6-Q's and AG7's 1.02x)
 TABLE_QUEUE = 16            # queues up to this length are decided from a compiled table, longer ones by the policy
 PLANNER = {"episodes": 3000, "seeds": 2, "lr": 0.05, "harm_weight": 5.0, "validation": 40, "held_out": 80,
            "trace": TRACE, "scale": (0.8, 1.25)}  # gaps scaled log-symmetrically: 0.5-1.5 weighted heavy load
@@ -124,6 +139,12 @@ class _RLS:
         trace, limit = sum(p[i][i] for i in range(n)), sum(self.spread)
         if trace > limit:
             p = [[v * limit / trace for v in row] for row in p]
+        # each parameter's own variance stays at or below its start (D P D with a diagonal D keeps P positive
+        # definite): forgetting in a direction no group excites, as groups of one leave the per-group term,
+        # otherwise regrows it up to the whole trace and the prefill split wandered 11.8 % (AG1 S2, run 6)
+        scale = [min(1.0, math.sqrt(self.spread[i] / p[i][i])) for i in range(n)]
+        if any(s < 1.0 for s in scale):
+            p = [[p[i][j] * scale[i] * scale[j] for j in range(n)] for i in range(n)]
         self.theta, self.p = theta, p
         self.n += 1
 
@@ -264,18 +285,58 @@ class Job:
     tokens: int
     first: float | None = None
     end: float | None = None
+    predicted: float | None = None  # AG2: the answer length predicted when it arrived, if recorded
 
 
-def _sjf_key(now: float) -> Callable[[Job], tuple]:
+def _order_value(job: Job, key: str) -> float:
+    if key == "predicted" and job.predicted is not None:
+        return min(float(job.max_tokens), job.predicted)
+    return float(job.max_tokens)
+
+
+def _sjf_key(now: float, key: str = "limit") -> Callable[[Job], tuple]:
     """The service's shortest-first order (`ProductService._order_waiting`): aged requests by arrival."""
-    return lambda r: (now - r.arrive <= SJF_AGE_S, r.max_tokens if now - r.arrive <= SJF_AGE_S else 0, r.arrive)
+    return lambda r: (now - r.arrive <= SJF_AGE_S, _order_value(r, key) if now - r.arrive <= SJF_AGE_S else 0,
+                      r.arrive)
+
+
+def _fresh(jobs: list[Job]) -> list[Job]:
+    """Copies without their simulated times (A1: built directly; `dataclasses.replace` was a third of a plan)."""
+    return [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens, j.tokens, None, None, j.predicted)
+            for j in jobs]
 
 
 def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]], bool],
-             width: Callable[[list[Job]], int], capacity: int, engine_width: int = ENGINE_WIDTH) -> float:
+             width: Callable[[list[Job]], int], capacity: int, engine_width: int = ENGINE_WIDTH,
+             key: str = "limit") -> float:
     """One card that runs one group at a time, members prefilled one after another, decode rounds of at most
     `engine_width` sessions, each member ending at its own last token (member release, H9). Returns the mean
     request cost: time in system plus time to first token, the live learner's contract."""
+    _run(params, jobs, sjf, width, capacity, engine_width, key)
+    return statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs) if jobs else 0.0
+
+
+def scores(jobs: list[Job]) -> dict[str, float]:
+    """AG8: what a simulated or replayed window scores: AG1's request cost (`latency`), its span from first arrival
+    to last end and the tokens made (seconds per token is span over tokens), and the mean first token."""
+    if not jobs:
+        return {"latency": 0.0, "span": 0.0, "tokens": 0, "first": 0.0}
+    return {"latency": statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs),
+            "span": max(j.end for j in jobs) - min(j.arrive for j in jobs),
+            "tokens": sum(j.tokens for j in jobs), "first": statistics.fmean(j.first - j.arrive for j in jobs)}
+
+
+def simulate_scores(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]], bool],
+                    width: Callable[[list[Job]], int], capacity: int, engine_width: int = ENGINE_WIDTH,
+                    key: str = "limit") -> dict[str, float]:
+    """`simulate`, scored by `scores`."""
+    _run(params, jobs, sjf, width, capacity, engine_width, key)
+    return scores(jobs)
+
+
+def _run(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]], bool],
+         width: Callable[[list[Job]], int], capacity: int, engine_width: int, key: str) -> None:
+    """The simulation itself: sets every job's `first` and `end`."""
     pending = sorted(jobs, key=lambda j: (j.arrive, j.index))
     waiting: list[Job] = []
     now, i = 0.0, 0
@@ -287,7 +348,7 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
             now = pending[i].arrive
             continue
         if sjf(waiting):
-            waiting.sort(key=_sjf_key(now))
+            waiting.sort(key=_sjf_key(now, key))
         size = max(1, min(capacity, width(waiting)))
         group, waiting = waiting[:size], waiting[size:]
         t = now + params.get("group_s", 0.0)
@@ -299,31 +360,62 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
             if remaining[job.index] <= 0:
                 job.end = t
         active = [j for j in group if remaining[j.index] > 0]
-        while active:
-            served = active[:engine_width]
-            t += params["step_s"] + params["step_s_per_session"] * (len(served) - 1)
-            for job in served:
-                remaining[job.index] -= 1
+        t = _decode(params, active, remaining, engine_width, t)
+        now = t
+
+
+def _decode(params: dict[str, float], active: list[Job], remaining: dict[int, int], engine_width: int,
+            t: float) -> float:
+    """A group's decode rounds, as `simulate` defines them: a round serves the first `engine_width` sessions and
+    rotates them to the back, and a session ends with the round that gives it its last token. A1 (2026-11-09):
+    instead of stepping round by round through the lists, jump to the next round in which a session ends. With at
+    most `engine_width` sessions every round serves all of them; with more, round r serves the r-th `engine_width`
+    of the endlessly repeated order, so session p gets its last token in round ((remaining - 1) * n + p) //
+    engine_width. Time is still added once per round, so every float is the one the round-by-round loop made."""
+    step_s, per_session = params["step_s"], params["step_s_per_session"]
+    while active:
+        n = len(active)
+        if n <= engine_width:
+            rounds = min(remaining[job.index] for job in active)
+            cost = step_s + per_session * (n - 1)
+            for _ in range(rounds):
+                t += cost
+            for job in active:
+                remaining[job.index] -= rounds
                 if remaining[job.index] == 0:
                     job.end = t
-            active = active[len(served):] + [j for j in served if remaining[j.index] > 0]
-        now = t
-    return statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs) if jobs else 0.0
+            active = [job for job in active if remaining[job.index] > 0]
+            continue
+        rounds = min(((remaining[job.index] - 1) * n + p) // engine_width for p, job in enumerate(active)) + 1
+        cost = step_s + per_session * (engine_width - 1)
+        for _ in range(rounds):
+            t += cost
+        served = rounds * engine_width  # places of the repeated order served so far
+        for p, job in enumerate(active):
+            remaining[job.index] -= (served - 1 - p) // n + 1 if served > p else 0
+            if remaining[job.index] == 0:
+                job.end = t
+        shift = served % n
+        active = [job for job in active[shift:] + active[:shift] if remaining[job.index] > 0]
+    return t
 
 
-def fixed_policy(width: int, sjf: bool) -> dict[str, Any]:
-    """A fixed schedule in the LD1 v2 policy format: the bias feature picks the order and the width."""
+def fixed_policy(width: int, sjf: bool, key: str = "limit") -> dict[str, Any]:
+    """A fixed schedule in the LD1 v2 policy format: the bias feature picks the order and the width; `key` is
+    what shortest-first sorts by (AG2)."""
     order = [20.0 if sjf else -20.0] + [0.0] * (ORDER_FEATURES - 1)
     rows = []
     for choice in WIDTH_CHOICES:
         rows += [20.0 if choice == width else 0.0] + [0.0] * (ORDER_FEATURES - 1)
-    return policy_json([0.0] * PLACEMENT_FEATURES, order, rows)
+    return policy_json([0.0] * PLACEMENT_FEATURES, order, rows, key)
 
 
-def policy_json(placement: list[float], order: list[float], width: list[float]) -> dict[str, Any]:
+def policy_json(placement: list[float], order: list[float], width: list[float], key: str = "limit") -> dict[str, Any]:
     body = {"schema": "ironmule.rl4.policy.v2", "placement": placement, "order": order,
             "features": {"placement": PLACEMENT_FEATURES, "order": ORDER_FEATURES},
             "width": width, "widths": list(WIDTH_CHOICES)}
+    if key != "limit":  # AG2; absent means the output limit, so every earlier digest stays valid
+        body["order_key"] = key
     return {**body, "sha256": hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()}
 
 
@@ -335,8 +427,10 @@ def _probabilities(weights: list[float], features: list[float], rows: int) -> li
     return [e / sum(exps) for e in exps]
 
 
-def _views(waiting: list[Job]) -> list[View]:
-    return [View(j.max_tokens, j.long_prompt) for j in waiting]
+def _views(waiting: list[Job]) -> list[Job]:
+    """What a decision sees of the queue. A job has a `View`'s two fields (`max_tokens`, `long_prompt`), which is
+    all the features read, so it is passed as it is (A1: building a `View` per job and decision cost a tenth)."""
+    return waiting
 
 
 def _deciders(policy: Policy, capacity: int) -> tuple[Callable, Callable]:
@@ -344,34 +438,130 @@ def _deciders(policy: Policy, capacity: int) -> tuple[Callable, Callable]:
             lambda waiting: min(capacity, policy.best_width(_views(waiting)) or capacity))
 
 
+def _cost_of(params: dict[str, float], jobs: list[Job], policy: Policy, capacity: int, engine_width: int) -> float:
+    return simulate(params, jobs, *_deciders(policy, capacity), capacity, engine_width, policy.key)
+
+
 def _fixed(width: int, sjf: bool) -> tuple[Callable, Callable]:
     """The reference schedule's deciders: its own width (any, not only a catalogue width) and order."""
     return (lambda waiting: sjf), (lambda waiting: width)
 
 
-def resample(arrivals: list[list[Any]], rng: random.Random, size: int, scale: tuple[float, float]) -> list[Job]:
-    """A window of `size` consecutive recorded arrivals, its gaps scaled by one factor drawn from `scale`
-    (lighter and heavier load than recorded), as model jobs. An arrival is [offset s, prompt tokens,
-    long prompt, output limit, tokens made]."""
-    start = rng.randrange(max(1, len(arrivals) - size + 1))
-    window = arrivals[start:start + size]
-    factor = rng.uniform(*scale)
-    t0 = window[0][0]
-    return [Job(k, (a[0] - t0) * factor, int(a[3]), bool(a[2]), int(a[1]), max(1, int(a[4])))
-            for k, a in enumerate(window)]
+def _jobs(arrivals: list[list[Any]], factor: float = 1.0) -> list[Job]:
+    """Recorded arrivals [offset s, prompt tokens, long prompt, output limit, tokens made, predicted tokens (AG2,
+    may be missing)] as model jobs, timed from the first, their gaps scaled by `factor`."""
+    t0 = arrivals[0][0] if arrivals else 0.0
+    return [Job(k, (a[0] - t0) * factor, int(a[3]), bool(a[2]), int(a[1]), max(1, int(a[4])),
+                predicted=float(a[5]) if len(a) > 5 and a[5] is not None else None)
+            for k, a in enumerate(arrivals)]
 
 
-def _arms(capacity: int) -> dict[str, dict[str, Any]]:
-    return {f"w{w}/{'sjf' if s else 'fifo'}": fixed_policy(w, s)
+def _reference_deciders(reference: dict[str, Any], capacity: int) -> tuple[Callable, Callable]:
+    return _fixed(max(1, min(capacity, int(reference["width"]))), bool(reference["sjf"]))
+
+
+def _idle_marks(params: dict[str, float], jobs: list[Job], reference: dict[str, Any], capacity: int,
+                engine_width: int) -> list[bool]:
+    """Per job: whether it arrives at an empty server (every earlier job ended) when the reference schedule
+    serves them all in the model. The first job always does."""
+    copy = _fresh(jobs)
+    if copy:
+        simulate(params, copy, *_reference_deciders(reference, capacity), capacity, engine_width)
+    marks, done = [], -math.inf
+    for job in copy:
+        marks.append(done <= job.arrive)
+        done = max(done, job.end if job.end is not None else job.arrive)
+    return marks
+
+
+def busy_size(params: dict[str, float], jobs: list[Job], reference: dict[str, Any], capacity: int,
+              engine_width: int, minimum: int = TRACE, maximum: int = MAX_WINDOW) -> int:
+    """How many leading jobs make a window of whole busy periods (AG1 V4): at least `minimum`, then up to the first
+    later arrival that finds the reference schedule's server empty in the model, at most `maximum`. A window cut
+    inside a busy period leaves out the backlog a slow schedule builds for the requests behind it, and that
+    flipped `w2/sjf` from -4.8 % on whole traces to +3.5 % on 16-arrival windows (AG1 V3)."""
+    jobs = jobs[:maximum]
+    if len(jobs) <= minimum:
+        return len(jobs)
+    marks = _idle_marks(params, jobs, reference, capacity, engine_width)
+    return next((k for k in range(minimum, len(jobs)) if marks[k]), len(jobs))
+
+
+def resample(arrivals: list[list[Any]], rng: random.Random, size: int, scale: tuple[float, float],
+             busy: dict[str, Any] | None = None) -> list[Job]:
+    """A window of consecutive recorded arrivals, its gaps scaled by one factor drawn from `scale` (lighter and
+    heavier load than recorded), as model jobs. Without `busy`, `size` arrivals from anywhere. With `busy`
+    ({"params", "reference", "capacity", "engine_width", "starts"}), it starts at a recorded arrival that found
+    the server empty (`starts`) and spans whole busy periods of the reference schedule: at least `size`
+    arrivals, at most `MAX_WINDOW` (AG1 V4)."""
+    if busy is None:
+        start = rng.randrange(max(1, len(arrivals) - size + 1))
+        return _jobs(arrivals[start:start + size], rng.uniform(*scale))
+    starts = busy["starts"] or [0]
+    start = starts[rng.randrange(len(starts))]
+    jobs = _jobs(arrivals[start:start + MAX_WINDOW], rng.uniform(*scale))
+    return jobs[:busy_size(busy["params"], jobs, busy["reference"], busy["capacity"], busy["engine_width"], size)]
+
+
+def busy_starts(params: dict[str, float], arrivals: list[list[Any]], reference: dict[str, Any], capacity: int,
+                engine_width: int, size: int = TRACE) -> list[int]:
+    """Recorded arrivals that find the reference schedule's server empty in the model and leave at least `size`
+    arrivals after them: where a busy-period window may start."""
+    marks = _idle_marks(params, _jobs(arrivals), reference, capacity, engine_width)
+    return [k for k, mark in enumerate(marks) if mark and k <= len(arrivals) - min(size, len(arrivals))]
+
+
+def _arms(capacity: int, predicted: bool = False) -> dict[str, dict[str, Any]]:
+    """The fixed schedules; with `predicted` (AG2) also shortest predicted answer first at every width."""
+    arms = {f"w{w}/{'sjf' if s else 'fifo'}": fixed_policy(w, s)
             for w in WIDTH_CHOICES if w <= max(1, capacity) for s in (False, True)}
+    if predicted:
+        arms.update({f"w{w}/pred": fixed_policy(w, True, "predicted") for w in WIDTH_CHOICES if w <= max(1, capacity)})
+    return arms
+
+
+def predictions_recorded(arrivals: list[list[Any]]) -> bool:
+    """AG2: whether enough recorded arrivals carry a prediction to plan and replay by it."""
+    with_prediction = sum(1 for a in arrivals if len(a) > 5 and a[5] is not None)
+    return with_prediction >= MIN_PREDICTED and with_prediction >= 0.9 * len(arrivals)
 
 
 def _mean_cost(params: dict[str, float], windows: list[list[Job]], deciders: tuple[Callable, Callable],
-               capacity: int, engine_width: int) -> float:
+               capacity: int, engine_width: int, key: str = "limit") -> float:
     sjf, width = deciders
-    return statistics.fmean(simulate(params, [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens,
-                                                  j.tokens) for j in window], sjf, width, capacity, engine_width)
+    return statistics.fmean(simulate(params, _fresh(window), sjf, width, capacity, engine_width, key)
                             for window in windows)
+
+
+def _policy_cost(params: dict[str, float], windows: list[list[Job]], policy: Policy, capacity: int,
+                 engine_width: int) -> float:
+    return _mean_cost(params, windows, _deciders(policy, capacity), capacity, engine_width, policy.key)
+
+
+def _pooled(params: dict[str, float], windows: list[list[Job]], deciders: tuple[Callable, Callable], capacity: int,
+            engine_width: int, key: str = "limit") -> tuple[float, float]:
+    """AG8: a schedule's price over windows: pooled seconds per token (sum of spans over sum of tokens) and the
+    pooled mean first token."""
+    sjf, width = deciders
+    span = tokens = first = 0.0
+    count = 0
+    for window in windows:
+        jobs = _fresh(window)
+        score = simulate_scores(params, jobs, sjf, width, capacity, engine_width, key)
+        span, tokens = span + score["span"], tokens + score["tokens"]
+        first, count = first + score["first"] * len(jobs), count + len(jobs)
+    return (span / tokens if tokens else 0.0), (first / count if count else 0.0)
+
+
+def _price(params: dict[str, float], windows: list[list[Job]], policy: Policy | None, capacity: int,
+           engine_width: int, objective: str, deciders: tuple[Callable, Callable] | None = None) -> tuple[float, float | None]:
+    """(cost, first token) under `objective`: `latency` is AG1's mean request cost and no first-token bound;
+    `throughput` is pooled seconds per token and the pooled first token (AG8)."""
+    deciders = deciders if deciders is not None else _deciders(policy, capacity)
+    key = policy.key if policy is not None else "limit"
+    if objective == "latency":
+        return _mean_cost(params, windows, deciders, capacity, engine_width, key), None
+    return _pooled(params, windows, deciders, capacity, engine_width, key)
 
 
 def plan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -383,45 +573,68 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     capacity, engine_width = int(payload["capacity"]), int(payload.get("engine_width", ENGINE_WIDTH))
     rng = random.Random(int(payload.get("seed", 0)))
     size, scale = int(settings["trace"]), tuple(settings["scale"])
-    validation = [resample(arrivals, random.Random(30_000 + k), size, scale) for k in range(settings["validation"])]
-    held_out = [resample(arrivals, random.Random(50_000 + k), size, scale) for k in range(settings["held_out"])]
-    arms = _arms(capacity)
+    busy = None
+    if settings.get("busy", True):  # AG1 V4: whole busy periods, not fixed windows
+        busy = {"params": params, "reference": payload["reference"], "capacity": capacity,
+                "engine_width": engine_width,
+                "starts": busy_starts(params, arrivals, payload["reference"], capacity, engine_width, size)}
+    validation = [resample(arrivals, random.Random(30_000 + k), size, scale, busy)
+                  for k in range(settings["validation"])]
+    held_out = [resample(arrivals, random.Random(50_000 + k), size, scale, busy) for k in range(settings["held_out"])]
+    arms = _arms(capacity, predictions_recorded(arrivals))
     allowed = [w for w in WIDTH_CHOICES if w <= max(1, capacity) and w in payload.get("widths", WIDTH_CHOICES)]
     arms = {name: arm for name, arm in arms.items() if int(name[1:].split("/")[0]) in allowed}
-    arm_costs = {name: _mean_cost(params, validation, _deciders(Policy.from_json(arm), capacity), capacity,
-                                  engine_width) for name, arm in arms.items()}
-    guard_name = min(arm_costs, key=lambda n: (arm_costs[n], n))
+    objective = payload.get("objective", "latency")  # a payload from before AG8 meant AG1's cost
+    if objective not in OBJECTIVES:
+        raise ValueError(f"unknown objective {objective!r}")
+    tolerance = 1 + TTFT_TOLERANCE
+    reference = payload["reference"]
+    ref_deciders = _fixed(min(capacity, int(reference["width"])), bool(reference["sjf"]))
+    arm_prices = {name: _price(params, validation, Policy.from_json(arm), capacity, engine_width, objective)
+                  for name, arm in arms.items()}
+    arm_costs = {name: price[0] for name, price in arm_prices.items()}
+    ref_first = None if objective == "latency" else _price(params, validation, None, capacity, engine_width,
+                                                           objective, ref_deciders)[1]
+
+    def in_bound(first: float | None, bound: float | None) -> bool:  # AG8: the first token no later than allowed
+        return first is None or bound is None or first <= tolerance * bound
+
+    bounded = [n for n in arm_costs if in_bound(arm_prices[n][1], ref_first)] or list(arm_costs)
+    guard_name = min(bounded, key=lambda n: (arm_costs[n], n))
     guard = Policy.from_json(arms[guard_name])
     excluded = set(payload.get("excluded") or ())  # behaviours rejected against this incumbent or withdrawn
-    open_arms = [n for n in arm_costs if behaviour(arms[n]) not in excluded]
+    open_arms = [n for n in bounded if behaviour(arms[n]) not in excluded]
     fixed_name = min(open_arms, key=lambda n: (arm_costs[n], n)) if open_arms else None
     runs = []
     for seed in range(int(settings["seeds"])):
         weights, curve = _train(params, arrivals, capacity, engine_width, guard, allowed, settings,
-                                random.Random(rng.randrange(1 << 30) + seed))
+                                random.Random(rng.randrange(1 << 30) + seed), busy, objective)
         candidate = Policy.from_json(policy_json([0.0] * PLACEMENT_FEATURES, weights[0], weights[1]))
-        runs.append((_mean_cost(params, validation, _deciders(candidate, capacity), capacity, engine_width), seed,
-                     weights, curve))
+        runs.append((_price(params, validation, candidate, capacity, engine_width, objective)[0], seed, weights,
+                     curve))
     best = min(runs, key=lambda r: (r[0], r[1]))
     learned = policy_json([0.0] * PLACEMENT_FEATURES, best[2][0], best[2][1])
-    reference = payload["reference"]
     rivals = {"learned": learned}
     if fixed_name is not None:
         rivals["best_fixed"] = arms[fixed_name]
     if payload.get("incumbent") is not None:
         rivals["incumbent"] = payload["incumbent"]
-    costs = {name: _mean_cost(params, held_out, _deciders(Policy.from_json(p), capacity), capacity, engine_width)
-             for name, p in rivals.items()}
-    costs["reference"] = _mean_cost(params, held_out, _fixed(min(capacity, int(reference["width"])),
-                                                             bool(reference["sjf"])), capacity, engine_width)
-    eligible = [name for name in ("learned", "best_fixed") if name in rivals and behaviour(rivals[name]) not in excluded]
+    prices = {name: _price(params, held_out, Policy.from_json(p), capacity, engine_width, objective)
+              for name, p in rivals.items()}
+    prices["reference"] = _price(params, held_out, None, capacity, engine_width, objective, ref_deciders)
+    costs = {name: price[0] for name, price in prices.items()}
+    firsts = {name: price[1] for name, price in prices.items()}
+    incumbent_name = "incumbent" if "incumbent" in costs else "reference"
+    incumbent, incumbent_first = costs[incumbent_name], firsts[incumbent_name]
+    eligible = [name for name in ("learned", "best_fixed") if name in rivals and behaviour(rivals[name]) not in excluded
+                and in_bound(firsts[name], incumbent_first)]
     choice = min(eligible, key=lambda name: (costs[name], name)) if eligible else None
-    incumbent = costs.get("incumbent", costs["reference"])
     proposed = rivals[choice] if choice is not None and costs[choice] < incumbent else None
     step = max(1, len(best[3]) // 50)
     return {"schema": PLAN_SCHEMA, "candidate": proposed, "choice": choice if proposed else None,
             "best_fixed": fixed_name, "guard": guard_name, "excluded": sorted(excluded), "model_costs": costs,
-            "arm_costs": arm_costs,
+            "arm_costs": arm_costs, "objective": objective,
+            **({} if objective == "latency" else {"model_firsts": firsts}),
             "model_gain_vs_incumbent": 1 - costs[choice] / incumbent if choice is not None and incumbent else 0.0,
             "curve": [statistics.fmean(best[3][k:k + step]) for k in range(0, len(best[3]), step)],
             "episodes": int(settings["episodes"]) * int(settings["seeds"]), "widths": allowed,
@@ -429,9 +642,12 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, engine_width: int, guard: Policy,
-           allowed: list[int], settings: dict[str, Any], rng: random.Random) -> tuple[tuple[list, list], list]:
-    """REINFORCE with a running-mean baseline (as `tools/rl4_agent.train`), order and width heads only; each
-    episode also pays the harm weight times what it lost to the guard schedule on the same traffic (RL8)."""
+           allowed: list[int], settings: dict[str, Any], rng: random.Random,
+           busy: dict[str, Any] | None = None, objective: str = "latency") -> tuple[tuple[list, list], list]:
+    """REINFORCE with a running-mean baseline (as `training/rl4_agent.train`), order and width heads only; each
+    episode also pays the harm weight times what it lost to the guard schedule on the same traffic (RL8). AG8:
+    under `throughput` the return is the guard's seconds per token over the episode's (as a ratio), less the harm
+    weight times what it lost to the guard, and times how far its first token went past the tolerance."""
     order = [0.0] * ORDER_FEATURES
     width = [0.0] * (len(WIDTH_CHOICES) * ORDER_FEATURES)
     for r, choice in enumerate(WIDTH_CHOICES):
@@ -441,7 +657,7 @@ def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, e
     baseline, curve = None, []
     lr, harm = float(settings["lr"]), float(settings["harm_weight"])
     for _ in range(int(settings["episodes"])):
-        jobs = resample(arrivals, rng, int(settings["trace"]), tuple(settings["scale"]))
+        jobs = resample(arrivals, rng, int(settings["trace"]), tuple(settings["scale"]), busy)
         grad_o = [0.0] * ORDER_FEATURES
         grad_w = [0.0] * len(width)
 
@@ -463,10 +679,16 @@ def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, e
                     grad_w[c * ORDER_FEATURES + k] += ((1.0 if c == chosen else 0.0) - p[c]) * f[k]
             return WIDTH_CHOICES[chosen]
 
-        copy = [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens, j.tokens) for j in jobs]
-        value = -simulate(params, copy, sjf, pick, capacity, engine_width)
-        rival = simulate(params, jobs, guard_sjf, guard_width, capacity, engine_width)
-        value -= harm * max(0.0, -value - rival)
+        if objective == "latency":
+            value = -simulate(params, _fresh(jobs), sjf, pick, capacity, engine_width)
+            rival = simulate(params, jobs, guard_sjf, guard_width, capacity, engine_width, guard.key)
+            value -= harm * max(0.0, -value - rival)
+        else:
+            mine = simulate_scores(params, _fresh(jobs), sjf, pick, capacity, engine_width)
+            theirs = simulate_scores(params, jobs, guard_sjf, guard_width, capacity, engine_width, guard.key)
+            ratio = (mine["span"] / mine["tokens"]) / max(1e-12, theirs["span"] / theirs["tokens"])
+            late = mine["first"] / max(1e-12, theirs["first"])
+            value = -ratio - harm * max(0.0, ratio - 1.0) - harm * max(0.0, late - 1.0 - TTFT_TOLERANCE)
         if baseline is None:
             baseline = value
         advantage = (value - baseline) / max(1e-6, abs(baseline))
@@ -491,6 +713,17 @@ def window_cost(rows: list[dict[str, Any]], deadline_s: float) -> float:
     return statistics.fmean(costs) if costs else 0.0
 
 
+def window_rate(result: dict[str, Any]) -> dict[str, float]:
+    """AG8: a replayed window's seconds per token (its span over the tokens its requests made) and mean first token."""
+    rows = result.get("rows") or []
+    tokens = sum(int(row.get("tokens") or 0) for row in rows)
+    firsts = [row["ttft_s"] if row.get("ttft_s") is not None else row.get("e2e_s", 0.0) for row in rows]
+    span = result.get("span_s")
+    if span is None:
+        span = max((row.get("e2e_s") or 0.0 for row in rows), default=0.0)
+    return {"spt": span / tokens if tokens else float("inf"), "first": statistics.fmean(firsts) if firsts else 0.0}
+
+
 def _nearest_rank(values: list[float], q: float) -> float:
     ordered = sorted(values)
     return ordered[max(0, math.ceil(q * len(ordered)) - 1)] if ordered else 0.0
@@ -509,7 +742,7 @@ def _paired(pairs: list[tuple[float, float]], resamples: int,
             [boot[min(resamples - 1, max(0, int(q * resamples) - (1 if q > 0.5 else 0)))] for q in quantiles])
 
 
-def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
+def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES, objective: str = "latency") -> dict[str, Any]:
     """The candidate's gain over the incumbent (B against the mean of A and AA, paired by triplet), against
     the floor: the size of what the same estimator finds between the incumbent's two runs (AA against A).
     Judged only at the `LOOKS` (group-sequential): `pass` when the gain's lower bound at that look's share of
@@ -524,14 +757,26 @@ def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[
                                        (alpha, 0.025, 0.975))
     control, _ = _paired([(t["aa"], t["a"]) for t in triplets], resamples)
     floor = max(0.0, abs(control))
+    first = _first_token(triplets, resamples, alpha) if objective == "throughput" else None
     verdict = "open"
     if n in LOOKS or n >= MAX_TRIPLETS:
-        if bound > floor:
+        later = first is not None and first["lower"] > first["allowed"]
+        if bound > floor and (first is None or first["upper"] <= first["allowed"]):
             verdict = "pass"
-        elif high <= floor or n >= MAX_TRIPLETS:
+        elif high <= floor or later or n >= MAX_TRIPLETS:
             verdict = "fail"
     return {"verdict": verdict, "triplets": n, "gain": gain, "gain_ci95": [low, high], "bound": bound,
-            "floor": floor, "noise": _nearest_rank([abs(1 - t["aa"] / t["a"]) for t in triplets], 0.95)}
+            "floor": floor, "noise": _nearest_rank([abs(1 - t["aa"] / t["a"]) for t in triplets], 0.95),
+            "objective": objective, **({"first_token": first} if first is not None else {})}
+
+
+def _first_token(triplets: list[dict[str, float]], resamples: int, alpha: float) -> dict[str, float]:
+    """AG8: how much later B's mean first token is than the incumbent's (`fb` against the mean of `fa`, `faa`), with
+    its bounds at `alpha` either side, and how much later it may be: the tolerance or the A/A floor on it."""
+    earlier, (low, high) = _paired([(t["fb"], (t["fa"] + t["faa"]) / 2) for t in triplets], resamples,
+                                   (alpha, 1 - alpha))
+    control, _ = _paired([(t["faa"], t["fa"]) for t in triplets], resamples)
+    return {"change": -earlier, "lower": -high, "upper": -low, "allowed": max(TTFT_TOLERANCE, abs(control))}
 
 
 def _alpha(n: int) -> float:
@@ -539,17 +784,20 @@ def _alpha(n: int) -> float:
     return ALPHAS[LOOKS.index(n)] if n in LOOKS else ALPHAS[-1]
 
 
-def harm(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
+def harm(triplets: list[dict[str, float]], resamples: int = RESAMPLES, objective: str = "latency") -> dict[str, Any]:
     """An audit of the serving schedule (B) against the reference (A, AA): `harm` when, at a look, the upper
     bound of its gain at 1 minus that look's alpha is below zero: it loses to the reference with the corrected
-    bound."""
+    bound. AG8: under `throughput` also when its first token is later than allowed with the corrected bound."""
     gain, (low, high) = _paired([(t["b"], (t["a"] + t["aa"]) / 2) for t in triplets], resamples,
                                 (0.025, 1 - _alpha(len(triplets))))
     n = len(triplets)
+    first = _first_token(triplets, resamples, _alpha(n)) if objective == "throughput" else None
     verdict = "open"
     if n in LOOKS or n >= MAX_TRIPLETS:
-        verdict = "harm" if high < 0 else ("confirmed" if n >= MAX_TRIPLETS else "open")
-    return {"verdict": verdict, "triplets": n, "gain": gain, "low": low, "high": high}
+        later = first is not None and first["lower"] > first["allowed"]
+        verdict = "harm" if high < 0 or later else ("confirmed" if n >= MAX_TRIPLETS else "open")
+    return {"verdict": verdict, "triplets": n, "gain": gain, "low": low, "high": high, "objective": objective,
+            **({"first_token": first} if first is not None else {})}
 
 
 def compile_table(policy: Policy) -> dict[tuple[int, int], tuple[bool, int | None]]:
@@ -574,6 +822,8 @@ def behaviour(policy_body: dict[str, Any]) -> str:
         for longs in range(n + 1):
             views = [View(LONG_TOKENS * 2, False)] * longs + [View(LONG_TOKENS // 4, False)] * (n - longs)
             decisions.append([policy.uses_sjf(views), policy.best_width(views)])
+    if policy.key != "limit":  # AG2: the same decisions sorted by another key are another schedule
+        decisions.append(policy.key)
     return hashlib.sha256(json.dumps(decisions).encode()).hexdigest()[:16]
 
 
@@ -587,19 +837,26 @@ class Agent:
     def __init__(self, root: str | Path, binding: dict[str, Any], *, capacity: int, reference: dict[str, Any],
                  engine_width: int = ENGINE_WIDTH, deadline_s: float = 120.0, device: str | None = None,
                  clock: Callable[[], float] = time.monotonic, planner_command: list[str] | None = None,
-                 planner_settings: dict[str, Any] | None = None):
+                 planner_settings: dict[str, Any] | None = None, hardware: dict[str, Any] | None = None,
+                 objective: str = OBJECTIVE):
+        if objective not in OBJECTIVES:
+            raise ValueError(f"unknown objective {objective!r}")
         self.root = Path(root)
-        self.binding = dict(binding)
+        self.objective = objective
+        # AG8: the objective is part of the binding, so what was learned and proven under another never serves here.
+        # Under AG1's `latency` the binding is as it was, so those states resume.
+        self.binding = dict(binding) if objective == "latency" else {**dict(binding), "objective": objective}
         self.binding_sha256 = hashlib.sha256(json.dumps(self.binding, sort_keys=True).encode()).hexdigest()
         self.path = self.root / f"state-{self.binding_sha256[:16]}.json"
         self.capacity, self.reference, self.engine_width = max(1, capacity), dict(reference), engine_width
         self.deadline_s, self.device, self.clock = deadline_s, device, clock
         self.planner_command = planner_command or [sys.executable, "-m", "ironmule_product.agent", "plan"]
         self.planner_settings = dict(planner_settings or {})
+        self.hardware = dict(hardware) if hardware else None  # AG3: the architecture it runs on (reported only)
         self._planner: subprocess.Popen | None = None
         self._planner_files: tuple[Path, Path] | None = None
         self._planner_stopped = False
-        self._plan_since = 0.0
+        self._plan_since, self._plan_since_id = 0.0, None
         self._last_activity = clock()
         self._dirty_since: float | None = None
         self._lock = threading.Lock()
@@ -614,7 +871,10 @@ class Agent:
     def _reset(self) -> None:
         """Everything this binding learns, at its start."""
         self.world = WorldModel(self.engine_width)
-        self.traffic: deque[list[Any]] = deque(maxlen=MAX_TRAFFIC)  # [arrive s, prompt tokens, long, limit, tokens]
+        # [arrive s, prompt tokens, long, limit, tokens, predicted tokens]
+        self.traffic: deque[list[Any]] = deque(maxlen=MAX_TRAFFIC)
+        self.lengths = LengthModel()  # AG2
+        self._predicted: OrderedDict[str, tuple[Any, float]] = OrderedDict()
         self.policy: Policy | None = None
         self.evidence: dict[str, Any] | None = None
         self.candidate: dict[str, Any] | None = None  # {"policy", "plan", "since", "triplets", "used"}
@@ -634,6 +894,7 @@ class Agent:
                          "qualified": 0, "rejected": 0, "withdrawn": 0}
         self.arrivals_at_plan = 0
         self.arrivals = 0
+        self._next_id = 0  # each recorded arrival's id, in recording order (its 7th field)
         self._monitor: list[bool] = []
         self._failed_windows = 0
 
@@ -683,6 +944,32 @@ class Agent:
     def card(self, request: Any, cards: list[list[Any]]) -> int | None:
         return None  # placement across GPUs stays with the pool's dispatch
 
+    def length_of(self, request: Any) -> tuple[Any, float]:
+        """AG2: a request's length features and its predicted answer tokens, made once when it is first seen
+        and kept until it finishes (so the prediction recorded for it is the one made before it taught)."""
+        rid = getattr(request, "request_id", None) or id(request)
+        with self._lock:
+            known = self._predicted.get(rid)
+            if known is not None:
+                return known
+            feats = length_features(request)
+            known = (feats, self.lengths.predict(feats, int(request.max_tokens)))
+            self._predicted[rid] = known
+            while len(self._predicted) > LENGTH_CACHE:
+                self._predicted.popitem(last=False)
+            return known
+
+    def order_key(self, request: Any) -> float | None:
+        """What shortest-first sorts this request by under the serving policy: its predicted answer length
+        when the policy orders by it (AG2), else None (the output limit)."""
+        policy = self.policy
+        if policy is None or self.paused or policy.key != "predicted":
+            return None
+        try:
+            return min(float(request.max_tokens), self.length_of(request)[1])
+        except Exception:  # noqa: BLE001 - a prediction fault falls back to the output limit
+            return None
+
     # ---- observation ----
 
     def busy(self) -> None:
@@ -705,14 +992,38 @@ class Agent:
                 self.counters["replayed_groups" if replay else "groups"] += 1
             if not replay:
                 for m in members:
+                    known = m.get("length")  # AG2: (features, prediction made when it arrived), if the service had it
+                    rid = m.get("request_id")
+                    if rid is not None:
+                        self._predicted.pop(rid, None)
                     if m.get("ok"):
+                        predicted = None
+                        if known is not None:
+                            feats, predicted = known
+                            if int(m["tokens"]) > 0:
+                                self.lengths.learn(feats, int(m["tokens"]), predicted)
+                        if len(self.traffic) == self.traffic.maxlen:
+                            self._dropping(self.traffic[0])
                         self.traffic.append([m["arrive"], int(m["prompt_tokens"]),
                                              int(m.get("prompt_chars", 0)) > LONG_PROMPT_CHARS, int(m["max_tokens"]),
-                                             int(m["tokens"])])
+                                             int(m["tokens"]), None if predicted is None else round(predicted, 2),
+                                             self._next_id])
+                        self._next_id += 1
                         self.arrivals += 1
                     if self.active:
                         self._monitor.append(bool(m.get("ok")))
                 self._watch()
+            self._dirty()
+
+    def observe_outcomes(self, outcomes: list[bool]) -> None:
+        """Live requests of a group the world model cannot price (one failed before its first token, or one joined
+        a running group): their outcomes still reach the live monitor. Before, such a group was dropped whole, so a
+        policy whose requests failed before their first token was never withdrawn (review of 2026-11-08)."""
+        with self._lock:
+            self._last_activity = self.clock()
+            if self.active:
+                self._monitor.extend(bool(ok) for ok in outcomes)
+            self._watch()
             self._dirty()
 
     def _watch(self) -> None:
@@ -761,8 +1072,9 @@ class Agent:
         trace = self._trace(self.traffic, since=None)
         if not unpriced or trace is None:
             return False
+        trace = trace[:TRACE]  # a measurement of a width needs no whole busy period
         width = unpriced[0]
-        result = replay([(0.0, chars, tokens) for _, chars, tokens in trace],
+        result = replay([(0.0, *row[1:]) for row in trace],
                         lambda count, waiting, rate, now: (width, 0, False), preempted)
         if result is not None:
             with self._lock:
@@ -772,21 +1084,87 @@ class Agent:
                 self._dirty()
         return True
 
-    def _trace(self, arrivals: Iterable[list[Any]], since: float | None,
-               skip: int = 0) -> list[tuple[float, int, int]] | None:
+    def _ensure_ids(self) -> None:
+        """Give every recorded arrival without one (a state saved before ids, or rows put in directly) the next
+        id, in recording order."""
+        with self._lock:
+            self._ensure_ids_locked()
+
+    def _ensure_ids_locked(self) -> None:  # the caller holds `_lock`
+        for row in self.traffic:
+            if len(row) < 7:
+                row.extend([None] * (6 - len(row)) + [self._next_id])
+                self._next_id += 1
+
+    @staticmethod
+    def _key(row: list[Any]) -> tuple[float, float]:
+        """An arrival's place: its recorded time, then its id (unique, so arrivals at one time keep one order)."""
+        return float(row[0]), float(row[6]) if len(row) > 6 else -1.0
+
+    @staticmethod
+    def _cursor(state: dict[str, Any]) -> tuple[float, float] | None:
+        """Where `state`'s next window starts, after this (time, id). A cursor saved as a time alone (2026-11-08,
+        before ids) means every arrival at that time was used."""
+        cursor = state.get("cursor")
+        if cursor is None:
+            return None
+        if isinstance(cursor, (list, tuple)):
+            return float(cursor[0]), float(cursor[1])
+        return float(cursor), math.inf
+
+    def _dropping(self, row: list[Any]) -> None:
+        """The memory is about to drop `row`: if a qualification had not reached it yet, count it as lost to that
+        state (it continues with the next arrival it still holds)."""
+        for state in (self.candidate, self.audit):
+            if not state or len(row) < 7:
+                continue
+            held_out = row[6] > state["since_id"] if state.get("since_id") is not None else row[0] > state["since"]
+            reached = state.get("trace_end") if state.get("trace") else state.get("cursor")
+            mark = self._cursor({"cursor": reached})
+            if held_out and (mark is None or self._key(row) > mark):
+                state["lost"] = state.get("lost", 0) + 1
+
+    def _trace(self, arrivals: Iterable[list[Any]], since: float | None, skip: int = 0,
+               ends: list[Any] | None = None, after: tuple[float, float] | None = None,
+               since_id: int | None = None) -> list[tuple[float, int, int, int, float]] | None:
         """TRACE consecutive recorded arrivals (after `since`, past the first `skip`) as the replay window's
         (offset s, prompt characters, output limit), with their recorded gaps: the service skips the idle
         stretches instead. Capping the gaps, as RSI3-LIVE does, turned quiet traffic into bursts, and
         capping output limits at 128 halved the long requests, so qualification favoured a schedule that
         loses on the recorded traffic (AG1 S, run 3). Prompt characters stand in for the recorded tokens at
-        about four characters a token, and long prompts keep their class."""
-        rows = sorted(a for a in arrivals if since is None or a[0] > since)[skip:skip + TRACE]
+        about four characters a token, and long prompts keep their class.
+
+        The window spans whole busy periods of the reference schedule in the world model (AG1 V4): at least
+        `TRACE` arrivals, then up to the next arrival that finds the server empty, at most `MAX_WINDOW`. Sixteen
+        arrivals cut from a 64-request burst scored `w2/sjf` +6.8 % on replay where it lost 6.5 % served (AG1
+        V3). The recorded traffic may end inside a busy period only because the server is idle now (replays
+        run only then), so its last period is complete.
+
+        Each row is (offset s, prompt characters, tokens to make, output limit, predicted tokens). A replayed
+        request makes the tokens its recorded answer made (AG2: a chat answer that ended at EOS long before its
+        limit is replayed at its own length) and is ordered by its recorded limit or recorded prediction, as the
+        arm's key says; a row recorded without a prediction is ordered by its limit under either key."""
+        self._ensure_ids()
+
+        def held_out(a: list[Any]) -> bool:  # recorded after the plan (by id where the state has one)
+            if since_id is not None:
+                return len(a) > 6 and a[6] > since_id
+            return since is None or a[0] > since
+
+        rows = sorted((a for a in arrivals if held_out(a) and (after is None or self._key(a) > after)),
+                      key=self._key)[skip:skip + MAX_WINDOW]
         if len(rows) < TRACE:
             return None
+        rows = rows[:busy_size(self.world.params(), _jobs(rows), self.reference, self.capacity, self.engine_width)]
+        if ends is not None:  # where this window ends, (time, id): the next window starts after it
+            ends.append([float(rows[-1][0]), int(rows[-1][6])])
         out = []
         for a in rows:
             chars = max(LONG_PROMPT_CHARS + 1, a[1] * 4) if a[2] else min(LONG_PROMPT_CHARS, max(1, a[1] * 4))
-            out.append((round(a[0] - rows[0][0], 6), chars, min(int(a[3]), MAX_REPLAY_TOKENS)))
+            limit = min(int(a[3]), MAX_REPLAY_TOKENS)
+            predicted = a[5] if len(a) > 5 and a[5] is not None else limit
+            out.append((round(a[0] - rows[0][0], 6), chars, max(1, min(int(a[4]), limit)), limit,
+                        min(float(limit), float(predicted))))
         return out
 
     def _arm(self, policy: Policy | None) -> Callable:
@@ -795,9 +1173,10 @@ class Agent:
             width, sjf = int(self.reference["width"]), bool(self.reference["sjf"])
             return lambda count, waiting, rate, now: (width, int(self.reference.get("gather_ms", 0)), sjf)
 
-        def choose(count: int, waiting: list[tuple[int, Any]], rate: float, now: int) -> tuple[int, int, bool]:
+        def choose(count: int, waiting: list[tuple[int, Any]], rate: float, now: int) -> tuple:
             views = [View.of(request) for _, request in waiting]
-            return min(self.capacity, policy.best_width(views) or self.capacity), 0, policy.uses_sjf(views)
+            decision = (min(self.capacity, policy.best_width(views) or self.capacity), 0, policy.uses_sjf(views))
+            return decision if policy.key == "limit" else (*decision, policy.key)  # AG2: the replay's sort key
         return choose
 
     def _triplet(self, state: dict[str, Any], replay: Callable, preempted: Callable[[], bool],
@@ -807,9 +1186,16 @@ class Agent:
         runs again in the next idle spell and the arms already run are kept (cost, whether a request failed, a
         digest per answer; AG1 S, run 2), bound to the serving schedule they ran against: if that changed or
         the agent was paused meanwhile, the kept arms are dropped. Returns the finished arms, else None."""
-        trace = self._trace(self.traffic, since=state["since"], skip=state["used"] * TRACE)
-        if trace is None:
-            return None
+        skip = int(state.get("skip", state["used"] * TRACE))
+        trace = state.get("trace")
+        if not trace:
+            ends: list[Any] = []
+            trace = self._trace(self.traffic, since=state["since"], skip=skip, ends=ends, after=self._cursor(state),
+                                since_id=state.get("since_id"))
+            if trace is None:
+                return None
+            state["trace_end"] = ends[0]
+        state["trace"] = trace  # the window is fixed until its triplet ends: the model it was cut by keeps learning
         bound = [self._incumbent_key(), self.paused]
         done = state.setdefault("partial", {})
         if done.get("bound", bound) != bound:
@@ -826,17 +1212,33 @@ class Agent:
                 if result is None:  # demand came first: this arm runs again in the next idle spell
                     state["preempted"] = state.get("preempted", 0) + 1
                     if state["preempted"] >= MAX_PREEMPTIONS:  # this window never fits the idle spells
-                        state["used"], state["preempted"], state["partial"] = state["used"] + 1, 0, {}
+                        self._next_window(state, skip, trace)
                     self._dirty()
                     return None
                 done[arm] = {"cost": window_cost(result["rows"], self.deadline_s),
+                             **window_rate(result),
                              "failed": any(row.get("outcome") != "ok" for row in result["rows"]),
                              "answers": [hashlib.sha256(text.encode()).hexdigest()[:16] for text in result["texts"]]}
                 state["preempted"] = 0
                 self._dirty()
         with self._lock:
-            state["used"], state["preempted"], state["partial"] = state["used"] + 1, 0, {}
+            self._next_window(state, skip, trace)
             return done
+
+    @staticmethod
+    def _next_window(state: dict[str, Any], skip: int, trace: list) -> None:
+        """Past this window. The cursor is the window's last arrival, (recorded time, id), not a count: the
+        traffic memory keeps only `MAX_TRAFFIC` arrivals, so a count of used arrivals ran past its end once that
+        many were used, and qualification stalled for good (review of 2026-11-08). A time alone skipped the
+        arrivals that shared the cut's time but did not fit the window; the id orders them. A state without a
+        window end (saved before) keeps counting."""
+        end = state.pop("trace_end", None)
+        if end is not None:
+            state["cursor"], state["skip"] = end, 0
+        else:
+            state["skip"] = skip + len(trace)
+        state["used"], state["trace"] = state["used"] + 1, None
+        state["preempted"], state["partial"] = 0, {}
 
     def _qualify(self, replay: Callable, preempted: Callable[[], bool]) -> None:
         """One A/B/AA triplet of the candidate (B) against the serving schedule on arrivals recorded after the
@@ -859,8 +1261,15 @@ class Agent:
                 return
             if done["a"]["failed"] or done["aa"]["failed"]:
                 return  # a failure under the incumbent says nothing about the candidate: the triplet is not counted
-            candidate["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
-            verdict = judge(candidate["triplets"])
+            incumbent = self._incumbent_key()
+            if candidate.get("incumbent", incumbent) != incumbent:
+                # Its triplets were measured against another serving schedule: judged together with new ones they
+                # promoted a candidate that loses to the schedule serving now (review of 2026-11-08). Start over.
+                candidate["triplets"], candidate["verdict"] = [], None
+                self._event("restarted", policy=candidate["policy"]["sha256"][:12], reason="the serving schedule changed")
+            candidate["incumbent"] = incumbent
+            candidate["triplets"].append(self._scored(done))
+            verdict = judge(candidate["triplets"], objective=self.objective)
             candidate["verdict"] = verdict
             if verdict["verdict"] == "pass":
                 self._promote(candidate, verdict)
@@ -887,8 +1296,8 @@ class Agent:
             if any(done[arm]["failed"] for arm in ("a", "aa")) or \
                     not (done["a"]["answers"] == done["b"]["answers"] == done["aa"]["answers"]):
                 return  # not a valid audit triplet; a differing answer is the candidate check's business
-            audit["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
-            verdict = harm(audit["triplets"])
+            audit["triplets"].append(self._scored(done))
+            verdict = harm(audit["triplets"], objective=self.objective)
             audit["verdict"] = verdict["verdict"]
             self.counters["audits"] = self.counters.get("audits", 0) + 1
             if verdict["verdict"] == "harm":
@@ -898,9 +1307,18 @@ class Agent:
                 self._event("audited", policy=audit["incumbent"][:12], gain=verdict["gain"], low=verdict["low"])
             self._dirty()
 
+    def _scored(self, done: dict[str, Any]) -> dict[str, float]:
+        """A triplet as the objective scores it: AG1's cost per arm, or (AG8) seconds per token per arm with each
+        arm's mean first token beside it."""
+        if self.objective == "latency":
+            return {k: done[k]["cost"] for k in ("a", "b", "aa")}
+        return {**{k: done[k]["spt"] for k in ("a", "b", "aa")}, **{f"f{k}": done[k]["first"] for k in ("a", "b", "aa")}}
+
     def _promote(self, candidate: dict[str, Any], verdict: dict[str, Any]) -> None:
         policy = Policy.from_json(candidate["policy"])
         body = {"schema": EVIDENCE_SCHEMA, "policy_sha256": policy.sha256, "binding_sha256": self.binding_sha256,
+                "objective": self.objective, **({"first_token": verdict["first_token"]}
+                                                if "first_token" in verdict else {}),
                 "incumbent_sha256": None if self.policy is None else self.policy.sha256, "verdict": "pass",
                 "gain": verdict["gain"], "gain_ci95": verdict["gain_ci95"], "floor": verdict["floor"],
                 "noise": verdict["noise"],
@@ -910,7 +1328,9 @@ class Agent:
         self.policy, self.evidence = policy, {**body, "sha256": hashlib.sha256(
             json.dumps(body, sort_keys=True).encode()).hexdigest()}
         self.candidate, self.errors, self._monitor, self._failed_windows = None, 0, [], 0
+        self._ensure_ids_locked()  # `_promote` runs under `_lock`
         self.audit = {"incumbent": policy.sha256, "since": max((a[0] for a in self.traffic), default=0.0),
+                      "since_id": max((int(a[6]) for a in self.traffic), default=None),
                       "used": 0, "triplets": [], "verdict": "open"}
         self.counters["qualified"] += 1
         self.arrivals_at_plan = self.arrivals
@@ -991,7 +1411,7 @@ class Agent:
                    "engine_width": self.engine_width, "seed": self.counters["plans"],
                    "widths": [w for w in WIDTH_CHOICES if w <= self.capacity and self.world.supported(w)],
                    "reference": self.reference, "settings": self.planner_settings, "excluded": self._excluded(),
-                   "incumbent": None if self.policy is None else _policy_body(self.policy)}
+                   "incumbent": None if self.policy is None else _policy_body(self.policy), "objective": self.objective}
         self.root.mkdir(parents=True, exist_ok=True)
         source, target = self.root / "plan-in.json", self.root / "plan-out.json"
         target.unlink(missing_ok=True)
@@ -1004,6 +1424,7 @@ class Agent:
             self.reason = f"the planner did not start: {exc}"
             return
         self._planner_files, self._plan_since = (source, target), arrivals[-1][0]
+        self._plan_since_id = max((int(a[6]) for a in arrivals if len(a) > 6), default=None)
         self._event("planning", arrivals=len(arrivals), model=self.world.params())
 
     def _collect_plan(self) -> None:
@@ -1031,7 +1452,7 @@ class Agent:
                                                           "model_gain_vs_incumbent", "curve", "episodes", "cpu_s")}
             if proposed is not None:
                 self.candidate = {"policy": proposed, "plan": self.last_plan, "since": self._plan_since,
-                                  "triplets": [], "used": 0}
+                                  "since_id": self._plan_since_id, "triplets": [], "used": 0}
             self._event("planned", candidate=None if proposed is None else proposed["sha256"][:12],
                         choice=result.get("choice"), model_gain=result.get("model_gain_vs_incumbent"),
                         cpu_s=result.get("cpu_s"))
@@ -1070,9 +1491,10 @@ class Agent:
                      "policy": None if self.policy is None else _policy_body(self.policy),
                      "evidence": self.evidence, "candidate": self.candidate, "withdrawn": self.withdrawn,
                      "history": list(self.history), "counters": self.counters, "paused": self.paused,
-                     "arrivals": self.arrivals, "arrivals_at_plan": self.arrivals_at_plan,
+                     "arrivals": self.arrivals, "arrivals_at_plan": self.arrivals_at_plan, "next_id": self._next_id,
                      "last_plan": self.last_plan, "explored": {str(k): v for k, v in self.explored.items()},
-                     "rejected": self.rejected, "rejected_epoch": self.rejected_epoch, "audit": self.audit}
+                     "rejected": self.rejected, "rejected_epoch": self.rejected_epoch, "audit": self.audit,
+                     "lengths": self.lengths.to_json()}
             self._dirty_since = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -1097,6 +1519,7 @@ class Agent:
                 raise ValueError("it belongs to another setup")
             self.world = WorldModel.from_json(state["world"])
             self.traffic.extend(state["traffic"])
+            self._next_id = max([int(state.get("next_id", 0))] + [int(a[6]) + 1 for a in self.traffic if len(a) > 6])
             self.withdrawn = list(state["withdrawn"])
             self.history.extend(state["history"])
             self.counters.update(state["counters"])
@@ -1107,6 +1530,8 @@ class Agent:
             self.rejected = {str(k): list(v) for k, v in (state.get("rejected") or {}).items()}
             self.rejected_epoch = int(state.get("rejected_epoch", 0))
             self.audit = state.get("audit")
+            if state.get("lengths") is not None:
+                self.lengths = LengthModel.from_json(state["lengths"])
             if state.get("policy") is not None:
                 policy, evidence = Policy.from_json(state["policy"]), state.get("evidence") or {}
                 body = {k: v for k, v in evidence.items() if k != "sha256"}
@@ -1137,6 +1562,7 @@ class Agent:
             candidate = self.candidate
             return {
                 "agent": "AG1", "active": self.active, "paused": self.paused, "reason": self.reason,
+                "objective": self.objective,
                 "serving": "reference" if self.policy is None else f"learned:{self.policy.sha256[:12]}",
                 "policy_sha256": None if self.policy is None else self.policy.sha256,
                 "gain": None if self.evidence is None else self.evidence["gain"],
@@ -1144,6 +1570,13 @@ class Agent:
                 "world_model": {**self.world.params(), "groups": dict(self.world.groups),
                                 "median_relative_error": self.world.fidelity(), "reopened": self.world.reopened},
                 "traffic": len(self.traffic), "planner": "running" if self._planner is not None else "idle",
+                "lengths": {"seen": self.lengths.seen, "spearman": self.lengths.quality(),
+                            "order_key": None if self.policy is None else self.policy.key},
+                "hardware": None if self.hardware is None else {
+                    **self.hardware, "utilisation": utilisation(
+                        self.hardware, self.world.params()["step_s"]
+                        if sum(self.world.groups.values()) >= MIN_GROUPS else None,
+                        self.world.params()["step_s_per_session"] if self.world.supported(2) else None)},
                 "last_plan": self.last_plan,
                 "candidate": None if candidate is None else {
                     "policy_sha256": candidate["policy"]["sha256"], "choice": candidate["plan"].get("choice"),
@@ -1156,8 +1589,18 @@ class Agent:
                 "counters": dict(self.counters), "history": list(self.history)[-10:]}
 
 
+def share_lengths(agents: list["Agent"]) -> None:
+    """AG2, several GPUs: one length model for every card's agent. How long an answer runs depends on the model and
+    the prompt, not on the card, so each card learns from every card's answers; the one with the most lessons
+    (after a restart, each card resumed its own copy) becomes the shared one."""
+    if len(agents) > 1:
+        shared = max((a.lengths for a in agents), key=lambda m: m.seen)
+        for a in agents:
+            a.lengths = shared
+
+
 def _policy_body(policy: Policy) -> dict[str, Any]:
-    return policy_json(list(policy.placement), list(policy.order), list(policy.width or ()))
+    return policy_json(list(policy.placement), list(policy.order), list(policy.width or ()), policy.key)
 
 
 def _lower_priority() -> None:

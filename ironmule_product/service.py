@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Any, Iterator
 
-from .errors import (BackendUnavailable, InvalidRequest, StateError,
+from .errors import (BackendUnavailable, EngineLimitExceeded, InvalidRequest, StateError,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .serving_policy import ServingLog, ServingPolicy, load_policy
 
@@ -110,6 +110,7 @@ class _Session:
     prompt_tokens: int = 0       # AG1: the prompt's tokens, as the worker reported them
     group: int | None = None     # STAB1: the scheduler group that served it
     error: str | None = None     # STAB1: the error code delivered to the caller, if any
+    order_values: dict | None = None  # AG2, replay only: the recorded limit and prediction it is sorted by
 
 
 class ProductService:
@@ -138,6 +139,9 @@ class ProductService:
     _starting: Any = None
     _recovery_refused: str | None = None
     _restarts: list[float] = []  # replaced per instance before any append
+    # STAB3: restarts since a request last completed. Only a served request proves a recovery, so the budget is
+    # not given back by time alone (a slow-failing start took longer than the window and the budget never ran out).
+    _unproven_restarts = 0
 
     def __init__(self, store, *, backend=None, spec: ModelSpec | None = None):
         self.store = store
@@ -181,9 +185,16 @@ class ProductService:
             optimization = {"stage": "unavailable", "engine_started": False,
                             "activation_allowed": False, "error_code": "optimization_status_invalid"}
         with self._lock:
-            result = {"service": "ironmule", "ready": bool(not self._closed.is_set() and self._backend_ready()),
+            accepting = bool(not self._closed.is_set() and self._backend_ready())
+            # STAB3: `ready` is a worker that answered its ready handshake (or idle work between workers, START1),
+            # not a worker being replaced; `accepting` says whether a request is admitted now.
+            result = {"service": "ironmule", "accepting": accepting,
+                    "ready": bool(accepting and (getattr(self, "_idle_busy", False)
+                                                 or (self.backend is not None and self.backend.ready))),
                     "mode": self.settings["mode"],
                     "execution": ("numeric@dense" if getattr(self.backend, "engine_configuration", None) == "dense_stacked"
+                                  # GG1: a gated Q8_0 GGUF on llama.cpp; its answers may differ from the MLX plans
+                                  else "numeric@ggml" if getattr(self.backend, "engine_configuration", None) == "ggml"
                                   else "exact" if getattr(self.backend, "compute_dtype", None) is None
                                   else f"exact@{self.backend.compute_dtype}"),
                     "backend": ("mlx_lm_reference" if getattr(self.backend, "execution_variant", "reference") == "reference"
@@ -196,9 +207,42 @@ class ProductService:
             if self._last_batch_size is not None:
                 result.update(last_batch_size=self._last_batch_size, batch_count=self._batch_count)
             result["device"] = getattr(self.backend, "device", None)  # OPS1: what the worker reported
+            blas = (getattr(self.backend, "ready_payload", None) or {}).get("cpu_blas")
+            if getattr(self.backend, "cpu_blas", None) is not None or blas is not None:  # CPU6: asked for, and serving
+                result["cpu_blas"] = {"requested": getattr(self.backend, "cpu_blas", None),
+                                      "serving": (blas or {}).get("serving", "stock"),
+                                      "reason": (getattr(self.backend, "cpu_blas_record", None) or {}).get("reason")}
+            if getattr(self.backend, "ggml_gate", None) is not None:  # GG1: the gate the engine passed at its start
+                result["ggml"] = {"gate": {k: self.backend.ggml_gate.get(k) for k in ("ratio", "interval", "passes")},
+                                  "answers": "may differ from the MLX plans, within the gate"}
+                width = self.backend.ggml_gate.get("sequences")
+                if isinstance(width, dict):  # SEQ1: the width the engine chose on this machine, and why
+                    result["ggml"]["sequences"] = {k: width.get(k) for k in ("sequences", "fitting", "rates", "reason")}
+                pool = self.backend.ggml_gate.get("shared_serving")
+                if isinstance(pool, dict):  # SP1: one KV pool with shared prefixes, its gate and how many run at once
+                    result["ggml"]["shared_pool"] = {k: pool.get(k) for k in ("cap", "ratio", "interval")}
+                pilot = getattr(self.backend, "pilot_status", None)
+                if isinstance(pilot, dict):  # PI1: what the Pilot decides on this machine, and how fast
+                    result["ggml"]["pilot"] = dict(pilot)
+                drafting = getattr(self.backend, "draft_model_status", None)
+                if isinstance(drafting, dict):  # DM1: the draft model's calibration, costs and what it brought
+                    result["ggml"]["draft_model"] = dict(drafting)
+                agent = getattr(self.backend, "ggml_agent_status", None)
+                if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
+                    result["ggml"]["agent"] = dict(agent)
+            if getattr(self.backend, "speculate", False) is True:  # SP2: asked for; what serves and what it learned
+                engine = (getattr(self.backend, "ready_payload", None) or {}).get("engine") or {}
+                dense = engine.get("dense_plan") or engine.get("ggml") or {}  # GG1: the ggml engine says it there
+                learned = getattr(self.backend, "speculation_status", None)
+                result["speculation"] = {"requested": "context", "serving": dense.get("speculation", "off"),
+                                         **({"reason": dense["speculation_refused"]}
+                                            if dense.get("speculation_refused") else {}),
+                                         **({"learned": dict(learned)} if isinstance(learned, dict) else {})}
             result.update(self._stability())
         if self.learning is not None:  # outside the service lock: admission never waits on the learner
             result["learning"] = self.learning.summary()
+        if getattr(self, "agent_setup", None) is not None:  # AG4: the plan and engine the agent chose, and why
+            result["agent_setup"] = self.agent_setup
         if self.agent is not None:
             result["agent"] = self.agent.status()
         elif self.dispatch is not None:
@@ -239,8 +283,10 @@ class ProductService:
         exit adds the worker's last stderr (4 KiB), which can hold library output: the log is private
         state like the serving log, and published summaries leave that tail out."""
         log = self.stability_log
-        if log is not None:
-            log.append({"t": round(time.monotonic(), 4), "event": event, **fields})
+        if log is not None:  # STAB3: a pool's shards share one log, so each line names its shard
+            label = getattr(self, "label", None)
+            log.append({"t": round(time.monotonic(), 4), "unix": round(time.time(), 3), "event": event,
+                        **({"shard": label} if label is not None else {}), **fields})
 
     def _stability(self) -> dict[str, Any]:
         """STAB1: what tells a dead worker, a worker without progress, an incomplete group and blocked
@@ -325,17 +371,31 @@ class ProductService:
         if not starts:
             return
         start = min(starts)
+        if any(item.first_ns is None or item.end_ns is None or item.joined for item in group):
+            # Not the one-group-at-a-time model the agent prices (a request joined it, or one failed before its
+            # first token), but its outcomes still reach the live monitor (review of 2026-11-08).
+            if not replay:
+                try:
+                    agent.observe_outcomes([item.outcome == "ok" for item in group])
+                except Exception:  # noqa: BLE001 - the agent never stops serving
+                    agent.reason = "the agent failed while learning; the reference schedule serves"
+            return
         members = []
+        length_of = None if replay else getattr(agent, "length_of", None)
         for item in group:
-            if item.first_ns is None or item.end_ns is None or item.joined:
-                return  # a group a request joined is not the one-group-at-a-time model the agent prices
             messages = item.request.messages or ()
-            members.append({"arrive": wall + item.submitted_ns / 1e9, "start": start / 1e9,
-                            "first": item.first_ns / 1e9, "end": item.end_ns / 1e9,
-                            "prompt_tokens": item.prompt_tokens,
-                            "prompt_chars": len(messages[-1][1]) if messages else 0,
-                            "max_tokens": item.request.max_tokens, "tokens": item.tokens,
-                            "ok": item.outcome == "ok"})
+            member = {"arrive": wall + item.submitted_ns / 1e9, "start": start / 1e9,
+                      "first": item.first_ns / 1e9, "end": item.end_ns / 1e9,
+                      "prompt_tokens": item.prompt_tokens,
+                      "prompt_chars": len(messages[-1][1]) if messages else 0,
+                      "max_tokens": item.request.max_tokens, "tokens": item.tokens,
+                      "ok": item.outcome == "ok"}
+            if length_of is not None:  # AG2: hashed features and the prediction made when it arrived; no text
+                try:
+                    member["length"], member["request_id"] = length_of(item.request), item.request.request_id
+                except Exception:  # noqa: BLE001 - a prediction fault only costs this lesson
+                    pass
+            members.append(member)
         try:
             agent.observe_group(members, replay=replay)
         except Exception:  # noqa: BLE001 - the agent never stops serving
@@ -368,6 +428,10 @@ class ProductService:
                 None if timeout is None else time.monotonic() + timeout,
             )
             try:
+                # The bound is on every waiting request: a shortest-first order moves waiting work from the queue
+                # to the carry, which the queue's own bound does not see (review of 2026-11-08).
+                if self._pending.qsize() + len(self._carry) >= self._pending.maxsize > 0:
+                    raise queue.Full
                 self._pending.put_nowait(session)
             except queue.Full:
                 if self.learning is not None:
@@ -473,6 +537,8 @@ class ProductService:
             refused = "the old worker's exit is not confirmed"
         elif len(self._restarts) >= MAX_RESTARTS:
             refused = f"{MAX_RESTARTS} worker restarts within {RESTART_WINDOW_S:.0f} s"
+        elif self._unproven_restarts >= MAX_RESTARTS:
+            refused = f"{MAX_RESTARTS} worker restarts and no request served since the first"
         if refused is not None:
             self._recovery_refused = refused
             self.note("worker_restart", outcome="refused", reason=reason, refused=refused)
@@ -485,6 +551,9 @@ class ProductService:
                 outcome = "abandoned: service closed"
                 return
             self._restarts.append(time.monotonic())
+            self._unproven_restarts += 1
+            self.note("worker_restart_start", reason=reason, attempt=len(self._restarts),
+                      unproven=self._unproven_restarts)
             with self._lock:
                 if self._closed.is_set():
                     outcome = "abandoned: service closed"
@@ -561,12 +630,19 @@ class ProductService:
                 break
         now = time.monotonic_ns()
         sjf = decide([session.request for session in self._carry])
+        dispatch = self.dispatch
+        order_key = getattr(dispatch, "order_key", None) if sjf else None
 
-        def key(session: _Session) -> tuple[bool, int, int]:
+        def value(request: GenerationRequest) -> float:
+            """AG2: the agent's predicted answer length when its serving policy orders by it, else the limit."""
+            predicted = order_key(request) if order_key is not None else None
+            return request.max_tokens if predicted is None else predicted
+
+        def key(session: _Session) -> tuple[bool, float, int]:
             if not sjf:
                 return (False, 0, session.submitted_ns)
             aged = now - session.submitted_ns > SJF_AGE_S * 1e9
-            return (not aged, 0 if aged else session.request.max_tokens, session.submitted_ns)
+            return (not aged, 0 if aged else value(session.request), session.submitted_ns)
 
         waiting = sorted(self._carry, key=key)
         self._carry.clear()
@@ -691,7 +767,9 @@ class ProductService:
         """RSI3-LIVE qualification: replay a metadata trace through the real backend.
 
         ``trace`` holds (arrival offset s, prompt characters, output limit); prompts are a fixed
-        filler, never user text. ``choose(queue, waiting, rate, now_ns)`` gives each group's width
+        filler, never user text. AG2 rows add (tokens to make, recorded limit, recorded prediction): the
+        request makes that many tokens, and ``choose`` may return a fourth element, "limit" or "predicted",
+        naming which recorded value shortest-first sorts by. ``choose(queue, waiting, rate, now_ns)`` gives each group's width
         and gather wait; groups run through this scheduler's own group execution. Runs on the
         scheduler thread while nothing waits. A real request cancels the window the moment it is
         admitted (RSI3-LIVE-P2): every replayed request stops at its next token boundary (or before
@@ -713,9 +791,10 @@ class ProductService:
             return None
         timeout = self.settings["request_timeout_s"] or 120
         deadline = time.monotonic() + timeout + (trace[-1][0] if trace else 0.0)
-        sessions = [_Session(GenerationRequest(self.spec.model_id, (("user", filler(chars)),), max_tokens=tokens,
-                                               request_id=f"replay-{index}-{time.monotonic_ns()}"), deadline)
-                    for index, (_, chars, tokens) in enumerate(trace)]
+        sessions = [_Session(GenerationRequest(self.spec.model_id, (("user", filler(row[1])),), max_tokens=row[2],
+                                               request_id=f"replay-{index}-{time.monotonic_ns()}"), deadline,
+                             order_values=None if len(row) < 5 else {"limit": row[3], "predicted": row[4]})
+                    for index, row in enumerate(trace)]
         texts: dict[str, list[str]] = {item.request.request_id: [] for item in sessions}
         stop, aborted = threading.Event(), threading.Event()
         window = self._replay_windows = getattr(self, "_replay_windows", 0) + 1
@@ -757,7 +836,7 @@ class ProductService:
         for thread in threads:
             thread.start()
         start = time.monotonic_ns()
-        due = [start + int(offset * 1e9) for offset, _, _ in trace]
+        due = [start + int(row[0] * 1e9) for row in trace]
         waiting: list[_Session] = []
         admitted, gap, last = 0, None, None
 
@@ -794,10 +873,14 @@ class ProductService:
                 width, gather_ms = decision[0], decision[1]
                 width = max(1, min(width, self._batch_capacity()))
                 if len(decision) > 2 and decision[2]:  # AG1: shortest output limit first, as `_order_waiting`
+                    order_by = decision[3] if len(decision) > 3 else "limit"  # AG2: or the recorded prediction
+
+                    def recorded(item: _Session, order_by: str = order_by) -> float:
+                        values = item.order_values
+                        return item.request.max_tokens if values is None else values[order_by]
                     waiting.sort(key=lambda item: (now - item.submitted_ns <= SJF_AGE_S * 1e9,
-                                                   item.request.max_tokens
-                                                   if now - item.submitted_ns <= SJF_AGE_S * 1e9 else 0,
-                                                   item.submitted_ns))
+                                                   recorded(item) if now - item.submitted_ns <= SJF_AGE_S * 1e9
+                                                   else 0, item.submitted_ns))
                 until = time.monotonic_ns() + gather_ms * 1_000_000
                 while (len(waiting) < width and admitted < len(sessions) and time.monotonic_ns() < until
                        and not aborted.is_set()):
@@ -1060,9 +1143,10 @@ class ProductService:
             elif kind == "rejected" and done is None and generated == 0:
                 # The worker rejected this grouped request alone (protocol 2); the single path's answer.
                 limit = event.get("limit")
-                raise InvalidRequest(f"the prompt and max_tokens exceed the {limit}-token "
-                                     + ("context limit" if event.get("reason") == "context_limit"
-                                        else "limit of this server's engine"))
+                if event.get("reason") == "context_limit":
+                    raise InvalidRequest(f"the prompt and max_tokens exceed the {limit}-token context limit")
+                raise EngineLimitExceeded(f"the prompt and max_tokens exceed the {limit}-token "
+                                          "limit of this server's engine")
             else:
                 raise BackendUnavailable("worker emitted an invalid event")
         if done is None:
@@ -1083,6 +1167,7 @@ class ProductService:
             raise RequestCancelled("response delivery interrupted")
         with self._lock:
             self._completed += 1
+            self._unproven_restarts = 0  # STAB3: a served request proves the worker serving now
         session.outcome = "ok"
         session.tokens = int(done.get("completion_tokens", generated) or 0)
         session.prompt_tokens = int(done.get("prompt_tokens", prompt_tokens) or 0)
@@ -1295,6 +1380,9 @@ class ProductService:
             if event.get("type") in ("done", "rejected"):
                 queues[request_id].put(None)
                 finished.add(request_id)
+                # STAB4: when the group stops counting it as open, before any join that takes its place; its
+                # `end` is written only when the whole group ends.
+                self.note("member_done", id=request_id, group=live[0].group)
 
         queues.clear()
         for item in live:

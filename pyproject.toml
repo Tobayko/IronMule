@@ -48,7 +48,7 @@ py-modules = ["ironmule_cli", "ironmule_inventory", "ironmule_controller"]
 
 [tool.setuptools.package-data]
 friday_evidence = ["migrations/*.sql"]
-ironmule = ["tune_knowledge_seed.json", "quality_reference.txt"]
+ironmule = ["tune_knowledge_seed.json", "quality_reference.txt", "pilot_weights.npz"]
 ironmule_product = ["dispatch/*/*.json"]
 
 [tool.setuptools.dynamic]

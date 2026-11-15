@@ -1,0 +1,334 @@
+{
+ "label": "lmstudio",
+ "single": {
+  "runs": [
+   {
+    "ttft_s": 1.3516562639997574,
+    "decode_tok_s": 6.059443805881118,
+    "tokens": 252
+   },
+   {
+    "ttft_s": 1.3469061439973302,
+    "decode_tok_s": 6.081899427843026,
+    "tokens": 252
+   },
+   {
+    "ttft_s": 1.1783992670025327,
+    "decode_tok_s": 5.880121053375061,
+    "tokens": 251
+   }
+  ],
+  "decode_tok_s": 6.059443805881118,
+  "ttft_s": 1.3469061439973302
+ },
+ "facts": {
+  "correct": 49,
+  "of": 50,
+  "answers": [
+   {
+    "q": "What is the capital of France?",
+    "ok": true,
+    "a": "The capital of France is Paris."
+   },
+   {
+    "q": "What is the capital of Japan?",
+    "ok": true,
+    "a": "The capital of Japan is **Tokyo**."
+   },
+   {
+    "q": "What is the capital of Australia?",
+    "ok": true,
+    "a": "The capital of Australia is **Canberra**."
+   },
+   {
+    "q": "What is the capital of Canada?",
+    "ok": true,
+    "a": "The capital of Canada is **Ottawa**."
+   },
+   {
+    "q": "What is the capital of Italy?",
+    "ok": true,
+    "a": "The capital of Italy is **Rome**."
+   },
+   {
+    "q": "What is the capital of Egypt?",
+    "ok": true,
+    "a": "The capital of Egypt is **Cairo**. It is the largest city in the country and a major cultural, economic, and historical "
+   },
+   {
+    "q": "What is the capital of Spain?",
+    "ok": true,
+    "a": "The capital of Spain is **Madrid**."
+   },
+   {
+    "q": "What is the capital of Germany?",
+    "ok": true,
+    "a": "The capital of Germany is **Berlin**."
+   },
+   {
+    "q": "What is the capital of Kenya?",
+    "ok": true,
+    "a": "The capital of Kenya is **Nairobi**. It is the country's political, economic, and cultural center."
+   },
+   {
+    "q": "What is the capital of Brazil?",
+    "ok": true,
+    "a": "The capital of Brazil is **Bras\u00edlia**."
+   },
+   {
+    "q": "What is 17 times 3?",
+    "ok": true,
+    "a": "17 multiplied by 3 is **51**."
+   },
+   {
+    "q": "What is 12 times 12?",
+    "ok": true,
+    "a": "12 times 12 is **144**."
+   },
+   {
+    "q": "What is 250 plus 375?",
+    "ok": true,
+    "a": "250 + 375 = 625"
+   },
+   {
+    "q": "What is 1000 minus 357?",
+    "ok": true,
+    "a": "To find the result of 1000 minus 357, you can subtract:\n\n$$\n1000 - 357 = 643\n$$\n\nSo, the answer is"
+   },
+   {
+    "q": "What is 81 divided by 9?",
+    "ok": true,
+    "a": "81 divided by 9 equals **9**.  \n\n$$\n81 \\div 9 = 9\n$$"
+   },
+   {
+    "q": "What is 15 squared?",
+    "ok": true,
+    "a": "15 squared is $ 15 \\times 15 = 225 $."
+   },
+   {
+    "q": "What is the square root of 196?",
+    "ok": true,
+    "a": "The square root of 196 is **14**.\n\nBecause $ 14 \\times 14 = 196 $."
+   },
+   {
+    "q": "What is 7 times 8?",
+    "ok": true,
+    "a": "7 times 8 equals **56**."
+   },
+   {
+    "q": "What is 2 to the power of 10?",
+    "ok": false,
+    "a": "$2^{10}$ means 2 multiplied by itself 10 times:\n\n$$\n2^{10} = 2 \\times 2 \\times 2 \\times 2 \\times 2 \\"
+   },
+   {
+    "q": "What is 45 plus 38?",
+    "ok": true,
+    "a": "45 + 38 = 83"
+   },
+   {
+    "q": "In what year did World War II end?",
+    "ok": true,
+    "a": "World War II ended in **1945**. The official end of the war was marked by the **surrender of Nazi Germany on May 7, 1945"
+   },
+   {
+    "q": "In what year did the Berlin Wall fall?",
+    "ok": true,
+    "a": "The Berlin Wall fell on **November 9, 1989**. This event marked the beginning of the end of the division of Germany afte"
+   },
+   {
+    "q": "In what year did humans first land on the Moon?",
+    "ok": true,
+    "a": "Humans first landed on the Moon in **1969**. The mission was **Apollo 11**, which successfully landed astronauts **Neil "
+   },
+   {
+    "q": "In what year did Columbus first reach the Americas?",
+    "ok": true,
+    "a": "Christopher Columbus first reached the Americas in **1492**. He set sail from Spain on August 3, 1492, and arrived in th"
+   },
+   {
+    "q": "In what year did the French Revolution begin?",
+    "ok": true,
+    "a": "The French Revolution began in **1789**. The revolution is often considered to have started with the **Storming of the B"
+   },
+   {
+    "q": "In what year was the US Declaration of Independence signed?",
+    "ok": true,
+    "a": "The United States Declaration of Independence was signed on **July 4, 1776**. This date is widely recognized as American"
+   },
+   {
+    "q": "What is the chemical symbol for gold?",
+    "ok": true,
+    "a": "The chemical symbol for gold is **Au**."
+   },
+   {
+    "q": "What is the chemical symbol for sodium?",
+    "ok": true,
+    "a": "The chemical symbol for sodium is **Na**."
+   },
+   {
+    "q": "How many planets are in the Solar System?",
+    "ok": true,
+    "a": "The Solar System contains **8 planets**. These are:\n\n1. **Mercury**  \n2. **Venus**  \n3. **Earth**  \n4. **Mars**  \n5. **J"
+   },
+   {
+    "q": "What planet is known as the Red Planet?",
+    "ok": true,
+    "a": "The planet known as the **Red Planet** is **Mars**. It receives this name because its surface appears reddish when viewe"
+   },
+   {
+    "q": "What gas do plants absorb from the air for photosynthesis?",
+    "ok": true,
+    "a": "Plants absorb **carbon dioxide (CO\u2082)** from the air for photosynthesis. During this process, they use CO\u2082 along with wat"
+   },
+   {
+    "q": "At what temperature in Celsius does water boil at sea level?",
+    "ok": true,
+    "a": "Water boils at **100\u00b0C** (212\u00b0F) at sea level. This is the standard boiling point of water under standard atmospheric pr"
+   },
+   {
+    "q": "What is the largest planet in the Solar System?",
+    "ok": true,
+    "a": "The largest planet in the Solar System is **Jupiter**. It is a gas giant, much larger than all the other planets combine"
+   },
+   {
+    "q": "How many bones are in the adult human body?",
+    "ok": true,
+    "a": "The adult human body has **206 bones**. \n\nThis number includes all the bones in the skeleton, such as those in the skull"
+   },
+   {
+    "q": "What is the chemical formula of water?",
+    "ok": true,
+    "a": "The chemical formula of water is **H\u2082O**. This means each molecule of water consists of **two hydrogen atoms** and **one"
+   },
+   {
+    "q": "What is the hardest natural substance?",
+    "ok": true,
+    "a": "The hardest natural substance is **diamond**.\n\nDiamond is a form of carbon and is known for being the hardest material k"
+   },
+   {
+    "q": "How many legs does an insect have?",
+    "ok": true,
+    "a": "An insect has **6 legs**. This is a defining characteristic of all insects, which are part of the class Insecta in the p"
+   },
+   {
+    "q": "What is the atomic number of carbon?",
+    "ok": true,
+    "a": "The atomic number of carbon is **6**. \n\nThis means that a carbon atom has 6 protons in its nucleus."
+   },
+   {
+    "q": "How many centimeters are in a meter?",
+    "ok": true,
+    "a": "There are **100 centimeters in a meter**.  \n\n1 meter (m) = 100 centimeters (cm)."
+   },
+   {
+    "q": "How many meters are in a kilometer?",
+    "ok": true,
+    "a": "There are **1,000 meters in a kilometer**.  \n\nThis is because the prefix \"kilo-\" in the metric system means \"thousand,\" "
+   },
+   {
+    "q": "How many minutes are in an hour?",
+    "ok": true,
+    "a": "There are **60 minutes** in an hour."
+   },
+   {
+    "q": "How many seconds are in a minute?",
+    "ok": true,
+    "a": "There are **60 seconds in a minute**."
+   },
+   {
+    "q": "How many grams are in a kilogram?",
+    "ok": true,
+    "a": "There are **1000 grams in a kilogram**.\n\nThis is because the prefix \"kilo-\" in the metric system means **thousand**, so:"
+   },
+   {
+    "q": "How many days are in a leap year?",
+    "ok": true,
+    "a": "A **leap year** has **366 days**.\n\nThis is because a leap year includes an extra day, February 29, to keep the calendar "
+   },
+   {
+    "q": "How many hours are in a day?",
+    "ok": true,
+    "a": "A day is 24 hours long. This is based on the Earth's rotation around its axis, which takes approximately 24 hours to com"
+   },
+   {
+    "q": "How many millimeters are in a centimeter?",
+    "ok": true,
+    "a": "There are **10 millimeters in a centimeter**.  \n\nThis is because the metric system defines that:  \n- 1 centimeter (cm) ="
+   },
+   {
+    "q": "Who wrote Romeo and Juliet?",
+    "ok": true,
+    "a": "*Romeo and Juliet* was written by **William Shakespeare**. It is one of his most famous plays, first published in 1597 a"
+   },
+   {
+    "q": "Who painted the Mona Lisa?",
+    "ok": true,
+    "a": "The Mona Lisa was painted by **Leonardo da Vinci**, an Italian Renaissance artist. She is one of the most famous paintin"
+   },
+   {
+    "q": "What is the longest river in South America?",
+    "ok": true,
+    "a": "The longest river in South America is the **Amazon River**. It flows through several countries, including Brazil, Peru, "
+   },
+   {
+    "q": "What ocean lies between Europe and North America?",
+    "ok": true,
+    "a": "The ocean that lies between Europe and North America is the **Atlantic Ocean**. It separates the two continents, with th"
+   }
+  ]
+ },
+ "burst": {
+  "1": [
+   {
+    "tok_s": 5.118505413889845,
+    "tokens": 60,
+    "wall_s": 11.722171835001063,
+    "failed": 0,
+    "ttft_mean_s": 1.493471859001147,
+    "ttft_max_s": 1.493471859001147
+   },
+   {
+    "tok_s": 5.475702913517287,
+    "tokens": 60,
+    "wall_s": 10.957497320003313,
+    "failed": 0,
+    "ttft_mean_s": 1.3422787640010938,
+    "ttft_max_s": 1.3422787640010938
+   },
+   {
+    "tok_s": 5.24214374117085,
+    "tokens": 60,
+    "wall_s": 11.445699119001802,
+    "failed": 0,
+    "ttft_mean_s": 1.5343750070023816,
+    "ttft_max_s": 1.5343750070023816
+   }
+  ],
+  "8": [
+   {
+    "tok_s": 13.778534608201577,
+    "tokens": 480,
+    "wall_s": 34.83679604899953,
+    "failed": 0,
+    "ttft_mean_s": 8.637628842124741,
+    "ttft_max_s": 8.642154490000394
+   },
+   {
+    "tok_s": 13.232574431974879,
+    "tokens": 480,
+    "wall_s": 36.274120540001604,
+    "failed": 0,
+    "ttft_mean_s": 9.278252804624572,
+    "ttft_max_s": 9.282964212001389
+   },
+   {
+    "tok_s": 13.288585966500689,
+    "tokens": 480,
+    "wall_s": 36.12122472699775,
+    "failed": 0,
+    "ttft_mean_s": 9.415157737373647,
+    "ttft_max_s": 9.418840655998792
+   }
+  ]
+ }
+}

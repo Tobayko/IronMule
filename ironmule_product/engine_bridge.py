@@ -71,6 +71,49 @@ _HISTORICAL_CONFIGURATIONS = {
 }
 _CONFIGURATIONS = frozenset(("current_profile", "dense_stacked", *_HISTORICAL_CONFIGURATIONS))
 DENSE_WIDTH = 8  # KB1: the dense plan stacks up to eight requests into one decode step
+
+
+def install_dense(model: Any, device_info: dict[str, Any] | None,
+                  slots: int = DENSE_WIDTH) -> tuple[Any, dict[str, Any]]:
+    """The stacked plan for `model`: on MLX's CPU device CPU6's plan (Llama-shaped models, float32); else KB2's
+    Gemma plan for a 4-bit Gemma 3 (the native plan's row kernel installed first, as `--compute-dtype native`
+    installs it), else KB1's dense plan (Qwen 3 bf16). Each refuses what it was
+    not built for and probes the model's own weights before it serves. `slots` is the stacked width (AG5: the
+    agent's measured best width); the pool holds that many requests, so no group or joiner exceeds it."""
+    from ironmule import dense_gemma
+
+    from ironmule import dense_cpu
+
+    if device_info is None and _on_cpu() and dense_cpu.refuse(model) is None:
+        # CPU6: MLX's CPU device has its own stacked plan (float32, BLAS) for the models it was built for; any other
+        # model goes on to the plans below, which refuse what they were not built for, as before
+        return dense_cpu.install(model, slots=slots)
+    if dense_gemma.refuse(model, native=False) is None:
+        if dense_gemma.refuse(model) is not None:
+            from ironmule.cuda_native import install as install_native
+            native = install_native(model, device_info)
+        else:
+            native = None
+        plan, record = dense_gemma.install(model, device_info, slots=slots)
+        return plan, {**record, "model_family": "gemma3", "native": native}
+    from ironmule.dense_plan import install
+
+    return install(model, device_info, slots=slots)
+
+
+def _on_cpu() -> bool:
+    import mlx.core as mx
+
+    return not mx.cuda.is_available() and mx.default_device() == mx.cpu
+
+
+def dense_width(value: Any) -> int:
+    """AG5: a stacked width the product accepts, 1 to `DENSE_WIDTH`; None means `DENSE_WIDTH`."""
+    if value is None:
+        return DENSE_WIDTH
+    if type(value) is not int or not 1 <= value <= DENSE_WIDTH:
+        raise ValueError(f"the stacked width must be an int from 1 to {DENSE_WIDTH}")
+    return value
 MAX_GROUP_REQUESTS = 32  # Admitted requests; actual grouped execution width remains <=4.
 
 
@@ -232,7 +275,8 @@ class CurrentEngineBridge:
     @classmethod
     def from_loaded(cls, model: Any, tokenizer: Any, spec: Any, *,
                     configuration: BridgeConfiguration = "current_profile",
-                    class_a_knobs: dict[str, Any] | None = None) -> "CurrentEngineBridge":
+                    class_a_knobs: dict[str, Any] | None = None,
+                    width: int | None = None, speculate: bool = False) -> "CurrentEngineBridge":
         """Construct from exactly the already loaded model and registered snapshot.
 
         Identity construction reads the supplied snapshot and fails closed; it does
@@ -244,6 +288,11 @@ class CurrentEngineBridge:
         """
         model_id, revision, snapshot_path = _validate_spec(spec)
         configuration = _validate_configuration(configuration)
+        width = dense_width(width)  # AG5: the stacked engine's width; refused before anything loads
+        if width != DENSE_WIDTH and configuration != "dense_stacked":
+            raise ValueError("a stacked width applies to the dense_stacked configuration only")
+        if speculate and configuration != "dense_stacked":
+            raise ValueError("speculation (SP2) applies to the dense_stacked configuration only")
         requested = None
         if class_a_knobs is not None:
             from .knob_profile import class_a_knobs as decode_class_a
@@ -279,11 +328,16 @@ class CurrentEngineBridge:
             # KB1: the opt-in dense numeric plan; `install` refuses anything it was not built for and probes the
             # model's own weights (stacked rows bit-identical) before it serves.
             import mlx.core as mx
-            from ironmule.dense_plan import install
             from ironmule.service import DenseStackedMode
-            plan, dense_record = install(model, mx.device_info() if mx.cuda.is_available() else None)
+            plan, dense_record = install_dense(model, mx.device_info() if mx.cuda.is_available() else None,
+                                               slots=width)
+            mode = DenseStackedMode(plan, max_width=width, speculate=speculate)
+            # SP2: what serves; a plan whose verify window was not found bit-identical never speculates
+            dense_record = {**dense_record, "width": width,
+                            "speculation": "context" if mode.speculate else "off",
+                            **({"speculation_refused": "the plan's verify window is not verified on this machine"}
+                               if speculate and not mode.speculate else {})}
             knobs, profile_available, profile_source = BASELINE, False, "dense_numeric_plan"
-            mode = DenseStackedMode(plan, max_width=DENSE_WIDTH)
         elif historical_candidate is not None:
             # These values are an explicit, archived B39d candidate.  They are
             # neither a compatible tune profile nor an automatic selection.
@@ -387,12 +441,16 @@ class CurrentEngineBridge:
         joined_limits: list[int] = []
 
         def take(capacity: int) -> list[Any]:
-            """SERVE8: (ids, limit, on_token, chat-turn boundaries or None) rows admitted into this run."""
+            """SERVE8: (ids, limit, on_token, chat-turn boundaries or None[, cancelled]) rows admitted into this
+            run. A joiner's `cancelled` stops it at its next token boundary, as it stops the run's first rows: without
+            it a cancelled joiner computed its whole limit (review of 2026-11-08)."""
             fresh = []
-            for ids, limit, emit, cuts in admit(capacity):
+            for row in admit(capacity):
+                ids, limit, emit, cuts = row[:4]
+                stop = row[4] if len(row) > 4 else None
                 fresh.append(Request(prompt_ids=_validate_request(ids, limit), max_tokens=limit,
                                      plan=StrictOneShotPlan() if cuts is None else ChatTurnsPlan(cuts),
-                                     stream=TokenStream(emit)))
+                                     stream=TokenStream(emit, stop)))
                 joined_limits.append(limit)
             return fresh
         try:
@@ -457,11 +515,28 @@ class CurrentEngineBridge:
             **({"dense_plan": dict(self._dense_plan)} if self._dense_plan is not None else {}),
         }
 
+    def fallback_kinds(self) -> list[dict[str, Any]]:
+        """STAB4: what the Runtime's fallbacks caught in the last run, as exception types, where they were caught
+        and memory flags; never a message, since a library message can quote input text. When the whole-executor
+        safety net catches an error and the run then fails on its result count, this is the only trace of it."""
+        kinds = []
+        for reason in list(getattr(getattr(self._runtime, "telemetry", None), "fallback_reasons", None) or [])[-8:]:
+            text = str(reason)
+            where = "executor" if text.startswith("executor: ") else "group"
+            kind, _, message = text.removeprefix("executor: ").partition(": ")
+            message = message.lower()
+            kinds.append({"where": where, "type": kind if kind.isidentifier() else "unknown",
+                          "out_of_memory": "out of memory" in message or "outofmemory" in message.replace(" ", ""),
+                          "illegal_memory_access": "illegal memory access" in message})
+        return kinds
+
     def counters(self) -> dict[str, Any]:
         """KP1: decode bodies this worker's engine built and evicted so far, and its card (no request data)."""
+        policy = getattr(getattr(self._runtime, "backend", None), "policy", None)
         return {"decode_bodies": dict(getattr(getattr(self._runtime, "engine", None), "body_counts", None)
                                       or {"built": 0, "evicted": 0}),
-                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES")}
+                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                **({"speculation": policy.summary()} if policy is not None else {})}  # SP2: what it has learned
 
     def eos_ids(self) -> tuple[int, ...]:
         """The token ids the engine stops on, so a stream ends exactly where the engine does."""

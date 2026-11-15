@@ -2,15 +2,27 @@
 
 ## Mission and authority
 
-The agent maintains IronMule, an evidence-gated local LLM runtime for Apple Silicon
-using MLX. Correct output and an honest reference path come before performance.
+The agent maintains IronMule, an evidence-gated local LLM runtime for existing hardware: Apple Silicon (MLX),
+NVIDIA GPUs (MLX's CUDA build) and CPUs (MLX's CPU build and llama.cpp's ggml kernels, GG). Correct answers and an
+honest reference path come before performance.
 
 **Main goal (maintainer decision, 2026-10-30):** a working IronMule agent, BACKLOG AG1
 (`ironmule_product/agent.py`). It decides on its own how the model's requests run on the
 hardware, reaches a measured gain there, keeps learning by reinforcement learning while it
 serves, and decides in microseconds. Work that advances it comes first. It is held to every
-rule in this guide: it changes no answer, it serves only what it proved on the machine it runs
-on, and its gains need the evidence described under Performance and evidence.
+rule in this guide: it keeps answer quality (see below), it serves only what it proved on the machine it runs
+on, and its gains need the evidence described under Performance and evidence. Its gain is measured first in
+tokens per second, with time to first token no worse (owner, 2026-11-03; BACKLOG, "The main goal").
+Under `--agent on` it may also choose an output-changing numeric plan or stacked engine by itself, but only one
+that passes its own on-machine quality gate, and never silently (owner, 2026-11-03; BACKLOG AG4). Outside agent
+mode the caller's plan is preserved as below.
+
+**Answer quality instead of identical tokens (owner decision, 2026-11-10; BACKLOG, "The main goal").** For this project
+answers need not be token-identical: what matters is that they stay correct with the same answer quality, and the
+project goes for full performance under that condition. A path that changes tokens may serve once its quality was
+shown on the machine (the perplexity gate, and QG1's correctness check once built), and never silently. Where this
+guide below asks to preserve tokens or exact output, read it as: preserve them for a path that claims exactness, and
+gate and name every path that does not. A correctness or quality failure still disqualifies a result.
 
 This is the shared engineering guide for Codex, Claude and Gemini. Providers may
 use different tools; correctness, evidence, testing, safety and completion standards
@@ -32,6 +44,7 @@ needs only the affected text and applicable documentation conventions.
 | Product purpose, usage or public claims | [README.md](README.md); for claims, [docs/LIMITS.md](docs/LIMITS.md) and the supporting [ledger](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md) entry in the research repository |
 | Runtime, executor, plans, cache or scheduling in [ironmule/](ironmule/) | [docs/RUNTIME.md](docs/RUNTIME.md), affected implementation and [runtime contract tests](tests/engine/test_ironmule_runtime.py) |
 | Service, workers, HTTP, calibration or state in [ironmule_product/](ironmule_product/) | [docs/HTTP.md](docs/HTTP.md), affected modules and matching `test_product_*` / `test_automatic_*` files in [tests/engine/](tests/engine/) |
+| The agent (AG1, AG2): decisions, learning, length model, training | [docs/AGENT.md](docs/AGENT.md), [training/README.md](training/README.md), BACKLOG AG1/AG2 and [tests/agent/](tests/agent/) |
 | Learned dispatch, qualification or recovery | LIMITS, relevant modules and tests: [learner](tests/learning/test_local_learner.py), [activation](tests/learning/test_activation.py), [monitoring](tests/learning/test_monitoring.py), [requalification](tests/learning/test_requalification.py), [readiness](tests/learning/test_readiness.py) |
 | Performance, benchmarks or optimisation experiments | [docs/BACKLOG.md](docs/BACKLOG.md), including Tier 0 and its reopening rule |
 | Shared evidence in [friday_evidence/](friday_evidence/) | Affected module, callers and tests; see Friday Evidence below |
@@ -40,13 +53,13 @@ needs only the affected text and applicable documentation conventions.
 | Releases | [docs/RELEASING.md](docs/RELEASING.md), including its full pre-publication gates |
 | Figures or aggregate evidence views | [tools/make_figures.py](tools/make_figures.py) for [docs/assets/](docs/assets/) |
 
-[tools/](tools/) now holds only what the product, the kept tests, CI or the README
-figures need -- measurement/verification harnesses for one specific kept test, plus the
-figure renderer -- and the Kaggle harness of an open backlog entry written while the
-research repository was out of reach, each with its own focused test
-(`tools/kaggle_whole_machine.py`, `tools/rl2_headroom.py`, `tools/rl4_agent.py`, `tools/cuda_probe.py`,
-`tools/ag1_online.py`); such a
-harness moves there once it is reachable. Inspect the selected tool and its contract before running it.
+[training/](training/) holds what trains, simulates and measures the agent (its simulator, its Kaggle harness
+and RL4), with the workflow in its README. [tools/](tools/) holds what the product, the kept tests, CI or the
+README figures need -- measurement/verification harnesses for one specific kept test, plus the figure renderer
+-- and the Kaggle harnesses of open hardware entries written while the research repository was out of reach,
+each with its own focused test (`tools/kaggle_whole_machine.py`, `tools/cuda_probe.py`, `tools/tpu_probe.py`); such a harness moves
+there once it is reachable. `tools/measure_dispatch_plan.py` stays where it is: the provenance contract test
+names it. Inspect the selected tool and its contract before running it.
 
 The research workflow that used to route through this file -- the experiment ledger,
 preregistration and sealed-study conventions, the Kaggle harnesses, the SSOT corpus and
@@ -109,6 +122,20 @@ work, and record results where they belong (see Performance and evidence below).
   persistent kill state and reference fallback; use the lifecycle tests above.
 
 ## Performance and evidence
+
+**Fast mode (owner decision, 2026-11-11): the QA process is removed, development goes for speed.** The owner's words:
+"remove all QAs that are here, we now develop faster", and "test wildly". Until the owner says otherwise, experimental
+work needs no protocol before data, no fixed release rule, no confidence interval, no A/A control, no Tier 0
+reopening procedure and no ledger entry or "ledger still owed" note. Try things, keep what is faster. Experiments
+live in `lab/` (no tests, no documentation duty) and are noted in `docs/LAB.md` in a few lines each: date, what was
+tried, the numbers, machine and model, what follows. Two things remain: (1) answers must stay factually correct:
+before a path is called a result, its answers are compared with a reference engine's on the same model, and a path
+that gets facts wrong is out; (2) numbers are reported as measured, with machine, model and what they were compared
+against. The goal is speed clearly above llama.cpp and comparable engines on the same hardware and model. Code that
+ships in `ironmule/` and `ironmule_product/` keeps its tests green. Kaggle GPU quota and the Safety boundaries below
+still need the owner's approval.
+
+*Suspended for experimental work while fast mode holds:*
 
 Before proposing an optimisation, inspect [docs/BACKLOG.md](docs/BACKLOG.md)'s Tier 0
 and the cited ledger entries. Add unlisted optimisation work with its mechanism and
