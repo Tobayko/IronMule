@@ -276,7 +276,8 @@ is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,
 - *How it was trained:* from scratch (random start), in a dreamed world: a simulator of continuous batching whose step
   times follow the measured costs and the measured contention collapse, randomised over machines, models, traffic and
   foreign load. The shipped weights (2026-11-15, world v4): a warm start that copies a teacher knowing the dream's true
-  foreign load, then PPO; 39 minutes on the 4-vCPU Xeon. Copying the visible-load rule instead (threads = free cores)
+  foreign load, then PPO; 49 minutes on two Kaggle T4 GPUs (seed 21 of two; the CPU run before it chose differently
+  in two passes near a boundary on the real machine, LAB.md). Copying the visible-load rule instead (threads = free cores)
   left two from-scratch runs at 4 threads beside a half-busy process, where 3 are 1.4x faster: that rule cannot see
   such a process. The generation before was trained on two Kaggle T4 GPUs (67 minutes) and fine-tuned on this CPU
   (29 minutes). The world and the recipe are not published.
