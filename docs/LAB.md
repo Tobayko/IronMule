@@ -1360,3 +1360,132 @@ Idle, separate processes put it 1.6-3.8 % below the defaults at the same 4 threa
 attached and detached in turn (4 rounds each, `e.pilot = None`) shows no cost: 10.04 against 10.05 tok/s for one
 request and 65.6 against 65.0 for eight (decisions 0.38 ms a step), so that gap was the spread between processes.
 With two busy processes the Pilot is 32x the defaults for one request and 21x for eight (short answers, one block).
+
+## 2026-11-15 KG1 v1: generated Q4_K CUDA kernels against llama.cpp's, on a T4
+
+Goal (owner, 2026-11-15): kernels the agent writes and tunes for each machine, as one more lever beside threads and
+batching. First step: `lab/kg1/gen.py` generates one CUDA kernel per parameter set for llama.cpp's Q4_K weights times
+float32 activations (lanes per 256-weight block L, rows per warp R, warps per block W, tokens per call B: 105
+variants), `lab/kg1/kaggle_kg1.py` runs each on the real Q4_K weights of Qwen3-4B Q4_K_M on a Kaggle T4 against
+llama.cpp's own kernel (`ggml_mul_mat` on the CUDA backend, `lab/kg1/ref_ggml.c`) and a float64 reference that
+decodes the format element by element. 8 weight copies per timing (no cache reuse), 50 repetitions.
+
+| shape (K x N), tokens | llama.cpp us (GB/s) | best variant us (GB/s) | variant |
+| --- | --- | --- | --- |
+| 2560 x 1024, 1 / 2 / 4 / 8 | 20.9 (71) / 22.1 / 33.1 / 54.2 | 20.8 / **15.2** / **20.8** / **35.5** | L16R1W4, L32R1W4, L32R1W2, L16R4W2 |
+| 2560 x 9728, 1 / 4 / 8 / 16 | 71.4 (196) / 140.4 / 251.7 / 107.3 | 88.6 (158) / 158.5 / 286.5 / 626.7 | L8R2W2, L16R4W8, ... |
+| 9728 x 2560, 1 / 4 / 8 / 16 | 62.0 (226) / 113.9 / 243.3 / 109.1 | 89.3 (157) / 143.9 / 280.3 / 581.7 | L8R4W8, L16R4W8, ... |
+
+Errors against float64: every variant 1.4-2.4e-7, llama.cpp 4.8-5.6e-3 (1-8 tokens) and 1.1-1.5e-2 (16), because it
+rounds the activations to 8 bits first. All Q4_K matmuls of one token (the model's counts per shape): llama.cpp 9.69
+ms at 1 token, the best variants 12.05 ms (0.80x); 0.71x / 0.87x / 0.90x at 2 / 4 / 8 tokens, 0.21x at 16, where
+llama.cpp switches to its tensor-core kernel. Read: llama.cpp's one-token kernel reads up to 226 GB/s, 70 % of the
+T4's 320 GB/s; the float32 variants win on the small 2560 x 1024 matrices and lose on the large ones, and from 4 tokens
+they are bound by float32 arithmetic. llama.cpp's own small-batch path is weakest at 4-8 tokens (55-57 GB/s on the
+large matrices, slower than its 16-token path). v2 adds variants with 8-bit activations and `__dp4a` (four
+multiply-adds per instruction) for that range.
+
+## 2026-11-15 KG1 v3: the library tuned on a T4, but the engine ran without the hook
+
+Kaggle T4, `lab/kg1/kaggle_e2e.py` at 404cc14. The tuning worked: `ironmule/kernel_gen.py` compiled 288 variants
+(50 s), measured them on the five Q4_K shapes of Qwen3-4B for 1-8 tokens (124 s) and built a 40-entry library; the
+fastest variants were mostly L8 with R 1-2 at 1-4 tokens and R 2-8 at 5-8 tokens (per shape: 2560 x 9728 67.1 /
+85.4 / 129.1 us at 1 / 4 / 8 tokens; 9728 x 2560 68.5 / 79.1 / 112.6 us). The patched build failed: `tools/build_ggml.py`
+found no CUDA::cuda_driver on Kaggle (fixed: it now falls back to the driver library), and MG2's build that ran after it
+extracted the source afresh, so the engine served without the kg1 hook. Its own measurement shows that: steps with the
+library "on" and "off" cost the same (18.7 / 34.0 / 54.4 ms at 1 / 4 / 8 tokens either way). Measured anyway, on one
+GPU, Qwen3-4B Q4_K_M, tok/s, two alternating passes:
+
+| requests | llama-server | engine (shared pool + PAD1) |
+| --- | --- | --- |
+| 1 | 53.0, 48.7 | 49.1, 49.9 |
+| 2 | 94.7, 86.6 | 90.8, 86.5 |
+| 4 | 119.1, 112.5 | 148.3, 147.2 |
+| 8 | 138.7, 137.0 | 278.2, 278.4 |
+
+Facts 49 / 50 for every engine arm. v4 builds with MG2's build and the patches applied right before cmake (as SG1 v2
+did for gr1), keeps the build and the model outside `/kaggle/working`, and adds both engines with PAD1 off.
+
+## 2026-11-15 PI1 on a second machine: a Kaggle CPU session
+
+The shipped Pilot (from scratch, world v4) on a different CPU than it was checked on: a Kaggle CPU session, Intel Xeon
+@ 2.20GHz (family 6 model 79, Broadwell: AVX2, no AVX-512), 2 cores with 2 threads each, Qwen3-4B Q4_K_M, the engine
+built with `tools/build_ggml.py` (53 min), `lab/pi1/kaggle_cpu.py` at 7245a82 (`lab/pi1/real.py`: 64-token answers,
+16 with two busy programs; then `lab/pi1/ab_idle.py`). tok/s for 1 / 8 requests:
+
+| foreign load | defaults (4 threads) | Pilot | its threads |
+| --- | --- | --- | --- |
+| none | 6.30 / 8.97 | 6.27 / 8.95 | 4 |
+| one busy process | 1.60 / 3.31 | **3.72 / 5.31** | 2 |
+| one process busy half of every 20 ms | 4.93 / 8.12 | 4.83 / 8.10 | 4 |
+| two busy processes | 1.09 / 1.88 | **4.09 / 2.91** | 2 |
+
+Idle, one process, the Pilot attached and detached in turn (4 rounds): 6.42 / 8.83 against 6.36 / 9.23; decisions
+0.51 ms a step. Read: on a machine it never saw, with hyper-threads, it is 2.3x / 1.6x the defaults beside one busy
+process and 3.8x / 1.5x beside two, and equal idle and beside a half-busy process (which costs this machine only 2-22 %
+at 4 threads, so keeping 4 is right here). Beside one busy process it chose 2 threads, where the 4-vCPU Xeon chose 3:
+here a foreign process on one hyper-thread also slows its sibling. The 8-request cases at 2 busy processes are
+slow either way (first tokens about 21 s): two cores of an older CPU are not enough for eight 4B requests.
+
+## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
+
+Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
+context. Three changes, each with a test against the old implementation on random inputs:
+
+- prompt lookup: `speculation.NgramIndex` per request (the last start of every 2- and 3-gram, updated by the new
+  tokens) instead of `draft()` scanning the whole context every step; the prompt is indexed once per request;
+- the shared pool's longest common prefix: a token trie (`ggml_engine._PrefixTrie`, ties to the earliest sequence as
+  before) instead of comparing the prompt with every held sequence; `_common` compares 64 tokens per slice in C;
+- the engine no longer builds `ids + tokens` per request and step for drafting, SP4 and the pool's sync.
+
+`lab/st1/bench.py` on the 4-vCPU Xeon (Python 3.13), microseconds:
+
+| context tokens | draft() scan | NgramIndex | the old ids + tokens copy |
+| --- | --- | --- | --- |
+| 512 | 154 | 0.76 | 2.3 |
+| 2,048 | 646 | 0.83 | 9.2 |
+| 8,192 | 2,662 | 0.78 | 35.6 |
+| 32,768 | 10,474 | 0.77 | 173 |
+
+| held sequences x tokens | old scan (token loop) | scan with the slice compare | trie |
+| --- | --- | --- | --- |
+| 8 x 2,048 | 429 | 72 | 58 |
+| 32 x 2,048 | 1,776 | 297 | 61 |
+| 64 x 4,096 | 7,066 | 1,156 | 122 |
+
+Tokens: the old and the new engine gave the same tokens for 8 of 8 prompts on Qwen3-4B Q8_0 (shared pool and
+per-sequence caches; the draft counts differ run to run for both, as the step policy prices steps by measured time).
+End to end through the HTTP API (`lab/cmp/run_all.sh`, burst-sys = requests sharing a system prompt, same state, so
+the same settings), tok/s, medians of 3 blocks:
+
+| | burst-sys 8 | burst-sys 32 | one request | facts |
+| --- | --- | --- | --- | --- |
+| llama-server (stock, -np 32) | 21.3 | 28.5 | 8.8 | 49 / 50 |
+| IronMule before | 47.4 | 74.5 | 9.86 | 49 / 50 |
+| IronMule ST1 | 50.2 | 76.2 | 9.5 | 49 / 50 |
+
+On this CPU a step costs 100-130 ms, so the saved milliseconds are within the spread at these contexts; they matter
+where steps are short (a T4 step is 19-28 ms, where a 32,768-token scan cost 10 ms per request) and contexts long.
+The first run of this comparison was not like for like: the new engine's fresh start chose a float32 KV cache on
+tuning noise (scores 25.9 against 24.6 at a 64-token context) and served 61 / 7.05 tok/s; the autotune now ranks f32
+KV first only 8 % ahead (`rank_settings`, ENGINE_VERSION 5).
+
+## 2026-11-15 ST2 (CPU): is decode bound by memory bandwidth?
+
+`lab/st2/cpu_bw.py` on the 4-vCPU Xeon (Sapphire Rapids: AMX, AVX512-VNNI), Qwen3-4B as Q8_0 (4.28 GB) and Q4_K_M
+(2.50 GB), one decode step of 1 or 8 rows at a 64-token context, median of 10; "GB/s" is the weight bytes a step reads
+over its time. The machine's memory: 14.7 / 30.2 / 33.5 GB/s read with 1 / 2 / 4 processes (numpy sum, 512 MB each).
+
+| threads | Q8_0 1 row tok/s (GB/s) | Q8_0 8 rows | Q8_0 ROW1 off, 1 / 8 rows | Q4_K_M 1 row (GB/s) | Q4_K_M 8 rows |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2.84 (12.2) | 19.5 | 2.71 / 12.9 | 2.48 (6.2) | 10.3 |
+| 2 | 5.88 (25.2) | 35.8 | 5.28 / 23.7 | 4.70 (11.7) | 19.1 |
+| 3 | 8.42 (36.0) | 57.3 | 7.01 / 34.1 | 6.26 (15.6) | 26.9 |
+| 4 | 9.50 (40.6) | 63.1 | 9.21 / 44.5 | 7.24 (18.1) | 33.5 |
+
+Read: one request with Q8_0 is memory bound: at 4 threads it reads 40 GB/s, above what the numpy probe reached, and
+the fourth thread adds only 13 % (ROW1's AMX kernels change nothing there: 9.50 against 9.21). Q4_K_M moves 58 % of
+the bytes and is slower (7.24 tok/s): it is bound by its decoding (18 GB/s, still rising with threads), not by memory.
+With 8 rows compute decides (ROW1 1.42x). So for one request the lever is fewer bytes at Q8_0's compute speed: a 4-bit
+weight read at 40 GB/s would allow up to about 16 tok/s; llama.cpp's Q4_K kernels on this CPU reach 7.2. A 4-bit
+format changes the answers and goes through the quality gate. Not more SIMD for Q8_0's one-row case.

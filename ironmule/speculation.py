@@ -53,6 +53,53 @@ def draft(context: Sequence[int], k: int, max_ngram: int = MAX_NGRAM,
     return [], 0
 
 
+class NgramIndex:
+    """`draft` without the scan: the last start of every `min_ngram`..`max_ngram`-gram of a request's context, kept up
+    to date as its answer grows, so a step's lookup costs the same at any context length (one dict lookup per n) and
+    the prompt is indexed once per request. Returns exactly what `draft(self.tokens, k)` returns."""
+
+    __slots__ = ("tokens", "max_ngram", "min_ngram", "_last", "_done", "_base")
+
+    def __init__(self, prompt: Sequence[int], max_ngram: int = MAX_NGRAM, min_ngram: int = MIN_NGRAM):
+        self.tokens = list(prompt)
+        self.max_ngram, self.min_ngram = max_ngram, min_ngram
+        self._last: dict[int, dict[tuple[int, ...], int]] = {n: {} for n in range(min_ngram, max_ngram + 1)}
+        self._done = 0  # every n-gram ending before this position is indexed
+        self._base = len(self.tokens)
+
+    def follow(self, answer: Sequence[int]) -> None:
+        """Take the answer's tokens this index has not seen yet (the answer only grows)."""
+        seen = len(self.tokens) - self._base
+        if len(answer) > seen:
+            self.tokens.extend(answer[seen:])
+
+    def append(self, token: int) -> None:
+        self.tokens.append(token)
+
+    def _index(self) -> None:
+        t, end = self.tokens, len(self.tokens) - 1  # the last n-gram (the suffix itself) is not an earlier occurrence
+        for e in range(self._done, end):
+            for n, table in self._last.items():
+                start = e - n + 1
+                if start >= 0:
+                    table[tuple(t[start:e + 1])] = start
+        if end > self._done:
+            self._done = end
+
+    def draft(self, k: int) -> tuple[list[int], int]:
+        if k < 1:
+            return [], 0
+        self._index()
+        t, n_ctx = self.tokens, len(self.tokens)
+        for n in range(min(self.max_ngram, n_ctx - 1), self.min_ngram - 1, -1):
+            start = self._last[n].get(tuple(t[n_ctx - n:]))
+            if start is not None:
+                tokens = t[start + n:start + n + k]
+                if tokens:
+                    return tokens, n
+        return [], 0
+
+
 def accept(drafts: Sequence[int], argmax: Sequence[int]) -> list[int]:
     """The drafts the plan agrees with, then its own next token."""
     n = 0

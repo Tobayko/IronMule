@@ -97,7 +97,8 @@ def build():
     pkg = W / "pkg/ironmule"
     pkg.mkdir(parents=True, exist_ok=True)
     (pkg / "__init__.py").write_text("")
-    for name in ("ggml_engine.py", "speculation.py", "ggml_agent.py", "pilot.py", "draft_model.py", "pilot_weights.npz"):
+    for name in ("ggml_engine.py", "speculation.py", "ggml_agent.py", "pilot.py", "draft_model.py", "pilot_weights.npz",
+                 "kernel_gen.py"):
         url = f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/ironmule/{name}"
         (pkg / name).write_bytes(urllib.request.urlopen(url, timeout=60).read())
     facts = urllib.request.urlopen(f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/lab/row1/facts.py",
@@ -309,7 +310,8 @@ for line in sys.stdin:
                       "first": [(j.first_ns - t0) / 1e9 for j in jobs], "texts": [j.tokens for j in jobs],
                       "steps": e.steps, "spec": e.policy.summary() if e.policy is not None else None,
                       "pilot": (e.summary() or {}).get("pilot"), "padding": (e.summary() or {}).get("padding"),
-                      "draft": (e.summary() or {}).get("draft_model")}), flush=True)
+                      "draft": (e.summary() or {}).get("draft_model"), "kernels": (e.summary() or {}).get("kernels")}),
+          flush=True)
 """
 
 
@@ -340,7 +342,7 @@ class Engines:
             p.stdin.write(json.dumps({"prompts": part, "limit": limit, "at_ns": at}) + "\n"); p.stdin.flush()
         rows = [json.loads(self._line(p)) for p in self.procs]
         self.last = [{"steps": r.get("steps"), "spec": r.get("spec"), "pilot": r.get("pilot"), "padding": r.get("padding"),
-                      "draft": r.get("draft")} for r in rows]
+                      "draft": r.get("draft"), "kernels": r.get("kernels")} for r in rows]
         wall = (max(r["t1"] for r in rows) - min(r["t0"] for r in rows)) / 1e9
         tokens = sum(sum(r["tokens"]) for r in rows)
         firsts = [f for r in rows for f in r["first"]]

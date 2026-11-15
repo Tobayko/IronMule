@@ -44,7 +44,8 @@ THREADS = int(os.environ.get("IRONMULE_GGML_THREADS") or _usable_cores())
 SEQS = int(os.environ.get("IRONMULE_GGML_SEQS", SEQS))
 SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
 POLL = 50  # llama-server's default busy-wait level
-ENGINE_VERSION = 4  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005
+ENGINE_VERSION = 5  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005;
+# 5 (ST1): a float32 KV cache ranks first in the autotune only 8 % ahead (rank_settings)
 OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default
 # Prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one). GG2 used 96, so early
 # requests streamed while later prompts waited; ROW1 round 5 (2026-11-12, Qwen3-4B, 32 sequences) measured 7-9 % more
@@ -59,6 +60,10 @@ COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
 # Only with one unified KV cache: per-sequence caches split a step whose sequences carry different token counts into
 # several passes (MG2 v5, 8 requests on a T4: 271 tok/s with the shared pool, 95 per-sequence, 150 per-sequence unpadded).
 PAD = os.environ.get("IRONMULE_GGML_PAD", "")
+# KG1 (2026-11-15): a kernel library generated and tuned for this GPU (ironmule/kernel_gen.py), loaded by llama.cpp's
+# kg1 hook from IRONMULE_KG_LIB. The engine measures its own step for 1-8 tokens with the library on and off at
+# startup and keeps it only for the token counts where the step is faster.
+KG_LIB = os.environ.get("IRONMULE_KG_LIB", "")
 PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PI1: the decision network, when its weights are present
 DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
 DRAFT_SLOTS = int(os.environ.get("IRONMULE_GGML_DRAFT_SLOTS", DRAFT_MAX_RUNNING))  # DM1: its sequences
@@ -168,6 +173,78 @@ class Job:
     first_ns: int = 0
     finished_ns: int = 0
     passed_over: int = 0
+    context: Any = None  # speculation.NgramIndex over ids + tokens, kept up to date by the engine
+
+    def full_context(self) -> list[int]:
+        """ids + tokens, grown by the new tokens only (the engine's per-step view of a request's context)."""
+        if self.context is None:
+            from .speculation import NgramIndex
+
+            self.context = NgramIndex(self.ids)
+        self.context.follow(self.tokens)
+        return self.context.tokens
+
+
+class _PrefixTrie:
+    """The sequences of a SharedPool by the tokens their cells hold, one node per token: the longest prefix any sequence
+    shares with a prompt is a walk down the prompt (one dict lookup per token), not a scan of every sequence. A node
+    knows the sequences that pass through it; ties go to the sequence that entered the pool first, as the scan's did."""
+
+    __slots__ = ("root", "paths", "order", "_next")
+
+    def __init__(self) -> None:
+        self.root: list = [{}, set(), None, None]  # children, sequences, parent, token
+        self.paths: dict[int, list[list]] = {}
+        self.order: dict[int, int] = {}
+        self._next = 0
+
+    def add(self, seq: int) -> None:
+        self.paths[seq] = []
+        self.order[seq] = self._next
+        self._next += 1
+
+    def extend(self, seq: int, tokens: Sequence[int]) -> None:
+        path = self.paths[seq]
+        node = path[-1] if path else self.root
+        for token in tokens:
+            child = node[0].get(token)
+            if child is None:
+                child = [{}, set(), node, token]
+                node[0][token] = child
+            child[1].add(seq)
+            path.append(child)
+            node = child
+
+    def truncate(self, seq: int, n: int) -> None:
+        path = self.paths[seq]
+        for node in reversed(path[n:]):
+            node[1].discard(seq)
+            if not node[1]:  # no sequence passes here, so none below either
+                del node[2][0][node[3]]
+        del path[n:]
+
+    def remove(self, seq: int) -> None:
+        if seq in self.paths:
+            self.truncate(seq, 0)
+            del self.paths[seq]
+            del self.order[seq]
+
+    def clear(self) -> None:
+        self.root[0].clear()
+        self.paths.clear()
+        self.order.clear()
+
+    def longest(self, ids: Sequence[int]) -> tuple[int | None, int]:
+        """The sequence holding the longest prefix of `ids` (the earliest among equals) and its length."""
+        node, depth = self.root, 0
+        for token in ids:
+            child = node[0].get(token)
+            if child is None:
+                break
+            node, depth = child, depth + 1
+        if depth == 0:
+            return None, 0
+        return min(node[1], key=self.order.__getitem__), depth
 
 
 class SharedPool:
@@ -196,6 +273,7 @@ class SharedPool:
         self.reserve: dict[int, int] = {}  # running sequence -> cells it may still take
         self.kept: OrderedDict[int, None] = OrderedDict()  # finished sequences kept as a cache, oldest first
         self.shared_tokens = 0
+        self.trie = _PrefixTrie()  # self.tokens by prefix: the longest shared prefix in one walk down a prompt
 
     @property
     def used(self) -> int:
@@ -208,6 +286,11 @@ class SharedPool:
         self.free_ids = sorted(set(self.free_ids) | set(self.tokens) | set(self.active))
         self.tokens.clear(); self.nodes.clear(); self.ref.clear(); self.active.clear(); self.reserve.clear()
         self.kept.clear()
+        self.trie.clear()
+
+    def longest(self, ids: Sequence[int]) -> tuple[int | None, int]:
+        """The sequence holding the longest prefix of `ids` and its length (None, 0 when none shares a token)."""
+        return self.trie.longest(ids)
 
     def _unref(self, nodes: list[int]) -> None:
         for node in nodes:
@@ -225,6 +308,7 @@ class SharedPool:
                 self.e.L.llama_memory_seq_rm(self.e.memory, seq, -1, -1)
                 self._unref(self.nodes.pop(seq, []))
                 self.tokens.pop(seq, None)
+                self.trie.remove(seq)
                 self.free_ids.append(seq)
                 return True
         return False
@@ -232,12 +316,7 @@ class SharedPool:
     def place(self, ids: list[int], limit: int) -> tuple[int, int] | None:
         """A sequence for a new request and how many of its prompt tokens it already holds, or None while it does
         not fit (it waits)."""
-        best, match = None, 0
-        if self.e.prefix_reuse:
-            for seq, held in self.tokens.items():
-                n = GgmlEngine._common(held, ids)
-                if n > match:
-                    best, match = seq, n
+        best, match = self.trie.longest(ids) if self.e.prefix_reuse else (None, 0)
         keep = min(match, len(ids) - 1)
         if keep <= 0:
             best, keep = None, 0
@@ -253,35 +332,44 @@ class SharedPool:
                 self._unref(self.nodes[seq][keep:])
                 del self.nodes[seq][keep:]
                 del self.tokens[seq][keep:]
+                self.trie.truncate(seq, keep)
         else:
             while not self.free_ids:
                 if not self._evict(best):
                     return None
             seq = self.free_ids.pop(0)
             self.tokens[seq], self.nodes[seq] = [], []
+            self.trie.add(seq)
             if keep:
                 self.e.L.llama_memory_seq_cp(self.e.memory, best, seq, 0, keep)
                 shared = self.nodes[best][:keep]
                 for node in shared:
                     self.ref[node] += 1
                 self.nodes[seq], self.tokens[seq] = list(shared), list(ids[:keep])
+                self.trie.extend(seq, ids[:keep])
         self.shared_tokens += keep
         self.active.add(seq)
         self.reserve[seq] = len(ids) - keep + limit + self.slack
         return seq, keep
 
-    def sync(self, seq: int, held: list[int], remaining: int) -> None:
-        """After a step: `seq`'s cells hold `held`; it may still take `remaining` cells."""
+    def sync(self, seq: int, held: Sequence[int], remaining: int, length: int | None = None) -> None:
+        """After a step: `seq`'s cells hold the first `length` tokens of `held` (all of them by default); it may still
+        take `remaining` cells. Costs the tokens that changed, not the context."""
+        n = len(held) if length is None else length
         nodes, tokens = self.nodes[seq], self.tokens[seq]
-        if len(nodes) > len(held):
-            self._unref(nodes[len(held):])
-            del nodes[len(held):]
-            del tokens[len(held):]
-        for token in held[len(nodes):]:
+        if len(nodes) > n:
+            self._unref(nodes[n:])
+            del nodes[n:]
+            del tokens[n:]
+            self.trie.truncate(seq, n)
+        new = held[len(nodes):n]
+        for token in new:
             self.ref[self.next_node] = 1
             nodes.append(self.next_node)
             tokens.append(token)
             self.next_node += 1
+        if new:
+            self.trie.extend(seq, new)
         self.reserve[seq] = max(0, remaining) + self.slack
 
     def release(self, seq: int, held: list[int] | None) -> None:
@@ -296,6 +384,7 @@ class SharedPool:
             self.e.L.llama_memory_seq_rm(self.e.memory, seq, -1, -1)
             self._unref(self.nodes.pop(seq, []))
             self.tokens.pop(seq, None)
+            self.trie.remove(seq)
             self.free_ids.append(seq)
 
     def summary(self) -> dict[str, Any]:
@@ -342,6 +431,9 @@ class GgmlEngine:
                    kv_q8=kv_q8)
         self.steps = 0
         self._warm_up()
+        self.kg: dict[str, Any] = {}
+        if KG_LIB and self.gpu_layers:
+            self.kg = self.measure_kg(KG_LIB)
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
@@ -358,6 +450,54 @@ class GgmlEngine:
                           gpu=bool(self.gpu_layers))
             self.pilot = pilot if pilot.active else None
             self.pilot_refused = None if pilot.active else pilot.reason
+
+    def _step_prices(self, counts: Any, repeats: int = 5) -> dict[int, float]:
+        """Seconds of a step of t tokens of one sequence at positions 64+ (median of `repeats`), for each t in `counts`."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        self._clear()
+        self._decode([(bos, j, 0, j == 63) for j in range(64)])
+        prices: dict[int, float] = {}
+        for t in counts:
+            times = []
+            for _ in range(repeats + 1):
+                started = time.perf_counter()
+                self._decode([(bos, 64 + j, 0, True) for j in range(t)])
+                times.append(time.perf_counter() - started)
+                self.L.llama_memory_seq_rm(self.memory, 0, 64, -1)
+            prices[t] = sorted(times[1:])[len(times[1:]) // 2]
+        self._clear()
+        return prices
+
+    def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:
+        """KG1: the step for 1-8 tokens with the generated kernels on and off (alternating, median of `repeats`); the
+        library keeps the token counts where it was at least 3 % faster. {} where the library is not loaded."""
+        import ctypes
+
+        try:
+            lib = ctypes.CDLL(path)  # the handle llama.cpp's hook opened: the same mask
+            lib.ironmule_kg_set_mask.argtypes = [ctypes.c_uint32]
+            lib.ironmule_kg_table.restype = ctypes.c_char_p
+        except (OSError, AttributeError) as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+        on: dict[int, list[float]] = {t: [] for t in range(1, 9)}
+        off: dict[int, list[float]] = {t: [] for t in range(1, 9)}
+        for _ in range(repeats):
+            for mask, store in ((0xFFFFFFFF, on), (0, off)):
+                lib.ironmule_kg_set_mask(mask)
+                for t, v in self._step_prices(range(1, 9), repeats=1).items():
+                    store[t].append(v)
+        med = lambda v: sorted(v)[len(v) // 2]  # noqa: E731
+        keep = [t for t in range(1, 9) if med(on[t]) <= 0.97 * med(off[t])]
+        mask = sum(1 << (t - 1) for t in keep)
+        lib.ironmule_kg_set_mask(mask)
+        self._kg_lib = lib
+        try:
+            entries = len(json.loads(lib.ironmule_kg_table().decode()).get("entries", []))
+        except (ValueError, AttributeError):
+            entries = None
+        return {"lib": os.path.basename(path), "entries": entries, "tokens_served": keep,
+                "step_ms_on": {str(t): round(med(on[t]) * 1000, 2) for t in on},
+                "step_ms_off": {str(t): round(med(off[t]) * 1000, 2) for t in off}}
 
     def measure_padding(self, repeats: int = 5) -> dict[int, int]:
         """PAD1: a verify step's seconds for 1 to `max_rows` tokens of one sequence (median of `repeats`), and for each
@@ -619,8 +759,13 @@ class GgmlEngine:
 
     @staticmethod
     def _common(a: Sequence[int], b: Sequence[int]) -> int:
+        """The length of the longest common prefix: compared 64 tokens per slice in C, then token by token."""
+        if type(a) is not type(b):
+            a, b = list(a), list(b)
         n = min(len(a), len(b))
         i = 0
+        while i + 64 <= n and a[i:i + 64] == b[i:i + 64]:
+            i += 64
         while i < n and a[i] == b[i]:
             i += 1
         return i
@@ -667,7 +812,7 @@ class GgmlEngine:
     # --- serving ------------------------------------------------------------------------------------------------------
     def run(self, jobs: list[Job], admit: Callable[[int], list[Job]] | None = None) -> list[Job]:
         """Serve `jobs` and every job `admit(free sequences)` hands over while they run; returns all, in order."""
-        from .speculation import MAX_DRAFT, accept, draft
+        from .speculation import MAX_DRAFT, accept
 
         served: list[Job] = list(jobs)
         pending = list(jobs)
@@ -754,7 +899,7 @@ class GgmlEngine:
                         # a prompt that shares a long prefix with one starting in this step waits one step and then
                         # shares its cells, instead of computing the same prefix again (a burst with one system prompt)
                         with self._lock:
-                            pooled = max((self._common(t, job.ids) for t in self.pool.tokens.values()), default=0)
+                            pooled = self.pool.longest(job.ids)[1]
                         if any(self._common(other.ids, job.ids) >= pooled + SHARE_WAIT for _, other, _ in fresh):
                             continue
                         with self._lock:
@@ -803,7 +948,7 @@ class GgmlEngine:
                         pos = len(job.ids) + len(job.tokens) - 1
                         room = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos, share)
                         if room > 0:
-                            wants[seq] = (job.ids + job.tokens, room)
+                            wants[seq] = (job.full_context(), room)
                     modelled = self.drafter.draft(wants, len(order)) if wants else {}
                 for seq in order:
                     job = active[seq]
@@ -812,9 +957,10 @@ class GgmlEngine:
                     if seq in modelled:
                         offers.append((modelled[seq], DRAFT_BUCKET))
                         continue
-                    offer = draft(job.ids + job.tokens, room) if self.policy is not None and room > 0 else ([], 0)
+                    context = job.full_context()
+                    offer = job.context.draft(room) if self.policy is not None and room > 0 else ([], 0)
                     if self.collective is not None and room > 0 and len(offer[0]) < 2:  # SP4: others' answers
-                        other = self.collective.draft(job.ids + job.tokens, room)
+                        other = self.collective.draft(context, room)
                         offer = other if len(other[0]) > len(offer[0]) else offer
                     offers.append(offer)
                 if modelled:  # the stopping rule chose these lengths; the others share what the step's rows leave
@@ -900,8 +1046,8 @@ class GgmlEngine:
                 if self.pool is not None:  # SP1: what every running sequence's cells hold now
                     with self._lock:
                         for seq, job in active.items():
-                            self.pool.sync(seq, (job.ids + job.tokens)[:len(job.ids) + len(job.tokens) - 1],
-                                           job.limit - len(job.tokens))
+                            self.pool.sync(seq, job.full_context(), job.limit - len(job.tokens),
+                                           length=len(job.ids) + len(job.tokens) - 1)
         finally:
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
@@ -939,6 +1085,7 @@ class GgmlEngine:
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
+                **({"kernels": self.kg} if getattr(self, "kg", None) else {}),
                 **({"padding": {"to": {str(k): v for k, v in self.pad_to.items()}, "guesses": self.padded,
                                 "step_ms_by_tokens": {str(k): round(v * 1000, 2) for k, v in self.pad_prices.items()}}}
                    if self.pad_prices else {}),
@@ -994,6 +1141,14 @@ SETTINGS = tuple({"flash_attn": fa, "kv_unified": unified, "kv_f32": f32}
                  for fa in (False, True) for unified in (False, True) for f32 in (False, True))
 
 
+KV_F32_MARGIN = 1.08
+
+
+def rank_settings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The autotune's order: highest score first, a float32 KV cache's score divided by KV_F32_MARGIN."""
+    return sorted(rows, key=lambda row: -row["score"] / (KV_F32_MARGIN if row.get("kv_f32") else 1.0))
+
+
 def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
     """GG1 (amendment of 2026-11-10): llama.cpp's flash attention and unified KV cache, each on and off, timed on a fixed
     synthetic workload (8 sequences of a fixed 64-token prompt and one sequence alone, `steps` decode steps each,
@@ -1018,7 +1173,10 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
         finally:
             engine.close()
         rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates["8"] * rates["1"])})
-    rows.sort(key=lambda row: -row["score"])
+    # ST1 (2026-11-15): a float32 KV cache moves twice the bytes per attended token, which a 64-token tuning context
+    # does not show: it ranks first only where it beats the rest by KV_F32_MARGIN (two fresh starts on the 4-vCPU Xeon
+    # ranked it first and third on 1-6 % noise, and it then served 30 % slower at the context of real requests)
+    rows = rank_settings(rows)
     return {"order": [{k: row[k] for k in ("flash_attn", "kv_unified", "kv_f32")} for row in rows], "measured": rows}
 
 

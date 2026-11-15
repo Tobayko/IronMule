@@ -192,3 +192,37 @@ def test_through_the_product_speculation_answers_as_without_it_and_health_shows_
     assert health["failed_requests"] == 0
     with pytest.raises(ValueError, match="dense_stacked"):
         MLXWorkerClient(spec, speculate=True)
+
+
+def test_the_incremental_ngram_index_drafts_exactly_what_the_scan_drafts():
+    """NgramIndex (one dict lookup per n per step) against draft() (a scan of the whole context) on random contexts that
+    grow token by token and in bursts, over small and large vocabularies, for every draft length."""
+    import random
+
+    from ironmule.speculation import NgramIndex, draft
+
+    rng = random.Random(7)
+    for _ in range(1500):
+        vocab = rng.choice([2, 3, 5, 20, 1000])
+        prompt = [rng.randrange(vocab) for _ in range(rng.randrange(0, 50))]
+        index, answer = NgramIndex(prompt), []
+        for _ in range(rng.randrange(1, 40)):
+            if rng.random() < 0.5:
+                index.follow(answer)
+            else:
+                for token in answer[len(index.tokens) - len(prompt):]:
+                    index.append(token)
+            k = rng.randrange(0, 9)
+            assert index.draft(k) == draft(prompt + answer, k)
+            answer += [rng.randrange(vocab) for _ in range(rng.randrange(1, 4))]
+
+
+def test_the_ngram_index_costs_the_new_tokens_not_the_context():
+    from ironmule.speculation import NgramIndex
+
+    index = NgramIndex(list(range(5000)) * 4)  # 20,000 tokens, indexed once
+    index.draft(7)
+    done = index._done
+    index.append(1)
+    index.draft(7)
+    assert index._done == done + 1  # one more position indexed for one more token
