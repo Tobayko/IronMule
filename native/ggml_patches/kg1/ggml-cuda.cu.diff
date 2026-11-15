@@ -1,0 +1,42 @@
+1a2
+> #include <dlfcn.h>
+1979a1981,2014
+> // KG1 (IronMule): a kernel library generated and tuned for this GPU (IRONMULE_KG_LIB, loaded once) takes the matmuls it
+> // has a kernel for; it returns non-zero for any other type, shape or batch, and llama.cpp's own kernels run as before.
+> typedef int (*ironmule_kg_fn)(int type, const void * w, const float * x, float * y, int64_t n_rows, int64_t k,
+>                               int64_t batch, cudaStream_t stream);
+> static ironmule_kg_fn ironmule_kg_load() {
+>     const char * path = getenv("IRONMULE_KG_LIB");
+>     if (path == nullptr || *path == 0) {
+>         return nullptr;
+>     }
+>     void * handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+>     if (handle == nullptr) {
+>         GGML_LOG_WARN("%s: IRONMULE_KG_LIB not loaded: %s\n", __func__, dlerror());
+>         return nullptr;
+>     }
+>     ironmule_kg_fn fn = (ironmule_kg_fn) dlsym(handle, "ironmule_kg_mul_mat");
+>     GGML_LOG_INFO("%s: IRONMULE_KG_LIB %s: %s\n", __func__, path, fn ? "loaded" : "no ironmule_kg_mul_mat");
+>     return fn;
+> }
+> static bool ironmule_kg_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
+>                                 ggml_tensor * dst) {
+>     static const ironmule_kg_fn fn = ironmule_kg_load();
+>     if (fn == nullptr || src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
+>         return false;
+>     }
+>     if (src0->ne[2] != 1 || src0->ne[3] != 1 || src1->ne[2] != 1 || src1->ne[3] != 1) {
+>         return false;
+>     }
+>     if (!ggml_is_contiguous(src0) || !ggml_is_contiguous(src1) || !ggml_is_contiguous(dst)) {
+>         return false;
+>     }
+>     return fn((int) src0->type, src0->data, (const float *) src1->data, (float *) dst->data, src0->ne[1], src0->ne[0],
+>               src1->ne[1], ctx.stream()) == 0;
+> }
+> 
+1981a2017,2020
+> 
+>     if (!split && ironmule_kg_mul_mat(ctx, src0, src1, dst)) {
+>         return;  // KG1
+>     }

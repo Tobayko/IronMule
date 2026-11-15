@@ -12,6 +12,8 @@ variables the engine reads. Nothing is installed system-wide.
         (or A, B) is set at run time. ROW1 in docs/LAB.md.
   gr1   CUDA builds only: CUDA graphs on GPUs older than Ampere (a T4) when IRONMULE_CUDA_GRAPHS=1 is set at run time;
         llama.cpp turns them off there, so a one-token step launches every kernel on its own. SG1 in docs/LAB.md.
+  kg1   CUDA builds only: a hook that hands a matmul to a kernel library generated and tuned for this GPU
+        (IRONMULE_KG_LIB, `ironmule/kernel_gen.py`) when it has a kernel for it; llama.cpp's own kernels otherwise.
 
     python tools/build_ggml.py                 # CPU build in ~/.cache/ironmule/ggml
     python tools/build_ggml.py --cuda 75,86    # with CUDA for these compute capabilities (T4 = 75)
@@ -39,6 +41,7 @@ PATCH_SETS = {
     "row1": ([("ggml/src/ggml-cpu/amx/mmq.cpp", "mmq.cpp.diff"), ("ggml/src/ggml-cpu/amx/amx.cpp", "amx.cpp.diff")],
              [("row1_kern.h", "ggml/src/ggml-cpu/amx/row1_kern.h")]),
     "gr1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),
+    "kg1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1, on the file gr1 left
 }
 
 
@@ -87,9 +90,16 @@ def build(tree: Path, cuda: str | None, jobs: int) -> Path:
     options = ["-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=ON", "-DLLAMA_CURL=OFF", "-DGGML_NATIVE=ON"]
     if cuda:
         options += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_ARCHITECTURES={cuda.replace(',', ';')}"]
-        if Path("/usr/local/cuda/bin/nvcc").exists():  # Kaggle: find the toolkit and its driver stub (CUDA::cuda_driver)
-            options += ["-DCUDAToolkit_ROOT=/usr/local/cuda", "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc",
-                        "-DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs"]
+        # Kaggle: a CUDA 12 toolkit where one is installed (its default CUDA 13 postdates llama.cpp 4227c9b), and its
+        # driver stub for CUDA::cuda_driver
+        toolkits = sorted(Path("/usr/local").glob("cuda-12*"), reverse=True) + [Path("/usr/local/cuda")]
+        root = next((t for t in toolkits if (t / "bin" / "nvcc").exists()), None)
+        if root is not None:
+            options += [f"-DCUDAToolkit_ROOT={root}", f"-DCMAKE_CUDA_COMPILER={root}/bin/nvcc",
+                        f"-DCMAKE_LIBRARY_PATH={root}/lib64/stubs"]
+            stub = next(iter(sorted(root.glob("lib64/stubs/libcuda.so")) + sorted(root.glob("targets/*/lib/stubs/libcuda.so"))), None)
+            if stub is not None:
+                options.append(f"-DCUDA_cuda_driver_LIBRARY={stub}")
     run(["cmake", "-B", "build", *options], cwd=tree, log=log)
     run(["cmake", "--build", "build", "--target", "llama", "llama-server", "-j", str(jobs)], cwd=tree, log=log)
     return tree / "build" / "bin"
@@ -105,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     dest = args.dest / ("stock" if args.no_patches else "ironmule") / ("cuda" if args.cuda else "cpu")
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

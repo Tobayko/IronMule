@@ -59,6 +59,10 @@ COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
 # Only with one unified KV cache: per-sequence caches split a step whose sequences carry different token counts into
 # several passes (MG2 v5, 8 requests on a T4: 271 tok/s with the shared pool, 95 per-sequence, 150 per-sequence unpadded).
 PAD = os.environ.get("IRONMULE_GGML_PAD", "")
+# KG1 (2026-11-15): a kernel library generated and tuned for this GPU (ironmule/kernel_gen.py), loaded by llama.cpp's
+# kg1 hook from IRONMULE_KG_LIB. The engine measures its own step for 1-8 tokens with the library on and off at
+# startup and keeps it only for the token counts where the step is faster.
+KG_LIB = os.environ.get("IRONMULE_KG_LIB", "")
 PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PI1: the decision network, when its weights are present
 DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
 DRAFT_SLOTS = int(os.environ.get("IRONMULE_GGML_DRAFT_SLOTS", DRAFT_MAX_RUNNING))  # DM1: its sequences
@@ -342,6 +346,9 @@ class GgmlEngine:
                    kv_q8=kv_q8)
         self.steps = 0
         self._warm_up()
+        self.kg: dict[str, Any] = {}
+        if KG_LIB and self.gpu_layers:
+            self.kg = self.measure_kg(KG_LIB)
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
@@ -358,6 +365,54 @@ class GgmlEngine:
                           gpu=bool(self.gpu_layers))
             self.pilot = pilot if pilot.active else None
             self.pilot_refused = None if pilot.active else pilot.reason
+
+    def _step_prices(self, counts: Any, repeats: int = 5) -> dict[int, float]:
+        """Seconds of a step of t tokens of one sequence at positions 64+ (median of `repeats`), for each t in `counts`."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        self._clear()
+        self._decode([(bos, j, 0, j == 63) for j in range(64)])
+        prices: dict[int, float] = {}
+        for t in counts:
+            times = []
+            for _ in range(repeats + 1):
+                started = time.perf_counter()
+                self._decode([(bos, 64 + j, 0, True) for j in range(t)])
+                times.append(time.perf_counter() - started)
+                self.L.llama_memory_seq_rm(self.memory, 0, 64, -1)
+            prices[t] = sorted(times[1:])[len(times[1:]) // 2]
+        self._clear()
+        return prices
+
+    def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:
+        """KG1: the step for 1-8 tokens with the generated kernels on and off (alternating, median of `repeats`); the
+        library keeps the token counts where it was at least 3 % faster. {} where the library is not loaded."""
+        import ctypes
+
+        try:
+            lib = ctypes.CDLL(path)  # the handle llama.cpp's hook opened: the same mask
+            lib.ironmule_kg_set_mask.argtypes = [ctypes.c_uint32]
+            lib.ironmule_kg_table.restype = ctypes.c_char_p
+        except (OSError, AttributeError) as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+        on: dict[int, list[float]] = {t: [] for t in range(1, 9)}
+        off: dict[int, list[float]] = {t: [] for t in range(1, 9)}
+        for _ in range(repeats):
+            for mask, store in ((0xFFFFFFFF, on), (0, off)):
+                lib.ironmule_kg_set_mask(mask)
+                for t, v in self._step_prices(range(1, 9), repeats=1).items():
+                    store[t].append(v)
+        med = lambda v: sorted(v)[len(v) // 2]  # noqa: E731
+        keep = [t for t in range(1, 9) if med(on[t]) <= 0.97 * med(off[t])]
+        mask = sum(1 << (t - 1) for t in keep)
+        lib.ironmule_kg_set_mask(mask)
+        self._kg_lib = lib
+        try:
+            entries = len(json.loads(lib.ironmule_kg_table().decode()).get("entries", []))
+        except (ValueError, AttributeError):
+            entries = None
+        return {"lib": os.path.basename(path), "entries": entries, "tokens_served": keep,
+                "step_ms_on": {str(t): round(med(on[t]) * 1000, 2) for t in on},
+                "step_ms_off": {str(t): round(med(off[t]) * 1000, 2) for t in off}}
 
     def measure_padding(self, repeats: int = 5) -> dict[int, int]:
         """PAD1: a verify step's seconds for 1 to `max_rows` tokens of one sequence (median of `repeats`), and for each
@@ -939,6 +994,7 @@ class GgmlEngine:
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
+                **({"kernels": self.kg} if getattr(self, "kg", None) else {}),
                 **({"padding": {"to": {str(k): v for k, v in self.pad_to.items()}, "guesses": self.padded,
                                 "step_ms_by_tokens": {str(k): round(v * 1000, 2) for k, v in self.pad_prices.items()}}}
                    if self.pad_prices else {}),
