@@ -1327,3 +1327,34 @@ differently from the one-row ones. Gemma 3 1B was refused by the engine: its voc
 llama-server on Qwen3-4B and 1.32x on Llama 3.1 8B for one request on one T4, and 1.09x llama-server with its own draft
 model on both. vLLM AWQ (63.7 tok/s on Qwen3-4B, MG2 v6) is still ahead. Without the draft model the engine was 8 %
 behind llama-server on these four different prompts (level on one repeated prompt in v2).
+
+## 2026-11-15 PI1: a new Pilot from scratch (world v4), shipped
+
+Two changes after the from-scratch v3 runs kept 4 threads beside a half-busy process: world v4 dreams more servers
+like the measured one, and the warm start copies a teacher that knows the dream's true foreign load instead of the
+visible-load rule ("threads = free cores"), which cannot see a starved half-busy process. With only the first change,
+two seeds from scratch still kept 4 threads at every part-time load on the real readings; with both, two seeds chose 3
+(like the weights before). Each run took 38-39 minutes on this 4-vCPU Xeon, two at once. The world and the recipe stay
+private.
+
+| | reward (dream, v4) | tokens | wait s | real readings: idle / 25 / 50 / 75 / 100 % |
+| --- | --- | --- | --- | --- |
+| defaults | -2546.9 | 46,448 | 23,838 | 4 / 4 / 4 / 4 / 4 |
+| hand rule (threads = free cores) | -1453.9 | 52,195 | 13,362 | -- |
+| shipped before (local5) | -1434.4 | 52,650 | 13,234 | 4 / 3 / 3 / 3 / 3 |
+| v4 seed 9 | -1436.1 | 52,708 | 13,270 | 4 / 3 / 3 / 3 / 3 |
+| **v4 seed 10 (shipped)** | **-1407.7** | 52,253 | **13,119** | 4 / 3 / 3 / 3 / 3 |
+
+On the real machine (engine, `lab/pi1/real.py`, Qwen3-4B Q8_0, shared pool, 64 tokens; tok/s for 1 / 8 requests):
+
+| foreign load | defaults | shipped before | v4 seed 10 |
+| --- | --- | --- | --- |
+| none (two alternating runs each) | 10.27, 9.85 / 66.3, 64.3 | 9.38, 9.48 / 63.8, 62.1 | 9.75, 9.61 / 63.7, 64.8 |
+| one busy process | 0.31 / 2.41 | 7.19 / 50.8 | 7.45 / 52.0 (3 threads) |
+| one process busy half of every 20 ms | 5.26 / 38.4 | 7.54 / 51.4 | 7.65 / 53.8 (3 threads) |
+| two busy processes | -- (stopped: under 1 tok/s) | -- | 5.78 / 36.9 (2 threads) |
+
+Read: seed 10 is at least as good as the weights before in every row and replaces them as `ironmule/pilot_weights.npz`.
+Idle it is 1.6-3.8 % below the defaults at the same 4 threads; its decisions cost about 0.4 ms a step (reading
+`/proc`), under 0.5 % of a 100 ms step, so most of that is the run-to-run spread (the defaults themselves moved 4 %
+between their two runs).

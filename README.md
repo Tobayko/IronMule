@@ -72,10 +72,10 @@ aside. The Pilot sees the foreign load and gives up exactly those cores:
 | two | 0.13 tok/s | **5.46 tok/s** (42x) | 0.68 tok/s | **35.2 tok/s** (52x) |
 
 With one busy program the llama.cpp server took 23 s to the first word for one user and 54 s for eight; IronMule
-took 0.3 s. The Pilot chose 4, 3 and 2 threads, and the answers are token for token the same at every thread count
+took 0.3 s. The Pilot chose 4, 3 and 2 threads (measured with its first weights; the current ones choose the same), and the answers are token for token the same at every thread count
 (checked at 4, 3, 2 and 1 threads). Same machine and model, through each server's HTTP API, one run each; IronMule's
 collective speculation (SP4) was off so that only the Pilot made the difference ([docs/LAB.md](docs/LAB.md), PI1).
-A program that is busy only half the time already costs a llama.cpp-style engine about 40 % of its speed; the Pilot
+A program that is busy only half the time already costs a llama.cpp-style engine 40 to 50 % of its speed; the Pilot
 gives up one core there too and keeps the speed (1.4x the engine's defaults, see [The Pilot](#the-pilot)).
 
 <details>
@@ -137,9 +137,9 @@ the last step went. It then picks four things for the next step:
 | :-- | :-- |
 | Size | 20 inputs, two layers of 128, four output heads: about 22,000 weights (88 KB) |
 | Decision time | about 0.4-0.5 ms per step in the running server on the 4-vCPU Xeon: the network itself takes about 20 microseconds, the rest is reading the CPU load from `/proc` |
-| Training | from scratch, by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load: 67 minutes on two Kaggle T4 GPUs (8,192 dreamed servers at once, 400 rounds, two seeds), then 29 minutes on a CPU in a world corrected by a new measurement (programs that are busy only part of the time) |
-| In the dream | 240 s of dreamed serving on 1,024 random machines: 8.9 % more tokens than the engine's defaults and 36 % less waiting, and a little ahead of the best hand rule ("threads = free cores", which it imitated first) |
-| On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy (7.44 and 51.1 tokens per second for 1 and 8 users, against 5.20 and 35.4 with the defaults: 1.4x); on an idle machine as fast as the defaults |
+| Training | from scratch (random start, no earlier model), by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load, after a short warm start from a teacher: 39 minutes on a 4-vCPU CPU (an earlier generation trained for 67 minutes on two Kaggle T4 GPUs) |
+| In the dream | 240 s of dreamed serving on 1,024 random machines: 12.5 % more tokens than the engine's defaults and 45 % less waiting, and ahead of the best hand rule ("threads = free cores": 1.8 % less waiting) |
+| On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy. Half-busy program: 7.65 and 53.8 tokens per second for 1 and 8 users, against 5.26 and 38.4 with the defaults (1.4x); one busy program: 7.45 and 52.0 against 0.31 and 2.41; idle: within 4 % of the defaults (9.68 and 64.3 against 10.06 and 65.3, two alternating runs) |
 | Answers | unchanged: every decision is a scheduling or threading choice |
 | Safety | without weights, with inputs outside what it was trained on, or with `IRONMULE_PILOT=0`, the engine keeps its own defaults |
 
