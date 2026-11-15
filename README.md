@@ -79,6 +79,28 @@ A program that is busy only half the time already costs a llama.cpp-style engine
 gives up one core there too and keeps the speed (1.4x the engine's defaults, see [The Pilot](#the-pilot)).
 
 <details>
+<summary>NVIDIA GPUs (GGUF engine, Kaggle Tesla T4, first numbers)</summary>
+
+Two Tesla T4s on Kaggle, the same Q4_K_M GGUFs, 128 tokens per answer, tokens per second for all requests together
+(MG2 v5, 2026-11-14, one run of 3 blocks each; v6 repeated it within a few per cent). The IronMule rows use its shared memory pool and PAD1, which fills a
+step with checked guesses up to a size CUDA computes faster:
+
+| | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
+| :-- | --: | --: | --: | --: |
+| 8 requests, one GPU: best llama.cpp server setup | 193.5 | 195.2 | 128.0 | 119.1 |
+| 8 requests, one GPU: IronMule | **270.7** | **263.6** | **175.1** | **157.7** |
+| 32 requests, one engine per GPU: llama.cpp server | 786.0 | 713.2 | 614.1 | 544.1 |
+| 32 requests, one engine per GPU: IronMule | **1026.9** | **1007.3** | **679.1** | **633.2** |
+
+Answers: the same facts right as through llama.cpp on every model (47 to 49 of 50), and 47 to 50 of 50 answers token
+for token the same as without the guesses (MG2 v6), so the server now uses the shared pool on GPUs too. Not yet
+better: one request on one GPU is as fast as llama.cpp, not faster (54.1 against 54.1 tokens per second on Qwen3-4B,
+within the GPU's run-to-run spread on the others; SG1 in [docs/LAB.md](docs/LAB.md)), and vLLM with the 4-bit AWQ
+model is ahead on one GPU (63.7, 419 and 861 tokens per second at 1, 8 and 32 requests on Qwen3-4B).
+
+</details>
+
+<details>
 <summary>Apple Silicon and NVIDIA GPUs (MLX path)</summary>
 
 On MLX, IronMule's exact mode returns the same tokens as stock MLX, checked token by token before use:

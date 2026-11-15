@@ -1245,3 +1245,45 @@ Owner, 2026-11-15: SGLang is left out for good, since it would not install on Ka
 wheel for Python 3.13 and needs a Rust compiler on 3.12). The comparison set is now llama.cpp, Ollama, LM Studio and
 vLLM. The harness (`lab/mg2/kaggle_gpu.py`) and `lab/cmp` no longer have an SGLang arm. MG2 v6 had already started with
 the arm, so its SGLang result is ignored.
+
+## 2026-11-15 MG2 v6: the shared pool's padded answers on a GPU
+
+Kaggle T4 x2, commit c1d4f54, the same arms as v5 plus a check of the answers: the 50 facts through the plain engine
+and through the shared pool with PAD1's guesses (8 at a time), token for token against each other.
+
+| | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
+| --- | --- | --- | --- | --- |
+| facts: llama-server / engine / pool + PAD1 | 49 / 49 / 49 | 47 / 48 / 48 | 49 / 49 / 49 | 49 / 49 / 49 |
+| pool answers token for token the same as the engine's | 50 / 50 | 50 / 50 | 49 / 50 | 47 / 50 |
+| PAD1 guesses in the pool's fact steps | 176 | 124 | 135 | 243 |
+| 8 req, one GPU: llama-server / pool + PAD1 (tok/s) | 152.8 / **272.7** | 144.8 / **260.7** | 76.0 / **171.8** | 74.5 / **159.5** |
+| 32 req, one per GPU: llama-server / pool | 777.3 / **1021.9** | 700.8 / **997.4** | 612.4 / **679.5** | 547.2 / **629.0** |
+| 1 req, one GPU: llama-server / engine | 54.9 / 47.2 | 49.6 / 45.9 | 26.7 / 26.3 | 23.5 / 23.2 |
+
+The best llama-server arm at 8 requests was its layer split or one server per GPU (193.3, 193.6, 126.8, 118.2), so the
+pool on one GPU is 1.35-1.41x the best of them, as in v5. Read: PAD1 changes a few answers in their wording (CUDA's
+kernels for 9 and more rows round differently from the 1-8-row ones) and no fact; the pool serves on GPUs from now on
+(`ironmule serve` opens it where its perplexity gate passes, as on CPUs). vLLM AWQ again 63.7 / 419.2 / 860.5 for
+1 / 8 / 32 requests. SGLang's server exited after its install (dropped for good, see above).
+
+## 2026-11-15 SG1: one request on one T4
+
+Question: why one request through the engine (MG2 v5: 46.1 tok/s on Qwen3-4B) is slower than through llama-server
+(52.9). Kaggle T4, one GPU, 3 blocks of 128 tokens after a warm-up, the same build as MG2. GR1 (CUDA graphs on GPUs
+older than Ampere, `native/ggml_patches/gr1`) was meant to be measured too, but its rebuild failed: the cached build
+has no `ggml-cuda.cu` to patch, so every `_g1` arm ran the stock library and is a repeat of its `_g0` twin.
+
+| tok/s, median of 3 | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
+| --- | --- | --- | --- | --- |
+| llama-server -t 4 (twice) | 54.1, 53.1 | 47.7, 45.9 | 29.7, 26.7 | 27.0, 24.0 |
+| engine, the Pilot's threads (twice) | 54.1, 52.8 | 44.7, 44.8 | 26.3, 28.9 | 24.9, 26.2 |
+| engine, 1 / 2 / 4 threads | 51.7 / 49.2 / 45.9 | 46.7 / 46.7 / 45.5 | 28.8 / 27.7 / 28.0 | 24.9 / 25.2 / 24.9 |
+| engine without speculation | 48.7 | 46.4 | 27.4 | 25.0 |
+
+Answers: every arm's tokens are the same as the engine's default arm; facts 49, 47, 49, 49 through both. Read: the
+gap of v5 was mostly the GPU's own spread. The same binary and setting differs by up to 3 tok/s from one run to the
+next (Mistral's llama-server 29.7 and 26.7), and one request through the engine is within that spread of
+llama-server (Qwen3 54.1 against 54.1). Threads make no difference above it with every layer on the GPU. One request
+on a T4 is bound by llama.cpp's own kernels, about 18.5 ms per Qwen3-4B token, against 15.7 ms for vLLM's AWQ
+kernels with CUDA graphs. Next: GR1 with a fresh CUDA build (about an hour of the session), then speculation that
+fills a step to 9-16 tokens, which a T4 computes in 27-28 ms against 20.5 ms for one token (MG2 v5's padding table).

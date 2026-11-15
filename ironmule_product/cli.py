@@ -439,9 +439,10 @@ def serve(argv: list[str]) -> int:
                     if shared.get("passes") and os.environ.get("IRONMULE_GGML_SHARED", "1") != "0":
                         from ironmule.ggml_engine import LLAMA_MAX_SEQ, fa1_version, gpu_layers
 
-                        # SP1: one pool, prefixes shared; twice the requests at once. FA1u is a CPU kernel: with the
-                        # layers on a GPU, llama.cpp's GPU attention would scan the whole pool, so not there (yet)
-                        if fa1_version() >= 3 and gpu_layers() == 0:
+                        # SP1: one pool, prefixes shared; twice the requests at once. On a CPU through FA1u; on a GPU
+                        # through llama.cpp's own flash attention, where PAD1 needs the one pool (MG2 v6 on a T4: 1.32-
+                        # 1.40x llama-server at 8 requests, the same facts, 47-50 of 50 answers token for token)
+                        if fa1_version() >= 3 or gpu_layers() > 0:
                             cap = int(os.environ.get("IRONMULE_GGML_SHARED_CAP") or min(LLAMA_MAX_SEQ // 2,
                                                                                       2 * int(width["sequences"])))
                             checked["shared_serving"] = {"settings": shared["settings"], "cap": cap,

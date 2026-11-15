@@ -1394,7 +1394,8 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
             break
     chosen = tried[-1]
     shared = None
-    if fa1_version() >= 3:  # SP1: the shared pool (unified KV, flash attention through FA1u) is gated on its own
+    if fa1_version() >= 3 or gpu_layers() > 0:  # SP1: the shared pool (unified KV, flash attention: FA1u on a CPU,
+        # llama.cpp's own on a GPU) is gated on its own
         settings = {**chosen["settings"], "flash_attn": True, "kv_unified": True}
         rows, error = nll(settings)
         shared = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
