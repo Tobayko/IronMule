@@ -10,6 +10,8 @@ variables the engine reads. Nothing is installed system-wide.
         against llama.cpp's default.
   row1  AMX int8 kernels for Q8_0 weights (`row1_kern.h`) on Sapphire Rapids and later; off unless `ROW1_GGML=B16`
         (or A, B) is set at run time. ROW1 in docs/LAB.md.
+  gr1   CUDA builds only: CUDA graphs on GPUs older than Ampere (a T4) when IRONMULE_CUDA_GRAPHS=1 is set at run time;
+        llama.cpp turns them off there, so a one-token step launches every kernel on its own. SG1 in docs/LAB.md.
 
     python tools/build_ggml.py                 # CPU build in ~/.cache/ironmule/ggml
     python tools/build_ggml.py --cuda 75,86    # with CUDA for these compute capabilities (T4 = 75)
@@ -36,6 +38,7 @@ PATCH_SETS = {
     "fa1": ([("ggml/src/ggml-cpu/ops.cpp", "ops.cpp.diff")], [("fa1_kern.h", "ggml/src/ggml-cpu/fa1_kern.h")]),
     "row1": ([("ggml/src/ggml-cpu/amx/mmq.cpp", "mmq.cpp.diff"), ("ggml/src/ggml-cpu/amx/amx.cpp", "amx.cpp.diff")],
              [("row1_kern.h", "ggml/src/ggml-cpu/amx/row1_kern.h")]),
+    "gr1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),
 }
 
 
@@ -102,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     dest = args.dest / ("stock" if args.no_patches else "ironmule") / ("cuda" if args.cuda else "cpu")
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"])
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

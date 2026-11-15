@@ -16,11 +16,11 @@ def load():
 
 def test_patch_sets_are_complete_and_well_formed():
     tool = load()
-    assert set(tool.PATCH_SETS) == {"fa1", "row1"}
+    assert set(tool.PATCH_SETS) == {"fa1", "row1", "gr1"}
     for name, (diffs, headers) in tool.PATCH_SETS.items():
         for target, diff in diffs:
             text = (tool.PATCHES / name / diff).read_text()
-            assert target.startswith("ggml/src/ggml-cpu/")
+            assert target.startswith(("ggml/src/ggml-cpu/", "ggml/src/ggml-cuda/"))
             assert re.match(r"^\d+(,\d+)?[acd]\d+(,\d+)?$", text.splitlines()[0])  # a normal diff hunk header
         for header, target in headers:
             assert (tool.PATCHES / name / header).is_file() and target.endswith(header)
