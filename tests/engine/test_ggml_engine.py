@@ -582,3 +582,15 @@ def test_sp1_the_prefix_trie_picks_what_the_scan_of_every_sequence_picked():
                 pool.release(seq, held if rng.random() < 0.7 else None)
             for seq, held in pool.tokens.items():  # the trie holds exactly what the pool's lists hold
                 assert [node[3] for node in pool.trie.paths[seq]] == held
+
+
+def test_st1_a_float32_kv_cache_ranks_first_only_well_ahead():
+    """Two fresh starts on the same machine ranked f32 KV first and third on tuning noise; it served 30 % slower."""
+    from ironmule.ggml_engine import rank_settings
+
+    measured = [{"flash_attn": True, "kv_unified": True, "kv_f32": True, "score": 25.92},  # the noisy first start
+                {"flash_attn": True, "kv_unified": True, "kv_f32": False, "score": 24.57},
+                {"flash_attn": False, "kv_unified": False, "kv_f32": False, "score": 21.27}]
+    assert [r["kv_f32"] for r in rank_settings(measured)] == [False, True, False]
+    clearly = [dict(measured[0], score=30.0), measured[1]]
+    assert rank_settings(clearly)[0]["kv_f32"] is True

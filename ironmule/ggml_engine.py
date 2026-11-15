@@ -44,7 +44,8 @@ THREADS = int(os.environ.get("IRONMULE_GGML_THREADS") or _usable_cores())
 SEQS = int(os.environ.get("IRONMULE_GGML_SEQS", SEQS))
 SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
 POLL = 50  # llama-server's default busy-wait level
-ENGINE_VERSION = 4  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005
+ENGINE_VERSION = 5  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005;
+# 5 (ST1): a float32 KV cache ranks first in the autotune only 8 % ahead (rank_settings)
 OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default
 # Prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one). GG2 used 96, so early
 # requests streamed while later prompts waited; ROW1 round 5 (2026-11-12, Qwen3-4B, 32 sequences) measured 7-9 % more
@@ -1140,6 +1141,14 @@ SETTINGS = tuple({"flash_attn": fa, "kv_unified": unified, "kv_f32": f32}
                  for fa in (False, True) for unified in (False, True) for f32 in (False, True))
 
 
+KV_F32_MARGIN = 1.08
+
+
+def rank_settings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The autotune's order: highest score first, a float32 KV cache's score divided by KV_F32_MARGIN."""
+    return sorted(rows, key=lambda row: -row["score"] / (KV_F32_MARGIN if row.get("kv_f32") else 1.0))
+
+
 def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
     """GG1 (amendment of 2026-11-10): llama.cpp's flash attention and unified KV cache, each on and off, timed on a fixed
     synthetic workload (8 sequences of a fixed 64-token prompt and one sequence alone, `steps` decode steps each,
@@ -1164,7 +1173,10 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
         finally:
             engine.close()
         rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates["8"] * rates["1"])})
-    rows.sort(key=lambda row: -row["score"])
+    # ST1 (2026-11-15): a float32 KV cache moves twice the bytes per attended token, which a 64-token tuning context
+    # does not show: it ranks first only where it beats the rest by KV_F32_MARGIN (two fresh starts on the 4-vCPU Xeon
+    # ranked it first and third on 1-6 % noise, and it then served 30 % slower at the context of real requests)
+    rows = rank_settings(rows)
     return {"order": [{k: row[k] for k in ("flash_attn", "kv_unified", "kv_f32")} for row in rows], "measured": rows}
 
 
