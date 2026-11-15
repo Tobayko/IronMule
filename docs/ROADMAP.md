@@ -1,7 +1,7 @@
 # Roadmap: from a research project to a product
 
 Recorded 2026-11-15 at the owner's request, after a review of the repository (code, tests, documents and the
-benchmarks in [LAB.md](LAB.md); the test suites were read, not run). This is a plan and an assessment. Nothing
+benchmarks in [LAB.md](LAB.md)). The marks were given before the suites were run; the audit below ran them. This is a plan and an assessment. Nothing
 here is a measured result unless it says so, and nothing here changes current behaviour.
 
 **What "done" means.** A stranger installs IronMule with one command, repeats the README's numbers on their own
@@ -38,6 +38,48 @@ an end-to-end gain from fixing them is not measured yet.
 
 Read: the Pilot and the argmax cost nothing worth moving. The n-gram search and the prefix comparison are the two
 places where Python's time grows with the context and the pool.
+
+## Audit: targets not met and outliers (2026-11-15)
+
+Found by reading the README against [LAB.md](LAB.md) and [BACKLOG.md](BACKLOG.md), and by running the suites
+(`pip install -e ".[cpu,dev]"` on the container above, Linux, no GPU, no model). Nothing below is fixed yet.
+
+**Tests.** `tests/engine tests/agent tests/learning tests/runtime tests/evidence tests/claims -m "not integration"`:
+2,219 passed, 80 skipped, 14 failed. CI runs only `tests/engine`, `tests/agent` and two claims files, so none of
+the 14 is seen there.
+
+| Failing | Count | Cause |
+| :-- | --: | :-- |
+| `tests/evidence/test_friday_evidence.py` | 7 | `experiments/legacy_h1h2_summaries_v1.json` is not in this repository; `friday_evidence/registry.py` still points at it, so the legacy import is broken here as well |
+| `tests/runtime/test_kernel_registry.py` | 4 | needs Metal, has no platform skip |
+| `tests/runtime/test_wired_fraction_native_memsize.py` | 2 | macOS `sysctl` behaviour, has no platform skip |
+| `tests/learning/test_requalification.py` | 1 | needs the cached Gemma 3 4B snapshot, is not marked `integration` |
+
+**Claims against the project's own measurements.**
+
+| Claim | Where | What the measurements say |
+| :-- | :-- | :-- |
+| The agent "decides in microseconds" | AGENTS.md, AGENT.md | 0.38-0.5 ms per step in the running server (PI1). In isolation here: 30 microseconds, 80 with a `/proc` read on every call. The README's reason (reading `/proc`) explains about 50 microseconds, not 0.4 ms; the rest is unexplained. |
+| The Pilot "never changes what the model answers" | README, `pilot.py` | Shown for threads on a CPU (4, 3, 2, 1). On a GPU the Pilot's draft switch and running cap change the rows of a step, and LAB.md (MG2 v6, SG1 v3) records that multi-row CUDA kernels round differently: 47-50 of 50 answers the same, long answers differ. |
+| "Without a draft model it is level with llama.cpp" (one request, T4) | README | Level on one repeated prompt (SG1 v2). On four different prompts 8 % behind: 43.5 against 47.3 (SG1 v3). |
+| 1.09x llama-server with its own draft model | README | The same binary and setting differs by 5-11 % from run to run on that GPU (SG1: 56.6 and 53.8; 29.7 and 26.7), so 1.09x is inside the spread. |
+| One user: 10.1 against 8.0 tokens per second; first word 0.33 s against 113 s | README, top table | CMP1 ran `llama-server` with 32 slots, which pays for every slot in each step (CMP1's own caution). Sized to the load it was level for one request (ROW1 round 5: 10.4 against 9.6-10.0) and made 27.3 / 40.9 against 50.4 / 71.3 at 8 / 16. The README does not carry that caution. Between sessions the same one-user numbers moved about 10 % (IronMule 10.1 and 9.33, llama-server 8.0 and 7.23). |
+| "8 requests, one GPU: best llama.cpp server setup" | README, GPU table | The best llama-server arm used both GPUs (layer split or one server per GPU). The label is wrong, to IronMule's disadvantage. |
+| Quality at least llama.cpp's (ratio at most 1.000; 1.005 for llama.cpp's own options) | BACKLOG, main goal | FA1x on Gemma 3 1B: 1.0024 [1.0004, 1.0044]. It passes 1.005, but FA1x is IronMule's kernel, and the interval lies wholly above 1.000. |
+| Tokens per second come first | BACKLOG, main goal | The shipped Pilot (v4 seed 10) was picked on reward: 52,253 dreamed tokens against 52,650 for the weights before and 52,708 for seed 9 (0.8 % fewer), with less waiting. On the real machine it was not slower. |
+| `--gguf` is "CPU only" / "on a machine without a GPU" | `cli.py` help, HTTP.md | The README and MG2 serve GGUFs on GPUs (`--gpus all --gguf`). |
+
+**Read from the code, not reproduced.** One `GgmlEngine.run()` lasts as long as requests keep arriving. Its
+`served` list, the bridge's `arrived` map and the worker's `streams` keep every request until the run goes idle,
+and the agent's traffic memory (`observe_request`) is fed only then. Under load without a gap, memory grows and
+the agent learns nothing new.
+
+**This document's own error, corrected above.** The first version proposed measuring Q8_0 against Q4_K_M on the
+CPU; ROW1 round 4 had already done so (Q4_K_M is slower there).
+
+**Dead weight.** 17 files in `docs/assets` (5.8 MB of the folder's 7 MB, among them a 2.0 MB GIF and a 1.5 MB
+MP4) are referenced by no file in the repository; whether the website links them is not known. BACKLOG.md is
+548 KB.
 
 ## The phases
 
@@ -78,8 +120,10 @@ Bar: every number in the README can be repeated with one command.
 3. A GPU kernel on the Marlin principle (4-bit weights, FP16 arithmetic on tensor cores, arXiv 2408.11743) for
    the quantized matrix products, as a ggml patch beside `native/ggml_patches`. Kill criterion: one request on a
    T4 gains less than 15 %.
-4. CPU: measure whether generation is bound by memory bandwidth (tokens per second over threads, Q8_0 against
-   Q4_K_M). If it is, work goes into moving fewer bytes, not into more SIMD.
+4. CPU: 4-bit formats. Already measured (LAB.md, ROW1 round 4): on this CPU Q4_K_M is compute-bound and slower
+   than Q8_0 for one request (13.5 against 20 tokens per second) although it reads fewer bytes, and both 4-bit
+   formats are worse at more rows. The open work there is the kernel for q4_K and the Q6_K output matrix, not a
+   switch of format.
 
 Bar: level with vLLM AWQ for one request on a T4, and still clearly ahead of llama.cpp for many requests on a CPU.
 
@@ -124,8 +168,8 @@ Step 2 (an experiment in lab/, measure first, then decide):
 - GPU: profile one decode step on a T4. Try an INT4xFP16 kernel on the Marlin principle (arXiv 2408.11743) for
   the quantized matrix products as a ggml patch beside native/ggml_patches. Stop if one request gains less than
   15 %.
-- CPU: measure whether generation is bound by memory bandwidth (tokens per second over threads, Q8_0 against
-  Q4_K_M). If it is, aim at moving fewer bytes, not at more SIMD.
+- CPU: the 4-bit formats are compute-bound on the measured Xeon (LAB.md, ROW1 round 4: Q4_K_M 13.5 against
+  Q8_0 20 tokens per second for one request). Profile the q4_K and Q6_K kernels before anything else there.
 
 Step 3 (only after asking):
 - The engine loop as a C++ shim against libllama, with the sampler chain for temperature and top_p.
