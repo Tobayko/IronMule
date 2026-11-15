@@ -1405,3 +1405,24 @@ GPU, Qwen3-4B Q4_K_M, tok/s, two alternating passes:
 
 Facts 49 / 50 for every engine arm. v4 builds with MG2's build and the patches applied right before cmake (as SG1 v2
 did for gr1), keeps the build and the model outside `/kaggle/working`, and adds both engines with PAD1 off.
+
+## 2026-11-15 PI1 on a second machine: a Kaggle CPU session
+
+The shipped Pilot (from scratch, world v4) on a different CPU than it was checked on: a Kaggle CPU session, Intel Xeon
+@ 2.20GHz (family 6 model 79, Broadwell: AVX2, no AVX-512), 2 cores with 2 threads each, Qwen3-4B Q4_K_M, the engine
+built with `tools/build_ggml.py` (53 min), `lab/pi1/kaggle_cpu.py` at 7245a82 (`lab/pi1/real.py`: 64-token answers,
+16 with two busy programs; then `lab/pi1/ab_idle.py`). tok/s for 1 / 8 requests:
+
+| foreign load | defaults (4 threads) | Pilot | its threads |
+| --- | --- | --- | --- |
+| none | 6.30 / 8.97 | 6.27 / 8.95 | 4 |
+| one busy process | 1.60 / 3.31 | **3.72 / 5.31** | 2 |
+| one process busy half of every 20 ms | 4.93 / 8.12 | 4.83 / 8.10 | 4 |
+| two busy processes | 1.09 / 1.88 | **4.09 / 2.91** | 2 |
+
+Idle, one process, the Pilot attached and detached in turn (4 rounds): 6.42 / 8.83 against 6.36 / 9.23; decisions
+0.51 ms a step. Read: on a machine it never saw, with hyper-threads, it is 2.3x / 1.6x the defaults beside one busy
+process and 3.8x / 1.5x beside two, and equal idle and beside a half-busy process (which costs this machine only 2-22 %
+at 4 threads, so keeping 4 is right here). Beside one busy process it chose 2 threads, where the 4-vCPU Xeon chose 3:
+here a foreign process on one hyper-thread also slows its sibling. The 8-request cases at 2 busy processes are
+slow either way (first tokens about 21 s): two cores of an older CPU are not enough for eight 4B requests.
