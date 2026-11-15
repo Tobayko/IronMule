@@ -105,7 +105,7 @@ other families' head layouts on hardware (Gemma 3, Llama 3.2, Mistral checked on
 ### MG2 — The ggml engine on GPUs, one or many (2026-11-13; first numbers 2026-11-14)
 
 GPU offload, split modes and one engine per GPU (`--gpus all --gguf`). `lab/mg2/kaggle_gpu.py` measures it on a Kaggle
-T4 x2 against `llama-server` (one GPU, split, one server per GPU), vLLM and SGLang on Qwen3-4B, Gemma 3 4B, Mistral 7B
+T4 x2 against `llama-server` (one GPU, split, one server per GPU) and vLLM on Qwen3-4B, Gemma 3 4B, Mistral 7B
 and Llama 3.1 8B. v4 (docs/LAB.md, 2026-11-14 MG2 v4), Qwen3-4B at 32 requests: one per GPU IronMule 1037-1059 tok/s
 against 797 for llama-server (ahead on Mistral 7B and Llama 3.1 8B too); on one GPU IronMule 748, llama-server 520,
 vLLM with AWQ 4-bit 893. At 8 requests on one GPU IronMule 150, llama-server 153, vLLM AWQ 431: vLLM is ahead on one

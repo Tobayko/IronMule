@@ -1,6 +1,6 @@
-# CMP: IronMule against llama.cpp, Ollama, LM Studio, vLLM and SGLang
+# CMP: IronMule against llama.cpp, Ollama, LM Studio and vLLM
 
-The owner's bar (2026-11-13): clearly faster than llama.cpp, Ollama, LM Studio, vLLM and SGLang on the same hardware and
+The owner's bar (2026-11-13): clearly faster than llama.cpp, Ollama, LM Studio and vLLM on the same hardware and
 model, with the same answer quality. MLX is left out for now. Results go to `docs/LAB.md` (CMP1, ...).
 
 ## The harness
@@ -26,7 +26,6 @@ one tokenizer, so engines that report usage differently count alike. Answers are
 | Ollama | 0.40.16 (its own llama.cpp) | `OLLAMA_NUM_PARALLEL=32 OLLAMA_CONTEXT_LENGTH=1024` | CPU here |
 | LM Studio | llmster 0.0.27, runtime llama.cpp avx2 2.66.0 | `lms load --parallel 32 --context-length 32768 --gpu off` | CPU here |
 | vLLM | 0.33.0 CPU build from source (no CPU wheel on PyPI; triton-cpu unreachable) | `vllm serve` bf16 | CPU here, T4 x2 on Kaggle |
-| SGLang | 0.5.23 | GPU first (`--attention-backend triton` on a T4) | Kaggle T4 x2 |
 
 ## More tests worth running (not all run yet)
 
@@ -39,7 +38,7 @@ one tokenizer, so engines that report usage differently count alike. Answers are
 6. *Structured output and tool calls*: JSON answers; speculation from the context should help most here.
 7. *Other models*: Gemma 3 4B, Llama 3.1 8B, Mistral 7B, Qwen3 8B/14B Q4_K_M (most used open weights that fit a
    desktop or a T4).
-8. *GPUs*: one T4, two T4s (split and one engine per GPU) against llama.cpp, Ollama, vLLM and SGLang (MG2 harness).
+8. *GPUs*: one T4, two T4s (split and one engine per GPU) against llama.cpp, Ollama and vLLM (MG2 harness).
 9. *Energy*: tokens per joule where RAPL or nvidia-smi power is readable.
 
 ## Ideas that do not exist yet (or only on paper), and their state

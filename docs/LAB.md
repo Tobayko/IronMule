@@ -1238,3 +1238,10 @@ slightly behind llama-server for one request on one GPU (46.1 against 52.9 on Qw
 two GPUs (64.2): one request is bound by the per-token step, where IronMule has nothing extra yet. The product does
 not yet use the shared pool on GPUs (it is gated to CPUs, where FA1u serves it); v6 checks the pool's padded answers
 on the GPU first.
+
+## 2026-11-15 SGLang dropped
+
+Owner, 2026-11-15: SGLang is left out for good, since it would not install on Kaggle (v4-v5: `outlines-core` has no
+wheel for Python 3.13 and needs a Rust compiler on 3.12). The comparison set is now llama.cpp, Ollama, LM Studio and
+vLLM. The harness (`lab/mg2/kaggle_gpu.py`) and `lab/cmp` no longer have an SGLang arm. MG2 v6 had already started with
+the arm, so its SGLang result is ignored.

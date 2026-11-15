@@ -13,7 +13,6 @@ requests (N = 1, 8, 32; one warm-up block and 3 blocks; 128 tokens; greedy; the 
   ironmule_x2    one engine per GPU (`ironmule serve --gpus all`), requests split evenly
   ironmule_pool  the engine with one shared KV pool (SP1, the product's CPU setup), on one GPU and one per GPU (_x2)
   vllm_1gpu      vLLM, Qwen3-4B in float16; vllm_awq_1gpu: Qwen3-4B-AWQ (4-bit, the closest to Q4_K_M)
-  sglang_1gpu    SGLang, Qwen3-4B in float16 (installed into a Python 3.12 venv: its outlines_core has no 3.13 wheel)
 
 A CUDA build attached as the dataset `ironmule-mg2-cuda-build` (the same llama.cpp tree, built by an earlier run) is
 unpacked instead of building again (an hour of the session). Each engine arm logs its steps and step times by rows.
@@ -180,7 +179,7 @@ def ask(port, prompt, limit, t0, out, i):
 
 
 def ask_openai(port, prompt, limit, t0, out, i, model):
-    """vLLM / SGLang: the same templated prompt through /v1/completions, streamed."""
+    """vLLM: the same templated prompt through /v1/completions, streamed."""
     r = post(port, "/v1/completions", {"model": model, "prompt": prompt, "max_tokens": limit, "temperature": 0,
                                        "stream": True})
     first, text = None, []
@@ -229,7 +228,7 @@ def gpu_used_mib():
 
 
 def kill_group(proc, wait=180):
-    """vLLM and SGLang start engine processes of their own that outlive a killed parent and keep the GPU's memory
+    """vLLM starts engine processes of their own that outlive a killed parent and keep the GPU's memory
     (MG2 v3: every model after them failed to load). Kill the whole group, then wait for the memory."""
     import signal
     try:
@@ -243,19 +242,12 @@ def kill_group(proc, wait=180):
 
 
 def run_python_engines(prompts, fact_prompts, facts, count):
-    """vLLM and SGLang with Qwen3-4B in float16 (a T4 has no bfloat16), on one GPU, the same templated prompts."""
+    """vLLM with Qwen3-4B in float16 (a T4 has no bfloat16) and AWQ 4-bit, on one GPU, the same templated prompts."""
     vllm = [sys.executable, "-m", "vllm.entrypoints.openai.api_server", "--served-model-name", "Qwen/Qwen3-4B",
             "--max-model-len", "4096", "--gpu-memory-utilization", "0.9", "--port", "8400"]
-    sgl = "/kaggle/working/sgl/bin/python"
     for name, install, command in (
             ("vllm_1gpu", "pip install -q vllm", vllm + ["--model", "Qwen/Qwen3-4B", "--dtype", "half"]),
-            ("vllm_awq_1gpu", "true", vllm + ["--model", "Qwen/Qwen3-4B-AWQ", "--quantization", "awq", "--dtype", "half"]),
-            ("sglang_1gpu", "curl -sSf https://sh.rustup.rs | sh -s -- -y -q --profile minimal && export PATH=$HOME/.cargo/bin:$PATH "
-             "&& pip install -q uv && uv venv -p 3.12 /kaggle/working/sgl >> /kaggle/working/pip.log 2>&1 && "
-             "uv pip install --python /kaggle/working/sgl/bin/python 'sglang[all]' >> /kaggle/working/pip.log 2>&1 && "
-             "/kaggle/working/sgl/bin/python -c 'import sglang'", [sgl, "-m", "sglang.launch_server", "--model-path",
-             "Qwen/Qwen3-4B", "--served-model-name", "Qwen/Qwen3-4B", "--dtype", "half", "--attention-backend", "triton",
-             "--port", "8400", "--mem-fraction-static", "0.85"])):
+            ("vllm_awq_1gpu", "true", vllm + ["--model", "Qwen/Qwen3-4B-AWQ", "--quantization", "awq", "--dtype", "half"])):
         m = REPORT["models"].setdefault("Qwen3-4B-hf-fp16", {"arms": {}})
         rows = m["arms"].setdefault(name, {})
         try:
@@ -389,7 +381,7 @@ def run_model(repo, name, facts):
         system = "/no_think" if "Qwen3" in name else None
         prompts = template(port, TEXTS, None)
         fact_prompts = template(port, [q + " Answer in one short sentence." for q, _ in facts], system)
-        if "Qwen3-4B" in name:  # the same templated prompts for vLLM and SGLang, counted with the model's tokenizer
+        if "Qwen3-4B" in name:  # the same templated prompts for vLLM, counted with the model's tokenizer
             global PYTHON_INPUTS, PYTHON_INPUTS_COUNT
             PYTHON_INPUTS = (prompts, fact_prompts)
             from transformers import AutoTokenizer  # the same tokenizer as the GGUF's; llama-server is stopped by then

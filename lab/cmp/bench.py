@@ -1,4 +1,4 @@
-"""CMP1: one benchmark for every OpenAI-compatible server (IronMule, llama-server, Ollama, LM Studio, vLLM, SGLang).
+"""CMP1: one benchmark for every OpenAI-compatible server (IronMule, llama-server, Ollama, LM Studio, vLLM).
 
 Usage: bench.py URL MODEL LABEL OUT.json [--workloads burst-sys,burst,poisson,single,facts] [--ns 1,8,16,32]
 
