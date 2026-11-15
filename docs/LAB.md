@@ -1353,8 +1353,10 @@ On the real machine (engine, `lab/pi1/real.py`, Qwen3-4B Q8_0, shared pool, 64 t
 | one busy process | 0.31 / 2.41 | 7.19 / 50.8 | 7.45 / 52.0 (3 threads) |
 | one process busy half of every 20 ms | 5.26 / 38.4 | 7.54 / 51.4 | 7.65 / 53.8 (3 threads) |
 | two busy processes | -- (stopped: under 1 tok/s) | -- | 5.78 / 36.9 (2 threads) |
+| two busy processes, 16 tokens, one block | 0.19 / 1.46 (4 threads) | -- | 6.11 / 30.9 (2 threads) |
 
 Read: seed 10 is at least as good as the weights before in every row and replaces them as `ironmule/pilot_weights.npz`.
-Idle it is 1.6-3.8 % below the defaults at the same 4 threads; its decisions cost about 0.4 ms a step (reading
-`/proc`), under 0.5 % of a 100 ms step, so most of that is the run-to-run spread (the defaults themselves moved 4 %
-between their two runs).
+Idle, separate processes put it 1.6-3.8 % below the defaults at the same 4 threads; the same process with the Pilot
+attached and detached in turn (4 rounds each, `e.pilot = None`) shows no cost: 10.04 against 10.05 tok/s for one
+request and 65.6 against 65.0 for eight (decisions 0.38 ms a step), so that gap was the spread between processes.
+With two busy processes the Pilot is 32x the defaults for one request and 21x for eight (short answers, one block).

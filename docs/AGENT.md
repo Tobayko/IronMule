@@ -293,8 +293,8 @@ at 4, 3, 2 and 1 threads. On an idle machine it costs nothing measurable (same e
 tokens per second for one user). Those numbers are from the first shipped weights. The current ones (in the engine, `real.py`, 64 tokens, Qwen3-4B
 Q8_0) choose the same threads and also give up a core when one program keeps a core half busy: 7.65 / 53.8 tokens per
 second for 1 / 8 requests against 5.26 / 38.4 with the defaults (the weights before: 7.54 / 51.4); with one busy program
-7.45 / 52.0 against 0.31 / 2.41 (before: 7.19 / 50.8); with two, 2 threads and 5.78 / 36.9. Idle, two alternating runs:
-9.68 / 64.3 against 10.06 / 65.3 with the defaults, within 4 % (before: 9.43 / 63.0). In the dreamed world (world v4,
+7.45 / 52.0 against 0.31 / 2.41 (before: 7.19 / 50.8); with two, 2 threads and 6.11 / 30.9 against 0.19 / 1.46 (16-token answers). Idle it costs nothing: in one
+process, attached and detached in turn, 10.04 / 65.6 against 10.05 / 65.0 tokens per second. In the dreamed world (world v4,
 240 s, 1,024 random machines) they make 12.5 % more tokens than the defaults with 45 % less waiting, and 1.8 % less
 waiting than the hand rule (reward -1408 against -1454; defaults -2547; the weights before -1434).
 
