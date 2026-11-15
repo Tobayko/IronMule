@@ -1515,3 +1515,28 @@ request's step measured on other T4 sessions (KG1 v3, SG1) the projection is 18.
 session's slower llama.cpp matmuls (13.2 + 4.1 ms of matmuls alone) it is about +16-18 %. llama.cpp's own times differ
 between T4 sessions by up to 1.8x on one shape (2560 x 4096: 34.5 us in KG1 v2, 62.8 us here), so only an
 end-to-end run on one session decides. By the rule: on to the end-to-end run, MQ1 for one token only.
+
+## 2026-11-15 KG2 (ST2): the generated kernel library end to end on a T4, one request 1.27x
+
+Kaggle T4, `lab/kg1/kaggle_e2e.py` at the KG2 commit: llama.cpp 4227c9b built with gr1 and the kg1 hook (57 min),
+`ironmule/kernel_gen.py` tuned 288 `__dp4a` variants and 18 MQ1 variants on the five Q4_K shapes of Qwen3-4B Q4_K_M
+(137 s) and built a 40-entry library, then each arm at 1 / 2 / 4 / 8 requests (128 tokens, one warm-up block and 3
+blocks, greedy, SP4 off), two alternating passes. Rule fixed before the data (ST2): one request at least 15 % faster.
+
+| tok/s, mean of 2 passes | llama-server | engine (pool + PAD1) | engine + library | engine, PAD1 off | engine + library, PAD1 off |
+| --- | --- | --- | --- | --- | --- |
+| 1 request | 46.6 | 44.9 | **57.0** | 44.5 | 57.0 |
+| 2 requests | 79.2 | 80.5 | **92.7** | 77.7 | 93.9 |
+| 4 requests | 102.5 | 143.4 | **153.0** | 104.7 | 139.8 |
+| 8 requests | 127.1 | 272.4 | **277.1** | 132.6 | 203.0 |
+
+The engine's own measurement at startup, one sequence: a step of 1 / 2 / 4 / 8 tokens 16.6 / 18.7 / 27.9 / 36.4 ms
+with the library and 18.7 / 22.9 / 36.0 / 55.9 ms without; it kept the library for every count from 1 to 8. Facts 49
+of 50 with and without it; the 50 fact answers token for token the same at one request, 47 of 50 at eight. Read:
+the rule holds (1.27x the engine without the library, 1.22x llama-server, for one request on one T4), so the server
+now tunes and loads the library on a GPU by itself (`ironmule serve --gguf`, cached per GPU, nvcc and model shapes;
+the gate runs with it and is keyed by it; IRONMULE_KG=0 turns it off). The gain comes from the `__dp4a` variants:
+MQ1 was correct (2.4-3.9e-7 against float64) but 7-22 % slower than the best of them on every shape (2560 x 1024:
+14.3 against 11.7 us; 9728 x 2560: 73.7 against 68.5), so no MQ1 kernel entered the library. With PAD1 off the
+library alone gives 1.53x at 8 requests; with PAD1 the two overlap (9-16-token steps use llama.cpp's tensor cores).
+vLLM AWQ on a T4 (MG2 v6): 63.7 / 419 / 861 tok/s at 1 / 8 / 32 requests, still ahead.

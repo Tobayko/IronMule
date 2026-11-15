@@ -434,6 +434,24 @@ def serve(argv: list[str]) -> int:
                 reason = available()
                 if reason is not None:
                     raise InvalidRequest(f"--engine ggml: {reason}")
+                from ironmule.ggml_engine import gpu_layers as ggml_gpu_layers
+
+                if (ggml_gpu_layers() and not os.environ.get("IRONMULE_KG_LIB")
+                        and os.environ.get("IRONMULE_KG", "1") != "0"):
+                    # KG1 (ST2, 2026-11-15): kernels generated and tuned for this GPU and model, once, then cached;
+                    # the gate below runs with them, and the engine keeps them per token count where its step is
+                    # faster. On a T4 one request 1.27x the engine without them (docs/LAB.md, KG2). IRONMULE_KG=0: off
+                    try:
+                        from ironmule.kernel_gen import ensure
+
+                        library = ensure(str(Path(args.gguf).resolve()), Path(store.root) / "kernels",
+                                         log=lambda line: None)
+                        if library is not None:
+                            os.environ["IRONMULE_KG_LIB"] = str(library)
+                            print(json.dumps({"ggml_kernels": str(library)}), flush=True)
+                    except Exception as exc:  # noqa: BLE001 - llama.cpp's own kernels serve without them
+                        print(json.dumps({"ggml_kernels": None, "reason": f"{type(exc).__name__}: {exc}"[:300]}),
+                              flush=True)
                 checked = ggml_gate(spec.snapshot_path, args.gguf, cache=Path(store.root) / "ggml-gate")
                 print(json.dumps({"ggml_gate": {k: checked.get(k) for k in ("ratio", "interval", "passes", "reason")}}),
                       flush=True)

@@ -1496,6 +1496,17 @@ DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
 SETTING_KEYS = ("flash_attn", "kv_unified", "kv_f32", "kv_q8")
 
 
+def gate_key(snapshot: str, gguf: str) -> str:
+    """The gate's cache key: the GGUF, the snapshot (or the GGUF itself, GG4), the gate rule, the engine, the machine,
+    and the generated kernel library the gate ran with (KG1: IRONMULE_KG_LIB), so that a new library is gated anew."""
+    from .numeric_choice import GATE_VERSION
+
+    kg = os.environ.get("IRONMULE_KG_LIB") or ""
+    return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
+                                     OPTION_BOUND, machine_key(), file_sha256(kg) if kg and Path(kg).is_file() else ""],
+                                    sort_keys=True).encode()).hexdigest()[:24]
+
+
 def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | None = None) -> dict[str, Any]:
     """The owner's bar (2026-11-10, 2026-11-11): answer quality at least llama.cpp's, its own options included. The
     engine's settings (all llama.cpp options) are timed (`autotune`), and the fastest one whose perplexity on the
@@ -1507,8 +1518,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     from .numeric_choice import GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
-    key = hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
-                                     OPTION_BOUND, machine_key()], sort_keys=True).encode()).hexdigest()[:24]
+    key = gate_key(snapshot, gguf)
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"{key}.json"
     if stored.exists():
