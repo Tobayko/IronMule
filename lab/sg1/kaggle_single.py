@@ -7,10 +7,12 @@ every one-token decode step launches hundreds of kernels one by one; vLLM captur
 build (the dataset `ironmule-mg2-cuda-build`), applies GR1, recompiles `ggml-cuda.cu` only, and measures per model one
 request on GPU 0 (one warm-up block and 3 blocks of 128 tokens, greedy, SP4 off as in MG2):
 
-  server_g0 / server_g1         llama-server -t 4, graphs off / on
+  server_g0 / server_g1         llama-server -t 4, graphs off / on (twice each, alternating: _a, _b)
   engine_pilot_g0 / _g1         the engine as the product runs it (the Pilot picks threads), graphs off / on
-  engine_t{1,2,4}_g{0,1}        the Pilot off, a fixed thread count
-  engine_nospec_g1              graphs on, no speculation
+  engine_nospec_g1a             graphs on, no speculation
+
+v1 (2026-11-15) also swept 1, 2 and 4 threads (no difference with every layer on the GPU) and found the cached build
+without `ggml-cuda.cu`; v2 builds afresh with GR1 applied before cmake (the dataset left off, about an hour).
 
 and whether answers change: every arm's tokens against its graphs-off twin, and the 50 facts one request at a time
 (the graph path) through the engine and llama-server with graphs off and on. Writes /kaggle/working/sg1.json.
@@ -59,6 +61,23 @@ def patch_and_rebuild():
     mg2.log("GR1 rebuilt", OUT["rebuild_s"])
 
 
+def patch_during_build():
+    """Without the cached build (SG1 v2): MG2's build() downloads the tree and runs cmake; GR1 goes in right before."""
+    diff = W / "gr1.diff"
+    diff.write_bytes(urllib.request.urlopen(
+        f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/native/ggml_patches/gr1/ggml-cuda.cu.diff",
+        timeout=60).read())
+    plain = mg2.sh
+
+    def sh(cmd, **kw):
+        if isinstance(cmd, str) and "cmake -B build" in cmd:
+            root = cmd.split("cd ", 1)[1].split(" &&", 1)[0]
+            plain(f"cd {root} && patch ggml/src/ggml-cuda/ggml-cuda.cu {diff}")
+            OUT["gr1_patched_before_build"] = True
+        return plain(cmd, **kw)
+    mg2.sh = sh
+
+
 def engine_arm(gguf, prompts, extra, speculate=True):
     eng = with_env(extra, lambda: mg2.Engines(gguf, 1, ["0"], speculate=speculate))
     try:
@@ -98,13 +117,11 @@ def run_model(repo, name, facts):
     finally:
         mg2.stop(proc)
     g = lambda on: {"IRONMULE_CUDA_GRAPHS": "1" if on else "0"}  # noqa: E731
-    arms = [("server_g0", "server", g(0), True), ("server_g1", "server", g(1), True),
-            ("engine_pilot_g0", "engine", g(0), True), ("engine_pilot_g1", "engine", g(1), True)]
-    for t in (1, 2, 4):
-        for on in (0, 1):
-            arms.append((f"engine_t{t}_g{on}", "engine", {**g(on), "IRONMULE_PILOT": "0", "IRONMULE_GGML_THREADS": str(t)},
-                         True))
-    arms.append(("engine_nospec_g1", "engine", g(1), False))
+    arms = []
+    for rep in ("a", "b"):  # graphs off and on alternate twice: v1 saw the same setting differ by up to 3 tok/s
+        arms += [(f"server_g0{rep}", "server", g(0), True), (f"server_g1{rep}", "server", g(1), True),
+                 (f"engine_pilot_g0{rep}", "engine", g(0), True), (f"engine_pilot_g1{rep}", "engine", g(1), True)]
+    arms.append(("engine_nospec_g1a", "engine", g(1), False))
     texts = {}
     for arm, kind, extra, spec in arms:
         try:
@@ -117,9 +134,9 @@ def run_model(repo, name, facts):
             mg2.log(name, arm, "ERROR", exc)
         save()
     m["same_tokens_as_g0_twin"] = {arm: texts.get(arm) == texts.get(arm.replace("_g1", "_g0"))
-                                   for arm in texts if arm.endswith("_g1") and arm.replace("_g1", "_g0") in texts}
-    m["same_tokens_as_engine_pilot_g0"] = {arm: texts[arm] == texts.get("engine_pilot_g0")
-                                          for arm in texts if arm.startswith("engine")}
+                                   for arm in texts if "_g1" in arm and arm.replace("_g1", "_g0") in texts}
+    m["same_tokens_as_engine_pilot_g0a"] = {arm: texts[arm] == texts.get("engine_pilot_g0a")
+                                           for arm in texts if arm.startswith("engine")}
     # the facts one request at a time, so that every step is a one-token step (the graph path)
     answers = {}
     for arm, extra in (("engine_g0", g(0)), ("engine_g1", g(1))):
@@ -154,13 +171,21 @@ def run_model(repo, name, facts):
 def main():
     OUT["nvidia_smi"] = subprocess.run("nvidia-smi --query-gpu=name,memory.total,clocks.max.sm --format=csv,noheader",
                                        shell=True, capture_output=True, text=True).stdout
+    patch_during_build()
     facts = mg2.build()
     OUT["build_cached"] = mg2.REPORT.get("build_cached")
-    try:
-        patch_and_rebuild()
-    except Exception as exc:  # noqa: BLE001 - the thread arms still run on the stock build
-        OUT["rebuild_error"] = f"{type(exc).__name__}: {exc}"[:300]
+    OUT["build_s"] = round(mg2.REPORT.get("build_s", 0), 1)
+    if OUT["build_cached"]:
+        try:
+            patch_and_rebuild()
+        except Exception as exc:  # noqa: BLE001 - the arms still run, on the stock build
+            OUT["rebuild_error"] = f"{type(exc).__name__}: {exc}"[:300]
+    cu = mg2.SRC / "llama_cpp_python-0.3.16/vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu"
+    OUT["gr1_in_source"] = cu.exists() and "IRONMULE_CUDA_GRAPHS" in cu.read_text()
     save()
+    if os.environ.get("SG1_KEEP_BUILD") == "1":  # the patched build as this run's output, for later runs
+        mg2.sh(f"cd {mg2.SRC} && tar czf {W}/sg1_build.tar.gz llama_cpp_python-0.3.16/vendor/llama.cpp/build/bin "
+               f"llama_cpp_python-0.3.16/llama_cpp")
     for repo, name in mg2.MODELS:
         try:
             run_model(repo, name, facts)

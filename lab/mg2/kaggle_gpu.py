@@ -118,10 +118,10 @@ def free_port():
     s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
 
 
-def server(gguf, n, gpus, split):
+def server(gguf, n, gpus, split, extra=()):
     port = free_port()
     cmd = [str(LIB / "llama-server"), "-m", gguf, "--host", "127.0.0.1", "--port", str(port), "-np", str(n),
-           "-c", str(n * CTX), "-ngl", "99", "-sm", split, "-fa", "--temp", "0", "--no-webui", "-t", "4"]
+           "-c", str(n * CTX), "-ngl", "99", "-sm", split, "-fa", "--temp", "0", "--no-webui", "-t", "4", *extra]
     proc = subprocess.Popen(cmd, env=env(gpus), stdout=subprocess.DEVNULL, stderr=open(W / "server.err", "a"))
     for _ in range(600):
         try:
@@ -289,7 +289,7 @@ import json, sys, time
 from ironmule.ggml_engine import GgmlEngine, Job
 cfg = json.loads(sys.stdin.readline())
 e = GgmlEngine(cfg["gguf"], seqs=cfg["seqs"], seq_ctx=cfg["ctx"], speculate=cfg.get("speculate", True), flash_attn=True,
-               shared=cfg.get("shared", False), cap=cfg.get("cap"))
+               shared=cfg.get("shared", False), cap=cfg.get("cap"), draft_gguf=cfg.get("draft"))
 BOS = int(e.L.llama_vocab_bos(e.vocab))
 ADD_BOS = bool(e.L.llama_vocab_get_add_bos(e.vocab)) and BOS >= 0
 def prompt_ids(text):
@@ -308,17 +308,19 @@ for line in sys.stdin:
     print(json.dumps({"t0": t0, "t1": t1, "tokens": [len(j.tokens) for j in jobs],
                       "first": [(j.first_ns - t0) / 1e9 for j in jobs], "texts": [j.tokens for j in jobs],
                       "steps": e.steps, "spec": e.policy.summary() if e.policy is not None else None,
-                      "pilot": (e.summary() or {}).get("pilot"), "padding": (e.summary() or {}).get("padding")}), flush=True)
+                      "pilot": (e.summary() or {}).get("pilot"), "padding": (e.summary() or {}).get("padding"),
+                      "draft": (e.summary() or {}).get("draft_model")}), flush=True)
 """
 
 
 class Engines:
-    def __init__(self, gguf, seqs, gpus_list, speculate=True, shared=False):
+    def __init__(self, gguf, seqs, gpus_list, speculate=True, shared=False, draft=None):
         self.procs, self.last = [], []
         for gpus in gpus_list:
             p = subprocess.Popen([sys.executable, "-c", ENGINE_CHILD], env=env(gpus), stdin=subprocess.PIPE,
                                  stdout=subprocess.PIPE, stderr=open(W / "engine.err", "a"), text=True)
             p.stdin.write(json.dumps({"gguf": gguf, "seqs": seqs, "ctx": CTX, "speculate": speculate, "shared": shared,
+                                      "draft": draft,
                                       "cap": max(16, 2 * seqs) if shared else None}) + "\n")
             p.stdin.flush()
             self.procs.append(p)
@@ -337,8 +339,8 @@ class Engines:
         for p, part in zip(self.procs, parts):
             p.stdin.write(json.dumps({"prompts": part, "limit": limit, "at_ns": at}) + "\n"); p.stdin.flush()
         rows = [json.loads(self._line(p)) for p in self.procs]
-        self.last = [{"steps": r.get("steps"), "spec": r.get("spec"), "pilot": r.get("pilot"), "padding": r.get("padding")}
-                     for r in rows]
+        self.last = [{"steps": r.get("steps"), "spec": r.get("spec"), "pilot": r.get("pilot"), "padding": r.get("padding"),
+                      "draft": r.get("draft")} for r in rows]
         wall = (max(r["t1"] for r in rows) - min(r["t0"] for r in rows)) / 1e9
         tokens = sum(sum(r["tokens"]) for r in rows)
         firsts = [f for r in rows for f in r["first"]]

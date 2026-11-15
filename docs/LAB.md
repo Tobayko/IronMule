@@ -1287,3 +1287,43 @@ llama-server (Qwen3 54.1 against 54.1). Threads make no difference above it with
 on a T4 is bound by llama.cpp's own kernels, about 18.5 ms per Qwen3-4B token, against 15.7 ms for vLLM's AWQ
 kernels with CUDA graphs. Next: GR1 with a fresh CUDA build (about an hour of the session), then speculation that
 fills a step to 9-16 tokens, which a T4 computes in 27-28 ms against 20.5 ms for one token (MG2 v5's padding table).
+
+## 2026-11-15 SG1 v2: GR1 (CUDA graphs on a T4) measured, no gain
+
+Kaggle T4, a fresh CUDA build of 4227c9b with GR1 applied before cmake (58 min), one request on GPU 0, graphs off
+(`_g0`) and on (`IRONMULE_CUDA_GRAPHS=1`, `_g1`) alternating twice (a, b), 3 blocks of 128 tokens each.
+
+| tok/s, mean of a and b | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
+| --- | --- | --- | --- | --- |
+| llama-server, graphs off / on | 55.2 / 54.2 | 47.1 / 46.7 | 29.9 / 28.1 | 27.3 / 25.0 |
+| engine (Pilot), graphs off / on | 55.6 / 54.2 | 46.6 / 46.0 | 28.6 / 29.7 | 25.9 / 27.0 |
+| engine without speculation, graphs on | 49.9 | 46.3 | 28.8 | 26.6 |
+
+Tokens: every `_g1` arm the same as its `_g0` twin; facts 49, 47, 49, 49 either way, 50 of 50 answers the same.
+Read: no gain from graphs on a T4. llama-server is 0.4-2.3 tok/s slower with them, the engine between -1.4 and +1.1,
+which is inside the drift from a to b (Qwen3: 56.6 to 53.8 for the same llama-server). One request on a T4 is bound
+by the kernels themselves, not by launching them. GR1 stays in `native/ggml_patches` as opt-in and is not turned on.
+The engine is level with llama-server (55.6 against 55.2 on Qwen3-4B). Next: a draft model (SG1 v3).
+
+## 2026-11-15 SG1 v3: one request on a T4 with a draft model (DM1)
+
+Kaggle T4, the stock path of SG1 v2's build (graphs off), one request at a time on 4 different story prompts, 3 blocks
+of 4 x 128 tokens after a warm-up, the order llama-server, llama-server `-md` (its own speculative decoding with the
+same draft GGUF, `-ngld 99`, its defaults), the engine, the engine with `--draft-gguf` (DM1), twice (a, b).
+
+| tok/s, mean of a and b | Qwen3-4B + Qwen3-0.6B | Llama 3.1 8B + Llama 3.2 1B | Gemma 3 4B + Gemma 3 1B |
+| --- | --- | --- | --- |
+| llama-server | 47.3 | 23.2 | 45.3 |
+| llama-server -md (draft model) | 49.6 | 28.2 | 37.1 |
+| engine | 43.5 | 22.9 | 45.1 |
+| engine + DM1 | **54.3** | **30.6** | 44.4 (refused, see below) |
+| DM1 drafts accepted | 1,073 of 1,519 | 1,740 of 2,255 | -- |
+
+Answers: facts 49 / 49 (Qwen3) and 49 / 49 (Llama 3.1) with and without the draft model through both engines, 50 of 50
+fact answers token for token the same with DM1 (llama-server -md: 48 of 50 on Qwen3). The long story answers differ in
+places with DM1 and with `-md` alike: verifying several tokens in one step takes CUDA's multi-row kernels, which round
+differently from the one-row ones. Gemma 3 1B was refused by the engine: its vocabulary (262,144) is not Gemma 3 4B's
+(262,208, image tokens included); llama-server took it and lost 18 %. Read: with a draft model the engine is 1.15x
+llama-server on Qwen3-4B and 1.32x on Llama 3.1 8B for one request on one T4, and 1.09x llama-server with its own draft
+model on both. vLLM AWQ (63.7 tok/s on Qwen3-4B, MG2 v6) is still ahead. Without the draft model the engine was 8 %
+behind llama-server on these four different prompts (level on one repeated prompt in v2).

@@ -93,10 +93,14 @@ step with checked guesses up to a size CUDA computes faster:
 | 32 requests, one engine per GPU: IronMule | **1026.9** | **1007.3** | **679.1** | **633.2** |
 
 Answers: the same facts right as through llama.cpp on every model (47 to 49 of 50), and 47 to 50 of 50 answers token
-for token the same as without the guesses (MG2 v6), so the server now uses the shared pool on GPUs too. Not yet
-better: one request on one GPU is as fast as llama.cpp, not faster (54.1 against 54.1 tokens per second on Qwen3-4B,
-within the GPU's run-to-run spread on the others; SG1 in [docs/LAB.md](docs/LAB.md)), and vLLM with the 4-bit AWQ
-model is ahead on one GPU (63.7, 419 and 861 tokens per second at 1, 8 and 32 requests on Qwen3-4B).
+for token the same as without the guesses (MG2 v6), so the server now uses the shared pool on GPUs too.
+
+One person on one GPU: with a small draft model of the same family (`--draft-gguf`) IronMule makes 54.3 tokens per
+second on Qwen3-4B (with Qwen3-0.6B) and 30.6 on Llama 3.1 8B (with Llama 3.2 1B), against 47.3 and 23.2 for the
+llama.cpp server and 49.6 and 28.2 for the llama.cpp server with the same draft model (SG1 v3 in
+[docs/LAB.md](docs/LAB.md)); the same facts right. Without a draft model it is level with llama.cpp. Not yet better:
+vLLM with the 4-bit AWQ model is ahead on one GPU (63.7, 419 and 861 tokens per second at 1, 8 and 32 requests on
+Qwen3-4B).
 
 </details>
 
