@@ -1287,3 +1287,20 @@ llama-server (Qwen3 54.1 against 54.1). Threads make no difference above it with
 on a T4 is bound by llama.cpp's own kernels, about 18.5 ms per Qwen3-4B token, against 15.7 ms for vLLM's AWQ
 kernels with CUDA graphs. Next: GR1 with a fresh CUDA build (about an hour of the session), then speculation that
 fills a step to 9-16 tokens, which a T4 computes in 27-28 ms against 20.5 ms for one token (MG2 v5's padding table).
+
+## 2026-11-15 SG1 v2: GR1 (CUDA graphs on a T4) measured, no gain
+
+Kaggle T4, a fresh CUDA build of 4227c9b with GR1 applied before cmake (58 min), one request on GPU 0, graphs off
+(`_g0`) and on (`IRONMULE_CUDA_GRAPHS=1`, `_g1`) alternating twice (a, b), 3 blocks of 128 tokens each.
+
+| tok/s, mean of a and b | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
+| --- | --- | --- | --- | --- |
+| llama-server, graphs off / on | 55.2 / 54.2 | 47.1 / 46.7 | 29.9 / 28.1 | 27.3 / 25.0 |
+| engine (Pilot), graphs off / on | 55.6 / 54.2 | 46.6 / 46.0 | 28.6 / 29.7 | 25.9 / 27.0 |
+| engine without speculation, graphs on | 49.9 | 46.3 | 28.8 | 26.6 |
+
+Tokens: every `_g1` arm the same as its `_g0` twin; facts 49, 47, 49, 49 either way, 50 of 50 answers the same.
+Read: no gain from graphs on a T4. llama-server is 0.4-2.3 tok/s slower with them, the engine between -1.4 and +1.1,
+which is inside the drift from a to b (Qwen3: 56.6 to 53.8 for the same llama-server). One request on a T4 is bound
+by the kernels themselves, not by launching them. GR1 stays in `native/ggml_patches` as opt-in and is not turned on.
+The engine is level with llama-server (55.6 against 55.2 on Qwen3-4B). Next: a draft model (SG1 v3).
