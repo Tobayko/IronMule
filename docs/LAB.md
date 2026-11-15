@@ -1426,3 +1426,66 @@ process and 3.8x / 1.5x beside two, and equal idle and beside a half-busy proces
 at 4 threads, so keeping 4 is right here). Beside one busy process it chose 2 threads, where the 4-vCPU Xeon chose 3:
 here a foreign process on one hyper-thread also slows its sibling. The 8-request cases at 2 busy processes are
 slow either way (first tokens about 21 s): two cores of an older CPU are not enough for eight 4B requests.
+
+## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
+
+Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
+context. Three changes, each with a test against the old implementation on random inputs:
+
+- prompt lookup: `speculation.NgramIndex` per request (the last start of every 2- and 3-gram, updated by the new
+  tokens) instead of `draft()` scanning the whole context every step; the prompt is indexed once per request;
+- the shared pool's longest common prefix: a token trie (`ggml_engine._PrefixTrie`, ties to the earliest sequence as
+  before) instead of comparing the prompt with every held sequence; `_common` compares 64 tokens per slice in C;
+- the engine no longer builds `ids + tokens` per request and step for drafting, SP4 and the pool's sync.
+
+`lab/st1/bench.py` on the 4-vCPU Xeon (Python 3.13), microseconds:
+
+| context tokens | draft() scan | NgramIndex | the old ids + tokens copy |
+| --- | --- | --- | --- |
+| 512 | 154 | 0.76 | 2.3 |
+| 2,048 | 646 | 0.83 | 9.2 |
+| 8,192 | 2,662 | 0.78 | 35.6 |
+| 32,768 | 10,474 | 0.77 | 173 |
+
+| held sequences x tokens | old scan (token loop) | scan with the slice compare | trie |
+| --- | --- | --- | --- |
+| 8 x 2,048 | 429 | 72 | 58 |
+| 32 x 2,048 | 1,776 | 297 | 61 |
+| 64 x 4,096 | 7,066 | 1,156 | 122 |
+
+Tokens: the old and the new engine gave the same tokens for 8 of 8 prompts on Qwen3-4B Q8_0 (shared pool and
+per-sequence caches; the draft counts differ run to run for both, as the step policy prices steps by measured time).
+End to end through the HTTP API (`lab/cmp/run_all.sh`, burst-sys = requests sharing a system prompt, same state, so
+the same settings), tok/s, medians of 3 blocks:
+
+| | burst-sys 8 | burst-sys 32 | one request | facts |
+| --- | --- | --- | --- | --- |
+| llama-server (stock, -np 32) | 21.3 | 28.5 | 8.8 | 49 / 50 |
+| IronMule before | 47.4 | 74.5 | 9.86 | 49 / 50 |
+| IronMule ST1 | 50.2 | 76.2 | 9.5 | 49 / 50 |
+
+On this CPU a step costs 100-130 ms, so the saved milliseconds are within the spread at these contexts; they matter
+where steps are short (a T4 step is 19-28 ms, where a 32,768-token scan cost 10 ms per request) and contexts long.
+The first run of this comparison was not like for like: the new engine's fresh start chose a float32 KV cache on
+tuning noise (scores 25.9 against 24.6 at a 64-token context) and served 61 / 7.05 tok/s; the autotune now ranks f32
+KV first only 8 % ahead (`rank_settings`, ENGINE_VERSION 5).
+
+## 2026-11-15 ST2 (CPU): is decode bound by memory bandwidth?
+
+`lab/st2/cpu_bw.py` on the 4-vCPU Xeon (Sapphire Rapids: AMX, AVX512-VNNI), Qwen3-4B as Q8_0 (4.28 GB) and Q4_K_M
+(2.50 GB), one decode step of 1 or 8 rows at a 64-token context, median of 10; "GB/s" is the weight bytes a step reads
+over its time. The machine's memory: 14.7 / 30.2 / 33.5 GB/s read with 1 / 2 / 4 processes (numpy sum, 512 MB each).
+
+| threads | Q8_0 1 row tok/s (GB/s) | Q8_0 8 rows | Q8_0 ROW1 off, 1 / 8 rows | Q4_K_M 1 row (GB/s) | Q4_K_M 8 rows |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2.84 (12.2) | 19.5 | 2.71 / 12.9 | 2.48 (6.2) | 10.3 |
+| 2 | 5.88 (25.2) | 35.8 | 5.28 / 23.7 | 4.70 (11.7) | 19.1 |
+| 3 | 8.42 (36.0) | 57.3 | 7.01 / 34.1 | 6.26 (15.6) | 26.9 |
+| 4 | 9.50 (40.6) | 63.1 | 9.21 / 44.5 | 7.24 (18.1) | 33.5 |
+
+Read: one request with Q8_0 is memory bound: at 4 threads it reads 40 GB/s, above what the numpy probe reached, and
+the fourth thread adds only 13 % (ROW1's AMX kernels change nothing there: 9.50 against 9.21). Q4_K_M moves 58 % of
+the bytes and is slower (7.24 tok/s): it is bound by its decoding (18 GB/s, still rising with threads), not by memory.
+With 8 rows compute decides (ROW1 1.42x). So for one request the lever is fewer bytes at Q8_0's compute speed: a 4-bit
+weight read at 40 GB/s would allow up to about 16 tok/s; llama.cpp's Q4_K kernels on this CPU reach 7.2. A 4-bit
+format changes the answers and goes through the quality gate. Not more SIMD for Q8_0's one-row case.
