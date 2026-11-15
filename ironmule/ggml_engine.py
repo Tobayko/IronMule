@@ -1482,10 +1482,14 @@ print(json.dumps({"nll": rows}))
 
 GATE_IDS = r"""
 import json, sys
-from mlx_lm.tokenizer_utils import load
 from pathlib import Path
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, _text_ids, gate_bos
-tokenizer = load(Path(sys.argv[1]))
+if sys.argv[1].lower().endswith(".gguf"):  # GG4: a GGUF served on its own tokenizes the gate's text itself
+    from ironmule.gguf_tokenizer import GgufTokenizer
+    tokenizer = GgufTokenizer(sys.argv[1])
+else:
+    from mlx_lm.tokenizer_utils import load
+    tokenizer = load(Path(sys.argv[1]))
 print(json.dumps({"ids": _text_ids(tokenizer)[:CHUNKS * CHUNK_TOKENS + 1], "bos": gate_bos(tokenizer)}))
 """
 DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}

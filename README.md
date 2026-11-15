@@ -162,22 +162,22 @@ pip install -e ".[cpu]"
 python tools/build_ggml.py
 ```
 
-`build_ggml.py` builds llama.cpp with IronMule's kernels and prints two `export` lines; run them. Then register a
-model with the same tokenizer as your GGUF (it gives the chat template) and serve the GGUF behind it:
+`build_ggml.py` builds llama.cpp with IronMule's kernels and prints two `export` lines; run them. Then serve any
+GGUF you have. It brings its own tokenizer and chat template, so nothing else needs downloading:
 
 ```bash
-ironmule models add Qwen/Qwen3-1.7B --download
-ironmule serve --gguf Qwen3-4B-Q8_0.gguf --model Qwen/Qwen3-1.7B --agent on
+ironmule serve --gguf Qwen3-4B-Q8_0.gguf --agent on
 ```
 
-On the first start IronMule checks the GGUF's quality on this machine and measures its step costs for the Pilot.
+On the first start IronMule checks the GGUF's quality on this machine and measures its step costs for the Pilot. The
+model answers as `gguf/` and the file name without `.gguf` (`/v1/models` lists it).
 
 The server listens on `http://127.0.0.1:8080`. Open it in a browser, or call its chat API:
 
 ```bash
 curl http://127.0.0.1:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "Qwen/Qwen3-1.7B", "messages": [{"role": "user", "content": "Hello!"}]}'
+  -d '{"model": "gguf/Qwen3-4B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
 On an Apple Silicon Mac or with an NVIDIA GPU (MLX path), one line installs and starts a chat:

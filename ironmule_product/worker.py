@@ -1310,13 +1310,25 @@ def main(argv: list[str] | None = None) -> int:
         if any(not 1 <= value <= 2**63 - 1 for value in (args.prefix_cache_max_entries, args.prefix_cache_max_bytes)):
             raise ValueError("invalid cache capacity")
         identity = None
-        if args.execution_variant in ("prefix_reuse", "current_engine", "automatic"):
-            from friday_evidence.identity import assert_model_unchanged, runtime_identity
-            identity = runtime_identity(spec)
         rust2 = args.execution_variant == "current_engine" and args.engine_configuration == "rust2"
         ggml = args.execution_variant == "current_engine" and args.engine_configuration == "ggml"
-        # GG1: llama.cpp holds the weights; MLX keeps only the tokenizer's model unloaded, as for rust2
-        model, tokenizer, stream_generate, device = _load(spec, lazy=rust2 or ggml)
+        # GG4: a GGUF served on its own, without a registered snapshot (ironmule.gguf_tokenizer.is_gguf_spec; checked
+        # here without importing the ironmule package, which imports MLX: the model policy is checked before that)
+        gguf_path = str(spec.get("snapshot_path") or "")
+        gguf_only = ggml and gguf_path.lower().endswith(".gguf") and Path(gguf_path).is_file()
+        if args.execution_variant in ("prefix_reuse", "current_engine", "automatic") and not gguf_only:
+            from friday_evidence.identity import assert_model_unchanged, runtime_identity
+            identity = runtime_identity(spec)
+        if gguf_only:  # its own tokenizer and chat template (llama.cpp's vocabulary, Jinja2), no MLX model at all
+            import mlx.core as mx
+            from ironmule.ggml_engine import gpu_offload
+            from ironmule.gguf_tokenizer import GgufTokenizer
+            model, stream_generate = None, None
+            tokenizer = GgufTokenizer(spec["snapshot_path"])
+            device = mx.gpu if gpu_offload() else mx.cpu
+        else:
+            # GG1: llama.cpp holds the weights; MLX keeps only the tokenizer's model unloaded, as for rust2
+            model, tokenizer, stream_generate, device = _load(spec, lazy=rust2 or ggml)
         import mlx.core as mx
         cuda_cache_limit = _apply_cuda_cache_limit(mx)
         if args.compute_dtype is not None:
@@ -1346,6 +1358,8 @@ def main(argv: list[str] | None = None) -> int:
             if not args.ggml_gguf or not isinstance(gate, dict) or gate.get("passes") is not True:
                 raise ValueError("the ggml engine serves a named GGUF after its quality gate passed (GG1)")
             engine_bridge = GgmlBridge(args.ggml_gguf, tokenizer, speculate=args.speculate, gate=gate)
+            if gguf_only and spec.get("revision") != "sha256:" + engine_bridge.gguf_sha256:
+                raise ValueError("the GGUF changed since the server named it")  # its content is its identity
         elif rust2:
             from ironmule_product.rust2_bridge import Rust2Bridge
             engine_bridge = Rust2Bridge(os.environ.get("IRONMULE_RUST2_BINARY", ""), spec["snapshot_path"],

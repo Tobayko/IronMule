@@ -402,9 +402,12 @@ class ProductService:
             agent.reason = "the agent failed while learning; the reference schedule serves"
 
     def models(self) -> list[dict[str, Any]]:
+        specs = list(self.store.models())
+        if self.spec is not None and self.spec not in specs:  # GG4: a GGUF served on its own is not registered
+            specs.append(self.spec)
         return [{"id": spec.model_id, "object": "model", "owned_by": "local",
                  "revision": spec.revision, "loaded": self.spec == spec and self.health()["ready"]}
-                for spec in self.store.models()]
+                for spec in specs]
 
     def stream(self, request: GenerationRequest) -> Iterator[dict[str, Any]]:
         # Validate direct Python callers as well as the HTTP boundary. No
@@ -415,7 +418,9 @@ class ProductService:
         with self._lock:
             if self._closed.is_set():
                 raise BackendUnavailable("service is closed")
-            registered = self.store.model(request.model)
+            # GG4: the model this service loaded answers to its id even when it is a GGUF served on its own
+            registered = (self.spec if self.spec is not None and request.model == self.spec.model_id
+                          else self.store.model(request.model))
             if self.spec is None or not self._backend_ready():
                 raise BackendUnavailable("no model worker is ready")
             if registered != self.spec:
