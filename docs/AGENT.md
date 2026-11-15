@@ -273,11 +273,13 @@ is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,
   7.2 to 0.24 tokens per second for one user with one foreign process (docs/LAB.md, PI1). A process busy only part of
   the time hurts too: at 25 / 50 / 75 % of every 20 ms an 8-row step at 4 threads was 1.34 / 1.75 / 2.46x slower and at
   3 threads unharmed, while the load reader saw only 0.0-0.2 / 0.23-0.32 / 0.44-0.51 cores of it (lab/pi1/half.py).
-- *How it was trained:* from scratch, in a dreamed world: a simulator of continuous batching whose step times follow
-  the measured costs and the measured contention collapse, randomised over machines, models, traffic and foreign
-  load, first by imitating a simple rule (threads = free cores) and then by PPO. The shipped weights: 400 PPO
-  iterations on 8,192 dreamed servers on two Kaggle T4 GPUs (two seeds, 67 minutes), then 100 iterations on this CPU
-  (29 minutes) in a world with part-time foreign processes and less harmless background (0-0.12 cores).
+- *How it was trained:* from scratch (random start), in a dreamed world: a simulator of continuous batching whose step
+  times follow the measured costs and the measured contention collapse, randomised over machines, models, traffic and
+  foreign load. The shipped weights (2026-11-15, world v4): a warm start that copies a teacher knowing the dream's true
+  foreign load, then PPO; 39 minutes on the 4-vCPU Xeon. Copying the visible-load rule instead (threads = free cores)
+  left two from-scratch runs at 4 threads beside a half-busy process, where 3 are 1.4x faster: that rule cannot see
+  such a process. The generation before was trained on two Kaggle T4 GPUs (67 minutes) and fine-tuned on this CPU
+  (29 minutes). The world and the recipe are not published.
 - *Safety:* without the weights, with a feature outside the range it was trained on (|x| > 4 or not finite), or with
   `IRONMULE_PILOT=0` the engine keeps its defaults (all usable cores, no cap below the engine's, no prompt budget,
   drafting allowed). `/health` shows it under `ggml.pilot`: whether it is active and why not, the cores, the foreign
@@ -288,11 +290,13 @@ speculation off so that only the Pilot differs from stock `llama-server` (all co
 per second with 0 / 1 / 2 busy foreign processes against 7.23 / 0.24 / 0.13, eight users 58.8 / 46.2 / 35.2 against
 23.3 / 1.41 / 0.68; first tokens 0.3-0.7 s against 0.8-149 s. It chose 4 / 3 / 2 threads; answers were token-identical
 at 4, 3, 2 and 1 threads. On an idle machine it costs nothing measurable (same engine, alternating: 9.81 against 9.81
-tokens per second for one user). Those numbers are from the first shipped weights; the current ones choose the same
-threads there and also give up a core when one program keeps a core half busy: 7.44 / 51.1 tokens per second for 1 / 8
-requests against 5.20 / 35.4 with the defaults and 5.32 / 36.0 with the first weights (in the engine, `real.py`). In the
-dreamed world (240 s, 1,024 random machines) they make 8.9 % more tokens than the defaults with 36 % less waiting, a
-little ahead of the hand rule (reward -1415 against -1420; defaults -2036).
+tokens per second for one user). Those numbers are from the first shipped weights. The current ones (in the engine, `real.py`, 64 tokens, Qwen3-4B
+Q8_0) choose the same threads and also give up a core when one program keeps a core half busy: 7.65 / 53.8 tokens per
+second for 1 / 8 requests against 5.26 / 38.4 with the defaults (the weights before: 7.54 / 51.4); with one busy program
+7.45 / 52.0 against 0.31 / 2.41 (before: 7.19 / 50.8); with two, 2 threads and 5.78 / 36.9. Idle, two alternating runs:
+9.68 / 64.3 against 10.06 / 65.3 with the defaults, within 4 % (before: 9.43 / 63.0). In the dreamed world (world v4,
+240 s, 1,024 random machines) they make 12.5 % more tokens than the defaults with 45 % less waiting, and 1.8 % less
+waiting than the hand rule (reward -1408 against -1454; defaults -2547; the weights before -1434).
 
 ## What it knows about the hardware (AG3)
 
