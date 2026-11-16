@@ -119,8 +119,9 @@ open. Short chats alone: 228.5 against 238.6 tokens per second, first token 0.83
 spread between rounds (207-255 for the same arm). Tried and dropped: padding 17-30 rows to 32
 (PAD2, LAB.md: the probe's serving steps of 17-30 rows cost 74-88 ms against 48-61 ms for 32, but a step of 17-32 tokens
 measured on its own rises evenly, 29-36 ms, and blocks of 20 / 24 / 28 requests cost 58 / 59 / 65 ms a step, so the gap
-came from the steps' contexts, not their width). Open: why serving steps with uneven contexts in the shared pool cost
-up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
+came from the steps' contexts, not their width). Also tried: compacting the KV cache and bounding the kept prefix
+cache (KVD1, LAB.md): equal steps on a T4, kept off. Open: why serving steps with uneven contexts in the shared pool
+cost up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
 
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
 

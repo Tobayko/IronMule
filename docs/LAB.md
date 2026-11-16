@@ -1684,6 +1684,31 @@ Read: a step's width is not what made the probe's 17-30-row steps dear; those st
 whose contexts in the shared pool are uneven, while the 32-row steps came mostly from blocks. Dropped (the engine
 change reverted, the harness mode kept). Open: why such steps cost up to 1.5x a block's step of the same width.
 
+## 2026-11-16 KVD1: the attended KV range on a T4, no gain, kept off
+
+Hypothesis from PAD2: every step attends over the cells up to the highest one in use (llama.cpp `used_max_p1`), and
+the shared pool's 32,768 cells fill from wherever llama.cpp's head stands, so after many requests a step reads most of
+the cache. Two levers, both off unless set: llama.cpp's defragmentation threshold (`IRONMULE_GGML_DEFRAG`) and a budget
+for the cells finished sequences keep as a prefix cache (`IRONMULE_GGML_KEEP`). On this CPU neither changed a step (255
+ms for 8 rows fresh, 231 after 40 kept prompts; 287 with defragmentation). Kaggle T4, `lab/pi3/kaggle_gpu_probe.py` in
+`PI3_MODE=kvd` at e2da4dd, 18 minutes: per arm its own engine, 8 requests fresh, then 60 kept 1,364-token prompts, then
+8 and 32 requests and both arrival patterns; two rounds, the order reversed. tok/s (round 1, round 2):
+
+| arm | 8 fresh | 8 after the fill | 32 after the fill | chat | mixed | cells in use |
+| --- | --- | --- | --- | --- | --- | --- |
+| base | 289, 237 | 230, 212 | 525, 495 | 260, 302 | 84.6, 58.5 | 24,027, 26,389 |
+| defrag 0.1 | 253, 254 | 225, 226 | 502, 498 | 264, 299 | 84.9, 58.1 | 22,757, 26,486 |
+| defrag 0.1, keep a quarter | 252, 253 | 225, 223 | 494, 490 | 260, 300 | 94.6, 60.9 | 7,596, 7,953 |
+
+Facts 49 of 50 in every arm, the 50 fact answers token for token the same as the base's in both others.
+
+Read: after the fill the steps are equally dear in all three arms, though the budget cut the cells in use from about
+25,000 to 7,700; so a step's attended range is not what makes it dear on a T4, and defragmentation does nothing
+measurable either. Mixed traffic with the budget: 94.6 against 84.6 tok/s in the first round, 60.9 against 58.5 in
+the second (all arms lost a third between the rounds), inside the T4's spread. Both levers stay off; the code stays
+for a machine where they pay. The fresh-to-filled drop (about 11 % in every arm) and the 1.5x of uneven serving steps
+remain unexplained.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
