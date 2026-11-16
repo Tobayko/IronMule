@@ -1427,6 +1427,29 @@ at 4 threads, so keeping 4 is right here). Beside one busy process it chose 2 th
 here a foreign process on one hyper-thread also slows its sibling. The 8-request cases at 2 busy processes are
 slow either way (first tokens about 21 s): two cores of an older CPU are not enough for eight 4B requests.
 
+## 2026-11-16 PI1 on a second machine: the Kaggle-trained Pilot
+
+The shipped Pilot (Kaggle seed 21, trained from scratch on two T4) on the same second machine as the entry above: a
+Kaggle CPU session, Intel Xeon @ 2.20GHz (Broadwell, AVX2), 2 cores with 2 threads each, 31 GB, Qwen3-4B Q4_K_M, the
+engine built with `tools/build_ggml.py` (58 min, patches fa1 and row1), `lab/pi1/kaggle_cpu.py` at 68d25f7. tok/s for
+1 / 8 requests, first token in seconds in brackets:
+
+| foreign load | defaults (4 threads) | Pilot | its threads | the weights before |
+| --- | --- | --- | --- | --- |
+| none | 6.10 / 8.65 | 5.99 / 8.63 | 4 | 6.27 / 8.95 (4) |
+| one busy process | 1.12 / 2.72 | **4.75 / 7.21** | 3 | 3.72 / 5.31 (2) |
+| one process busy half of every 20 ms | 4.53 / 7.65 | **4.92** / 7.67 | 3 | 4.83 / 8.10 (4) |
+| two busy processes | 0.88 / 1.68 | **3.93 / 2.89** | 2 | 4.09 / 2.91 (2) |
+
+First tokens: one busy process 1.12 / 3.96 s against 3.50 / 8.12 s with the defaults; two busy processes 0.34 / 21.9 s
+against 1.90 / 22.1 s. Decisions 0.55-0.61 ms a step. Idle, the Pilot attached and detached in turn in one process (4
+rounds): 5.97 / 8.29 against 6.05 / 8.84; its 8-request rounds rose from 7.84 to 8.60 (the first round lowest), so
+the idle cost is between 0 % (the separate runs above) and 6 %. Read: on a machine it never saw, it is 4.2x / 2.7x the
+defaults beside one busy process and 4.5x / 1.7x beside two, 9 % faster for one request beside a half-busy process and
+equal idle. Against the weights before it chooses 3 threads beside one busy process (1.3x / 1.4x faster there) and
+the same elsewhere within a few percent. Eight 4B requests beside two busy processes stay slow for both (first tokens
+about 22 s).
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
