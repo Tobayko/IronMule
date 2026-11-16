@@ -13,6 +13,8 @@ import pytest
 
 from ironmule import kernel_registry as kr
 
+pytestmark = pytest.mark.skipif(not mx.metal.is_available(), reason="needs MLX's Metal back-end")
+
 ADD_ONE = "uint i = thread_position_in_grid.x; out[i] = a[i] + 1.0f;"
 ADD_HUNDRED = "uint i = thread_position_in_grid.x; out[i] = a[i] + 100.0f;"
 

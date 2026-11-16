@@ -8,6 +8,7 @@ shells out, and the Q3f child guard blocks `subprocess.Popen`, so the knob raise
 
 from __future__ import annotations
 
+import platform
 import subprocess
 
 import pytest
@@ -26,6 +27,7 @@ def _restore_wired_owners():
     runtime._WIRED_LIMIT_OWNERS[:] = saved
 
 
+@pytest.mark.skipif(platform.system() != "Darwin", reason="reads macOS's sysctl")
 def test_native_memsize_equals_the_shell_reading():
     native = hw.installed_memory_bytes()
     shell = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True)
@@ -78,6 +80,7 @@ def test_an_unavailable_size_fails_closed(monkeypatch):
     assert touched == [], "a failed read must not change the process-global limit"
 
 
+@pytest.mark.skipif(platform.system() != "Darwin", reason="reads macOS's sysctl")
 def test_a_native_error_is_reported_as_unavailable(monkeypatch):
     class Broken:
         def sysctlbyname(self, *args, **kwargs):

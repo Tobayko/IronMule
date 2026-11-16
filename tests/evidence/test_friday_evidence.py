@@ -276,15 +276,20 @@ class StorageContractTest(unittest.TestCase):
             EvidenceStorage.open(self.path, read_only=True)
 
 
+#: The H1/H2 legacy summaries live in the research repository since the 2026-09-11 layout change.
+LEGACY_SOURCE = PROJECT_ROOT / "experiments" / "legacy_h1h2_summaries_v1.json"
+NO_LEGACY_SOURCE = "the legacy H1/H2 summaries are not in this repository"
+
+
 class LegacyAndDashboardTest(unittest.TestCase):
     def setUp(self) -> None:
+        if not LEGACY_SOURCE.is_file():
+            self.skipTest(NO_LEGACY_SOURCE)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "evidence.sqlite3"
         with EvidenceStorage.open(self.path, initialize=True) as storage:
-            self.outcomes = import_legacy_summaries(
-                storage, PROJECT_ROOT / "experiments" / "legacy_h1h2_summaries_v1.json"
-            )
+            self.outcomes = import_legacy_summaries(storage, LEGACY_SOURCE)
 
     def test_all_legacy_rows_are_explicitly_downgraded(self) -> None:
         self.assertEqual(len(self.outcomes), 10)
@@ -296,9 +301,7 @@ class LegacyAndDashboardTest(unittest.TestCase):
 
     def test_import_is_idempotent(self) -> None:
         with EvidenceStorage.open(self.path) as storage:
-            outcomes = import_legacy_summaries(
-                storage, PROJECT_ROOT / "experiments" / "legacy_h1h2_summaries_v1.json"
-            )
+            outcomes = import_legacy_summaries(storage, LEGACY_SOURCE)
         self.assertTrue(all(item.state == "already_present" for item in outcomes))
 
     def test_snapshot_and_html_show_history_without_writes(self) -> None:
@@ -369,6 +372,8 @@ class EvidenceCliTest(unittest.TestCase):
         return code, json.loads(output.getvalue())
 
     def test_write_commands_require_apply_and_reads_are_explicit(self) -> None:
+        if not LEGACY_SOURCE.is_file():
+            self.skipTest(NO_LEGACY_SOURCE)
         code, report = self.invoke("init")
         self.assertEqual((code, report["state"]), (78, "not_applied"))
         self.assertFalse(self.path.exists())
