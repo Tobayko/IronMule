@@ -134,17 +134,20 @@ the last step went. It then picks four things for the next step:
 3. **how many prompt tokens** may join a step (new guests against those already eating),
 4. **whether the draft model** may guess ahead.
 
-The Pilot itself always runs on the CPU: it is small enough to need no graphics card. Today it steers the model on
-CPUs, where it was trained and measured. The next goal: the Pilot, still on the CPU, steers the model on a GPU so that
-it runs there as fast as the card allows. The CPU path stays ([docs/BACKLOG.md](docs/BACKLOG.md), PI3).
+The Pilot itself always runs on the CPU: it is small enough to need no graphics card. It steers the model on a CPU
+and, since PI3, on a GPU too. On a graphics card the threads no longer matter, but the third choice does: when a long
+document arrives together with short questions, the Pilot lets the short ones start first instead of making everyone
+wait while the document is read. On a Kaggle T4 that halves the wait for the first word, at the same speed of answers.
+The Pilot has two sets of weights for this, one for CPUs and one for GPUs ([docs/LAB.md](docs/LAB.md), PI3).
 
 | | |
 | :-- | :-- |
 | Size | 20 inputs, two layers of 128, four output heads: about 22,000 weights (88 KB) |
-| Decision time | about 0.17-0.19 ms per step in the running server on the 4-vCPU Xeon (0.39 ms before it kept `/proc` open); in a tight loop the whole decision takes about 15 microseconds |
+| Decision time | about 0.17-0.19 ms per step in the running server on the 4-vCPU Xeon (0.39 ms before it kept `/proc` open), about 0.11 ms beside a T4 (no CPU load to read there); in a tight loop the whole decision takes about 15 microseconds |
 | Training | from scratch (random start, no earlier model), by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load, after a short warm start from a teacher: 47 minutes on two Kaggle T4 GPUs (8,192 dreamed servers at once, 200 rounds). The dream copies what the real machine does, down to a detail found on it: when IronMule leaves a core free, the server's own background services run there and look like a busy program; the Pilot learned that this is no reason to give up a core |
 | In the dream | 240 s of dreamed serving on 1,024 random machines: 9.5 % more tokens than the engine's defaults and 74 % less waiting, and slightly ahead of the best hand rule ("threads = free cores") |
 | On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy. One busy program: 7.38 and 28.9 tokens per second for 1 and 8 users, against 1.59 and 6.65 with the defaults (4.6x and 4.3x); two: 5.56 and 20.7 against 0.29 and 1.75 (19x and 12x); half-busy: 7.64 and 28.2 against 5.90 and 23.1 (1.3x and 1.2x); idle as fast as the defaults (10.1 and 36.0 against 10.1 and 36.2). Mean of two rounds, 64-token answers ([docs/LAB.md](docs/LAB.md), PI2). On a second, older CPU it never saw (a Kaggle Xeon with 2 cores and hyper-threads) it is 3.1x the defaults for one user beside one busy program (4.25 against 1.36 tokens per second) and 4.8x beside two (2.75 against 0.57), equal when idle |
+| On a GPU | Kaggle T4, Qwen3-4B Q4_K_M, GPU weights trained from scratch in 41 minutes on two T4 in a dream built from the T4's measured costs. Requests arriving one after another, 30 % of them a 1,364-token document: the first word after 5.2 s on average instead of 11.8 s (median 1.35 s instead of 13.3 s), 80.3 against 75.4 tokens per second. 8 and 32 requests at once: the same speed (206.5 against 205.9 and 486.7 against 490.0 tokens per second), the first word sooner (0.15 against 0.17 s and 0.43 against 0.62 s). Short chats only: within the card's own spread (228.5 against 238.6 tokens per second, first word 0.83 against 0.68 s on average). 49 of 50 facts right with and without it |
 | Answers | unchanged: every decision is a scheduling or threading choice |
 | Safety | without weights, with inputs outside what it was trained on, or with `IRONMULE_PILOT=0`, the engine keeps its own defaults |
 

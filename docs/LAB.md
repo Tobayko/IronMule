@@ -1634,6 +1634,40 @@ Pilot now ships two weight files: `pilot_weights.npz` (v6) where the layers run 
 (seed 80) where they run on a GPU; there the threads do not matter (probe, part A) and its cap and budget decisions
 are what the T4 check below measures.
 
+The T4 check: Kaggle T4, `lab/pi3/kaggle_gpu_probe.py` in `PI3_MODE=check` at 1b7dbbb (seed 80 shipped there as the
+engine's weights, the same file as `pilot_weights_gpu.npz`), 27 minutes, the probe's setup. The defaults ran first in
+the first round, while the T4 still ran at its higher starting clock (53.8 against 36.1 tok/s for one request), so the
+first round is left out below (all rounds: the same direction, mixed 86.6 against 84.8 tok/s and 5.11 against 10.13 s).
+Blocks of requests at once, 128 tokens, tok/s (mean first token): defaults 2 rounds, seed 80 3 rounds.
+
+| requests at once | defaults | seed 80 (cap 32, budget 128) |
+| --- | --- | --- |
+| 1 | 36.2 (0.048 s) | 36.0 (0.048 s) |
+| 8 | 205.9 (0.169 s) | 206.5 (**0.145 s**) |
+| 32 | 490.0 (0.623 s) | 486.7 (**0.429 s**) |
+
+Arriving requests, rounds 2-4 (the arm order rotated each round), tok/s and first token mean / median / 90th
+percentile in seconds:
+
+| arm | chat | mixed (30 % documents) |
+| --- | --- | --- |
+| defaults | 238.6, 0.68 / 0.16 / 2.53 | 75.4, 11.76 / 13.28 / 19.70 |
+| **seed 80** | 228.5, 0.83 / 0.17 / 3.14 | **80.3, 5.22 / 1.35 / 16.95** |
+| v6 | 233.9, 0.72 / 0.17 / 2.82 | 75.5, 12.05 / 13.59 / 20.46 |
+| prompt budget 512 held | 228.8, 0.80 / 0.17 / 3.24 | 76.9, 5.80 / 1.93 / 19.24 |
+
+It decided cap 32, budget 128, 4 threads, drafts on in all 5,904 steps (v6: budget open in all 2,285). With the draft
+model (2 rounds; tok/s for 1 / 8 requests and chat): defaults 54.4, 34.7 / 251, 199 / 325, 296; seed 80 36.0, 36.0 /
+203, 208 / 312, 297 (the defaults' first round again at the starting clock). Answers: 49 of 50 facts with the defaults
+and with seed 80, 49 of 50 answers token for token the same.
+
+Read: with documents among chats the first token comes 2.3x sooner (median 9.8x) and 6 % more tokens per second come
+out; for 8 and 32 requests at once the first token comes 14 % and 31 % sooner at the same tokens per second (budget 128
+lets three short prompts start per step instead of all 32 in one long step); one request is unchanged. For short chats
+alone seed 80 and a held budget of 512 are 4 % below the defaults, inside the spread of the rounds (the same arm 207-255
+tok/s), so whether a budget costs anything there is not settled. The GPU weights ship (BACKLOG PI3 has the kill rule's
+reading). Next on a GPU: padding 17-31 rows to 32.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

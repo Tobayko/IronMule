@@ -15,7 +15,8 @@ trained from scratch by reinforcement learning in a dreamed world -- a world mod
 and never on a production server; its weights ship as `pilot_weights.npz` (open weights). An engine whose layers run on a
 GPU uses `pilot_weights_gpu.npz` instead (PI3): weights trained in a dream world with a GPU's measured costs, whose
 decisions there were checked on a T4, while their thread decisions on CPUs were not as steady as the CPU weights'. The network takes a few tens
-of microseconds in numpy; with the CPU load from `/proc` a decision takes about 0.17-0.19 ms in the running server (PI1, PI2). It never changes
+of microseconds in numpy; with the CPU load from `/proc` a decision takes about 0.17-0.19 ms in the running server (PI1, PI2), about 0.11 ms
+beside a GPU, where no CPU load is read (PI3). It never changes
 what the model answers: every decision is a scheduling or threading choice.
 
 Safety: without the weights file, with features outside the ranges it was trained on, or with `IRONMULE_PILOT=0`, the

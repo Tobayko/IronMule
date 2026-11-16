@@ -87,7 +87,7 @@ card allows (PI3); (3) the CPU serving path, the ggml engine with the Pilot as i
 tests and numbers; (4) a gain counts only on the hardware it was measured on. The owner was told this reading and may
 correct it.
 
-### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; open)
+### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; GPU weights shipped, two parts open)
 
 **Why.** The owner's goal above: the Pilot keeps running on the CPU, and the model it steers is to run perfectly on
 the GPU. Today the Pilot's thread head means nothing when the layers run on a GPU, and the
@@ -106,6 +106,18 @@ reference engine.
 first token no later, at 1, 8 and 32 requests, the GPU heads stay off and the defaults serve there.
 
 **Cost.** GPU training and the T4 measurement spend Kaggle GPU quota and need the owner's approval before each push.
+
+**Result (2026-11-16, LAB.md, PI3 probe and PI3).** Approved by the owner: about 3.5 GPU hours in three steps; used
+1.9 (probe 47 min, training 41 min, check 27 min). On a T4 the host threads and CPU load do not matter and the cap
+must stay at its maximum; the prompt budget is the decision that pays. GPU weights (`pilot_weights_gpu.npz`, world v7,
+from scratch) serve an engine on a GPU. Against the kill rule above: tokens per second equal at 1, 8 and 32 requests
+(36.0 / 206.5 / 486.7 against 36.2 / 205.9 / 490.0), not faster, with the first token no later (0.048 / 0.145 / 0.43
+against 0.048 / 0.169 / 0.62 s); with documents among arriving chats 80.3 against 75.4 tokens per second and the first
+token 5.22 against 11.76 s. Read post hoc: the rule asked for more tokens per second, the gain is in the first token
+at the same tokens per second, so the weights ship as a first-token gain and the rule's tokens-per-second part stays
+open. Short chats alone: 228.5 against 238.6 tokens per second, first token 0.83 against 0.68 s, inside the T4's own
+spread between rounds (207-255 for the same arm). Open: padding 17-31 rows to 32 (the probe: 72-81 ms against 49 ms a
+step, a tokens-per-second gain for 17-31 running requests) and the GPU a new request joins when there are several.
 
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
 
