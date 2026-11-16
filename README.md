@@ -134,8 +134,9 @@ the last step went. It then picks four things for the next step:
 3. **how many prompt tokens** may join a step (new guests against those already eating),
 4. **whether the draft model** may guess ahead.
 
-Today the Pilot steers IronMule on CPUs, where it was trained and measured. The next goal is the same on GPUs: IronMule
-is to be fast on both, and the CPU path stays ([docs/BACKLOG.md](docs/BACKLOG.md), PI3).
+The Pilot itself always runs on the CPU: it is small enough to need no graphics card. Today it steers the model on
+CPUs, where it was trained and measured. The next goal: the Pilot, still on the CPU, steers the model on a GPU so that
+it runs there as fast as the card allows. The CPU path stays ([docs/BACKLOG.md](docs/BACKLOG.md), PI3).
 
 | | |
 | :-- | :-- |

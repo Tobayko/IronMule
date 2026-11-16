@@ -78,16 +78,19 @@ llama.cpp's quality when its perplexity on the gate's chunks is within NUM1's bo
 GGUF (the ratio's 95 % upper end at most 1.005); a comparison then gives `llama-server` the same options. GG3 and LC2
 below carry it out. The owner was told this reading and may correct it.
 
-**GPU and CPU, both first-class (owner, 2026-11-16).** "The LLM IronMule optimises is to be optimised for the GPU, but
-also the CPU; we don't throw that away." Read as: (1) the GPU path is a main target of the agent and of the Pilot, not
-a side branch; (2) the CPU path, the ggml engine and the Pilot as it decides there today, stays and keeps its tests and
-numbers; (3) a gain counts only on the hardware it was measured on, so a CPU result says nothing about a GPU and the
-other way round. The Pilot so far decides only CPU-side steps (threads, cap, prompt budget, draft) and was measured
-only on CPUs; PI3 below carries the goal to GPUs. The owner was told this reading and may correct it.
+**IronMule on the CPU, the model perfect on the GPU (owner, 2026-11-16).** First: "The LLM IronMule optimises is to
+be optimised for the GPU, but also the CPU; we don't throw that away." Then, correcting the first reading: "No,
+IronMule is to run on the CPU, and what is optimised is to be perfect for the GPU." Read as: (1) IronMule's decisions,
+the agent and the Pilot, run on the CPU, and stay fast enough there to decide every step in milliseconds; (2) the
+served LLM is what they optimise, and its main target is the GPU: the Pilot is to steer it there to the best speed the
+card allows (PI3); (3) the CPU serving path, the ggml engine with the Pilot as it decides there today, stays with its
+tests and numbers; (4) a gain counts only on the hardware it was measured on. The owner was told this reading and may
+correct it.
 
 ### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; open)
 
-**Why.** The owner's goal above. Today the Pilot's thread head means nothing when the layers run on a GPU, and the
+**Why.** The owner's goal above: the Pilot keeps running on the CPU, and the model it steers is to run perfectly on
+the GPU. Today the Pilot's thread head means nothing when the layers run on a GPU, and the
 other heads (running cap, prompt budget, draft) were trained only on CPU step costs. On a T4 the engine's costs have a
 different shape: small batches are dear (PAD1), a full prompt costs little next to decoding, and the draft model and
 generated kernels change the price of a step (MG2, KG2).
