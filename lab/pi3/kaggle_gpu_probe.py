@@ -27,6 +27,12 @@ decisions the Pilots take are counted.
 PI3_MODE=pad2: the engine with its own padding table measured up to 32 tokens ("pad2") against the same table cut at
 16 ("pad1"), the shipped Pilot deciding in both: blocks of 20 / 24 / 28 requests (128 tokens, 3 rounds), both arrival
 patterns (4 rounds), and the 50 facts 25 at a time (so that the steps have 17-30 rows) through both.
+
+PI3_MODE=kvd: KVD1. Each arm opens its own engine (llama.cpp reads the defragmentation threshold when the context is
+made): "base" (as shipped), "defrag" (IRONMULE_GGML_DEFRAG=0.1), "keep" (defrag and finished sequences may keep a
+quarter of the cells). Per arm and round: 8 requests at once fresh, then 60 long prompts that finish and stay as the
+prefix cache (pushing the cells up the cache), then 8 and 32 requests at once, both arrival patterns, and the 50 facts 8
+at a time; two rounds, the arm order reversed in the second.
 Writes /kaggle/working/pi3_probe.json. MG2_COMMIT names the commit to fetch.
 """
 import json, math, multiprocessing as mp, os, random, sys, time
@@ -37,7 +43,8 @@ LOCAL = os.environ.get("PI3_LOCAL")  # a CPU smoke of this file: the repository,
 W = Path(LOCAL or "/kaggle/working")
 SMOKE = bool(LOCAL)
 CHECK = os.environ.get("PI3_MODE") == "check"
-PAD2 = os.environ.get("PI3_MODE") == "pad2"  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
+PAD2 = os.environ.get("PI3_MODE") == "pad2"
+KVD = os.environ.get("PI3_MODE") == "kvd"  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
 OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
@@ -244,6 +251,52 @@ def main():
         return {"tok_s": round(tok / wall, 2), "tokens": tok, "wall": round(wall, 2), "done": len(e2e),
                 "ttft_mean": round(sum(ttft) / max(1, len(ttft)), 3), "ttft_p50": q(ttft, 0.5), "ttft_p90": q(ttft, 0.9),
                 "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9)}
+
+    if KVD:
+        import ironmule.ggml_engine as ge
+
+        OUT["kvd"], answers = [], {}
+        arms = [("base", 0.0, 1.0), ("defrag", 0.1, 1.0), ("keep", 0.1, 0.25)]
+        for rep in range(1 if SMOKE else 2):
+            for arm, thold, keep in (arms if rep == 0 else arms[::-1]):
+                ge.DEFRAG, ge.KEEP = thold, keep
+                e, tok_ = open_engine()
+                tok = tok_
+                collect(e, f"{arm}_{rep}")
+                fact_ids = [tok(p) for p in fact_prompts]
+                e.run([Job(ids_of(chat_text(0)), 16)])
+                row = {"arm": arm, "rep": rep, "fresh8": block(e, 8, 8 if SMOKE else 128)}
+                t0 = time.time()
+                for k in range(4 if SMOKE else 60):
+                    e.run([Job(ids_of(doc_text(k)), 4)])
+                row["fill_s"] = round(time.time() - t0, 1)
+                row["after8"] = block(e, 8, 8 if SMOKE else 128)
+                row["after32"] = block(e, 8 if SMOKE else 32, 8 if SMOKE else 128, blocks=1)
+                row["chat"] = stream(e, "chat", 600 + rep)
+                row["mixed"] = stream(e, "mixed", 700 + rep)
+                row["pool"] = e.summary().get("shared_pool")
+                if rep == 0:
+                    got = []
+                    for k in range(0, 8 if SMOKE else len(fact_ids), 8):
+                        js = [Job(i, 48) for i in fact_ids[k:k + 8]]
+                        e.run(js)
+                        got += [j.tokens for j in js]
+                    answers[arm] = got
+                OUT["kvd"].append(row)
+                print(json.dumps(row), flush=True)
+                e.observer = None
+                e.close()
+                save()
+        ge.DEFRAG, ge.KEEP = 0.0, 1.0
+        proc, port = mg2.server(gguf, 1, "0", "layer" if LOCAL else "none")
+        try:
+            OUT["facts"] = {arm: mg2.correct([mg2.detok_server(port, i) for i in v], facts) for arm, v in answers.items()}
+        finally:
+            mg2.stop(proc)
+        OUT["same_tokens"] = {arm: sum(a == b for a, b in zip(answers["base"], v)) for arm, v in answers.items()}
+        OUT["finished"] = time.time()
+        save()
+        return
 
     # ---- engine 1: no draft model ------------------------------------------------------------------------------------
     e, tok_ = open_engine()

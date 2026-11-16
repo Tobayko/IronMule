@@ -464,6 +464,22 @@ def test_sp1_a_full_pool_evicts_finished_sequences_first_and_otherwise_makes_a_r
     assert pool.place([7000 + i for i in range(150)], 20) is None  # 150 used + 22 reserved + 172 > 300: it waits
 
 
+def test_kvd1_a_keep_budget_evicts_the_oldest_finished_sequences_when_a_request_ends():
+    pool, calls = _pool_engine(cells=1000, cap=4)
+    pool.keep_cells = 250
+    for k in range(3):  # three finished requests of 100 cells each, nothing shared
+        ids = [1000 * (k + 1) + i for i in range(100)]
+        seq, _ = pool.place(ids, 5)
+        pool.sync(seq, ids, 5)
+        pool.release(seq, ids)
+    assert pool.kept_cells() == 200 and list(pool.kept) == [1, 2] and ("rm", 0, -1, -1) in calls
+    seq, keep = pool.place([2000 + i for i in range(100)] + [7], 5)  # a kept prefix still serves while it is kept
+    assert keep == 100
+    pool.keep_cells = None  # without a budget every finished sequence stays until the cells are needed
+    pool.release(seq, [2000 + i for i in range(100)] + [7, 8])
+    assert pool.kept_cells() == 202
+
+
 def test_sp1_a_finished_sequence_is_continued_past_the_shared_prefix():
     pool, calls = _pool_engine()
     pool.place(list(range(50)) + [1, 2], 5)
