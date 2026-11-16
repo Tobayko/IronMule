@@ -1450,6 +1450,35 @@ equal idle. Against the weights before it chooses 3 threads beside one busy proc
 the same elsewhere within a few percent. Eight 4B requests beside two busy processes stay slow for both (first tokens
 about 22 s).
 
+## 2026-11-16 PI1 decision time: /proc reread through open files
+
+The Pilot's decision took about 0.4 ms a step in the running server, against 15 us in a loop. Split on the 4-vCPU
+Xeon, 60 ms between decisions (as between engine steps): opening and reading `/proc/stat` and `/proc/self/stat` 190-250
+us, the features 50 us, the network 60 us, the four argmaxes 26 us; after a step Python's code is out of the caches.
+Two changes, the same decisions as before on 6,000 random inputs (machines, costs, loads, queues):
+
+- `CpuLoad` keeps both files open and rereads them with `pread` (about 50 us instead of 190 us);
+- the range check and the argmaxes in plain Python on the 20 features and the 21 logits.
+
+Tried first and dropped: reading the load in a background thread every 50 ms. Decisions took 0.114 ms instead of 0.40,
+but idle with 8 requests the engine made 37.9 / 38.0 tok/s against 39.7 / 39.7 in two rounds: its wake-ups push a
+llama.cpp thread off its core.
+
+Real engine, `lab/pi1/real.py`, Qwen3-4B Q8_0, shared pool, 64-token answers, tok/s for 1 / 8 requests, two rounds
+(new, old, defaults in that order):
+
+| foreign load | new | old | defaults |
+| --- | --- | --- | --- |
+| none | 9.28 / 39.62, 9.67 / 39.14 | 9.37 / 40.40, 9.34 / 40.64 | 9.39 / 40.76, 9.91 / 40.57 |
+| one busy process | 7.13 / 31.60, 7.44 / 32.28 | 7.29 / 31.35, 7.12 / 32.96 | 0.33 / 2.07, 0.33 / 2.06 |
+| one process busy half of every 20 ms | 7.17 / 31.33, 7.60 / 32.98 | 7.26 / 31.05, 7.36 / 32.22 | 5.29 / 22.30, 5.26 / 22.76 |
+| decision | 0.184-0.192 ms | 0.386-0.401 ms | - |
+
+Idle, 8 requests, in mixed order (old new def new old def def old new): new 40.16 / 40.47 / 38.53, old 40.27 / 39.22 /
+38.90, defaults 41.60 / 39.58 / 40.04 tok/s. Read: a decision takes half the time (0.19 ms); the speed is the same as
+before within the run-to-run spread (38.5-41.6 idle), and the 2-3 % idle gap of the first table was the run order.
+Beside a busy process the Pilot stays 15-22x the defaults, beside a half-busy one 1.4x. Shipped.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
