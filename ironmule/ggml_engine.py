@@ -885,6 +885,8 @@ class GgmlEngine:
                 # budget (whole prompts, at least one), and one passed over too often first
                 fresh: list[tuple[int, Job, int]] = []
                 budget = min(PROMPT_BUDGET or self.seq_ctx, decision["budget"])
+                if self.pool is not None and not PROMPT_BUDGET and decision["budget"] >= 1 << 30:
+                    budget = 1 << 62  # the shared pool takes every waiting prompt that fits, unless a budget is set
                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
@@ -901,6 +903,9 @@ class GgmlEngine:
                         with self._lock:
                             pooled = self.pool.longest(job.ids)[1]
                         if any(self._common(other.ids, job.ids) >= pooled + SHARE_WAIT for _, other, _ in fresh):
+                            continue
+                        if fresh and len(job.ids) - pooled > budget:  # PI2: the step's prompt budget (the Pilot's)
+                            job.passed_over += 1
                             continue
                         with self._lock:
                             placed = self.pool.place(job.ids, job.limit)
