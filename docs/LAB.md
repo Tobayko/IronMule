@@ -1592,6 +1592,48 @@ low and let prompts in oldest first, where the engine takes the shortest first. 
 and the engine's order, a Pilot trained from scratch in it, and a check on the T4. Seen in passing: 17-31 rows cost 1.5x
 what 32 rows cost, so padding them to 32 (as PAD1 pads 4-8 to 9) is an engine gain of its own.
 
+## 2026-11-16 PI3: GPU weights for the Pilot (dream world v7)
+
+Dream world v7 (private) takes the probe's T4 costs into its GPU servers: each further unpadded row 0.06-0.45 of a
+one-row step, 1,000 prompt tokens 8-90 of it, attention 0.0002-0.05 of it, PAD1's step staircase (a step of r rows
+costs min(1 + u (r - 1), P1 + s2 (r - 16)) one-row steps), a quarter of them the measured T4 class; documents among
+chats (in half the servers 5-45 % of the prompts are 6-50x longer); waiting prompts let in as the engine does (one
+passed over 8 times first, then the shortest), where v6 took the oldest first; GPU servers 45 % of the dream instead
+of 20 %. Its replay of the probe's mixed traffic: prompt budget 512 3.15 s to the first token against 4.37 s with
+every prompt let in (-28 %; the T4: -46 %), the same tokens per second; small caps lose there as on the T4.
+
+Trained from scratch on Kaggle (two T4, seeds 80 and 81, 8,192 dreamed servers, 180 PPO iterations, 41 minutes,
+private kernel `ironmule-pilot-train` v6). Dream reward per server over 240 s (tokens, wait s, first token s):
+
+| | all servers | GPU servers only (120 s) |
+| --- | --- | --- |
+| defaults | -1122.9 (16,189, 17,699, 16.1) | -62.5 (16,418, 857, 2.48) |
+| hand rule (threads = free cores) | -150.5 (16,867, 1,888, 5.23) | -- |
+| prompt budget 512 held | -- | -59.0 (16,460, 861, 2.40) |
+| **seed 80** | **-142.9** (16,899, 1,948, 5.05) | -63.1 (16,352, 884, 2.49) |
+| seed 81 | -151.6 (16,831, 1,896, 5.34) | -66.3 (16,411, 898, 2.60) |
+
+On the probe's measured T4 costs seed 80 keeps the cap at 32 and a prompt budget of 128 in every state tried (idle,
+8-30 running, chats and documents waiting); seed 81 keeps every budget open, as v6 did.
+
+Seed 80 on the CPU (this 4-vCPU Xeon, `lab/pi1/real.py`, Qwen3-4B Q8_0, two rounds in alternating order against the
+shipped v6 weights, tok/s for 1 / 8 requests, first token of 8 in brackets, its threads per round):
+
+| foreign load | seed 80 | v6 |
+| --- | --- | --- |
+| none | 10.05 / 37.99 (1.19 s), 4 / 4 | 10.18 / 36.70 (1.55 s), 3-4 / 4 |
+| one busy process | 5.43 / 22.71 (0.94 s), 3 / 2 | **7.78 / 30.34** (0.71 s), 3 / 3 |
+| two busy processes | 5.64 / 21.34 (0.53 s), 2 / 2 | 5.64 / 22.14 (0.53 s), 2 / 2 |
+| one process busy 25 % of every 20 ms | 7.01 / 27.91 (0.40 s), 3 / 4 | 7.42 / 30.28 (0.40 s), 3 / 3 |
+| one process busy 50 % of every 20 ms | 6.18 / 28.43 (0.46 s), 3 / 3 | **8.12 / 31.45** (0.36 s), 3 / 3 |
+
+Read: idle, its budget of 128 brings the first of 8 tokens 23 % sooner (1.19 against 1.55 s), but its threads are not
+steady: beside one busy process it took 3 threads in one round and 2 in the other (3.84 against 7.90 tok/s for one
+request there), beside the 25 % process 4 threads in the second round; 9 % below v6 over the ten cells. So the
+Pilot now ships two weight files: `pilot_weights.npz` (v6) where the layers run on the CPU, `pilot_weights_gpu.npz`
+(seed 80) where they run on a GPU; there the threads do not matter (probe, part A) and its cap and budget decisions
+are what the T4 check below measures.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

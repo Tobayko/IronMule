@@ -12,7 +12,9 @@ their prompts and contexts are -- and decides four things for the next step:
 
 The network is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads), about 22,000 weights. It was
 trained from scratch by reinforcement learning in a dreamed world -- a world model of serving built from measurements --
-and never on a production server; its weights ship as `pilot_weights.npz` (open weights). The network takes a few tens
+and never on a production server; its weights ship as `pilot_weights.npz` (open weights). An engine whose layers run on a
+GPU uses `pilot_weights_gpu.npz` instead (PI3): weights trained in a dream world with a GPU's measured costs, whose
+decisions there were checked on a T4, while their thread decisions on CPUs were not as steady as the CPU weights'. The network takes a few tens
 of microseconds in numpy; with the CPU load from `/proc` a decision takes about 0.17-0.19 ms in the running server (PI1, PI2). It never changes
 what the model answers: every decision is a scheduling or threading choice.
 
@@ -37,6 +39,7 @@ DRAFTS = (0, 1)
 HEADS = (len(THREAD_FRACTIONS), len(CAPS), len(BUDGETS), len(DRAFTS))
 OBS = 20
 WEIGHTS = Path(__file__).with_name("pilot_weights.npz")
+WEIGHTS_GPU = Path(__file__).with_name("pilot_weights_gpu.npz")  # PI3: the weights for an engine on a GPU
 VERSION = 2  # 2 (PI2): five prompt budgets, the shared pool honours them
 _HEAD_SLICES = tuple((sum(HEADS[:i]), sum(HEADS[:i + 1])) for i in range(len(HEADS)))
 
@@ -134,7 +137,9 @@ class Pilot:
         self.load = CpuLoad()
         self.reason: str | None = None
         self.w = None
-        path = weights or Path(os.environ.get("IRONMULE_PILOT_WEIGHTS") or WEIGHTS)
+        default = WEIGHTS_GPU if self.gpu and WEIGHTS_GPU.exists() else WEIGHTS
+        path = weights or Path(os.environ.get("IRONMULE_PILOT_WEIGHTS") or default)
+        self.weights_name = path.name
         if os.environ.get("IRONMULE_PILOT", "1") == "0":
             self.reason = "turned off (IRONMULE_PILOT=0)"
         elif not path.exists():
@@ -223,11 +228,13 @@ class Pilot:
         self.load.close()
 
     def status(self) -> dict[str, Any]:
-        return {"version": VERSION, "active": self.active, "reason": self.reason, "cores": self.cores,
+        return {"version": VERSION, "active": self.active, "reason": self.reason, "weights": self.weights_name,
+                "cores": self.cores,
                 "foreign_cores": round(self.load.foreign, 2), "decision": self.apply(self.cur) if self.active else None,
                 "decisions": self.decisions,
                 "decide_us_mean": round(self.decide_us / self.decisions, 1) if self.decisions else None,
                 "out_of_range": self.out_of_range}
 
 
-__all__ = ["BUDGETS", "CAPS", "HEADS", "OBS", "Pilot", "THREAD_FRACTIONS", "CpuLoad", "usable_cores"]
+__all__ = ["BUDGETS", "CAPS", "HEADS", "OBS", "WEIGHTS", "WEIGHTS_GPU", "Pilot", "THREAD_FRACTIONS", "CpuLoad",
+           "usable_cores"]
