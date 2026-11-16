@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -193,7 +194,13 @@ def test_the_preflight_compares_logits_and_state_bit_for_bit_at_every_capacity_t
     result = kp.compare_class_a(model, tokenizer, {**kp.BASELINE_KNOBS, "readback_every": 4}, prompts,
                                 [64, 128, 192, 128], 6)
     assert result["ok"] and result["differ"] == []
-    assert kp.compare_class_a(model, tokenizer, kp.kp1_knobs(), prompts, [128], 6)["ok"]  # a CPU smoke, not T4 evidence
+    compiled = kp.compare_class_a(model, tokenizer, kp.kp1_knobs(), prompts, [128], 6)  # a CPU smoke, not T4 evidence
+    # Whether the compiled step matches the eager one bit for bit is a property of the CPU's kernels: Apple's CPU and
+    # the 4-vCPU Xeon of the cloud sessions match, a hosted Linux runner did not (2026-11-16). The preflight decides it
+    # per machine and fails closed; what holds everywhere is that it reports every difference it finds.
+    assert compiled["ok"] == (compiled["differ"] == []) and len(compiled["rows"]) == 2
+    if sys.platform == "darwin":
+        assert compiled["ok"]
     assert [(r["capacity"], r["prompt"]) for r in result["rows"]] == [
         (64, "short"), (128, "short"), (128, "long"), (192, "short"), (192, "long")]  # 89 + 6 + 8 > 64
     from ironmule import runtime
