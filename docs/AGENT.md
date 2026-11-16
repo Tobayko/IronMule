@@ -258,6 +258,10 @@ AG10 chooses a configuration while idle; the Pilot (`ironmule/pilot.py`) decides
 is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,000 weights) whose weights ship as
 `ironmule/pilot_weights.npz` (open weights; the world it was trained in and the recipe are not published).
 
+*Scope (owner goal 2026-11-16, BACKLOG PI3).* The Pilot is to decide on GPU machines as well as on CPUs. Today it
+decides CPU-side steps of the ggml engine and was trained and measured on CPUs only; the GPU heads and their
+measurement are open under PI3.
+
 - *What it reads (20 features):* the cores this process may use (affinity and cgroup quota), how many of them other
   programs keep busy (`/proc/stat` minus this process's own CPU time, read at most every 50 ms), this machine's step
   costs measured when the engine starts (one row, each further row, 1,000 prompt tokens, 1,000 attended tokens),

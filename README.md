@@ -134,6 +134,9 @@ the last step went. It then picks four things for the next step:
 3. **how many prompt tokens** may join a step (new guests against those already eating),
 4. **whether the draft model** may guess ahead.
 
+Today the Pilot steers IronMule on CPUs, where it was trained and measured. The next goal is the same on GPUs: IronMule
+is to be fast on both, and the CPU path stays ([docs/BACKLOG.md](docs/BACKLOG.md), PI3).
+
 | | |
 | :-- | :-- |
 | Size | 20 inputs, two layers of 128, four output heads: about 22,000 weights (88 KB) |
