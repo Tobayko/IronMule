@@ -60,6 +60,10 @@ COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
 # Only with one unified KV cache: per-sequence caches split a step whose sequences carry different token counts into
 # several passes (MG2 v5, 8 requests on a T4: 271 tok/s with the shared pool, 95 per-sequence, 150 per-sequence unpadded).
 PAD = os.environ.get("IRONMULE_GGML_PAD", "")
+# PAD2 (PI3): on a GPU the measurement goes on to 32 tokens: on a T4 a step of 17-30 rows cost 74-88 ms against 48-61 ms
+# for 31-32 (median of 77,000 serving steps, Qwen3-4B Q4_K_M; docs/LAB.md, PI3 probe), so a step of 17-30 is filled to
+# 32 where the startup measurement shows 32 at least 5 % cheaper, and left alone where it does not.
+PAD_ROWS = int(os.environ.get("IRONMULE_GGML_PAD_ROWS", 32))
 # KG1 (2026-11-15): a kernel library generated and tuned for this GPU (ironmule/kernel_gen.py), loaded by llama.cpp's
 # kg1 hook from IRONMULE_KG_LIB. The engine measures its own step for 1-8 tokens with the library on and off at
 # startup and keeps it only for the token counts where the step is faster.
@@ -501,14 +505,16 @@ class GgmlEngine:
 
     def measure_padding(self, repeats: int = 5) -> dict[int, int]:
         """PAD1: a verify step's seconds for 1 to `max_rows` tokens of one sequence (median of `repeats`), and for each
-        token count the larger count to fill it to when that one is measured at least 5 % cheaper."""
+        token count the larger count to fill it to when that one is measured at least 5 % cheaper. PAD2: on a GPU the
+        counts go on to PAD_ROWS (three repeats each above `max_rows`)."""
         bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
         self._clear()
         self._decode([(bos, j, 0, j == 63) for j in range(64)])
         prices: dict[int, float] = {}
-        for t in range(1, self.max_rows + 1):
+        top = max(self.max_rows, min(PAD_ROWS, LLAMA_MAX_SEQ)) if self.gpu_layers else self.max_rows
+        for t in range(1, top + 1):
             times = []
-            for _ in range(repeats + 1):
+            for _ in range((repeats if t <= self.max_rows else 3) + 1):
                 started = time.perf_counter()
                 self._decode([(bos, 64 + j, 0, True) for j in range(t)])
                 times.append(time.perf_counter() - started)
