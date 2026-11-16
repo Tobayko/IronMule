@@ -269,7 +269,7 @@ measurement are open under PI3. The CPU serving path stays.
   price, the running, queued and waiting prompt tokens, the mean context, arrival and token rates, its own last
   choices and the draft acceptance seen.
 - *What it decides:* the step's CPU threads (an eighth to all of the usable cores), the running cap (1-64), the prompt
-  tokens a step may take (256 to unlimited) and whether the draft model may draft. None of these changes an answer.
+  tokens a step may take (32, 128, 512, 2,048 or unlimited; the shared pool honours it since PI2) and whether the draft model may draft. None of these changes an answer.
 - *Why threads matter:* llama.cpp splits each matmul across its threads and waits at a barrier for the slowest.
   When a foreign process holds a core, the thread on it runs only part of the time and every other thread waits:
   on the 4-vCPU Xeon with Qwen3-4B Q8_0 a one-row step took 2.42 s with one busy foreign process at 4 threads and
@@ -279,7 +279,13 @@ measurement are open under PI3. The CPU serving path stays.
   3 threads unharmed, while the load reader saw only 0.0-0.2 / 0.23-0.32 / 0.44-0.51 cores of it (lab/pi1/half.py).
 - *How it was trained:* from scratch (random start), in a dreamed world: a simulator of continuous batching whose step
   times follow the measured costs and the measured contention collapse, randomised over machines, models, traffic and
-  foreign load. The shipped weights (2026-11-15, world v4): a warm start that copies a teacher knowing the dream's true
+  foreign load. The shipped weights (version 2, 2026-11-16, world v6; LAB.md, PI2): from scratch, a warm start copying a
+  teacher that knows the dream's true foreign load, then PPO, 47 minutes on two Kaggle T4 GPUs (seed 70 of two). World
+  v6 adds what the real machine showed: with a core left free the daemons of a quiet server run on it and are seen as
+  foreign load (0.12 cores at 3 of 4 threads, about 0 at 4); the world-v5 weights before them took that for a busy
+  process and stayed at 3 threads on an idle machine. On the 4-vCPU Xeon they are on par with version 1 (+0.1 % tokens
+  per second over 15 load cases, ahead idle, behind for one request beside a process busy 25 % of the time) and decide
+  in 0.17 ms. Version 1 (2026-11-15, world v4): a warm start that copies a teacher knowing the dream's true
   foreign load, then PPO; 49 minutes on two Kaggle T4 GPUs (seed 21 of two; the CPU run before it chose differently
   in two passes near a boundary on the real machine, LAB.md). Copying the visible-load rule instead (threads = free cores)
   left two from-scratch runs at 4 threads beside a half-busy process, where 3 are 1.4x faster: that rule cannot see

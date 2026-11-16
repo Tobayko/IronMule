@@ -13,7 +13,7 @@ their prompts and contexts are -- and decides four things for the next step:
 The network is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads), about 22,000 weights. It was
 trained from scratch by reinforcement learning in a dreamed world -- a world model of serving built from measurements --
 and never on a production server; its weights ship as `pilot_weights.npz` (open weights). The network takes a few tens
-of microseconds in numpy; with the CPU load from `/proc` a decision took about 0.11 ms in a busy server (PI1). It never changes
+of microseconds in numpy; with the CPU load from `/proc` a decision takes about 0.17-0.19 ms in the running server (PI1, PI2). It never changes
 what the model answers: every decision is a scheduling or threading choice.
 
 Safety: without the weights file, with features outside the ranges it was trained on, or with `IRONMULE_PILOT=0`, the

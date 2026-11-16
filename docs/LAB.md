@@ -1479,6 +1479,47 @@ Idle, 8 requests, in mixed order (old new def new old def def old new): new 40.1
 before within the run-to-run spread (38.5-41.6 idle), and the 2-3 % idle gap of the first table was the run order.
 Beside a busy process the Pilot stays 15-22x the defaults, beside a half-busy one 1.4x. Shipped.
 
+## 2026-11-16 PI2: Pilot version 2, five prompt budgets, dream worlds v5 and v6
+
+Version 2 (`ironmule/pilot.py`, `VERSION = 2`): five prompt budgets (32, 128, 512, 2,048 tokens, none) instead of four,
+and the shared pool now honours a set budget (before, it took every waiting prompt that fit). Measured first, budget
+alone, 4-vCPU Xeon, Qwen3-4B Q8_0, 8 requests, two rounds: first token 1.26 / 1.07 s with budget 32 against 1.89 / 1.34 s
+without one when idle, 0.87 / 0.89 s against 1.42 / 1.35 s beside two busy programs, at the same tokens per second; 16
+requests idle 58.9 / 60.5 tok/s against 63.4 / 62.7.
+
+- *World v5, trained from scratch on two Kaggle T4 (43 min, seed 30 of two):* beside two busy programs it chose 2
+  threads and budget 32, the first token of 8 requests 0.61 s against 0.94 s with the version-1 weights (-35 %), the
+  same tok/s. Idle it was 4-11 % slower: it stayed at 3 threads on 40-50 % of the steps. Not shipped.
+- *Why:* traced step by step. With all 4 cores taken, the load reader sees 0.00-0.02 foreign cores on an idle machine;
+  at 3 threads it sees 0.11-0.12 (a tenth of the steps 0.14-0.19), the daemons of a quiet server now running on the
+  free core. Beside a process busy 25 % of the time it sees 0.29 at 3 threads. World v5 had the daemons at any thread
+  count, so a free core's reading looked like a part-time process and kept the Pilot there.
+- *World v6:* the daemons are seen only on a free core, at the measured level. Three runs on this CPU (from scratch,
+  and two fine-tunes of the v5 weights, 1,024 dreamed servers, 100 rounds, 16-47 min) fixed either the idle case or
+  kept budget 32, not both. Replayed on the recorded real features (no engine): the from-scratch run stayed at 4 idle
+  threads in 88-97 % of the steps (v5: 50-65 %), the fine-tunes 50-71 %.
+- *World v6 on two Kaggle T4 (47 min, from scratch, seeds 70/71; 8,192 dreamed servers, 200 rounds):* both keep 4 idle
+  threads in 88-98 % of the replayed steps and give up a core beside the 25 % process in 79-97 %; neither uses the small
+  budgets (in the dream they move the reward by about 4 %). Seed 70 (best in the dream: reward -303 against -307 for
+  "threads = free cores" and -1118 for the defaults) shipped.
+
+Real engine, `lab/pi1/real.py`, 64-token answers, tok/s for 1 / 8 / 16 requests (first token of 8 in brackets), mean of
+two rounds in alternating order. Version 1 ran from d1b1897 (its decision 0.39 ms, the pread change came later); the
+defaults and v5 are from the same day's earlier rounds:
+
+| foreign load | v6 (shipped) | version 1 | v5 | defaults |
+| --- | --- | --- | --- | --- |
+| none | 10.09 / 36.02 / 59.13 (1.47 s) | 9.28 / 35.62 / 58.73 (1.59 s) | 8.90 / 33.59 / 58.79 (1.82 s) | 10.14 / 36.21 / 56.83 (1.43 s) |
+| one busy process | 7.38 / 28.90 / 48.43 (0.73 s) | 7.83 / 28.08 / 45.95 (0.71 s) | 7.35 / 28.91 / 46.62 (0.71 s) | 1.59 / 6.65 / 12.26 (2.09 s) |
+| two busy processes | 5.56 / 20.72 / 34.44 (0.94 s) | 5.33 / 19.92 / 34.11 (0.94 s) | 5.65 / 20.67 / 34.28 (0.61 s) | 0.29 / 1.75 / 3.27 (6.11 s) |
+| one process busy 25 % of every 20 ms | 6.90 / 27.96 / 46.39 (0.71 s) | 7.61 / 28.03 / 46.52 (0.70 s) | - | - |
+| one process busy 50 % of every 20 ms | 7.64 / 28.24 / 46.56 (0.72 s) | 7.92 / 29.14 / 48.84 (0.65 s) | 7.69 / 29.56 / 48.54 (0.66 s) | 5.90 / 23.05 / 37.96 (0.81 s) |
+
+Read: v6 is on par with version 1 (+0.1 % tok/s over the 15 cells, rounds differ by up to 10 %), ahead idle, behind for
+one request beside the 25 % process (6.90 against 7.61: there it keeps 4 threads on some steps). Its decision takes 0.17
+ms. The 35 % sooner first token of v5 beside two busy programs is not in v6; a world in which the small budgets matter
+more, or a reward that weighs them, is what would bring it back.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
