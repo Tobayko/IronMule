@@ -7,10 +7,6 @@ BLAS and keep working. The worker client and the service report what serves.
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
