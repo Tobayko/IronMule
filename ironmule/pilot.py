@@ -32,12 +32,12 @@ import numpy as np
 
 THREAD_FRACTIONS = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0)
 CAPS = (1, 2, 4, 8, 16, 32, 64)
-BUDGETS = (256, 1024, 4096, 1 << 30)
+BUDGETS = (32, 128, 512, 2048, 1 << 30)  # PI2: 32 and 128 let short prompts start one or a few per step
 DRAFTS = (0, 1)
 HEADS = (len(THREAD_FRACTIONS), len(CAPS), len(BUDGETS), len(DRAFTS))
 OBS = 20
 WEIGHTS = Path(__file__).with_name("pilot_weights.npz")
-VERSION = 1
+VERSION = 2  # 2 (PI2): five prompt budgets, the shared pool honours them
 _HEAD_SLICES = tuple((sum(HEADS[:i]), sum(HEADS[:i + 1])) for i in range(len(HEADS)))
 
 
