@@ -1520,6 +1520,24 @@ one request beside the 25 % process (6.90 against 7.61: there it keeps 4 threads
 ms. The 35 % sooner first token of v5 beside two busy programs is not in v6; a world in which the small budgets matter
 more, or a reward that weighs them, is what would bring it back.
 
+Second machine (the Kaggle CPU session of the PI1 entries: Xeon @ 2.20GHz, 2 cores with 2 threads each, Qwen3-4B
+Q4_K_M, engine build 62 min, `lab/pi1/kaggle_cpu.py` at 7d09702 with the v6 weights, 1.8 h in all). tok/s for 1 / 8
+requests, first token in seconds in brackets:
+
+| foreign load | defaults (4 threads) | v6 | its threads |
+| --- | --- | --- | --- |
+| none | 5.13 / 7.82 (1.21 / 8.45 s) | 5.02 / 7.34 (1.22 / 9.35 s) | 4 |
+| one busy process | 1.36 / 3.00 (2.80 / 6.82 s) | **4.25 / 6.49** (1.26 / 4.28 s) | 3 |
+| one process busy half of every 20 ms | 4.33 / 7.11 (0.83 / 1.97 s) | **4.66** / 7.18 (0.86 / 1.94 s) | 3 |
+| two busy processes | 0.57 / 1.81 (1.27 / 23.6 s) | **2.75 / 2.53** (0.53 / 24.7 s) | 2 |
+
+Idle, attached and detached in turn in one process (4 rounds): 5.30 / 7.55 against 4.98 / 7.41, so the 6 % gap of the
+separate 8-request runs above is round-to-round spread. Decisions 0.28-0.32 ms a step (0.55-0.61 ms before the pread
+change). This session's machine was slower than the one of the version-1 run (idle defaults 5.13 / 7.82 against 6.10 /
+8.65), so the rows are compared within the session: 3.1x / 2.2x the defaults beside one busy process, 4.8x / 1.4x
+beside two, 8 % faster for one request beside a half-busy process, equal idle. Against each session's idle defaults
+v6 keeps 83 % / 83 % beside one busy process, version 1 kept 78 % / 83 %: on par, as on the first machine.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
