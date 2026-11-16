@@ -33,7 +33,10 @@ class DraftStop:
     that steps with drafts really made against what plain steps make; where drafting measured slower it stops, and is
     tried again once in `PROBE` steps (the load or the text may have changed)."""
 
-    PROBE, TRUST = 200, 8
+    # DM2: once measured slower, drafting is tried again every PROBE steps; at 200 a few bad samples (a T4 at one
+    # request: 24.2 tok/s measured with drafts) kept it off for a whole stream of requests, at 25 it costs at most 4 %
+    # of the steps where drafting really is slower
+    PROBE, TRUST = 25, 8
 
     def __init__(self) -> None:
         self.tried = [2.0] * BINS

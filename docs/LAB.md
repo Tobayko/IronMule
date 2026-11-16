@@ -1709,6 +1709,36 @@ the second (all arms lost a third between the rounds), inside the T4's spread. B
 for a machine where they pay. The fresh-to-filled drop (about 11 % in every arm) and the 1.5x of uneven serving steps
 remain unexplained.
 
+## 2026-11-16 DM2: the draft model on a T4, its rate check fixed
+
+The draft model's stop rule pauses drafting for PROBE steps where steps with drafts measured slower than plain ones.
+Their cost included the draft model's catch-up on a new request's prompt, paid once per request, so a stream of new
+requests turned drafting off (PI3 probe: 35.3 tok/s measured with drafts for one request; its first round 57 against 39
+without). Catch-up seconds are now kept out of that check. On this CPU (Qwen3-4B Q4_K_M with Qwen3-0.6B Q8_0, 12
+requests one after another with new 200-400-token prompts, 64 tokens): 365 drafts in 768 tokens instead of 139, 7.3
+tok/s measured with drafts against 7.0 plain; overall 4.62 against 4.64 tok/s (prompts dominate on a CPU, and the draft
+model reads them too). On a GPU, `ironmule serve` now names a draft model of the same family measured on a T4 (Qwen3,
+Llama 3.1) with the command that would download it, and downloads nothing.
+
+Kaggle T4, `lab/pi3/kaggle_gpu_probe.py` in `PI3_MODE=dm2` at 12af3c0, 10 minutes, each arm on its own fresh engine, two
+rounds in reversed order. (The harness fetched `pilot_weights.npz` only, so here and in PAD2 and KVD1 the CPU weights
+decided on the GPU; the same in both arms. Fixed for later runs.) tok/s, round 1 and round 2:
+
+| | with the draft model | without |
+| --- | --- | --- |
+| 1 request (4 x 128 tokens) | **60.2, 52.2** | 45.2, 43.8 |
+| 16 requests one after another, new prompts | **53.4**, 40.7 | 40.2, 40.2 |
+| 8 at once | 265.7, 260.8 | 264.2, 262.9 |
+| 32 at once | 604.7, 602.3 | 599.8, 591.8 |
+| chat arrivals | 329.5, 324.8 | 332.5, 335.0 |
+| mixed arrivals | 73.0, 115.7 | 72.8, 115.8 |
+
+Answers: 49 of 50 facts with and without it, the 50 fact answers token for token the same. 1,955 and 852 drafts, 74 %
+and 79 % accepted. Read: one request 1.26x on average (1.33x and 1.19x); 8 and 32 requests and both arrival patterns
+the same within 2 % (the draft model rests beyond 2 running requests, by design). In the second round the check
+measured 24.2 tok/s with drafts for one request and paused drafting, so the requests one after another gained 1 %
+there against 33 % in the first; it tried again only every 200 steps. PROBE is now 25.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
