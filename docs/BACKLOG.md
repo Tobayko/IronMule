@@ -116,8 +116,11 @@ against 0.048 / 0.169 / 0.62 s); with documents among arriving chats 80.3 agains
 token 5.22 against 11.76 s. Read post hoc: the rule asked for more tokens per second, the gain is in the first token
 at the same tokens per second, so the weights ship as a first-token gain and the rule's tokens-per-second part stays
 open. Short chats alone: 228.5 against 238.6 tokens per second, first token 0.83 against 0.68 s, inside the T4's own
-spread between rounds (207-255 for the same arm). Open: padding 17-31 rows to 32 (the probe: 72-81 ms against 49 ms a
-step, a tokens-per-second gain for 17-31 running requests) and the GPU a new request joins when there are several.
+spread between rounds (207-255 for the same arm). Tried and dropped: padding 17-30 rows to 32
+(PAD2, LAB.md: the probe's serving steps of 17-30 rows cost 74-88 ms against 48-61 ms for 32, but a step of 17-32 tokens
+measured on its own rises evenly, 29-36 ms, and blocks of 20 / 24 / 28 requests cost 58 / 59 / 65 ms a step, so the gap
+came from the steps' contexts, not their width). Open: why serving steps with uneven contexts in the shared pool cost
+up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
 
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
 

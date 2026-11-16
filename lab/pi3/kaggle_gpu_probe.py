@@ -23,6 +23,10 @@ PI3_MODE=check (step 3): the Pilot shipped at MG2_COMMIT ("ship") against the de
 from OLD_WEIGHTS) and a fixed prompt budget of 512: blocks of 1 / 8 / 32 requests (128 tokens, 3 rounds), both arrival
 patterns (4 rounds, the arm order rotated), the draft model (2 rounds) and the 50 facts; part A is left out. The
 decisions the Pilots take are counted.
+
+PI3_MODE=pad2: the engine with its own padding table measured up to 32 tokens ("pad2") against the same table cut at
+16 ("pad1"), the shipped Pilot deciding in both: blocks of 20 / 24 / 28 requests (128 tokens, 3 rounds), both arrival
+patterns (4 rounds), and the 50 facts 25 at a time (so that the steps have 17-30 rows) through both.
 Writes /kaggle/working/pi3_probe.json. MG2_COMMIT names the commit to fetch.
 """
 import json, math, multiprocessing as mp, os, random, sys, time
@@ -32,7 +36,8 @@ COMMIT = os.environ["MG2_COMMIT"]
 LOCAL = os.environ.get("PI3_LOCAL")  # a CPU smoke of this file: the repository, a local build and models in PI3_LOCAL
 W = Path(LOCAL or "/kaggle/working")
 SMOKE = bool(LOCAL)
-CHECK = os.environ.get("PI3_MODE") == "check"  # the check of a newly trained Pilot (step 3 of PI3), see below
+CHECK = os.environ.get("PI3_MODE") == "check"
+PAD2 = os.environ.get("PI3_MODE") == "pad2"  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
 OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
@@ -251,6 +256,57 @@ def main():
     cores = e.threads
     OUT["costs"] = v6.costs if v6 is not None else e.measure_costs()
     big = 1 << 30
+    if PAD2:
+        full = dict(e.pad_to)
+        pad1 = {k: v for k, v in full.items() if k <= 16 and v <= 16}
+        OUT["pad_table"], OUT["pad_prices_ms"] = full, {k: round(v * 1e3, 2) for k, v in e.pad_prices.items()}
+        ship = Counted(v6) if v6 is not None else None
+        e.pilot = ship
+        e.run([Job(ids_of(chat_text(0)), 16)])
+        collect(e, "plain")
+        arms = [("pad1", pad1), ("pad2", full)]
+        OUT["blocks"] = []
+        for rep in range(1 if SMOKE else 3):
+            for arm, table in (arms if rep % 2 == 0 else arms[::-1]):
+                for n in ((20,) if SMOKE else (20, 24, 28)):
+                    e.pad_to, e.padded = table, 0
+                    row = {"arm": arm, "rep": rep, "n": n, **block(e, n, 8 if SMOKE else 128, blocks=1 if SMOKE else 3),
+                           "guesses": e.padded}
+                    OUT["blocks"].append(row)
+                    print(json.dumps(row), flush=True)
+                    save()
+        for rep in range(1 if SMOKE else 4):
+            for arm, table in (arms if rep % 2 == 0 else arms[::-1]):
+                for kind in ("chat", "mixed"):
+                    e.pad_to, e.padded = table, 0
+                    row = {"arm": arm, "rep": rep, "kind": kind, **stream(e, kind, 500 + rep), "guesses": e.padded}
+                    OUT["B"].append(row)
+                    print(json.dumps(row), flush=True)
+                    save()
+        answers = {}
+        for arm, table in arms:
+            e.pad_to, e.padded = table, 0
+            got = []
+            for k in range(0, 25 if SMOKE else len(fact_ids), 25):
+                js = [Job(i, 48) for i in fact_ids[k:k + 25]]
+                e.run(js)
+                got += [j.tokens for j in js]
+            answers[arm] = got
+            OUT.setdefault("fact_guesses", {})[arm] = e.padded
+        OUT["ship_seen"] = ship.seen if ship is not None else None
+        OUT["summary_end"] = e.summary()
+        e.observer = None
+        e.close()
+        save()
+        proc, port = mg2.server(gguf, 1, "0", "layer" if LOCAL else "none")
+        try:
+            OUT["facts"] = {arm: mg2.correct([mg2.detok_server(port, i) for i in v], facts) for arm, v in answers.items()}
+        finally:
+            mg2.stop(proc)
+        OUT["same_tokens"] = sum(a == b for a, b in zip(answers["pad1"], answers["pad2"]))
+        OUT["finished"] = time.time()
+        save()
+        return
     if CHECK:
         from ironmule.pilot import Pilot
 

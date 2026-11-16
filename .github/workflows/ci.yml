@@ -5,6 +5,32 @@ on:
   pull_request:
 
 jobs:
+  # The same product suites on Linux with MLX's CPU build (AGENTS.md: cloud sessions run them this way). A hosted
+  # Linux runner costs a tenth of a macOS one; the macOS jobs below stay the reference for Apple Silicon.
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    name: linux / py3.12 (MLX CPU)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[cpu,dev]" "ruff==0.16.6" "matplotlib==3.11.1"
+      - name: Static product and measurement checks
+        run: ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tools/export_evidence.py training tests/engine tests/agent tests/conftest.py tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py --select F
+      - name: Engine test suite
+        run: python -m pytest tests/engine -m "not integration"
+      - name: Agent test suite
+        run: python -m pytest tests/agent -m "not integration"
+      - name: Documented claims
+        run: python -m pytest tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py -n 0 -rs
+      - name: Figures match their evidence
+        run: python tools/make_figures.py --check
+
   macos:
     runs-on: macos-14
     timeout-minutes: 20

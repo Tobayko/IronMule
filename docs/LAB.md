@@ -1590,7 +1590,8 @@ median 6.87 to 1.73 s) at the same tokens per second, because short prompts no l
 several documents at once. v6 keeps every budget open on a GPU: its dream world priced a GPU prompt about ten times too
 low and let prompts in oldest first, where the engine takes the shortest first. Next: dream world v7 with these costs
 and the engine's order, a Pilot trained from scratch in it, and a check on the T4. Seen in passing: 17-31 rows cost 1.5x
-what 32 rows cost, so padding them to 32 (as PAD1 pads 4-8 to 9) is an engine gain of its own.
+what 32 rows cost, which looked like an engine gain of its own (padding them to 32 as PAD1 pads 4-8 to 9); PAD2 below
+found it is not.
 
 ## 2026-11-16 PI3: GPU weights for the Pilot (dream world v7)
 
@@ -1666,7 +1667,22 @@ out; for 8 and 32 requests at once the first token comes 14 % and 31 % sooner at
 lets three short prompts start per step instead of all 32 in one long step); one request is unchanged. For short chats
 alone seed 80 and a held budget of 512 are 4 % below the defaults, inside the spread of the rounds (the same arm 207-255
 tok/s), so whether a budget costs anything there is not settled. The GPU weights ship (BACKLOG PI3 has the kill rule's
-reading). Next on a GPU: padding 17-31 rows to 32.
+reading). Next on a GPU: padding 17-31 rows to 32 (PAD2 below: dropped).
+
+## 2026-11-16 PAD2: filling 17-30 rows to 32 on a T4, dropped
+
+Built from the probe's serving steps (17-30 rows 74-88 ms, 31-32 rows 48-61 ms): PAD1's startup measurement went on
+to 32 tokens on a GPU, and its table would fill a step to 32 where that was measured at least 5 % cheaper. Kaggle T4,
+`lab/pi3/kaggle_gpu_probe.py` in `PI3_MODE=pad2` at c23739a, 16 minutes, the shipped GPU Pilot deciding in both arms.
+The startup measurement (one sequence, t tokens, ms): 1-8 tokens 19.3-49.8, 9-16 25.8-26.9, 17-24 29.4-31.8, 25-32
+34.1-36.2: no step down after 16, so the table stayed PAD1's (4-8 to 10) and both arms ran the same steps (the same
+guesses: 14 in the facts, 68-250 per stream). Blocks of requests at once, tok/s for 20 / 24 / 28 (3 rounds): 386 / 413 /
+431 and 341 / 404 / 430, the first arm of the first round again at the T4's starting clock (466 against 335 for 20);
+a step 58 / 59 / 65 ms, against 66 ms for 32 in the check before. 49 of 50 facts either way.
+
+Read: a step's width is not what made the probe's 17-30-row steps dear; those steps came from arriving requests,
+whose contexts in the shared pool are uneven, while the 32-row steps came mostly from blocks. Dropped (the engine
+change reverted, the harness mode kept). Open: why such steps cost up to 1.5x a block's step of the same width.
 
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
