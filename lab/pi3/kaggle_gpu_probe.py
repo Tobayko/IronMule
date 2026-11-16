@@ -33,6 +33,10 @@ made): "base" (as shipped), "defrag" (IRONMULE_GGML_DEFRAG=0.1), "keep" (defrag 
 quarter of the cells). Per arm and round: 8 requests at once fresh, then 60 long prompts that finish and stay as the
 prefix cache (pushing the cells up the cache), then 8 and 32 requests at once, both arrival patterns, and the 50 facts 8
 at a time; two rounds, the arm order reversed in the second.
+
+PI3_MODE=dm2: the shipped engine (the GPU Pilot deciding) with the draft model (Qwen3-0.6B Q8_0) against without it,
+each arm on its own fresh engine, two rounds, the order reversed: 1 request at once (4 blocks of 128 tokens), 16
+requests one after another with new prompts, 8 and 32 at once, both arrival patterns, and the 50 facts 2 at a time.
 Writes /kaggle/working/pi3_probe.json. MG2_COMMIT names the commit to fetch.
 """
 import json, math, multiprocessing as mp, os, random, sys, time
@@ -44,7 +48,8 @@ W = Path(LOCAL or "/kaggle/working")
 SMOKE = bool(LOCAL)
 CHECK = os.environ.get("PI3_MODE") == "check"
 PAD2 = os.environ.get("PI3_MODE") == "pad2"
-KVD = os.environ.get("PI3_MODE") == "kvd"  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
+KVD = os.environ.get("PI3_MODE") == "kvd"
+DM2 = os.environ.get("PI3_MODE") == "dm2"  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
 OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
@@ -252,6 +257,51 @@ def main():
                 "ttft_mean": round(sum(ttft) / max(1, len(ttft)), 3), "ttft_p50": q(ttft, 0.5), "ttft_p90": q(ttft, 0.9),
                 "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9)}
 
+    if DM2:
+        OUT["dm2"], answers = [], {}
+        arms = [("draft", draft), ("plain", None)]
+        for rep in range(1 if SMOKE else 2):
+            for arm, dg in (arms if rep == 0 else arms[::-1]):
+                e, tok_ = open_engine(dg)
+                tok = tok_
+                collect(e, f"{arm}_{rep}")
+                fact_ids = [tok(p) for p in fact_prompts]
+                e.run([Job(ids_of(chat_text(0)), 16)])
+                row = {"arm": arm, "rep": rep, "one": block(e, 1, 8 if SMOKE else 128, blocks=2 if SMOKE else 4)}
+                tok_n = wall = 0.0
+                for k in range(3 if SMOKE else 16):
+                    j = Job(ids_of(doc_text(k) if k % 4 == 3 else chat_text(k)), 8 if SMOKE else 128)
+                    t = time.perf_counter()
+                    e.run([j])
+                    wall += time.perf_counter() - t
+                    tok_n += len(j.tokens)
+                row["sequential"] = {"tok_s": round(tok_n / wall, 2), "wall": round(wall, 2)}
+                row["eight"] = block(e, 8, 8 if SMOKE else 128, blocks=1 if SMOKE else 3)
+                row["thirtytwo"] = block(e, 8 if SMOKE else 32, 8 if SMOKE else 128, blocks=1)
+                row["chat"] = stream(e, "chat", 800 + rep)
+                row["mixed"] = stream(e, "mixed", 900 + rep)
+                got = []
+                for k in range(0, 4 if SMOKE else len(fact_ids), 2):
+                    js = [Job(i, 48) for i in fact_ids[k:k + 2]]
+                    e.run(js)
+                    got += [j.tokens for j in js]
+                answers.setdefault(arm, got)
+                row["draft_model"] = e.summary().get("draft_model")
+                row["pilot"] = (e.summary().get("pilot") or {}).get("weights")
+                OUT["dm2"].append(row)
+                print(json.dumps(row), flush=True)
+                e.observer = None
+                e.close()
+                save()
+        proc, port = mg2.server(gguf, 1, "0", "layer" if LOCAL else "none")
+        try:
+            OUT["facts"] = {arm: mg2.correct([mg2.detok_server(port, i) for i in v], facts) for arm, v in answers.items()}
+        finally:
+            mg2.stop(proc)
+        OUT["same_tokens"] = sum(a == b for a, b in zip(answers["plain"], answers["draft"]))
+        OUT["finished"] = time.time()
+        save()
+        return
     if KVD:
         import ironmule.ggml_engine as ge
 

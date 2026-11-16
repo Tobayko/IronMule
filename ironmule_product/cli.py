@@ -492,6 +492,14 @@ def serve(argv: list[str]) -> int:
                                                                                    "reason")}}), flush=True)
                 if args.draft_gguf:
                     checked = {**checked, "draft": {"gguf": str(Path(args.draft_gguf).resolve())}}
+                elif args.speculate != "off" and ggml_gpu_layers():
+                    from ironmule.draft_model import suggest_draft
+
+                    # DM2: on a GPU a draft model of the same family speeds up one or two users (SG1 v3 on a T4:
+                    # 54.3 against 47.3 tok/s for Qwen3-4B); named only, never downloaded without the user's command
+                    hint = suggest_draft(str(args.gguf))
+                    if hint is not None:
+                        print(json.dumps({"draft_model_suggestion": hint}), flush=True)
                 # PI1: the worker loads the GGUF, measures this machine's step costs for the Pilot and, with a draft
                 # model, its draft calls before it is ready; on a 4-vCPU Xeon that took about 105 s of the default 120
                 ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
