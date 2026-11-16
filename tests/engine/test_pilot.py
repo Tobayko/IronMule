@@ -75,3 +75,16 @@ def test_foreign_load_is_read_from_proc():
     load = pl.CpuLoad()
     time.sleep(0.06)
     assert load.update() >= 0.0 and pl.usable_cores() >= 1
+
+
+
+def test_the_load_rereads_open_files_and_close_releases_them():
+    load = pl.CpuLoad()
+    assert load._fds is not None
+    first = load._last
+    time.sleep(0.06)
+    load.update()
+    assert load._last[0] > first[0] and load.foreign >= 0.0
+    load.close()
+    assert load._fds is None and load._read() is None
+    load.close()  # twice is fine

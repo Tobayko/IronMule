@@ -1096,6 +1096,8 @@ class GgmlEngine:
                 **({"speculation": self.policy.summary()} if self.policy is not None else {"speculation": "off"})}
 
     def close(self) -> None:
+        if getattr(self, "pilot", None) is not None:
+            self.pilot.close()
         if getattr(self, "drafter", None) is not None:
             self.drafter.close()
             self.drafter = None
