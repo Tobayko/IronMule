@@ -13,7 +13,9 @@ import pytest
 
 from ironmule import kernel_registry as kr
 
-pytestmark = pytest.mark.skipif(not mx.metal.is_available(), reason="needs MLX's Metal back-end")
+#: The tests that run a kernel need Metal; the ones that only derive names run anywhere.
+needs_metal = pytest.mark.skipif(not mx.metal.is_available(),
+                                 reason="needs Apple's Metal backend (mx.metal.is_available() is False)")
 
 ADD_ONE = "uint i = thread_position_in_grid.x; out[i] = a[i] + 1.0f;"
 ADD_HUNDRED = "uint i = thread_position_in_grid.x; out[i] = a[i] + 100.0f;"
@@ -35,6 +37,7 @@ def _built(source: str, **extra):
                     output_names=["out"], **extra)
 
 
+@needs_metal
 def test_the_collision_this_guards_against_is_real_here() -> None:
     """Before: one hand-picked name, two sources, both run the first one."""
 
@@ -48,6 +51,7 @@ def test_the_collision_this_guards_against_is_real_here() -> None:
     )
 
 
+@needs_metal
 def test_two_sources_in_one_evaluation_keep_their_own_results() -> None:
     """After: the same two sources, dispatched before one `eval`, stay separate."""
 
@@ -59,6 +63,7 @@ def test_two_sources_in_one_evaluation_keep_their_own_results() -> None:
     assert second.tolist() == [100.0] * 4
 
 
+@needs_metal
 def test_the_order_of_registration_does_not_decide_the_result() -> None:
     second = _call(_built(ADD_HUNDRED))
     first = _call(_built(ADD_ONE))
@@ -68,6 +73,7 @@ def test_the_order_of_registration_does_not_decide_the_result() -> None:
     assert second.tolist() == [100.0] * 4
 
 
+@needs_metal
 def test_the_same_source_reuses_one_identifier() -> None:
     """Rebuilding a specialisation must not invent a second kernel for it."""
 

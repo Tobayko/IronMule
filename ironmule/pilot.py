@@ -12,8 +12,11 @@ their prompts and contexts are -- and decides four things for the next step:
 
 The network is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads), about 22,000 weights. It was
 trained from scratch by reinforcement learning in a dreamed world -- a world model of serving built from measurements --
-and never on a production server; its weights ship as `pilot_weights.npz` (open weights). The network takes a few tens
-of microseconds in numpy; with the CPU-load read a decision took about 0.5 ms in a busy server (PI1). It never changes
+and never on a production server; its weights ship as `pilot_weights.npz` (open weights). An engine whose layers run on a
+GPU uses `pilot_weights_gpu.npz` instead (PI3): weights trained in a dream world with a GPU's measured costs, whose
+decisions there were checked on a T4, while their thread decisions on CPUs were not as steady as the CPU weights'. The network takes a few tens
+of microseconds in numpy; with the CPU load from `/proc` a decision takes about 0.17-0.19 ms in the running server (PI1, PI2), about 0.11 ms
+beside a GPU, where no CPU load is read (PI3). It never changes
 what the model answers: every decision is a scheduling or threading choice.
 
 Safety: without the weights file, with features outside the ranges it was trained on, or with `IRONMULE_PILOT=0`, the
@@ -32,12 +35,14 @@ import numpy as np
 
 THREAD_FRACTIONS = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0)
 CAPS = (1, 2, 4, 8, 16, 32, 64)
-BUDGETS = (256, 1024, 4096, 1 << 30)
+BUDGETS = (32, 128, 512, 2048, 1 << 30)  # PI2: 32 and 128 let short prompts start one or a few per step
 DRAFTS = (0, 1)
 HEADS = (len(THREAD_FRACTIONS), len(CAPS), len(BUDGETS), len(DRAFTS))
 OBS = 20
 WEIGHTS = Path(__file__).with_name("pilot_weights.npz")
-VERSION = 1
+WEIGHTS_GPU = Path(__file__).with_name("pilot_weights_gpu.npz")  # PI3: the weights for an engine on a GPU
+VERSION = 2  # 2 (PI2): five prompt budgets, the shared pool honours them
+_HEAD_SLICES = tuple((sum(HEADS[:i]), sum(HEADS[:i + 1])) for i in range(len(HEADS)))
 
 
 def usable_cores() -> int:
@@ -64,20 +69,40 @@ def usable_cores() -> int:
 
 
 class CpuLoad:
-    """Cores kept busy by other programs: the machine's busy time minus this process's, over the last interval."""
+    """Cores kept busy by other programs: the machine's busy time minus this process's, over the last interval.
+
+    It keeps `/proc/stat` and `/proc/self/stat` open and rereads them with `pread`: about 50 microseconds right after
+    an engine step, against about 190 for opening and reading them afresh. A background reader would take nothing from
+    the step's path, but it cost 4.5 % idle with 8 requests on 4 cores: its wake-ups push a llama.cpp thread off its
+    core (docs/LAB.md, PI1 decision time)."""
 
     def __init__(self) -> None:
         self.hz = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+        self._fds: tuple[int, int] | None = None
+        try:
+            self._fds = (os.open("/proc/stat", os.O_RDONLY), os.open("/proc/self/stat", os.O_RDONLY))
+        except OSError:
+            pass
         self._last = self._read()
         self.foreign = 0.0
 
-    @staticmethod
-    def _read() -> tuple[float, float, float] | None:
+    def close(self) -> None:
+        if self._fds is not None:
+            for fd in self._fds:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            self._fds = None
+
+    def _read(self) -> tuple[float, float, float] | None:
+        if self._fds is None:
+            return None
         try:
-            parts = Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]
+            parts = os.pread(self._fds[0], 512, 0).split(b"\n", 1)[0].split()[1:]
             values = [float(v) for v in parts]
             busy = sum(values) - values[3] - (values[4] if len(values) > 4 else 0.0)  # all but idle and iowait
-            own = Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()
+            own = os.pread(self._fds[1], 4096, 0).rsplit(b")", 1)[1].split()
             mine = float(own[11]) + float(own[12])  # utime + stime of this process (all its threads)
             return time.monotonic(), busy, mine
         except (OSError, ValueError, IndexError):
@@ -85,7 +110,7 @@ class CpuLoad:
 
     def update(self, min_interval: float = 0.05) -> float:
         if self._last is not None and time.monotonic() - self._last[0] < min_interval:
-            return self.foreign  # read /proc at most every 50 ms: a decision stays in the microseconds
+            return self.foreign  # read /proc at most every 50 ms
         now = self._read()
         if now is None or self._last is None:
             self._last = now
@@ -113,7 +138,9 @@ class Pilot:
         self.load = CpuLoad()
         self.reason: str | None = None
         self.w = None
-        path = weights or Path(os.environ.get("IRONMULE_PILOT_WEIGHTS") or WEIGHTS)
+        default = WEIGHTS_GPU if self.gpu and WEIGHTS_GPU.exists() else WEIGHTS
+        path = weights or Path(os.environ.get("IRONMULE_PILOT_WEIGHTS") or default)
+        self.weights_name = path.name
         if os.environ.get("IRONMULE_PILOT", "1") == "0":
             self.reason = "turned off (IRONMULE_PILOT=0)"
         elif not path.exists():
@@ -147,12 +174,15 @@ class Pilot:
             if not self.gpu else c["step_one"] + c["row"] * max(0, rows - 1)
 
     def features(self, running: int, queued: int, waiting_prompt_tokens: int, mean_ctx: float) -> np.ndarray:
+        return np.array(self._features(running, queued, waiting_prompt_tokens, mean_ctx), dtype=np.float32)
+
+    def _features(self, running: int, queued: int, waiting_prompt_tokens: int, mean_ctx: float) -> list[float]:
         c, C = self.costs, float(self.cores)
         a1 = max(1e-4, c["step_one"])
         T = self.threads_for(self.cur[0])
         seen = 0.0 if self.gpu else self.load.update()
         slow = self.last_step / max(1e-6, self._uncontended(T, max(1, running)))
-        return np.array([
+        return [
             math.log2(C) / 6, float(self.gpu), float(getattr(self.engine, "drafter", None) is not None),
             math.log10(a1) + 1.5, math.log10(max(1e-6, c["row"]) / a1) + 1.5,
             math.log10(max(1e-6, c["prefill_1k"]) / a1) * 0.5, math.log10(max(1e-6, c["kv_1k"]) / a1) + 1,
@@ -160,26 +190,23 @@ class Pilot:
             running / max(1, self.max_cap), math.log1p(queued) / 4, math.log1p(waiting_prompt_tokens) / 10,
             math.log1p(mean_ctx) / 8, math.log1p(self.arr_ema * a1 * 100) / 4, math.log1p(self.tok_ema * a1) / 2,
             self.cur[1] / (len(CAPS) - 1), self.cur[2] / (len(BUDGETS) - 1), self.acc_seen,
-            math.log2(max(1, self.max_cap)) / 6], dtype=np.float32)
+            math.log2(max(1, self.max_cap)) / 6]
 
     # --- the decision ------------------------------------------------------------------------------------------------
     def decide(self, running: int, queued: int, waiting_prompt_tokens: int, mean_ctx: float) -> dict[str, Any]:
         """Threads, running cap, prompt budget and drafting for the next step."""
         started = time.perf_counter()
-        x = self.features(running, queued, waiting_prompt_tokens, mean_ctx)
+        f = self._features(running, queued, waiting_prompt_tokens, mean_ctx)
         if self.w is None:
             return self.apply(self.cur)
-        if not np.all(np.isfinite(x)) or np.abs(x).max() > 4.0:  # outside what it was trained on: keep defaults
+        if not all(math.isfinite(v) and abs(v) <= 4.0 for v in f):  # outside what it was trained on: keep defaults
             self.out_of_range += 1
             return self.apply([len(THREAD_FRACTIONS) - 1, len(CAPS) - 1, len(BUDGETS) - 1, 1])
         w1, b1, w2, b2, w3, b3 = self.w
-        h = np.tanh(w1 @ x + b1)
+        h = np.tanh(w1 @ np.array(f, dtype=np.float32) + b1)
         h = np.tanh(w2 @ h + b2)
-        logits = w3 @ h + b3
-        choice, off = [], 0
-        for n in HEADS:
-            choice.append(int(np.argmax(logits[off:off + n])))
-            off += n
+        logits = (w3 @ h + b3).tolist()
+        choice = [max(range(b - a), key=lambda i, a=a: logits[a + i]) for a, b in _HEAD_SLICES]  # first maximum, as argmax
         self.decide_us += (time.perf_counter() - started) * 1e6
         self.decisions += 1
         return self.apply(choice)
@@ -198,12 +225,17 @@ class Pilot:
         if accepted_drafts is not None:
             self.acc_seen += 0.05 * (accepted_drafts - self.acc_seen)
 
+    def close(self) -> None:
+        self.load.close()
+
     def status(self) -> dict[str, Any]:
-        return {"version": VERSION, "active": self.active, "reason": self.reason, "cores": self.cores,
+        return {"version": VERSION, "active": self.active, "reason": self.reason, "weights": self.weights_name,
+                "cores": self.cores,
                 "foreign_cores": round(self.load.foreign, 2), "decision": self.apply(self.cur) if self.active else None,
                 "decisions": self.decisions,
                 "decide_us_mean": round(self.decide_us / self.decisions, 1) if self.decisions else None,
                 "out_of_range": self.out_of_range}
 
 
-__all__ = ["BUDGETS", "CAPS", "HEADS", "OBS", "Pilot", "THREAD_FRACTIONS", "CpuLoad", "usable_cores"]
+__all__ = ["BUDGETS", "CAPS", "HEADS", "OBS", "WEIGHTS", "WEIGHTS_GPU", "Pilot", "THREAD_FRACTIONS", "CpuLoad",
+           "usable_cores"]

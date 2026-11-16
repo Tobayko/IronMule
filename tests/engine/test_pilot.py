@@ -11,7 +11,7 @@ from ironmule import pilot as pl
 COSTS = {"step_one": 0.1, "row": 0.003, "prefill_1k": 3.0, "kv_1k": 0.02}
 
 
-def weights(tmp_path: Path, prefer=(7, 6, 3, 1)) -> Path:
+def weights(tmp_path: Path, prefer=(7, 6, 4, 1)) -> Path:
     """Weights whose output prefers the given choice per head, whatever the input."""
     rng = np.random.default_rng(0)
     w1 = rng.normal(0, 0.01, (128, pl.OBS)).astype(np.float32)
@@ -35,14 +35,14 @@ def test_a_decision_follows_the_network_and_stays_in_range(tmp_path, monkeypatch
     monkeypatch.setattr(pl, "usable_cores", lambda: 16)
     pilot = pl.Pilot(engine(), COSTS, max_cap=32, weights=weights(tmp_path, (3, 2, 1, 0)))
     d = pilot.decide(running=4, queued=10, waiting_prompt_tokens=3000, mean_ctx=500.0)
-    assert d == {"threads": 8, "cap": 4, "budget": 1024, "draft": False}
+    assert d == {"threads": 8, "cap": 4, "budget": 128, "draft": False}
     features = pilot.features(4, 10, 3000, 500.0)
     assert features.shape == (pl.OBS,) and np.all(np.isfinite(features)) and np.abs(features).max() < 4
 
 
 def test_the_cap_never_exceeds_the_engine_and_threads_are_at_least_one(tmp_path, monkeypatch):
     monkeypatch.setattr(pl, "usable_cores", lambda: 2)
-    pilot = pl.Pilot(engine(), COSTS, max_cap=8, weights=weights(tmp_path, (0, 6, 3, 1)))
+    pilot = pl.Pilot(engine(), COSTS, max_cap=8, weights=weights(tmp_path, (0, 6, 4, 1)))
     d = pilot.decide(0, 0, 0, 0.0)
     assert d["threads"] == 1 and d["cap"] == 8
 
@@ -75,3 +75,50 @@ def test_foreign_load_is_read_from_proc():
     load = pl.CpuLoad()
     time.sleep(0.06)
     assert load.update() >= 0.0 and pl.usable_cores() >= 1
+
+
+
+def test_the_load_rereads_open_files_and_close_releases_them():
+    load = pl.CpuLoad()
+    assert load._fds is not None
+    first = load._last
+    time.sleep(0.06)
+    load.update()
+    assert load._last[0] > first[0] and load.foreign >= 0.0
+    load.close()
+    assert load._fds is None and load._read() is None
+    load.close()  # twice is fine
+
+
+def test_weights_for_the_four_budgets_of_version_1_are_refused(tmp_path):
+    path = weights(tmp_path)
+    z = dict(np.load(path))
+    z["heads"] = np.array((8, 7, 4, 2))
+    old = tmp_path / "v1.npz"
+    np.savez(old, **z)
+    pilot = pl.Pilot(engine(), COSTS, max_cap=16, weights=old)
+    assert not pilot.active and "another Pilot version" in pilot.reason
+
+
+def test_an_engine_on_a_gpu_takes_the_gpu_weights_and_a_cpu_engine_the_cpu_weights(tmp_path, monkeypatch):
+    monkeypatch.delenv("IRONMULE_PILOT_WEIGHTS", raising=False)
+    monkeypatch.delenv("IRONMULE_PILOT", raising=False)
+    (tmp_path / "g").mkdir()
+    cpu, gpu = weights(tmp_path, (7, 6, 4, 1)), weights(tmp_path / "g", (7, 6, 1, 1)).rename(tmp_path / "gpu.npz")
+    monkeypatch.setattr(pl, "WEIGHTS", cpu)
+    monkeypatch.setattr(pl, "WEIGHTS_GPU", gpu)
+    on_gpu = pl.Pilot(engine(), COSTS, max_cap=32, gpu=True)
+    on_cpu = pl.Pilot(engine(), COSTS, max_cap=32, gpu=False)
+    assert on_gpu.status()["weights"] == "gpu.npz" and on_cpu.status()["weights"] == cpu.name
+    assert on_gpu.decide(4, 2, 300, 200.0)["budget"] == pl.BUDGETS[1]
+    assert on_cpu.decide(4, 2, 300, 200.0)["budget"] == pl.BUDGETS[4]
+    monkeypatch.setattr(pl, "WEIGHTS_GPU", tmp_path / "missing.npz")  # without a GPU file the CPU weights serve both
+    assert pl.Pilot(engine(), COSTS, max_cap=32, gpu=True).status()["weights"] == cpu.name
+    monkeypatch.setenv("IRONMULE_PILOT_WEIGHTS", str(gpu))  # the variable names one file for every engine
+    assert pl.Pilot(engine(), COSTS, max_cap=32, gpu=False).status()["weights"] == "gpu.npz"
+
+
+def test_both_shipped_weight_files_load_for_this_version():
+    for path in (pl.WEIGHTS, pl.WEIGHTS_GPU):
+        pilot = pl.Pilot(engine(), COSTS, max_cap=32, gpu=path is pl.WEIGHTS_GPU, weights=path)
+        assert pilot.active, (path.name, pilot.reason)

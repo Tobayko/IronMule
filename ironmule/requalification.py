@@ -108,20 +108,18 @@ class Preconditions:
         return {"allowed": self.allowed, "reason": self.reason, "checked": dict(self.checked)}
 
 
-def check_preconditions(state_path: Path, context: IntakeContext,
-                        learner: LocalLearner,
-                        action_id: str = QUALIFIED_ACTION_ID) -> Preconditions:
-    """Everything that has to be true before a single model is loaded."""
+def state_preconditions(state_path: Path, action_id: str = QUALIFIED_ACTION_ID
+                        ) -> tuple["Preconditions | None", dict[str, Any]]:
+    """What the state directory alone decides: a refusal (no requalification record, or a kill record) or None, and
+    what was checked. Needs no model, so the command refuses before it resolves one."""
     from .activation import read_kill
 
     checked: dict[str, Any] = {"action_id": action_id}
-    state_path = Path(state_path)
-
     required = requalification_path(state_path)
     checked["requalification_record"] = str(required)
     if not required.exists():
         return Preconditions(False, "nothing requires a requalification: this runs only after "
-                                    "monitoring has taken the action away", checked)
+                                    "monitoring has taken the action away", checked), checked
     try:
         record = json.loads(required.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -132,7 +130,18 @@ def check_preconditions(state_path: Path, context: IntakeContext,
     checked["kill_record"] = killed
     if killed is not None:
         return Preconditions(False, "a kill record is present. A kill is a safety failure and "
-                                    "is not cleared by a measurement", checked)
+                                    "is not cleared by a measurement", checked), checked
+    return None, checked
+
+
+def check_preconditions(state_path: Path, context: IntakeContext,
+                        learner: LocalLearner,
+                        action_id: str = QUALIFIED_ACTION_ID) -> Preconditions:
+    """Everything that has to be true before a single model is loaded."""
+    state_path = Path(state_path)
+    refused, checked = state_preconditions(state_path, action_id)
+    if refused is not None:
+        return refused
 
     if not context.identified:
         return Preconditions(False, "this installation does not identify its machine, model "
@@ -588,6 +597,12 @@ def requalify(model_id: str | None = None, *, state_path: Path | None = None,
 
     model_id = model_id or DEFAULT_MODEL
     state_path = Path(state_path or default_state_path())
+    early, _ = state_preconditions(state_path)  # refusals the state alone decides need no model
+    if early is not None:
+        append_lineage(state_path, {"event": "requalification_refused", "reason": early.reason})
+        return {"schema": SCHEMA, "outcome": "REFUSED", "started_at": datetime.now(timezone.utc).isoformat(),
+                "preconditions": early.as_dict(), "state": REQUALIFICATION_REQUIRED,
+                "reason": early.reason, "applied": False}
     resolved = resolve_local_model(model_id)
     context = IntakeContext(
         hardware_fingerprint=fingerprint(),

@@ -79,6 +79,15 @@ llama.cpp's quality when its perplexity on the gate's chunks is within NUM1's bo
 GGUF (the ratio's 95 % upper end at most 1.005); a comparison then gives `llama-server` the same options. GG3 and LC2
 below carry it out. The owner was told this reading and may correct it.
 
+**IronMule on the CPU, the model perfect on the GPU (owner, 2026-11-16).** First: "The LLM IronMule optimises is to
+be optimised for the GPU, but also the CPU; we don't throw that away." Then, correcting the first reading: "No,
+IronMule is to run on the CPU, and what is optimised is to be perfect for the GPU." Read as: (1) IronMule's decisions,
+the agent and the Pilot, run on the CPU, and stay fast enough there to decide every step in milliseconds; (2) the
+served LLM is what they optimise, and its main target is the GPU: the Pilot is to steer it there to the best speed the
+card allows (PI3); (3) the CPU serving path, the ggml engine with the Pilot as it decides there today, stays with its
+tests and numbers; (4) a gain counts only on the hardware it was measured on. The owner was told this reading and may
+correct it.
+
 ## Open: the GGUF engine and the Pilot
 
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
@@ -89,6 +98,41 @@ extraction from a given context), each answered greedily by the reference path a
 passes when its share of correct answers is not lower than the reference's by more than the reference's own A/A
 noise. It joins the perplexity gate for every path that changes tokens; its protocol is fixed before it serves a
 decision.
+
+### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; GPU weights shipped, two parts open)
+
+**Why.** The owner's goal above: the Pilot keeps running on the CPU, and the model it steers is to run perfectly on
+the GPU. Today the Pilot's thread head means nothing when the layers run on a GPU, and the
+other heads (running cap, prompt budget, draft) were trained only on CPU step costs. On a T4 the engine's costs have a
+different shape: small batches are dear (PAD1), a full prompt costs little next to decoding, and the draft model and
+generated kernels change the price of a step (MG2, KG2).
+
+**Mechanism.** Measure a GPU machine's step costs at startup as on the CPU (one row, each further row, prompt and
+attended tokens, per GPU), give the dream world a GPU cost model built from those measurements, and add the heads a
+GPU needs: the running cap and prompt budget per GPU, padding to a dear-batch boundary (PAD1), draft on or off, and
+which GPU a new request joins when there are several (MG1). Train from scratch as PI1/PI2, then measure on a Kaggle
+T4 x2 against the engine's defaults, `llama-server` and vLLM (MG2's harness), with the facts checked against the
+reference engine.
+
+**Kill.** If on the T4 the Pilot's decisions are not faster than the engine's defaults in tokens per second, with the
+first token no later, at 1, 8 and 32 requests, the GPU heads stay off and the defaults serve there.
+
+**Cost.** GPU training and the T4 measurement spend Kaggle GPU quota and need the owner's approval before each push.
+
+**Result (2026-11-16, LAB.md, PI3 probe and PI3).** Approved by the owner: about 3.5 GPU hours in three steps; used
+1.9 (probe 47 min, training 41 min, check 27 min). On a T4 the host threads and CPU load do not matter and the cap
+must stay at its maximum; the prompt budget is the decision that pays. GPU weights (`pilot_weights_gpu.npz`, world v7,
+from scratch) serve an engine on a GPU. Against the kill rule above: tokens per second equal at 1, 8 and 32 requests
+(36.0 / 206.5 / 486.7 against 36.2 / 205.9 / 490.0), not faster, with the first token no later (0.048 / 0.145 / 0.43
+against 0.048 / 0.169 / 0.62 s); with documents among arriving chats 80.3 against 75.4 tokens per second and the first
+token 5.22 against 11.76 s. Read post hoc: the rule asked for more tokens per second, the gain is in the first token
+at the same tokens per second, so the weights ship as a first-token gain and the rule's tokens-per-second part stays
+open. Short chats alone: 228.5 against 238.6 tokens per second, first token 0.83 against 0.68 s, inside the T4's own
+spread between rounds (207-255 for the same arm). Tried and dropped: padding 17-30 rows to 32
+(PAD2, LAB.md: the probe's serving steps of 17-30 rows cost 74-88 ms against 48-61 ms for 32, but a step of 17-32 tokens
+measured on its own rises evenly, 29-36 ms, and blocks of 20 / 24 / 28 requests cost 58 / 59 / 65 ms a step, so the gap
+came from the steps' contexts, not their width). Open: why serving steps with uneven contexts in the shared pool cost
+up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
 
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
@@ -113,11 +157,12 @@ and Llama 3.1 8B. v4 (docs/LAB.md, 2026-11-14 MG2 v4), Qwen3-4B at 32 requests: 
 against 797 for llama-server (ahead on Mistral 7B and Llama 3.1 8B too); on one GPU IronMule 748, llama-server 520,
 vLLM with AWQ 4-bit 893. At 8 requests on one GPU IronMule 150, llama-server 153, vLLM AWQ 431: vLLM is ahead on one
 GPU, and CUDA's small-batch kernels make 5-8 rows dear (PAD1, measured in v5). Gemma 3's answers failed through the
-harness (no BOS, fixed in v5); one-request numbers were inflated by SP4 on repeated prompts (off in v5). v5/v6 (2026-11-15): the shared pool with PAD1 on one GPU 1.32-1.41x the best `llama-server` arm at 8 requests on all four models, the same facts, 47-50 of 50 answers token for token unchanged; the server opens the pool on GPUs now. vLLM AWQ stays ahead on one GPU at 8 and 32 requests; one request is level with `llama-server` without a draft model and 1.15-1.32x with DM1 (1.09x `llama-server -md`; SG1 v3); CUDA graphs on a T4 (GR1) brought nothing (SG1 v2).
+harness (no BOS, fixed in v5); one-request numbers were inflated by SP4 on repeated prompts (off in v5). v5/v6 (2026-11-15): the shared pool with PAD1 on one GPU 1.32-1.41x the best `llama-server` arm at 8 requests on all four models, the same facts, 47-50 of 50 answers token for token unchanged; the server opens the pool on GPUs now. vLLM AWQ stays ahead on one GPU at 8 and 32 requests; one request is level with `llama-server` without a draft model and 1.15-1.32x with DM1 (1.09x `llama-server -md`; SG1 v3); CUDA graphs on a T4 (GR1) brought nothing (SG1 v2). Generated kernels (KG2, 2026-11-15): one request on a T4 1.27x the engine without them and 1.22x `llama-server` (57.0 against 46.6 tok/s), the same facts; on by default on GPUs where nvcc is present.
 
-The audit of 2026-11-15 ([ROADMAP.md](ROADMAP.md)) lists what is open on this line beyond these entries: the two
-searches in the engine loop that grow with the context, sampling, a Linux CI job for the GGUF engine, a fair
-`llama-server` arm under foreign load, and a GPU kernel for 4-bit weights.
+Open on this line beyond these entries ([ROADMAP.md](ROADMAP.md)): sampling, a CI job that runs the GGUF engine
+against a real model, a fair `llama-server` arm under foreign load, and requests that a long run holds until it goes
+idle. Done since the audit of 2026-11-15 (LAB.md): ST1, the engine loop's two searches no longer grow with the
+context; KG2, generated GPU kernels for 4-bit weights, one request on a T4 1.27x.
 
 ## Open: the agent and the server on the MLX path
 

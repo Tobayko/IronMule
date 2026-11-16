@@ -39,7 +39,7 @@ waiter notices and plans around it.
 
 **IronMule is that kitchen, and its head waiter is the Pilot**: a small neural network (about 22,000 numbers) that
 looks at your machine and the people asking, and decides again before every step of the language model how that step
-runs, in about half a millisecond. It never changes what the model answers. It only decides how the work is done.
+runs, in about a fifth of a millisecond. It never changes what the model answers. It only decides how the work is done.
 
 For developers: IronMule is a local, OpenAI-compatible LLM server. It serves GGUF models through llama.cpp's kernels
 plus its own (continuous batching, a shared prefix cache, AVX-512 and AMX attention kernels, a draft model) and MLX
@@ -95,10 +95,11 @@ step with checked guesses up to a size CUDA computes faster:
 Answers: the same facts right as through llama.cpp on every model (47 to 49 of 50), and 47 to 50 of 50 answers token
 for token the same as without the guesses (MG2 v6), so the server now uses the shared pool on GPUs too.
 
-One person on one GPU: with a small draft model of the same family (`--draft-gguf`) IronMule makes 54.3 tokens per
-second on Qwen3-4B (with Qwen3-0.6B) and 30.6 on Llama 3.1 8B (with Llama 3.2 1B), against 47.3 and 23.2 for the
-llama.cpp server and 49.6 and 28.2 for the llama.cpp server with the same draft model (SG1 v3 in
-[docs/LAB.md](docs/LAB.md)); the same facts right. Without a draft model it is level with llama.cpp. Not yet better:
+One person on one GPU: IronMule writes its own GPU kernels for the 4-bit weights. On first start it generates a few
+hundred variants, checks and times each on your GPU with your model, and keeps the fastest (KG2 in
+[docs/LAB.md](docs/LAB.md)). On a T4 with Qwen3-4B that makes 57.0 tokens per second for one person against 46.6 for
+the llama.cpp server (1.22x), and 153 against 103 at four people, with the same facts right. A small draft model of the
+same family (`--draft-gguf`) helps too: 54.3 against 47.3 on Qwen3-4B and 30.6 against 23.2 on Llama 3.1 8B (SG1 v3). Not yet better:
 vLLM with the 4-bit AWQ model is ahead on one GPU (63.7, 419 and 861 tokens per second at 1, 8 and 32 requests on
 Qwen3-4B).
 
@@ -133,13 +134,20 @@ the last step went. It then picks four things for the next step:
 3. **how many prompt tokens** may join a step (new guests against those already eating),
 4. **whether the draft model** may guess ahead.
 
+The Pilot itself always runs on the CPU: it is small enough to need no graphics card. It steers the model on a CPU
+and, since PI3, on a GPU too. On a graphics card the threads no longer matter, but the third choice does: when a long
+document arrives together with short questions, the Pilot lets the short ones start first instead of making everyone
+wait while the document is read. On a Kaggle T4 that halves the wait for the first word, at the same speed of answers.
+The Pilot has two sets of weights for this, one for CPUs and one for GPUs ([docs/LAB.md](docs/LAB.md), PI3).
+
 | | |
 | :-- | :-- |
 | Size | 20 inputs, two layers of 128, four output heads: about 22,000 weights (88 KB) |
-| Decision time | about 0.4-0.5 ms per step in the running server on the 4-vCPU Xeon: the network itself takes about 20 microseconds, the rest is reading the CPU load from `/proc` |
-| Training | from scratch (random start, no earlier model), by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load, after a short warm start from a teacher: 39 minutes on a 4-vCPU CPU (an earlier generation trained for 67 minutes on two Kaggle T4 GPUs) |
-| In the dream | 240 s of dreamed serving on 1,024 random machines: 12.5 % more tokens than the engine's defaults and 45 % less waiting, and ahead of the best hand rule ("threads = free cores": 1.8 % less waiting) |
-| On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy. Half-busy program: 7.65 and 53.8 tokens per second for 1 and 8 users, against 5.26 and 38.4 with the defaults (1.4x); one busy program: 7.45 and 52.0 against 0.31 and 2.41; two: 6.11 and 30.9 against 0.19 and 1.46; idle it costs nothing (10.04 and 65.6 against 10.05 and 65.0, switched on and off in the same process) |
+| Decision time | about 0.17-0.19 ms per step in the running server on the 4-vCPU Xeon (0.39 ms before it kept `/proc` open), about 0.11 ms beside a T4 (no CPU load to read there); in a tight loop the whole decision takes about 15 microseconds |
+| Training | from scratch (random start, no earlier model), by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load, after a short warm start from a teacher: 47 minutes on two Kaggle T4 GPUs (8,192 dreamed servers at once, 200 rounds). The dream copies what the real machine does, down to a detail found on it: when IronMule leaves a core free, the server's own background services run there and look like a busy program; the Pilot learned that this is no reason to give up a core |
+| In the dream | 240 s of dreamed serving on 1,024 random machines: 9.5 % more tokens than the engine's defaults and 74 % less waiting, and slightly ahead of the best hand rule ("threads = free cores") |
+| On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy. One busy program: 7.38 and 28.9 tokens per second for 1 and 8 users, against 1.59 and 6.65 with the defaults (4.6x and 4.3x); two: 5.56 and 20.7 against 0.29 and 1.75 (19x and 12x); half-busy: 7.64 and 28.2 against 5.90 and 23.1 (1.3x and 1.2x); idle as fast as the defaults (10.1 and 36.0 against 10.1 and 36.2). Mean of two rounds, 64-token answers ([docs/LAB.md](docs/LAB.md), PI2). On a second, older CPU it never saw (a Kaggle Xeon with 2 cores and hyper-threads) it is 3.1x the defaults for one user beside one busy program (4.25 against 1.36 tokens per second) and 4.8x beside two (2.75 against 0.57), equal when idle |
+| On a GPU | Kaggle T4, Qwen3-4B Q4_K_M, GPU weights trained from scratch in 41 minutes on two T4 in a dream built from the T4's measured costs. Requests arriving one after another, 30 % of them a 1,364-token document: the first word after 5.2 s on average instead of 11.8 s (median 1.35 s instead of 13.3 s), 80.3 against 75.4 tokens per second. 8 and 32 requests at once: the same speed (206.5 against 205.9 and 486.7 against 490.0 tokens per second), the first word sooner (0.15 against 0.17 s and 0.43 against 0.62 s). Short chats only: within the card's own spread (228.5 against 238.6 tokens per second, first word 0.83 against 0.68 s on average). 49 of 50 facts right with and without it |
 | Answers | unchanged: every decision is a scheduling or threading choice |
 | Safety | without weights, with inputs outside what it was trained on, or with `IRONMULE_PILOT=0`, the engine keeps its own defaults |
 
@@ -162,22 +170,22 @@ pip install -e ".[cpu]"
 python tools/build_ggml.py
 ```
 
-`build_ggml.py` builds llama.cpp with IronMule's kernels and prints two `export` lines; run them. Then register a
-model with the same tokenizer as your GGUF (it gives the chat template) and serve the GGUF behind it:
+`build_ggml.py` builds llama.cpp with IronMule's kernels and prints two `export` lines; run them. Then serve any
+GGUF you have. It brings its own tokenizer and chat template, so nothing else needs downloading:
 
 ```bash
-ironmule models add Qwen/Qwen3-1.7B --download
-ironmule serve --gguf Qwen3-4B-Q8_0.gguf --model Qwen/Qwen3-1.7B --agent on
+ironmule serve --gguf Qwen3-4B-Q8_0.gguf --agent on
 ```
 
-On the first start IronMule checks the GGUF's quality on this machine and measures its step costs for the Pilot.
+On the first start IronMule checks the GGUF's quality on this machine and measures its step costs for the Pilot. The
+model answers as `gguf/` and the file name without `.gguf` (`/v1/models` lists it).
 
 The server listens on `http://127.0.0.1:8080`. Open it in a browser, or call its chat API:
 
 ```bash
 curl http://127.0.0.1:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "Qwen/Qwen3-1.7B", "messages": [{"role": "user", "content": "Hello!"}]}'
+  -d '{"model": "gguf/Qwen3-4B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
 On an Apple Silicon Mac or with an NVIDIA GPU (MLX path), one line installs and starts a chat:

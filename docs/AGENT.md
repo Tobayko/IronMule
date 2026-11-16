@@ -256,7 +256,18 @@ chosen within the GPU's memory. Not yet measured on a GPU: the Kaggle harness `l
 
 AG10 chooses a configuration while idle; the Pilot (`ironmule/pilot.py`) decides on every step of the ggml engine. It
 is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,000 weights) whose weights ship as
-`ironmule/pilot_weights.npz` (open weights; the world it was trained in and the recipe are not published).
+`ironmule/pilot_weights.npz` for an engine on the CPU and `ironmule/pilot_weights_gpu.npz` for one whose layers run on
+a GPU (PI3; open weights; the world they were trained in and the recipe are not published).
+
+*Scope (owner goal 2026-11-16, BACKLOG PI3).* The Pilot runs on the CPU; the model it steers is to run perfectly on
+the GPU. Since PI3 (2026-11-16) an engine on a GPU takes the GPU weights: trained from scratch in dream world v7, built
+from a T4's measured costs (LAB.md, PI3 probe), they keep the running cap at its maximum and a prompt budget of 128
+there. On a Kaggle T4 with Qwen3-4B Q4_K_M that halves the mean first token when documents arrive among chats (5.22
+against 11.76 s, 80.3 against 75.4 tokens per second) and brings it sooner for 8 and 32 requests at once (0.145 against
+0.169 s, 0.43 against 0.62 s) at the same tokens per second; for short chats alone it is within the card's spread.
+Their thread decisions were not steady on the CPU, so the CPU keeps its own weights. Open under PI3: why serving steps
+with uneven contexts cost up to 1.5x a block's step of the same width on a GPU, and the choice of GPU when there are
+several (padding 17-30 rows to 32 was tried and dropped, LAB.md, PAD2). The CPU serving path stays.
 
 - *What it reads (20 features):* the cores this process may use (affinity and cgroup quota), how many of them other
   programs keep busy (`/proc/stat` minus this process's own CPU time, read at most every 50 ms), this machine's step
@@ -265,7 +276,7 @@ is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,
   price, the running, queued and waiting prompt tokens, the mean context, arrival and token rates, its own last
   choices and the draft acceptance seen.
 - *What it decides:* the step's CPU threads (an eighth to all of the usable cores), the running cap (1-64), the prompt
-  tokens a step may take (256 to unlimited) and whether the draft model may draft. None of these changes an answer.
+  tokens a step may take (32, 128, 512, 2,048 or unlimited; the shared pool honours it since PI2) and whether the draft model may draft. None of these changes an answer.
 - *Why threads matter:* llama.cpp splits each matmul across its threads and waits at a barrier for the slowest.
   When a foreign process holds a core, the thread on it runs only part of the time and every other thread waits:
   on the 4-vCPU Xeon with Qwen3-4B Q8_0 a one-row step took 2.42 s with one busy foreign process at 4 threads and
@@ -275,8 +286,15 @@ is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,
   3 threads unharmed, while the load reader saw only 0.0-0.2 / 0.23-0.32 / 0.44-0.51 cores of it (lab/pi1/half.py).
 - *How it was trained:* from scratch (random start), in a dreamed world: a simulator of continuous batching whose step
   times follow the measured costs and the measured contention collapse, randomised over machines, models, traffic and
-  foreign load. The shipped weights (2026-11-15, world v4): a warm start that copies a teacher knowing the dream's true
-  foreign load, then PPO; 39 minutes on the 4-vCPU Xeon. Copying the visible-load rule instead (threads = free cores)
+  foreign load. The shipped weights (version 2, 2026-11-16, world v6; LAB.md, PI2): from scratch, a warm start copying a
+  teacher that knows the dream's true foreign load, then PPO, 47 minutes on two Kaggle T4 GPUs (seed 70 of two). World
+  v6 adds what the real machine showed: with a core left free the daemons of a quiet server run on it and are seen as
+  foreign load (0.12 cores at 3 of 4 threads, about 0 at 4); the world-v5 weights before them took that for a busy
+  process and stayed at 3 threads on an idle machine. On the 4-vCPU Xeon they are on par with version 1 (+0.1 % tokens
+  per second over 15 load cases, ahead idle, behind for one request beside a process busy 25 % of the time) and decide
+  in 0.17 ms. Version 1 (2026-11-15, world v4): a warm start that copies a teacher knowing the dream's true
+  foreign load, then PPO; 49 minutes on two Kaggle T4 GPUs (seed 21 of two; the CPU run before it chose differently
+  in two passes near a boundary on the real machine, LAB.md). Copying the visible-load rule instead (threads = free cores)
   left two from-scratch runs at 4 threads beside a half-busy process, where 3 are 1.4x faster: that rule cannot see
   such a process. The generation before was trained on two Kaggle T4 GPUs (67 minutes) and fine-tuned on this CPU
   (29 minutes). The world and the recipe are not published.
@@ -320,7 +338,7 @@ ironmule serve --agent on --gpus all      # one agent per GPU
 
 ```bash
 python tools/build_ggml.py                 # once: llama.cpp with IronMule's kernels; prints two exports
-ironmule serve --agent on --gguf Qwen3-4B-Q8_0.gguf --model Qwen/Qwen3-1.7B  # a registered model with the GGUF's tokenizer
+ironmule serve --agent on --gguf Qwen3-4B-Q8_0.gguf  # the GGUF's own tokenizer and template; or --model to bind one
 ```
 
 `GET /health` and `GET /v1/ironmule/dispatch` show each agent: what serves and its measured gain, the world
@@ -334,7 +352,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | :-- | :-- |
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule/ggml_agent.py` | AG10: the ggml engine's agent: step-cost model, traffic memory, dreaming, switch and revert |
-| `ironmule/pilot.py`, `ironmule/pilot_weights.npz` | PI1: the Pilot, its features, decision and open weights |
+| `ironmule/pilot.py`, `ironmule/pilot_weights.npz`, `ironmule/pilot_weights_gpu.npz` | PI1, PI3: the Pilot, its features, decision and open weights (CPU and GPU) |
 | `ironmule/draft_model.py` | DM1: the draft model's stopping rule, calibration and KV bookkeeping |
 | `ironmule/ggml_engine.py` | GG1/SEQ1: llama.cpp's kernels in process, continuous batching, the gate, the width choice, GPU offload |
 | `native/ggml_patches/`, `tools/build_ggml.py` | FA1 and ROW1 kernels for llama.cpp, and the build that applies them |

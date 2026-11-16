@@ -16,6 +16,10 @@ import pytest
 from ironmule import hw
 from ironmule.runtime import BASELINE, Engine, Knobs
 
+#: `hw.memsize` and `sysctlbyname` exist on macOS only; elsewhere `installed_memory_bytes` reads sysconf.
+macos_only = pytest.mark.skipif(platform.system() != "Darwin",
+                                reason="needs macOS sysctl hw.memsize (this platform reads sysconf)")
+
 
 @pytest.fixture(autouse=True)
 def _restore_wired_owners():
@@ -27,7 +31,7 @@ def _restore_wired_owners():
     runtime._WIRED_LIMIT_OWNERS[:] = saved
 
 
-@pytest.mark.skipif(platform.system() != "Darwin", reason="reads macOS's sysctl")
+@macos_only
 def test_native_memsize_equals_the_shell_reading():
     native = hw.installed_memory_bytes()
     shell = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True)
@@ -80,7 +84,7 @@ def test_an_unavailable_size_fails_closed(monkeypatch):
     assert touched == [], "a failed read must not change the process-global limit"
 
 
-@pytest.mark.skipif(platform.system() != "Darwin", reason="reads macOS's sysctl")
+@macos_only
 def test_a_native_error_is_reported_as_unavailable(monkeypatch):
     class Broken:
         def sysctlbyname(self, *args, **kwargs):

@@ -514,3 +514,134 @@ def test_pad1_guesses_change_no_answer_on_the_real_model(engine):
         assert padded == plain and engine.padded > 0
     finally:
         engine.pad_to = saved
+
+
+def test_the_common_prefix_matches_the_token_by_token_loop():
+    import random
+
+    from ironmule.ggml_engine import GgmlEngine
+    from ironmule.draft_model import _common as drafter_common
+
+    def loop(a, b):
+        i = 0
+        while i < min(len(a), len(b)) and a[i] == b[i]:
+            i += 1
+        return i
+
+    rng = random.Random(3)
+    for _ in range(3000):
+        base = [rng.randrange(4) for _ in range(rng.randrange(0, 300))]
+        a = base + [rng.randrange(4) for _ in range(rng.randrange(0, 80))]
+        b = base[:rng.randrange(0, len(base) + 1)] + [rng.randrange(4) for _ in range(rng.randrange(0, 80))]
+        if rng.random() < 0.2:
+            b = tuple(b)
+        assert GgmlEngine._common(a, b) == loop(a, b) == drafter_common(a, b)
+
+
+def test_sp1_the_prefix_trie_picks_what_the_scan_of_every_sequence_picked():
+    """The pool's trie against the scan it replaced (the longest common prefix over every held sequence, the earliest
+    sequence among equals), through random places, syncs (growing and shrinking), releases and evictions."""
+    import random
+
+    from ironmule.ggml_engine import GgmlEngine
+
+    def scan(pool, ids):
+        best, match = None, 0
+        for seq, held in pool.tokens.items():
+            n = GgmlEngine._common(held, ids)
+            if n > match:
+                best, match = seq, n
+        return best, match
+
+    rng = random.Random(11)
+    for _ in range(60):
+        pool, _ = _pool_engine(cells=rng.choice([300, 2000]), cap=6)
+        prefixes = [[rng.randrange(6) for _ in range(rng.randrange(1, 30))] for _ in range(4)]
+        running = {}
+        for _ in range(120):
+            ids = rng.choice(prefixes) + [rng.randrange(6) for _ in range(rng.randrange(0, 15))]
+            if len(ids) < 2:
+                continue
+            assert pool.longest(ids) == scan(pool, ids)
+            op = rng.random()
+            if op < 0.45 and pool.slots():
+                placed = pool.place(ids, rng.randrange(1, 20))
+                if placed is not None:
+                    seq, keep = placed
+                    running[seq] = list(ids)
+                    pool.sync(seq, ids, 5)
+            elif op < 0.75 and running:
+                seq = rng.choice(list(running))
+                held = running[seq]
+                held = held[:rng.randrange(1, len(held) + 1)] + [rng.randrange(6) for _ in range(rng.randrange(0, 6))]
+                running[seq] = held
+                pool.sync(seq, held + [99], 3, length=len(held))
+            elif running:
+                seq = rng.choice(list(running))
+                held = running.pop(seq)
+                pool.release(seq, held if rng.random() < 0.7 else None)
+            for seq, held in pool.tokens.items():  # the trie holds exactly what the pool's lists hold
+                assert [node[3] for node in pool.trie.paths[seq]] == held
+
+
+def test_st1_a_float32_kv_cache_ranks_first_only_well_ahead():
+    """Two fresh starts on the same machine ranked f32 KV first and third on tuning noise; it served 30 % slower."""
+    from ironmule.ggml_engine import rank_settings
+
+    measured = [{"flash_attn": True, "kv_unified": True, "kv_f32": True, "score": 25.92},  # the noisy first start
+                {"flash_attn": True, "kv_unified": True, "kv_f32": False, "score": 24.57},
+                {"flash_attn": False, "kv_unified": False, "kv_f32": False, "score": 21.27}]
+    assert [r["kv_f32"] for r in rank_settings(measured)] == [False, True, False]
+    clearly = [dict(measured[0], score=30.0), measured[1]]
+    assert rank_settings(clearly)[0]["kv_f32"] is True
+
+
+def test_kg1_the_gate_is_keyed_by_the_kernel_library_it_ran_with(tmp_path, monkeypatch):
+    from ironmule import ggml_engine as ge
+
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"GGUF weights")
+    monkeypatch.delenv("IRONMULE_KG_LIB", raising=False)
+    plain = ge.gate_key(str(gguf), str(gguf))
+    library = tmp_path / "kg.so"
+    library.write_bytes(b"one library")
+    monkeypatch.setenv("IRONMULE_KG_LIB", str(library))
+    with_library = ge.gate_key(str(gguf), str(gguf))
+    library.write_bytes(b"another library")
+    assert len({plain, with_library, ge.gate_key(str(gguf), str(gguf))}) == 3
+
+
+def test_pi2_the_shared_pool_starts_prompts_within_a_set_budget(monkeypatch):
+    from ironmule import ggml_engine
+    from ironmule.ggml_engine import Job
+
+    if not GGUF or ggml_engine.available() is not None:
+        pytest.skip("needs llama.cpp's bindings and IRONMULE_TEST_GGUF")
+    built = ggml_engine.GgmlEngine(GGUF, seqs=8, seq_ctx=512, speculate=False, shared=True, cap=8)
+    try:
+        def prompts(first: int) -> list[list[int]]:  # new prompts each time: the pool keeps what it computed
+            return [built.tokenize(f"<|im_start|>user\nName a colour, number {i}.<|im_end|>\n<|im_start|>assistant\n")
+                    for i in range(first, first + 4)]
+
+        decode = built.L.llama_decode
+        calls = {"n": 0}
+
+        def counted(*args):
+            calls["n"] += 1
+            return decode(*args)
+
+        monkeypatch.setattr(built.L, "llama_decode", counted)
+
+        def steps(budget: int, first: int) -> tuple[int, list[list[int]]]:
+            monkeypatch.setattr(ggml_engine, "PROMPT_BUDGET", budget)
+            jobs = [Job(p, 4) for p in prompts(first)]
+            calls["n"] = 0
+            built.run(jobs)
+            assert all(len(job.tokens) == 4 or job.reason == "eos" for job in jobs)
+            return calls["n"], [job.tokens for job in jobs]
+
+        together, _ = steps(0, 0)  # no budget: every prompt starts in the first step
+        staggered, _ = steps(1, 10)  # a budget of one token: one prompt per step (at least one starts)
+        assert staggered >= together + 3
+    finally:
+        built.close()

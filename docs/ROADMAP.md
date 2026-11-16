@@ -7,6 +7,25 @@ here is a measured result unless it says so, and nothing here changes current be
 **What "done" means.** A stranger installs IronMule with one command, repeats the README's numbers on their own
 machine with one command, and uses it from the client they already have.
 
+## Read this first: the review looked at an older main
+
+The review, the audit and the micro-benchmarks below were made on a checkout of `main` at `2e72c17` (2026-11-15).
+`main` moved 47 commits while they were written; it was merged into this branch on 2026-11-16. Checked against
+`main` at `821fe50`:
+
+| Point below | State on main |
+| :-- | :-- |
+| The two searches in the engine loop that grow with the context (Phase 4, step 1) | Done as ST1 (LAB.md): an n-gram index per request and a prefix trie in the shared pool, tokens identical. The micro-benchmarks below describe the old code |
+| A GPU kernel for 4-bit weights (Phase 4, step 3) | Done as KG2 (LAB.md): generated kernels, one request on a T4 1.27x, on by default on GPUs. vLLM AWQ's 63.7 tokens per second (MG2 v6) is the number still to reach |
+| Is the CPU bound by memory bandwidth (Phase 4, step 4) | Answered as ST2 (LAB.md) |
+| The Pilot's decision time | 0.17-0.19 ms in the running server since it keeps `/proc` open (0.39 ms before) |
+| The 14 failing tests | Fixed on main as well; main's version of those files is kept here. A Linux CI job now runs `tests/engine`, `tests/agent` and the claims files |
+| "One flagship" (Phase 1) | The owner's goal of 2026-11-16 (BACKLOG, "The main goal"): IronMule decides on the CPU, the served model's main target is the GPU, and the CPU serving path stays |
+
+Still open on main: the README and help-text rows of the audit's claims table ("never changes what the model
+answers", the "one GPU" label, the 32-slot caution, `--gguf` "CPU only"), requests held until a run goes idle,
+sampling, and CI for `tests/learning`, `tests/runtime`, `tests/evidence` and for the GGUF engine with a real model.
+
 ## Where the project stands
 
 | Area | Mark (of 10) | Why |
@@ -88,7 +107,8 @@ Owner: remove what is not needed, do not archive it. Done on that day:
 - [BACKLOG.md](BACKLOG.md): 6,944 lines to about 690. The goal, the open work and Tier 0 stay; every answered
   entry is one line.
 - The 14 failing tests now skip with their reason where their precondition is absent (Metal, macOS, the
-  research repository's legacy file) or are marked `integration`: 2,217 passed, 93 skipped, none failed. CI still
+  research repository's legacy file) or are marked `integration`; after the merge of main its own fixes of the
+  same files are kept: 2,300 passed, 88 skipped, none failed. CI still
   does not run `tests/learning`, `tests/runtime` and `tests/evidence`.
 
 Not removed, because tests or AGENTS.md hold them; each is a decision for the owner:
