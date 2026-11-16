@@ -18,6 +18,11 @@ Parts (each cell twice, in alternating arm order):
   D  answers: the 50 facts of lab/row1/facts.py at 8 at a time, defaults against v6, checked as MG2 checks them
 
 Every engine step's (decode rows, prompt tokens, attended tokens, seconds) is kept for the GPU dream world.
+
+PI3_MODE=check (step 3): the Pilot shipped at MG2_COMMIT ("ship") against the defaults, the PI2 Pilot ("v6", weights
+from OLD_WEIGHTS) and a fixed prompt budget of 512: blocks of 1 / 8 / 32 requests (128 tokens, 3 rounds), both arrival
+patterns (4 rounds, the arm order rotated), the draft model (2 rounds) and the 50 facts; part A is left out. The
+decisions the Pilots take are counted.
 Writes /kaggle/working/pi3_probe.json. MG2_COMMIT names the commit to fetch.
 """
 import json, math, multiprocessing as mp, os, random, sys, time
@@ -27,6 +32,8 @@ COMMIT = os.environ["MG2_COMMIT"]
 LOCAL = os.environ.get("PI3_LOCAL")  # a CPU smoke of this file: the repository, a local build and models in PI3_LOCAL
 W = Path(LOCAL or "/kaggle/working")
 SMOKE = bool(LOCAL)
+CHECK = os.environ.get("PI3_MODE") == "check"  # the check of a newly trained Pilot (step 3 of PI3), see below
+OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
 
@@ -64,6 +71,28 @@ class Fixed:
 
     def status(self):
         return {"fixed": self.d}
+
+    def close(self):
+        pass
+
+
+class Counted:
+    """A Pilot whose decisions are counted (cap, budget, threads, draft)."""
+
+    def __init__(self, inner):
+        self.inner, self.seen = inner, {}
+
+    def decide(self, *a):
+        d = self.inner.decide(*a)
+        key = f"c{d['cap']}/b{min(d['budget'], 99999)}/t{d['threads']}/d{int(d['draft'])}"
+        self.seen[key] = self.seen.get(key, 0) + 1
+        return d
+
+    def observe(self, *a):
+        self.inner.observe(*a)
+
+    def status(self):
+        return {**self.inner.status(), "seen": dict(self.seen)}
 
     def close(self):
         pass
@@ -222,6 +251,84 @@ def main():
     cores = e.threads
     OUT["costs"] = v6.costs if v6 is not None else e.measure_costs()
     big = 1 << 30
+    if CHECK:
+        from ironmule.pilot import Pilot
+
+        old = W / "pilot_weights_v6.npz"
+        if not old.exists():
+            old.write_bytes(__import__("urllib.request").request.urlopen(
+                f"https://raw.githubusercontent.com/Tobayko/IronMule/{OLD_WEIGHTS}/ironmule/pilot_weights.npz", timeout=60).read())
+        ship = Counted(v6)
+        prev = Counted(Pilot(e, v6.costs, max_cap=e.cap, gpu=True, weights=old))
+        OUT["prev_status"] = prev.status()
+        e.pilot = None
+        e.run([Job(ids_of(chat_text(0)), 16)])
+        collect(e, "plain")
+        arms = [("defaults", None), ("ship", ship), ("v6", prev), ("budget512", Fixed(cores, 32, 512))]
+        OUT["blocks"] = []
+        for rep in range(3):
+            for arm, src_ in (arms[:2] if rep % 2 == 0 else arms[:2][::-1]):
+                for n in (1, 8, 32):
+                    e.pilot = src_
+                    e.set_threads(cores)
+                    row = {"arm": arm, "rep": rep, "n": n, **block(e, n, 8 if SMOKE else 128, blocks=1 if SMOKE else 3)}
+                    OUT["blocks"].append(row)
+                    print(json.dumps(row), flush=True)
+                    save()
+        for rep in range(1 if SMOKE else 4):
+            for arm, src_ in arms[rep % 4:] + arms[:rep % 4]:
+                for kind in ("chat", "mixed"):
+                    e.pilot = src_
+                    e.set_threads(cores)
+                    row = {"arm": arm, "rep": rep, "kind": kind, **stream(e, kind, 300 + rep)}
+                    OUT["B"].append(row)
+                    print(json.dumps(row), flush=True)
+                    save()
+        OUT["ship_seen"], OUT["v6_seen"] = ship.seen, prev.seen
+        answers = {}
+        for arm, src_ in (("defaults", None), ("ship", ship)):
+            e.pilot = src_
+            e.set_threads(cores)
+            got = []
+            for k in range(0, 8 if SMOKE else len(fact_ids), 8):
+                js = [Job(i, 48) for i in fact_ids[k:k + 8]]
+                e.run(js)
+                got += [j.tokens for j in js]
+            answers[arm] = got
+        e.pilot = None
+        OUT["summary_end"] = e.summary()
+        e.observer = None
+        e.close()
+        save()
+        e, tok_ = open_engine(draft)
+        tok = tok_
+        shipd = Counted(e.pilot) if e.pilot is not None else None
+        e.pilot = None
+        e.run([Job(ids_of(chat_text(0)), 16)])
+        for rep in range(1 if SMOKE else 2):
+            for arm, src_ in ((("defaults", None), ("ship", shipd)) if rep == 0 else (("ship", shipd), ("defaults", None))):
+                e.pilot = src_
+                e.set_threads(cores)
+                for n in (1, 8):
+                    row = {"arm": arm, "rep": rep, "n": n, **block(e, n, 8 if SMOKE else 128)}
+                    OUT["C"].append(row)
+                    print(json.dumps(row), flush=True)
+                row = {"arm": arm, "rep": rep, "n": "chat", **stream(e, "chat", 400 + rep)}
+                OUT["C"].append(row)
+                print(json.dumps(row), flush=True)
+                save()
+        OUT["ship_draft_seen"] = shipd.seen if shipd is not None else None
+        OUT["draft_end"] = e.summary().get("draft_model")
+        e.close()
+        proc, port = mg2.server(gguf, 1, "0", "layer" if LOCAL else "none")
+        try:
+            OUT["facts"] = {arm: mg2.correct([mg2.detok_server(port, i) for i in v], facts) for arm, v in answers.items()}
+        finally:
+            mg2.stop(proc)
+        OUT["same_tokens"] = sum(a == b for a, b in zip(answers["defaults"], answers["ship"]))
+        OUT["finished"] = time.time()
+        save()
+        return
     e.pilot = None
     e.run([Job(ids_of(chat_text(0)), 16)])
     collect(e, "plain")
