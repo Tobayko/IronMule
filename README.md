@@ -39,7 +39,7 @@ waiter notices and plans around it.
 
 **IronMule is that kitchen, and its head waiter is the Pilot**: a small neural network (about 22,000 numbers) that
 looks at your machine and the people asking, and decides again before every step of the language model how that step
-runs, in about half a millisecond. It never changes what the model answers. It only decides how the work is done.
+runs, in about a fifth of a millisecond. It never changes what the model answers. It only decides how the work is done.
 
 For developers: IronMule is a local, OpenAI-compatible LLM server. It serves GGUF models through llama.cpp's kernels
 plus its own (continuous batching, a shared prefix cache, AVX-512 and AMX attention kernels, a draft model) and MLX
@@ -134,13 +134,17 @@ the last step went. It then picks four things for the next step:
 3. **how many prompt tokens** may join a step (new guests against those already eating),
 4. **whether the draft model** may guess ahead.
 
+The Pilot itself always runs on the CPU: it is small enough to need no graphics card. Today it steers the model on
+CPUs, where it was trained and measured. The next goal: the Pilot, still on the CPU, steers the model on a GPU so that
+it runs there as fast as the card allows. The CPU path stays ([docs/BACKLOG.md](docs/BACKLOG.md), PI3).
+
 | | |
 | :-- | :-- |
 | Size | 20 inputs, two layers of 128, four output heads: about 22,000 weights (88 KB) |
-| Decision time | about 0.19 ms per step in the running server on the 4-vCPU Xeon (0.39 ms before it kept `/proc` open); in a tight loop the whole decision takes about 15 microseconds |
-| Training | from scratch (random start, no earlier model), by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load, after a short warm start from a teacher: 49 minutes on two Kaggle T4 GPUs (8,192 dreamed servers at once, 200 rounds); of two seeds the one that chose the same threads every time on the real machine ships |
-| In the dream | 240 s of dreamed serving on 1,024 random machines: 12.5 % more tokens than the engine's defaults and 45 % less waiting, and ahead of the best hand rule ("threads = free cores": 1.8 % less waiting) |
-| On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy, the same choice every time. Half-busy program: 7.21 and 50.6 tokens per second for 1 and 8 users, against 5.26 and 38.4 with the defaults (1.4x); one busy program: 7.26 and 49.3 against 0.31 and 2.41; idle at the same 4 threads as the defaults. On a second, older CPU it never saw (a Kaggle Xeon with 2 cores and hyper-threads) it was 4.2x the defaults for one user beside one busy program (4.75 against 1.12 tokens per second) and 4.5x beside two (3.93 against 0.88), equal when idle |
+| Decision time | about 0.17-0.19 ms per step in the running server on the 4-vCPU Xeon (0.39 ms before it kept `/proc` open); in a tight loop the whole decision takes about 15 microseconds |
+| Training | from scratch (random start, no earlier model), by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load, after a short warm start from a teacher: 47 minutes on two Kaggle T4 GPUs (8,192 dreamed servers at once, 200 rounds). The dream copies what the real machine does, down to a detail found on it: when IronMule leaves a core free, the server's own background services run there and look like a busy program; the Pilot learned that this is no reason to give up a core |
+| In the dream | 240 s of dreamed serving on 1,024 random machines: 9.5 % more tokens than the engine's defaults and 74 % less waiting, and slightly ahead of the best hand rule ("threads = free cores") |
+| On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy. One busy program: 7.38 and 28.9 tokens per second for 1 and 8 users, against 1.59 and 6.65 with the defaults (4.6x and 4.3x); two: 5.56 and 20.7 against 0.29 and 1.75 (19x and 12x); half-busy: 7.64 and 28.2 against 5.90 and 23.1 (1.3x and 1.2x); idle as fast as the defaults (10.1 and 36.0 against 10.1 and 36.2). Mean of two rounds, 64-token answers ([docs/LAB.md](docs/LAB.md), PI2). On a second, older CPU it never saw (a Kaggle Xeon with 2 cores and hyper-threads) it is 3.1x the defaults for one user beside one busy program (4.25 against 1.36 tokens per second) and 4.8x beside two (2.75 against 0.57), equal when idle |
 | Answers | unchanged: every decision is a scheduling or threading choice |
 | Safety | without weights, with inputs outside what it was trained on, or with `IRONMULE_PILOT=0`, the engine keeps its own defaults |
 

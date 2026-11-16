@@ -17,6 +17,12 @@ Under `--agent on` it may also choose an output-changing numeric plan or stacked
 that passes its own on-machine quality gate, and never silently (owner, 2026-11-03; BACKLOG AG4). Outside agent
 mode the caller's plan is preserved as below.
 
+**IronMule decides on the CPU, the model it steers is to run perfectly on the GPU (owner decision, 2026-11-16;
+BACKLOG, "The main goal").** The agent and its per-step decision model, the Pilot (`ironmule/pilot.py`), run on the
+CPU and stay small enough to decide in milliseconds there. What they optimise, the served LLM, is to be tuned to the
+GPU first (BACKLOG PI3); the CPU serving path is kept, not dropped. A gain on one says nothing about the other until
+measured there.
+
 **Answer quality instead of identical tokens (owner decision, 2026-11-10; BACKLOG, "The main goal").** For this project
 answers need not be token-identical: what matters is that they stay correct with the same answer quality, and the
 project goes for full performance under that condition. A path that changes tokens may serve once its quality was

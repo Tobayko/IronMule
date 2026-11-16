@@ -13,7 +13,7 @@ their prompts and contexts are -- and decides four things for the next step:
 The network is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads), about 22,000 weights. It was
 trained from scratch by reinforcement learning in a dreamed world -- a world model of serving built from measurements --
 and never on a production server; its weights ship as `pilot_weights.npz` (open weights). The network takes a few tens
-of microseconds in numpy; with the CPU load from `/proc` a decision took about 0.11 ms in a busy server (PI1). It never changes
+of microseconds in numpy; with the CPU load from `/proc` a decision takes about 0.17-0.19 ms in the running server (PI1, PI2). It never changes
 what the model answers: every decision is a scheduling or threading choice.
 
 Safety: without the weights file, with features outside the ranges it was trained on, or with `IRONMULE_PILOT=0`, the
@@ -32,12 +32,12 @@ import numpy as np
 
 THREAD_FRACTIONS = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0)
 CAPS = (1, 2, 4, 8, 16, 32, 64)
-BUDGETS = (256, 1024, 4096, 1 << 30)
+BUDGETS = (32, 128, 512, 2048, 1 << 30)  # PI2: 32 and 128 let short prompts start one or a few per step
 DRAFTS = (0, 1)
 HEADS = (len(THREAD_FRACTIONS), len(CAPS), len(BUDGETS), len(DRAFTS))
 OBS = 20
 WEIGHTS = Path(__file__).with_name("pilot_weights.npz")
-VERSION = 1
+VERSION = 2  # 2 (PI2): five prompt budgets, the shared pool honours them
 _HEAD_SLICES = tuple((sum(HEADS[:i]), sum(HEADS[:i + 1])) for i in range(len(HEADS)))
 
 

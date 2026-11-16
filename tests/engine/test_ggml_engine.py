@@ -609,3 +609,39 @@ def test_kg1_the_gate_is_keyed_by_the_kernel_library_it_ran_with(tmp_path, monke
     with_library = ge.gate_key(str(gguf), str(gguf))
     library.write_bytes(b"another library")
     assert len({plain, with_library, ge.gate_key(str(gguf), str(gguf))}) == 3
+
+
+def test_pi2_the_shared_pool_starts_prompts_within_a_set_budget(monkeypatch):
+    from ironmule import ggml_engine
+    from ironmule.ggml_engine import Job
+
+    if not GGUF or ggml_engine.available() is not None:
+        pytest.skip("needs llama.cpp's bindings and IRONMULE_TEST_GGUF")
+    built = ggml_engine.GgmlEngine(GGUF, seqs=8, seq_ctx=512, speculate=False, shared=True, cap=8)
+    try:
+        def prompts(first: int) -> list[list[int]]:  # new prompts each time: the pool keeps what it computed
+            return [built.tokenize(f"<|im_start|>user\nName a colour, number {i}.<|im_end|>\n<|im_start|>assistant\n")
+                    for i in range(first, first + 4)]
+
+        decode = built.L.llama_decode
+        calls = {"n": 0}
+
+        def counted(*args):
+            calls["n"] += 1
+            return decode(*args)
+
+        monkeypatch.setattr(built.L, "llama_decode", counted)
+
+        def steps(budget: int, first: int) -> tuple[int, list[list[int]]]:
+            monkeypatch.setattr(ggml_engine, "PROMPT_BUDGET", budget)
+            jobs = [Job(p, 4) for p in prompts(first)]
+            calls["n"] = 0
+            built.run(jobs)
+            assert all(len(job.tokens) == 4 or job.reason == "eos" for job in jobs)
+            return calls["n"], [job.tokens for job in jobs]
+
+        together, _ = steps(0, 0)  # no budget: every prompt starts in the first step
+        staggered, _ = steps(1, 10)  # a budget of one token: one prompt per step (at least one starts)
+        assert staggered >= together + 3
+    finally:
+        built.close()

@@ -78,6 +78,35 @@ llama.cpp's quality when its perplexity on the gate's chunks is within NUM1's bo
 GGUF (the ratio's 95 % upper end at most 1.005); a comparison then gives `llama-server` the same options. GG3 and LC2
 below carry it out. The owner was told this reading and may correct it.
 
+**IronMule on the CPU, the model perfect on the GPU (owner, 2026-11-16).** First: "The LLM IronMule optimises is to
+be optimised for the GPU, but also the CPU; we don't throw that away." Then, correcting the first reading: "No,
+IronMule is to run on the CPU, and what is optimised is to be perfect for the GPU." Read as: (1) IronMule's decisions,
+the agent and the Pilot, run on the CPU, and stay fast enough there to decide every step in milliseconds; (2) the
+served LLM is what they optimise, and its main target is the GPU: the Pilot is to steer it there to the best speed the
+card allows (PI3); (3) the CPU serving path, the ggml engine with the Pilot as it decides there today, stays with its
+tests and numbers; (4) a gain counts only on the hardware it was measured on. The owner was told this reading and may
+correct it.
+
+### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; open)
+
+**Why.** The owner's goal above: the Pilot keeps running on the CPU, and the model it steers is to run perfectly on
+the GPU. Today the Pilot's thread head means nothing when the layers run on a GPU, and the
+other heads (running cap, prompt budget, draft) were trained only on CPU step costs. On a T4 the engine's costs have a
+different shape: small batches are dear (PAD1), a full prompt costs little next to decoding, and the draft model and
+generated kernels change the price of a step (MG2, KG2).
+
+**Mechanism.** Measure a GPU machine's step costs at startup as on the CPU (one row, each further row, prompt and
+attended tokens, per GPU), give the dream world a GPU cost model built from those measurements, and add the heads a
+GPU needs: the running cap and prompt budget per GPU, padding to a dear-batch boundary (PAD1), draft on or off, and
+which GPU a new request joins when there are several (MG1). Train from scratch as PI1/PI2, then measure on a Kaggle
+T4 x2 against the engine's defaults, `llama-server` and vLLM (MG2's harness), with the facts checked against the
+reference engine.
+
+**Kill.** If on the T4 the Pilot's decisions are not faster than the engine's defaults in tokens per second, with the
+first token no later, at 1, 8 and 32 requests, the GPU heads stay off and the defaults serve there.
+
+**Cost.** GPU training and the T4 measurement spend Kaggle GPU quota and need the owner's approval before each push.
+
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
 
 **Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers
