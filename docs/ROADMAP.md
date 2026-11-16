@@ -42,7 +42,8 @@ places where Python's time grows with the context and the pool.
 ## Audit: targets not met and outliers (2026-11-15)
 
 Found by reading the README against [LAB.md](LAB.md) and [BACKLOG.md](BACKLOG.md), and by running the suites
-(`pip install -e ".[cpu,dev]"` on the container above, Linux, no GPU, no model). Nothing below is fixed yet.
+(`pip install -e ".[cpu,dev]"` on the container above, Linux, no GPU, no model). The failing tests are dealt with
+(see Cleanup below); the claims are not corrected yet.
 
 **Tests.** `tests/engine tests/agent tests/learning tests/runtime tests/evidence tests/claims -m "not integration"`:
 2,219 passed, 80 skipped, 14 failed. CI runs only `tests/engine`, `tests/agent` and two claims files, so none of
@@ -77,9 +78,28 @@ the agent learns nothing new.
 **This document's own error, corrected above.** The first version proposed measuring Q8_0 against Q4_K_M on the
 CPU; ROW1 round 4 had already done so (Q4_K_M is slower there).
 
-**Dead weight.** 17 files in `docs/assets` (5.8 MB of the folder's 7 MB, among them a 2.0 MB GIF and a 1.5 MB
-MP4) are referenced by no file in the repository; whether the website links them is not known. BACKLOG.md is
-548 KB.
+## Cleanup (2026-11-16)
+
+Owner: remove what is not needed, do not archive it. Done on that day:
+
+- 17 files in `docs/assets` that no file referenced (5.8 MB), and the Qwen3.6 routing figure that no document
+  showed, with its evidence file and its function in `tools/make_figures.py` (18 figures remain and match).
+- `tools/gg0_probe.py` and `tools/cs1_probe.py`, which nothing referenced.
+- [BACKLOG.md](BACKLOG.md): 6,944 lines to about 690. The goal, the open work and Tier 0 stay; every answered
+  entry is one line.
+- The 14 failing tests now skip with their reason where their precondition is absent (Metal, macOS, the
+  research repository's legacy file) or are marked `integration`: 2,217 passed, 93 skipped, none failed. CI still
+  does not run `tests/learning`, `tests/runtime` and `tests/evidence`.
+
+Not removed, because tests or AGENTS.md hold them; each is a decision for the owner:
+
+| What | Size | Why it may go |
+| :-- | :-- | :-- |
+| `tools/product_*.py`, their specs `docs/PROD*.md` and their tests | 5,232 + 805 + 1,158 lines | Harnesses of the September product validation on the MLX path; four read raw files that are not in this repository, and `product_bounded_bench.py` hashes a `BACKLOG.md` at the root that does not exist |
+| `tools/cuda_probe.py`, `kaggle_whole_machine.py`, `tpu_probe.py`, `tpu_step_probe.py` and their tests | 4,509 + 2,761 lines | Kaggle harnesses of closed entries (HW3, KB1-KB3, TP1) |
+| `ironmule/adaptive.py`, `ironmule/opt_adapter.py` | 865 lines | Imported by no product module, only by their tests |
+| `native/optimizer` | 7,259 lines of Rust | Used through `live_learning.py` and `service.py`; outside the path the README's numbers come from |
+| The MLX serving engines beside the GGUF engine (`tuned`, `dense`, `rust2`) | most of `ironmule/` | Phase 1's decision: one flagship |
 
 ## The phases
 
