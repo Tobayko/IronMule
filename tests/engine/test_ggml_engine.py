@@ -500,17 +500,6 @@ def test_pad1_fills_a_step_only_to_a_size_measured_cheaper():
     assert pad_table({1: 0.10, 2: 0.097}) == {}  # within 5 %: not worth a guess
 
 
-def test_pad2_fills_17_to_30_rows_to_32_where_32_is_measured_cheaper():
-    from ironmule.ggml_engine import pad_table
-
-    # PI3 probe on a T4 (medians of serving steps): 9-16 rows 46-50 ms, 17-30 rows 74-88 ms, 31-32 rows 48-61 ms
-    prices = {t: 0.047 for t in range(9, 17)} | {t: 0.078 for t in range(17, 31)} | {31: 0.061, 32: 0.055}
-    table = pad_table(prices)
-    assert all(table[t] == 32 for t in range(17, 31)) and 31 in table and not any(t in table for t in range(9, 17))
-    flat = {t: 0.047 + 0.0005 * t for t in range(9, 33)}  # no step down after 16 (the draft engine's steps): no padding
-    assert pad_table(flat) == {}
-
-
 def test_pad1_guesses_change_no_answer_on_the_real_model(engine):
     from ironmule.ggml_engine import Job
 

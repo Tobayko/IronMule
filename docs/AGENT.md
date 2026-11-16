@@ -265,8 +265,9 @@ from a T4's measured costs (LAB.md, PI3 probe), they keep the running cap at its
 there. On a Kaggle T4 with Qwen3-4B Q4_K_M that halves the mean first token when documents arrive among chats (5.22
 against 11.76 s, 80.3 against 75.4 tokens per second) and brings it sooner for 8 and 32 requests at once (0.145 against
 0.169 s, 0.43 against 0.62 s) at the same tokens per second; for short chats alone it is within the card's spread.
-Their thread decisions were not steady on the CPU, so the CPU keeps its own weights. Open under PI3: padding 17-31 rows
-to 32 on a GPU and the choice of GPU when there are several. The CPU serving path stays.
+Their thread decisions were not steady on the CPU, so the CPU keeps its own weights. Open under PI3: why serving steps
+with uneven contexts cost up to 1.5x a block's step of the same width on a GPU, and the choice of GPU when there are
+several (padding 17-30 rows to 32 was tried and dropped, LAB.md, PAD2). The CPU serving path stays.
 
 - *What it reads (20 features):* the cores this process may use (affinity and cgroup quota), how many of them other
   programs keep busy (`/proc/stat` minus this process's own CPU time, read at most every 50 ms), this machine's step
