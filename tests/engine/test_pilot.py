@@ -98,3 +98,27 @@ def test_weights_for_the_four_budgets_of_version_1_are_refused(tmp_path):
     np.savez(old, **z)
     pilot = pl.Pilot(engine(), COSTS, max_cap=16, weights=old)
     assert not pilot.active and "another Pilot version" in pilot.reason
+
+
+def test_an_engine_on_a_gpu_takes_the_gpu_weights_and_a_cpu_engine_the_cpu_weights(tmp_path, monkeypatch):
+    monkeypatch.delenv("IRONMULE_PILOT_WEIGHTS", raising=False)
+    monkeypatch.delenv("IRONMULE_PILOT", raising=False)
+    (tmp_path / "g").mkdir()
+    cpu, gpu = weights(tmp_path, (7, 6, 4, 1)), weights(tmp_path / "g", (7, 6, 1, 1)).rename(tmp_path / "gpu.npz")
+    monkeypatch.setattr(pl, "WEIGHTS", cpu)
+    monkeypatch.setattr(pl, "WEIGHTS_GPU", gpu)
+    on_gpu = pl.Pilot(engine(), COSTS, max_cap=32, gpu=True)
+    on_cpu = pl.Pilot(engine(), COSTS, max_cap=32, gpu=False)
+    assert on_gpu.status()["weights"] == "gpu.npz" and on_cpu.status()["weights"] == cpu.name
+    assert on_gpu.decide(4, 2, 300, 200.0)["budget"] == pl.BUDGETS[1]
+    assert on_cpu.decide(4, 2, 300, 200.0)["budget"] == pl.BUDGETS[4]
+    monkeypatch.setattr(pl, "WEIGHTS_GPU", tmp_path / "missing.npz")  # without a GPU file the CPU weights serve both
+    assert pl.Pilot(engine(), COSTS, max_cap=32, gpu=True).status()["weights"] == cpu.name
+    monkeypatch.setenv("IRONMULE_PILOT_WEIGHTS", str(gpu))  # the variable names one file for every engine
+    assert pl.Pilot(engine(), COSTS, max_cap=32, gpu=False).status()["weights"] == "gpu.npz"
+
+
+def test_both_shipped_weight_files_load_for_this_version():
+    for path in (pl.WEIGHTS, pl.WEIGHTS_GPU):
+        pilot = pl.Pilot(engine(), COSTS, max_cap=32, gpu=path is pl.WEIGHTS_GPU, weights=path)
+        assert pilot.active, (path.name, pilot.reason)

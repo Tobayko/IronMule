@@ -256,11 +256,17 @@ chosen within the GPU's memory. Not yet measured on a GPU: the Kaggle harness `l
 
 AG10 chooses a configuration while idle; the Pilot (`ironmule/pilot.py`) decides on every step of the ggml engine. It
 is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,000 weights) whose weights ship as
-`ironmule/pilot_weights.npz` (open weights; the world it was trained in and the recipe are not published).
+`ironmule/pilot_weights.npz` for an engine on the CPU and `ironmule/pilot_weights_gpu.npz` for one whose layers run on
+a GPU (PI3; open weights; the world they were trained in and the recipe are not published).
 
 *Scope (owner goal 2026-11-16, BACKLOG PI3).* The Pilot runs on the CPU; the model it steers is to run perfectly on
-the GPU. Today it steers the ggml engine on CPUs, where it was trained and measured; the GPU heads and their
-measurement are open under PI3. The CPU serving path stays.
+the GPU. Since PI3 (2026-11-16) an engine on a GPU takes the GPU weights: trained from scratch in dream world v7, built
+from a T4's measured costs (LAB.md, PI3 probe), they keep the running cap at its maximum and a prompt budget of 128
+there. On a Kaggle T4 with Qwen3-4B Q4_K_M that halves the mean first token when documents arrive among chats (5.22
+against 11.76 s, 80.3 against 75.4 tokens per second) and brings it sooner for 8 and 32 requests at once (0.145 against
+0.169 s, 0.43 against 0.62 s) at the same tokens per second; for short chats alone it is within the card's spread.
+Their thread decisions were not steady on the CPU, so the CPU keeps its own weights. Open under PI3: padding 17-31 rows
+to 32 on a GPU and the choice of GPU when there are several. The CPU serving path stays.
 
 - *What it reads (20 features):* the cores this process may use (affinity and cgroup quota), how many of them other
   programs keep busy (`/proc/stat` minus this process's own CPU time, read at most every 50 ms), this machine's step
@@ -345,7 +351,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | :-- | :-- |
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule/ggml_agent.py` | AG10: the ggml engine's agent: step-cost model, traffic memory, dreaming, switch and revert |
-| `ironmule/pilot.py`, `ironmule/pilot_weights.npz` | PI1: the Pilot, its features, decision and open weights |
+| `ironmule/pilot.py`, `ironmule/pilot_weights.npz`, `ironmule/pilot_weights_gpu.npz` | PI1, PI3: the Pilot, its features, decision and open weights (CPU and GPU) |
 | `ironmule/draft_model.py` | DM1: the draft model's stopping rule, calibration and KV bookkeeping |
 | `ironmule/ggml_engine.py` | GG1/SEQ1: llama.cpp's kernels in process, continuous batching, the gate, the width choice, GPU offload |
 | `native/ggml_patches/`, `tools/build_ggml.py` | FA1 and ROW1 kernels for llama.cpp, and the build that applies them |

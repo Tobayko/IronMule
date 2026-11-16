@@ -1538,6 +1538,136 @@ change). This session's machine was slower than the one of the version-1 run (id
 beside two, 8 % faster for one request beside a half-busy process, equal idle. Against each session's idle defaults
 v6 keeps 83 % / 83 % beside one busy process, version 1 kept 78 % / 83 %: on par, as on the first machine.
 
+## 2026-11-16 PI3 probe: what the Pilot can decide on a T4
+
+Kaggle T4 (one of two), `lab/pi3/kaggle_gpu_probe.py` at 6ad9ab2, MG2's CUDA build (no generated kernels), Qwen3-4B
+Q4_K_M with every layer on the GPU, shared pool (16 x 2,048 cells, cap 32), PAD1, 47 minutes. Each arm is a decision
+source swapped into the same engine; every prompt is new to the engine (a first run showed a long prompt prefilled
+once and then reused by every later arm). The T4 runs faster in its first minutes (55 against 42 tok/s for one
+request in the first cell), so arms alternate.
+
+A. Host CPU load (4 vCPUs), tok/s for 1 / 8 / 32 requests at once, 64 tokens, mean of 2 rounds:
+
+| busy processes | 1 thread | 2 threads | 4 threads | v6 (4 threads) |
+| --- | --- | --- | --- | --- |
+| none | 49 / 265 / 624 | 44 / 247 / 598 | 45 / 246 / 599 | 43 / 248 / 596 |
+| one | 42 / 236 / 576 | 42 / 237 / 580 | 42 / 237 / 578 | 43 / 237 / 575 |
+| two | 42 / 230 / 564 | 42 / 228 / 563 | 43 / 231 / 565 | 42 / 231 / 567 |
+| three | 42 / 237 / 561 | 42 / 234 / 565 | 42 / 236 / 563 | 42 / 233 / 560 |
+| one, half of every 20 ms | 43 / 238 / 578 | 44 / 240 / 575 | 43 / 238 / 577 | 43 / 236 / 571 |
+
+B. Arriving requests, first token counted from arrival, mean of 3 rounds: "chat" (48 short prompts, Poisson 4/s, answers
+64-192 tokens) and "mixed" (48 prompts in clumps of 4 at 3/s, 30 % of them a 1,364-token document, answers 32-160).
+tok/s, first token mean / median / 90th percentile in seconds:
+
+| arm | chat | mixed |
+| --- | --- | --- |
+| defaults (cap 32, every waiting prompt) | 260, 0.69 / 0.14 / 2.53 | 89, 7.70 / 6.87 / 13.09 |
+| v6 | 269, 0.32 / 0.14 / 1.03 | 90, 7.45 / 6.42 / 13.26 |
+| prompt budget 128 | 258, 0.53 / 0.15 / 1.66 | **90, 4.13 / 1.57 / 12.63** |
+| prompt budget 512 | 252, 0.58 / 0.15 / 1.77 | **90, 4.11 / 1.73 / 11.18** |
+| cap 16 | 249, 2.34 / 2.43 / 5.26 | 86, 9.46 / 8.59 / 16.69 |
+| cap 8 | 160, 10.0 / 9.98 / 19.1 | 79, 12.4 / 11.8 / 23.2 |
+| cap 4 | 83, 27.9 / 26.6 / 53.0 | 51, 25.3 / 24.2 / 47.0 |
+| 1 thread | 260, 0.45 / 0.15 / 1.36 | 90, 7.80 / 7.12 / 13.47 |
+
+C. With a draft model (Qwen3-0.6B Q8_0, DM1), tok/s for 1 / 8 requests, 2 rounds: defaults 57.1, 38.3 / 271, 218;
+drafts off 39.4, 38.4 / 215, 214; v6 (drafts on) 45.7, 46.8 / 215, 212. The draft model's own stop rule settles
+after its first minutes (its first round 57 tok/s, later 38-47), so these differences are its state, not the arm.
+
+Answers: 49 of 50 facts with the defaults and with v6, 48 of 50 fact answers token for token the same.
+
+The engine's steps (38,983 logged): one row 24 ms, 2 rows 34, 3 rows 40, 8 rows 59 (unpadded), 9-16 rows 40-50 (PAD1),
+17-31 rows 72-81 and 32 rows 49 ms (median, attended tokens 0.5-3.5k); a prompt of 540 tokens alone 320-460 ms.
+The Pilot's startup measurement: one row 18.4 ms, each further row 4.3 ms, 1,000 prompt tokens 494 ms, attention below
+what it can measure. v6 saw these as features outside the GPU servers it dreamed (each further row 0.002-0.02 of a
+one-row step, 1,000 prompt tokens 0.3-3 of it; measured 0.23 and 27).
+
+Read: on a GPU the host's threads and its CPU load do not matter (within 2 %, even three busy processes on four
+vCPUs); the running cap must stay at its maximum (cap 16 already costs first tokens); the prompt budget is the decision
+that pays: with documents among chats, 128 or 512 prompt tokens per step halve the mean first token (7.70 to 4.11 s,
+median 6.87 to 1.73 s) at the same tokens per second, because short prompts no longer wait for a step that prefills
+several documents at once. v6 keeps every budget open on a GPU: its dream world priced a GPU prompt about ten times too
+low and let prompts in oldest first, where the engine takes the shortest first. Next: dream world v7 with these costs
+and the engine's order, a Pilot trained from scratch in it, and a check on the T4. Seen in passing: 17-31 rows cost 1.5x
+what 32 rows cost, so padding them to 32 (as PAD1 pads 4-8 to 9) is an engine gain of its own.
+
+## 2026-11-16 PI3: GPU weights for the Pilot (dream world v7)
+
+Dream world v7 (private) takes the probe's T4 costs into its GPU servers: each further unpadded row 0.06-0.45 of a
+one-row step, 1,000 prompt tokens 8-90 of it, attention 0.0002-0.05 of it, PAD1's step staircase (a step of r rows
+costs min(1 + u (r - 1), P1 + s2 (r - 16)) one-row steps), a quarter of them the measured T4 class; documents among
+chats (in half the servers 5-45 % of the prompts are 6-50x longer); waiting prompts let in as the engine does (one
+passed over 8 times first, then the shortest), where v6 took the oldest first; GPU servers 45 % of the dream instead
+of 20 %. Its replay of the probe's mixed traffic: prompt budget 512 3.15 s to the first token against 4.37 s with
+every prompt let in (-28 %; the T4: -46 %), the same tokens per second; small caps lose there as on the T4.
+
+Trained from scratch on Kaggle (two T4, seeds 80 and 81, 8,192 dreamed servers, 180 PPO iterations, 41 minutes,
+private kernel `ironmule-pilot-train` v6). Dream reward per server over 240 s (tokens, wait s, first token s):
+
+| | all servers | GPU servers only (120 s) |
+| --- | --- | --- |
+| defaults | -1122.9 (16,189, 17,699, 16.1) | -62.5 (16,418, 857, 2.48) |
+| hand rule (threads = free cores) | -150.5 (16,867, 1,888, 5.23) | -- |
+| prompt budget 512 held | -- | -59.0 (16,460, 861, 2.40) |
+| **seed 80** | **-142.9** (16,899, 1,948, 5.05) | -63.1 (16,352, 884, 2.49) |
+| seed 81 | -151.6 (16,831, 1,896, 5.34) | -66.3 (16,411, 898, 2.60) |
+
+On the probe's measured T4 costs seed 80 keeps the cap at 32 and a prompt budget of 128 in every state tried (idle,
+8-30 running, chats and documents waiting); seed 81 keeps every budget open, as v6 did.
+
+Seed 80 on the CPU (this 4-vCPU Xeon, `lab/pi1/real.py`, Qwen3-4B Q8_0, two rounds in alternating order against the
+shipped v6 weights, tok/s for 1 / 8 requests, first token of 8 in brackets, its threads per round):
+
+| foreign load | seed 80 | v6 |
+| --- | --- | --- |
+| none | 10.05 / 37.99 (1.19 s), 4 / 4 | 10.18 / 36.70 (1.55 s), 3-4 / 4 |
+| one busy process | 5.43 / 22.71 (0.94 s), 3 / 2 | **7.78 / 30.34** (0.71 s), 3 / 3 |
+| two busy processes | 5.64 / 21.34 (0.53 s), 2 / 2 | 5.64 / 22.14 (0.53 s), 2 / 2 |
+| one process busy 25 % of every 20 ms | 7.01 / 27.91 (0.40 s), 3 / 4 | 7.42 / 30.28 (0.40 s), 3 / 3 |
+| one process busy 50 % of every 20 ms | 6.18 / 28.43 (0.46 s), 3 / 3 | **8.12 / 31.45** (0.36 s), 3 / 3 |
+
+Read: idle, its budget of 128 brings the first of 8 tokens 23 % sooner (1.19 against 1.55 s), but its threads are not
+steady: beside one busy process it took 3 threads in one round and 2 in the other (3.84 against 7.90 tok/s for one
+request there), beside the 25 % process 4 threads in the second round; 9 % below v6 over the ten cells. So the
+Pilot now ships two weight files: `pilot_weights.npz` (v6) where the layers run on the CPU, `pilot_weights_gpu.npz`
+(seed 80) where they run on a GPU; there the threads do not matter (probe, part A) and its cap and budget decisions
+are what the T4 check below measures.
+
+The T4 check: Kaggle T4, `lab/pi3/kaggle_gpu_probe.py` in `PI3_MODE=check` at 1b7dbbb (seed 80 shipped there as the
+engine's weights, the same file as `pilot_weights_gpu.npz`), 27 minutes, the probe's setup. The defaults ran first in
+the first round, while the T4 still ran at its higher starting clock (53.8 against 36.1 tok/s for one request), so the
+first round is left out below (all rounds: the same direction, mixed 86.6 against 84.8 tok/s and 5.11 against 10.13 s).
+Blocks of requests at once, 128 tokens, tok/s (mean first token): defaults 2 rounds, seed 80 3 rounds.
+
+| requests at once | defaults | seed 80 (cap 32, budget 128) |
+| --- | --- | --- |
+| 1 | 36.2 (0.048 s) | 36.0 (0.048 s) |
+| 8 | 205.9 (0.169 s) | 206.5 (**0.145 s**) |
+| 32 | 490.0 (0.623 s) | 486.7 (**0.429 s**) |
+
+Arriving requests, rounds 2-4 (the arm order rotated each round), tok/s and first token mean / median / 90th
+percentile in seconds:
+
+| arm | chat | mixed (30 % documents) |
+| --- | --- | --- |
+| defaults | 238.6, 0.68 / 0.16 / 2.53 | 75.4, 11.76 / 13.28 / 19.70 |
+| **seed 80** | 228.5, 0.83 / 0.17 / 3.14 | **80.3, 5.22 / 1.35 / 16.95** |
+| v6 | 233.9, 0.72 / 0.17 / 2.82 | 75.5, 12.05 / 13.59 / 20.46 |
+| prompt budget 512 held | 228.8, 0.80 / 0.17 / 3.24 | 76.9, 5.80 / 1.93 / 19.24 |
+
+It decided cap 32, budget 128, 4 threads, drafts on in all 5,904 steps (v6: budget open in all 2,285). With the draft
+model (2 rounds; tok/s for 1 / 8 requests and chat): defaults 54.4, 34.7 / 251, 199 / 325, 296; seed 80 36.0, 36.0 /
+203, 208 / 312, 297 (the defaults' first round again at the starting clock). Answers: 49 of 50 facts with the defaults
+and with seed 80, 49 of 50 answers token for token the same.
+
+Read: with documents among chats the first token comes 2.3x sooner (median 9.8x) and 6 % more tokens per second come
+out; for 8 and 32 requests at once the first token comes 14 % and 31 % sooner at the same tokens per second (budget 128
+lets three short prompts start per step instead of all 32 in one long step); one request is unchanged. For short chats
+alone seed 80 and a held budget of 512 are 4 % below the defaults, inside the spread of the rounds (the same arm 207-255
+tok/s), so whether a budget costs anything there is not settled. The GPU weights ship (BACKLOG PI3 has the kill rule's
+reading). Next on a GPU: padding 17-31 rows to 32.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
