@@ -1985,6 +1985,13 @@ token for token the same. The off arm here kept the padding measured with the li
 it only for the token counts where Q4_K and Q6_K together beat Q4_K alone and the step without the library; the
 harness measures each arm's own padding.
 
+Confirmed at 5972eac (T4, 9.7 minutes, each arm on its own padding table): the engine kept the library's Q4_K kernels
+for 1-8, 16, 24 and 32 tokens and its Q6_K kernels for 3 and 5-8 (Q4_K and Q6_K together 23.3 against 27.0 ms at 8
+tokens, 41.4 against 36.5 at 32). Blocks of 128 tokens, mean of two rounds: 1 request 56.3 against 41.2 tok/s
+(1.37x), **8 requests 310.4 against 249.2 (1.25x)**, 32 requests 626.9 against 602.2 (1.04x); steps of one token per
+request at context 300: 26.4 against 60.8 ms at 8 (unpadded), 32.8 against 34.5 at 16, 49.4 against 50.7 at 32. 49 of 50
+facts either way, 48 of the 50 answers token for token the same.
+
 ## 2026-11-17 PB1: the GPU Pilot's prompt budget with one KV stream per request
 
 Another session read low tokens per second for bursts of medium prompts on the T4 and suspected the GPU Pilot's prompt

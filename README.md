@@ -111,8 +111,8 @@ One person on one GPU: IronMule writes its own GPU kernels for the 4-bit weights
 hundred variants, checks and times each on your GPU with your model, and keeps the fastest (KG2 in
 [docs/LAB.md](docs/LAB.md)). On a T4 with Qwen3-4B that makes 57.0 tokens per second for one person against 46.6 for
 the llama.cpp server (1.22x), and 153 against 103 at four people, with the same facts right. Since KG4 those kernels
-also use the GPU's tensor cores for 8 to 32 people at once: on a T4 with Qwen3-4B 280 against 251 tokens per second
-for 8 (1.12x) and 642 against 602 for 32 (1.07x) against the same server without them, the same facts right. A small draft model of the
+also use the GPU's tensor cores for up to 32 people at once: on a T4 with Qwen3-4B 310 against 249 tokens per second
+for 8 (1.25x) and 627 against 602 for 32 (1.04x) against the same engine without them, the same facts right. A small draft model of the
 same family (`--draft-gguf`) helps too: on a T4 with Qwen3-4B 54.1 against 44.1 tokens per second for one person
 (1.23x) and 48.8 against 40.9 when new people come one after another (1.19x), the same facts right (DM2); on a GPU
 `ironmule serve` names the draft model that fits and the command to fetch it, and fetches nothing itself. Not yet better:
