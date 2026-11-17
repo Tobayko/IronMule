@@ -159,6 +159,11 @@ the pool there served 8 sequences because its width measurement fails with llama
 Still open: that measurement, the streams' 8-request step through the server, vLLM AWQ's kernels, the first token of
 a block of requests (0.73 against 0.65 s at 32), and the GPU a new request joins when there are several.
 
+**Owner decision (2026-11-17, after KG3 end to end).** Asked whether to let AG10 switch between the pool and one
+stream per request by load (the pool wins at few requests when its cache is small, the streams at many), the owner
+chose to leave the state as it is: streams on a GPU from 16 sequences on, the pool below. The points above stay open
+until the owner reopens them.
+
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
 `ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among
