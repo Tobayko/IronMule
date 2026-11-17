@@ -146,6 +146,16 @@ request 1.23x. More tokens per second at 8 and 32 requests on a GPU is kernel wo
 open as its own entry when the owner reopens it. Open: why serving steps with uneven contexts in the shared pool
 cost up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
 
+**Reopened by the owner the same day: KG3 (2026-11-17, LAB.md).** The cost was llama.cpp's flash-attention kernel
+on the T4 reading every cell of the shared pool for every query token (no skip of masked blocks). One KV stream per
+request, with three engine changes so that a step stays one pass over KV streams (a new prompt in its own call, the
+same number of drafts per stream, placeholder rows for a free id between running ones) and PAD3 (every stream padded
+evenly to the size measured cheaper): 1.28x the pool at 20 requests, 1.78x at 32, 1.59x for 32 short requests, 1.54x
+with documents among arriving chats (first token 2.1 against 6.5 s), 1.08x for chats alone, 1.04-1.21x at 8 and
+0.98x at 4; 49 of 50 facts either way. On a GPU `ironmule serve` now serves that way where its own gate passes
+(`IRONMULE_GGML_STREAMS=0` keeps the pool). Still open: vLLM AWQ's kernels, the first token of a block of requests
+(0.73 against 0.65 s at 32), and the GPU a new request joins when there are several.
+
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
 `ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among

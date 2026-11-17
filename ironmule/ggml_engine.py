@@ -452,7 +452,8 @@ class GgmlEngine:
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
-        if self.speculate and PAD != "0" and (self.gpu_layers or PAD == "1") and self.settings.get("kv_unified"):
+        if self.speculate and PAD != "0" and (self.gpu_layers or PAD == "1") and (
+                self.settings.get("kv_unified") or self.gpu_layers):  # PAD3: KV streams on a GPU pad evenly
             self.pad_to = self.measure_padding()
         self.drafter = None
         if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies
@@ -791,6 +792,17 @@ class GgmlEngine:
         """A free sequence for a prompt and how many of its first tokens the sequence's KV already holds (at least one
         prompt token is always computed, for its logits). Call with the lock held."""
         best, keep = self._free[0], 0
+        settings = getattr(self, "settings", None)
+        if settings is not None and not settings.get("kv_unified"):
+            # KG3: with one KV stream per sequence llama.cpp keeps a call in one pass only for consecutive sequence
+            # ids, so a new request takes the lowest free id unless a kept prefix of 64 tokens or more is elsewhere
+            best = min(self._free)
+            if self.prefix_reuse and self._kept:
+                for seq in self._free:
+                    n = self._common(self._kept.get(seq) or [], ids)
+                    if n >= max(64, keep + 1):
+                        best, keep = seq, n
+            return best, min(keep, len(ids) - 1)
         if self.prefix_reuse and self._kept:
             for seq in self._free:
                 held = self._kept.get(seq)
@@ -995,9 +1007,30 @@ class GgmlEngine:
                             budget -= ks[i]
                 else:
                     ks = self.policy.choose(offers) if self.policy is not None and order else [0] * len(order)
+                streams = getattr(self, "settings", None) is not None and not self.settings.get("kv_unified")
+                if ks and streams and len(set(ks)) > 1:
+                    # KG3: with one KV stream per sequence llama.cpp splits a call whose sequences carry different token
+                    # counts into a pass per count; every sequence verifies as many drafts as the one with the fewest
+                    ks = [min(ks)] * len(ks)
                 real = list(ks)
                 pad_to = getattr(self, "pad_to", None)
                 want = pad_to.get(len(order) + sum(ks)) if pad_to else None
+                if want and streams:
+                    # PAD3: with one KV stream per sequence every stream must carry the same number of tokens, or the
+                    # call splits; each verifies `per` (its own drafts first, then its last token again), so the step
+                    # reaches the size measured cheaper, or the step is not padded
+                    per = -(-want // len(order))
+                    caps = [min(MAX_DRAFT, active[sq].limit - len(active[sq].tokens) - 1,
+                                self.seq_ctx - len(active[sq].ids) - len(active[sq].tokens)) for sq in order]
+                    if not modelled and all(per - 1 <= cap for cap in caps):
+                        for i, sq in enumerate(order):
+                            job = active[sq]
+                            drafts = list(offers[i][0][:per - 1])
+                            drafts += [job.tokens[-1]] * (per - 1 - len(drafts))
+                            offers[i] = (drafts, offers[i][1])
+                            ks[i] = per - 1
+                        self.padded += sum(ks) - sum(real)
+                    want = None
                 if want:  # PAD1: guesses (the last token again) fill the step to the size measured cheaper
                     extra = want - len(order) - sum(ks)
                     for i, seq in enumerate(order * MAX_DRAFT):
@@ -1022,16 +1055,42 @@ class GgmlEngine:
                 room = self.seq_ctx - decode_rows  # one call's tokens
                 batched: list[tuple[int, Job]] = []
                 for seq, job, keep in fresh:
-                    if len(job.ids) - keep <= room:
+                    # KG3: with one KV stream per sequence a prompt beside others' rows would split the call into passes
+                    if len(job.ids) - keep <= room and not (streams and (rows or batched) and len(job.ids) - keep > 1):
                         rows += [(t, j, seq, j == len(job.ids) - 1) for j, t in enumerate(job.ids) if j >= keep]
                         room -= len(job.ids) - keep
                         batched.append((seq, job))
                     else:  # too long to share this call: its own prefill first
                         active[seq] = job
                         take(seq, job, self._prefill(job.ids, seq, keep))
+                fillers: list[tuple[int, int]] = []
+                if streams and order and not batched and max(order) - min(order) + 1 > len(order):
+                    # KG3: llama.cpp splits a call over KV streams into a pass per run of consecutive sequence ids; a
+                    # free id between running ones gets placeholder rows (the BOS token past what its stream holds,
+                    # no logits), removed again after the step, so the step stays one pass. Computed after this
+                    # step's own prompt calls, from llama.cpp's own record of each stream.
+                    per = len(rows) // len(order)
+                    by_seq: dict[int, list[tuple[int, int, int, bool]]] = {}
+                    for row in rows:
+                        by_seq.setdefault(row[2], []).append(row)
+                    bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+                    rows = []
+                    for sq in range(min(order), max(order) + 1):
+                        if sq in by_seq:
+                            rows += by_seq[sq]
+                            continue
+                        held = int(self.L.llama_memory_seq_pos_max(self.memory, sq)) + 1
+                        if held + per > self.seq_ctx:  # a full stream gives up its kept prefix for the placeholder
+                            self.L.llama_memory_seq_rm(self.memory, sq, -1, -1)
+                            self._kept.pop(sq, None)
+                            held = 0
+                        rows += [(bos, held + j, sq, False) for j in range(per)]
+                        fillers.append((sq, held))
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
                 seconds = time.perf_counter() - started
+                for sq, held in fillers:  # KG3: the placeholders leave nothing behind
+                    self.L.llama_memory_seq_rm(self.memory, sq, held, -1)
                 if self.policy is not None and decode_rows and not batched:  # a prompt in the call is not a step's price
                     self.policy.observe_step(decode_rows, seconds, any(ks))
                 if self.observer is not None and rows:  # AG10: the agent's world model learns every step's price
@@ -1547,7 +1606,9 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     stored = cache / f"{key}.json"
     if stored.exists():
         try:
-            return json.loads(stored.read_text())
+            kept = json.loads(stored.read_text())
+            if not (gpu_layers() > 0 and kept.get("ran") and "streams" not in kept):  # KG3: gate the streams too
+                return kept
         except (OSError, ValueError):
             pass
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
@@ -1597,7 +1658,15 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         shared = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
                   else {"settings": settings, "error": error})
         shared["passes"] = rows is not None and shared["interval"][1] <= OPTION_BOUND
-    result = {"ran": True, "shared": shared, **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
+    streams = None
+    if gpu_layers() > 0:  # KG3: one KV stream per request (flash attention, no unified cache) is gated on its own
+        settings = {**chosen["settings"], "flash_attn": True, "kv_unified": False}
+        rows, error = nll(settings)
+        streams = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
+                   else {"settings": settings, "error": error})
+        streams["passes"] = rows is not None and streams["interval"][1] <= OPTION_BOUND
+    result = {"ran": True, "shared": shared, "streams": streams,
+              **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
               "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
               "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}

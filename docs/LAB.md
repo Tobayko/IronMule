@@ -1767,6 +1767,110 @@ requests one at a time 1.19x, in every one of the four pairs (+15 % to +28 %), w
 on the same as without it (it rests beyond two). DM2 ships: the rate check without the catch-up, PROBE 25, and
 `ironmule serve` naming the draft model on a GPU.
 
+## 2026-11-17 KG3: what a GPU step with many requests pays for
+
+The owner chose a kernel project for more tokens per second at 8-32 requests on a GPU (BACKLOG PI3). First where the
+time goes. From the PAD2 run: a serving step of 20 sequences cost 54 ms of llama.cpp's decode against about 59 ms in
+all (the engine's own Python about 5 ms), and 20 tokens of one sequence cost 30 ms at startup. Kaggle T4,
+`PI3_MODE=span` at bba69b0, 7 minutes: plain decode steps (median of 24) of n sequences with 200 tokens each, their
+cells low in a fresh cache, high after 60 kept long prompts, and after clearing the cache, with and without
+defragmentation, two rounds. ms per step (the four runs' range):
+
+| sequences | cells low | cells high | cleared |
+| --- | --- | --- | --- |
+| 8 | 49-66 | 62-64 | 61-65 |
+| 20 | 39-44 | 46.2-46.7 | 43.4-44.4 |
+| 32 | 47-55 | 57-61 | 54-60 |
+
+Defragmentation changed nothing. 8 sequences cost more than 20 (8 tokens use llama.cpp's vector kernels, 9 and more
+its tensor cores; in serving PAD1 fills 4-8 to 10). Read: cells high in the cache cost about 7 % at 20-32 sequences;
+the larger part is that 20 sequences of 200 tokens cost 43.5 ms where 20 tokens of one cost 30. In this llama.cpp
+(4227c9b) a GPU step with more than one query token runs the `mma_f16` flash-attention kernel over every cell up to
+the span with the mask, with no skip of masked blocks, so each request's token also reads every other request's
+cells. Across 120,000 logged T4 serving steps, steps of 20-32 rows cost about 50 ms up to 2-3k attended tokens and
+72-83 ms beyond. Next: one KV stream per request (each token reads only its own cells), measured against the pool
+without a rebuild (`PI3_MODE=streams`).
+
+`PI3_MODE=streams` at 6d578e6, 12.5 minutes, each arm on a fresh engine, two rounds in reversed order, the GPU Pilot
+deciding: the shared pool (16 x 2,048 cells), the pool without speculation, and one KV stream per request (32 x 1,024
+cells, the engine's per-sequence mode) without speculation. tok/s, mean of the two rounds:
+
+| | pool | pool, no speculation | one stream per request, no speculation |
+| --- | --- | --- | --- |
+| 8 requests, ~420-token prompts | **82.4** | 60.0 | 57.1 |
+| 20 requests, ~420-token prompts | 60.4 | 55.0 | **79.6** |
+| 32 requests, ~420-token prompts | 42.0 | 39.6 | **73.4** |
+| 32 short requests at once | 301.4 | 308.5 | **564.3** (first token 0.44 against 0.71 s) |
+| chat arrivals | **305.6** | 306.8 | 148.6 |
+
+49 of 50 facts in every arm. Read: with one stream per request a token reads only its own cells, and 32 requests at
+once make 1.75-1.87x the pool's tokens per second; with requests arriving it makes half. The likely reason is llama.cpp's
+split of a call with one KV stream per sequence: sequences with different token counts in one call (a new prompt beside
+running requests, or uneven drafts) go into a pass per count. The engine now gives a new prompt its own call and every
+stream the same number of drafts in that mode (the pool is unchanged); 8 of 8 answers on this CPU the same as the
+pool's with requests arriving mid-run. (The prompt budget of 128 the GPU Pilot holds lets in one 420-token prompt per
+step, which is why those blocks are slow in every arm.)
+
+KG3 v2 at 9cbd5a2 (prompts in their own call, equal drafts per stream; `PI3_STREAMS_V=2`), 19.4 minutes: two
+minutes of warm-up, four rounds (pool, streams / streams, pool / streams, pool / pool, streams), one stream per request
+with 32 x 2,048 cells and speculation. tok/s, mean of four rounds, streams against the pool: 8 requests of ~420-token
+prompts 63.3 against 82.6 (0.77x), 20 requests 80.2 against 73.9 (1.08x), 32 requests 75.1 against 52.2 (1.44x), 32
+short requests at once 473 against 348 (1.36x), mixed arrivals 88.3 against 79.8 (1.11x, first token 2.4 against 5.6
+s), chat arrivals 154 against 320 (0.48x); 49 of 50 facts either way. The logged steps show why chat lost: with streams
+a step of 32 rows cost 46 ms but one of 10 rows 209 ms and of 5 rows 103 ms. llama.cpp keeps a call over KV streams in
+one pass only while its sequence ids run consecutively (`split_equal(..., sequential=true)`); once a request ends, the
+running ones leave gaps and every step splits into a pass per run. The engine now fills such a gap with placeholder
+rows for the free id (the BOS token past what its stream holds, no logits, removed after the step) and gives a new
+request the lowest free id unless a kept prefix of 64 tokens or more is elsewhere; on this CPU 8 of 8 answers with
+requests arriving mid-run are the pool's.
+
+The first T4 run of that (at db6130f) stopped after its first arm: a new request that took the free id in the middle
+was prefilled in its own call in the same step, after the placeholder for that id had been planned at position 0, and
+llama.cpp refused the row ("inconsistent sequence positions"). The placeholders are now planned right before the
+step's call, after its prompt calls, at the position llama.cpp reports for the stream (`llama_memory_seq_pos_max`);
+the stub test now refuses rows as llama.cpp does and fails on the earlier code. On this CPU, with a request taking
+the free id between two running ones: 4 of 5 answers token for token the pool's, the fifth "The Rhine" against
+"Rhine" in its fifteenth token (a step of a different width rounds differently, as PAD1's do on a GPU).
+
+KG3 v3 at 63e6e13 (the same design as v2), 16 minutes, complete. tok/s, mean of four rounds, one stream per request
+against the pool (each round's numbers within a few per cent of each other):
+
+| | one stream per request | shared pool | ratio |
+| --- | --- | --- | --- |
+| 8 requests, ~420-token prompts | 67.7 | **84.3** | 0.80x |
+| 20 requests, ~420-token prompts | **89.4** | 75.7 | **1.18x** |
+| 32 requests, ~420-token prompts | **92.4** | 54.5 | **1.70x** |
+| 32 short requests at once | **567.8** (first token 0.72 s) | 385.6 (0.60 s) | **1.47x** |
+| chat arrivals | **354.1** (first token 0.07 s) | 332.9 (0.11 s) | **1.06x** |
+| mixed arrivals | **129.6** (first token 2.04 s) | 85.0 (5.25 s) | **1.53x** |
+
+49 of 50 facts either way; 47 of the 50 fact answers token for token the pool's (a step of a different width rounds
+differently). A step of 32 streams cost 44 ms and no step split any more. Read: one KV stream per request is 1.18-1.70x
+the pool from 20 requests on and 1.53x with documents among arriving chats, 1.06x for chats alone; the pool stays ahead
+at 8 requests, where PAD1 fills a step to 10 rows (the tensor cores), which needs the one pool. Next: the same
+filling for streams (every stream verifies the same number of guesses), then streams as the GPU default.
+
+PAD3 and the check at 70ece6b, 18.6 minutes (the same design, 4 and 8 requests and 8 short ones at once added).
+tok/s, mean of four rounds, one stream per request against the pool:
+
+| | one stream per request | shared pool | ratio |
+| --- | --- | --- | --- |
+| 4 requests, ~420-token prompts | 68.5 | 69.8 | 0.98x |
+| 8 requests, ~420-token prompts | **81.6** | 78.2 | 1.04x |
+| 8 short requests at once | **234.6** (first token 0.17 s) | 194.4 (0.15 s) | **1.21x** |
+| 20 requests | **88.7** | 69.1 | **1.28x** |
+| 32 requests | **89.6** | 50.4 | **1.78x** |
+| 32 short requests at once | **545.8** (first token 0.73 s) | 343.3 (0.65 s) | **1.59x** |
+| chat arrivals | **343.9** (first token 0.07 s) | 319.4 (0.15 s) | 1.08x |
+| mixed arrivals | **123.6** (first token 2.07 s) | 80.0 (6.47 s) | **1.54x** |
+
+About 2,300 PAD3 guesses per round; 49 of 50 facts either way, 49 of 50 fact answers token for token the pool's. Read:
+with PAD3 one stream per request is at least level with the pool everywhere measured (4 requests inside the spread)
+and 1.28-1.78x from 20 requests on; the first token of a block of requests comes 0.02-0.08 s later (its prompts run
+in their own calls). So on a GPU `ironmule serve` now gates this setting (flash attention, one KV stream per request)
+beside the pool's and serves with it where it passes; `IRONMULE_GGML_STREAMS=0` keeps the pool. The serve path itself
+was not run on a GPU here; the engine was, through the harness.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

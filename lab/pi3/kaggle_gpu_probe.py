@@ -49,7 +49,9 @@ SMOKE = bool(LOCAL)
 CHECK = os.environ.get("PI3_MODE") == "check"
 PAD2 = os.environ.get("PI3_MODE") == "pad2"
 KVD = os.environ.get("PI3_MODE") == "kvd"
-DM2 = os.environ.get("PI3_MODE") == "dm2"  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
+DM2 = os.environ.get("PI3_MODE") == "dm2"
+SPAN = os.environ.get("PI3_MODE") == "span"
+STREAMS = os.environ.get("PI3_MODE") == "streams"  # KG3: one KV stream per request (own-cell attention) against the pool  # KG3: does a step cost more when its cells sit high in the cache?  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
 OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
@@ -179,9 +181,9 @@ def main():
     def ids_of(text):
         return tok(f"<|im_start|>system\n/no_think<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n")
 
-    def open_engine(draft_gguf=None):
-        e = GgmlEngine(gguf, seqs=16, seq_ctx=2048, speculate=True, flash_attn=True, shared=True, cap=32,
-                       draft_gguf=draft_gguf)
+    def open_engine(draft_gguf=None, **over):
+        kw = {"seqs": 16, "seq_ctx": 2048, "speculate": True, "flash_attn": True, "shared": True, "cap": 32, **over}
+        e = GgmlEngine(gguf, draft_gguf=draft_gguf, **kw)
         e.collective = None
         ids = lambda t: e.tokenize(t)  # noqa: E731
         return e, ids
@@ -257,6 +259,129 @@ def main():
                 "ttft_mean": round(sum(ttft) / max(1, len(ttft)), 3), "ttft_p50": q(ttft, 0.5), "ttft_p90": q(ttft, 0.9),
                 "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9)}
 
+    if STREAMS:
+        def mid_text(i):  # about 400 tokens: a short report and a question
+            tag[0] += 1
+            r = random.Random(tag[0])
+            body = " ".join(f"Paragraph {k}: the harbour office of {('Arlen', 'Bree', 'Cosk', 'Dunmore')[r.randrange(4)]} "
+                            f"logged {r.randrange(40)} ships and the weather was {('calm', 'windy', 'rainy')[r.randrange(3)]}."
+                            for k in range(14))
+            return f"Report {tag[0]}.\n{body}\n\nQuestion: summarise paragraph {i % 14} in one sentence."
+
+        def mid_block(e, n, tokens, blocks=2):
+            tok_n = wall = 0.0
+            for b in range(blocks):
+                js = [Job(ids_of(mid_text(b * n + i)), tokens) for i in range(n)]
+                t = time.monotonic_ns()
+                e.run(js)
+                wall += (time.monotonic_ns() - t) / 1e9
+                tok_n += sum(len(j.tokens) for j in js)
+            return {"tok_s": round(tok_n / wall, 2), "wall": round(wall, 2)}
+
+        OUT["streams"], answers = [], {}
+        if os.environ.get("PI3_STREAMS_V") == "2":  # KG3 v2: prompts in their own call, equal drafts per stream
+            arms = [("pool", {}), ("perseq", {"shared": False, "seqs": 2 if SMOKE else 32, "seq_ctx": 2048, "cap": None})]
+            warm = 0 if SMOKE else 120
+        else:
+            arms = [("pool", {}), ("pool_nospec", {"speculate": False}),
+                    ("perseq_nospec", {"speculate": False, "shared": False, "seqs": 32, "seq_ctx": 1024, "cap": None})]
+            warm = 0
+        if warm:
+            e, tok_ = open_engine()
+            tok = tok_
+            t0 = time.time()
+            while time.time() - t0 < warm:
+                e.run([Job(ids_of(chat_text(k)), 128) for k in range(8)])
+            e.close()
+        order = [arms, arms[::-1], arms[::-1], arms] if len(arms) == 2 and not SMOKE else \
+            [arms, arms[::-1]][:1 if SMOKE else 2]
+        for rep, pair in enumerate(order):
+            for arm, over in pair:
+                e, tok_ = open_engine(**over)
+                tok = tok_
+                collect(e, f"{arm}_{rep}")
+                fact_ids = [tok(p) for p in fact_prompts]
+                e.run([Job(ids_of(chat_text(0)), 16)])
+                row = {"arm": arm, "rep": rep, "settings": e.summary().get("settings")}
+                for n in ((2,) if SMOKE else (4, 8, 20, 32) if len(arms) == 2 else (8, 20, 32)):
+                    row[f"mid{n}"] = mid_block(e, n, 8 if SMOKE else 128, blocks=1 if SMOKE or len(arms) == 2 else 2)
+                row["chat32"] = block(e, 4 if SMOKE else 32, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
+                if len(arms) == 2:
+                    row["chat8"] = block(e, 4 if SMOKE else 8, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
+                    row["padded"] = getattr(e, "padded", 0)
+                row["chat"] = stream(e, "chat", 1000 + rep)
+                if len(arms) == 2:
+                    row["mixed"] = stream(e, "mixed", 1100 + rep)
+                if rep == 0 or (len(arms) == 2 and arm not in answers):
+                    got = []
+                    for k in range(0, 8 if SMOKE else len(fact_ids), 8):
+                        js = [Job(i, 48) for i in fact_ids[k:k + 8]]
+                        e.run(js)
+                        got += [j.tokens for j in js]
+                    answers[arm] = got
+                OUT["streams"].append(row)
+                print(json.dumps(row), flush=True)
+                e.observer = None
+                e.close()
+                save()
+        proc, port = mg2.server(gguf, 1, "0", "layer" if LOCAL else "none")
+        try:
+            OUT["facts"] = {arm: mg2.correct([mg2.detok_server(port, i) for i in v], facts) for arm, v in answers.items()}
+        finally:
+            mg2.stop(proc)
+        OUT["same_tokens"] = {arm: sum(a == b for a, b in zip(answers["pool"], v)) for arm, v in answers.items()}
+        OUT["finished"] = time.time()
+        save()
+        return
+    if SPAN:
+        import ironmule.ggml_engine as ge
+
+        def steps_of(e, n, ctx_tokens, steps=24):
+            """Median milliseconds of `steps` plain decode steps of n sequences, each with ctx_tokens of context, placed
+            wherever llama.cpp's cache puts them now (free sequence ids of the pool, removed again afterwards)."""
+            bos = max(0, int(e.L.llama_vocab_bos(e.vocab)))
+            while len(e.pool.free_ids) < n and e.pool._evict(None):  # free sequence ids; the kept cells stay put
+                pass
+            seqs = list(e.pool.free_ids[:n])
+            for sq in seqs:
+                e.L.llama_memory_seq_rm(e.memory, sq, -1, -1)
+                for k in range(0, ctx_tokens, 256):
+                    e._decode([(bos, j, sq, j == ctx_tokens - 1) for j in range(k, min(ctx_tokens, k + 256))])
+            times = []
+            for t in range(steps):
+                t0 = time.perf_counter()
+                e._decode([(bos, ctx_tokens + t, sq, True) for sq in seqs])
+                times.append(time.perf_counter() - t0)
+            for sq in seqs:
+                e.L.llama_memory_seq_rm(e.memory, sq, -1, -1)
+            times.sort()
+            return round(times[len(times) // 2] * 1e3, 2)
+
+        OUT["span"] = []
+        for rep in range(1 if SMOKE else 2):
+            for thold in (0.0, 0.1):
+                ge.DEFRAG = thold
+                e, tok_ = open_engine()
+                tok = tok_
+                row = {"rep": rep, "defrag": thold}
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"low_{n}"] = steps_of(e, n, 32 if SMOKE else 200)
+                for k in range(2 if SMOKE else 60):  # long prompts that finish and stay as the prefix cache
+                    e.run([Job(ids_of(doc_text(k)), 4)])
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"high_{n}"] = steps_of(e, n, 32 if SMOKE else 200)
+                e.pool.reset() if e.pool is not None else None
+                e._clear()
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"cleared_{n}"] = steps_of(e, n, 32 if SMOKE else 200)
+                OUT["span"].append(row)
+                print(json.dumps(row), flush=True)
+                e.close()
+                save()
+        ge.DEFRAG = 0.0
+        OUT["finished"] = time.time()
+        save()
+        return
     if DM2:
         OUT["dm2"], answers = [], {}
         warm = float(os.environ.get("PI3_WARM_S", 0))  # DM2 v2: hold the T4 busy first, past its starting clock

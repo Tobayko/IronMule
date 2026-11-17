@@ -5,6 +5,7 @@ installed `llama-cpp-python`) and `IRONMULE_TEST_GGUF` are set, and are skipped 
 
 from __future__ import annotations
 
+import collections
 import importlib.util
 import os
 from pathlib import Path
@@ -661,3 +662,128 @@ def test_pi2_the_shared_pool_starts_prompts_within_a_set_budget(monkeypatch):
         assert staggered >= together + 3
     finally:
         built.close()
+
+
+def test_kg3_with_one_kv_stream_per_sequence_a_new_prompt_gets_its_own_call():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, _ = _stub_engine()
+    engine.settings = {"kv_unified": False}  # one KV stream per sequence
+    first = Job([1, 2, 3], 4)
+    late = [Job([5, 6, 7, 8], 2)]
+
+    def admit(room):
+        return [late.pop()] if late and len(fed) >= 2 else []
+
+    engine.run([first], admit=admit)
+    for call in fed:  # no call mixes another sequence's single token with a prompt of several tokens
+        seqs = {s for _, _, s in call}
+        assert len(seqs) == 1 or len(call) == len(seqs), call
+    assert any(len(call) == 4 and {s for _, _, s in call} == {call[0][2]} for call in fed)  # the late prompt alone
+    engine2, fed2, _ = _stub_engine()
+    engine2.settings = {"kv_unified": True}  # the shared pool keeps batching a prompt into the running step
+    late = [Job([5, 6, 7, 8], 2)]
+
+    def admit2(room):
+        return [late.pop()] if late and len(fed2) >= 2 else []
+
+    engine2.run([Job([1, 2, 3], 4)], admit=admit2)
+    assert any(len({s for _, _, s in call}) == 2 and len(call) == 5 for call in fed2)
+
+
+def _streams_engine():
+    """The stub engine with one KV stream per sequence, which, as llama.cpp does, refuses a row that does not continue
+    its stream (a sequence's first row in a call must sit right past what the stream holds)."""
+    engine, fed, removed = _stub_engine()
+    engine.settings = {"kv_unified": False}
+    engine.L.llama_vocab_bos = lambda vocab: 1
+    top: dict[int, int] = {}
+    decode, rm = engine.L.llama_decode, engine.L.llama_memory_seq_rm
+
+    def checked(ctx, b):
+        first: dict[int, int] = {}
+        for i in range(b.n_tokens):
+            first.setdefault(b.seq_id[i][0], b.pos[i])
+        for seq, pos in first.items():
+            assert pos == top.get(seq, -1) + 1, (seq, pos, top.get(seq, -1))
+        for i in range(b.n_tokens):
+            top[b.seq_id[i][0]] = max(top.get(b.seq_id[i][0], -1), b.pos[i])
+        return decode(ctx, b)
+
+    def trimmed(memory, seq, start, end):
+        ok = rm(memory, seq, start, end)
+        if ok:
+            top[seq] = -1 if start < 0 else min(top.get(seq, -1), start - 1)
+        return ok
+
+    engine.L.llama_decode, engine.L.llama_memory_seq_rm = checked, trimmed
+    engine.L.llama_memory_seq_pos_max = lambda memory, seq: top.get(seq, -1)
+    return engine, fed, removed
+
+
+def test_kg3_a_free_id_between_running_streams_gets_placeholder_rows_that_are_removed_again():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, removed = _streams_engine()
+    a, b, c = Job([1, 2], 6), Job([3, 4], 2), Job([5, 6], 6)
+    engine.run([a, b, c])  # b (the middle id) ends first; a and c run on around its free id
+    assert len(b.tokens) == 2 and len(a.tokens) == len(c.tokens) == 6
+    fillers = [call for call in fed if [s for _, _, s in call] == [0, 1, 2] and call[1][0] == 1]
+    assert fillers  # one call over ids 0..2 with a placeholder for 1
+    held = fillers[0][1][1]
+    assert (1, held, -1) in removed  # the placeholder's cell is removed after the step
+
+
+def test_kg3_a_request_that_takes_a_free_id_mid_run_is_not_overwritten_by_a_placeholder():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, _ = _streams_engine()
+    a, b, c = Job([1, 2], 8), Job([3, 4], 2), Job([5, 6], 8)
+    late = [Job([7, 8, 9, 10, 11], 3)]
+
+    def admit(room):  # once b's id is free, a new request takes it (the lowest) while a and c run on
+        return [late.pop()] if late and len(b.tokens) == 2 and room else []
+
+    engine.run([a, b, c], admit=admit)  # the stub refuses any row that would not continue its stream
+    assert not late and all(len(j.tokens) == j.limit for j in (a, b, c))
+
+
+def test_kg3_a_new_request_takes_the_lowest_free_stream():
+    engine, _, _ = _stub_engine()
+    engine.settings = {"kv_unified": False}
+    engine._free, engine._kept = [3, 1, 2], {3: [9, 9, 9]}
+    assert engine._take_sequence([5, 6, 7]) == (1, 0)
+    engine._kept = {3: list(range(80))}
+    assert engine._take_sequence(list(range(70)) + [5]) == (3, 70)  # a long kept prefix still wins
+
+
+def test_pad3_streams_are_padded_evenly_to_the_size_measured_cheaper():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, _ = _streams_engine()
+    engine.pad_to, engine.padded = {4: 10}, 0  # 4 rows would be dear; 10 measured cheaper
+    jobs = [Job([10 * k + 1, 10 * k + 2], 6) for k in range(4)]
+    engine.run(jobs)
+    padded = [call for call in fed if len(call) == 12]
+    assert padded and engine.padded > 0  # 4 streams x 3 tokens: one pass, past the 10 measured cheaper
+    for call in padded:
+        counts = collections.Counter(s for _, _, s in call)
+        assert set(counts.values()) == {3}  # every stream the same number of tokens, so the call does not split
+    assert all(len(j.tokens) == 6 for j in jobs)
+
+
+def test_kg3_on_a_gpu_the_gate_checks_one_kv_stream_per_request_and_a_cpu_gate_does_not(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.0 + 0.002] * 16)
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda L=None: 999)
+    result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    streams = result["streams"]
+    assert streams["passes"] and streams["settings"]["flash_attn"] and not streams["settings"]["kv_unified"]
+    stored = next((tmp_path / "cache").glob("*.json"))
+    old = {k: v for k, v in result.items() if k != "streams"}
+    stored.write_text(__import__("json").dumps(old))  # a gate stored before KG3 is run again on a GPU
+    assert "streams" in ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda L=None: 0)
+    on_cpu = ggml_engine.gate(str(tmp_path), str(tmp_path / "m2.gguf"), cache=tmp_path / "cache2")
+    assert on_cpu["streams"] is None
