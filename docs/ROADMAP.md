@@ -22,9 +22,20 @@ The review, the audit and the micro-benchmarks below were made on a checkout of 
 | The 14 failing tests | Fixed on main as well; main's version of those files is kept here. A Linux CI job now runs `tests/engine`, `tests/agent` and the claims files |
 | "One flagship" (Phase 1) | The owner's goal of 2026-11-16 (BACKLOG, "The main goal"): IronMule decides on the CPU, the served model's main target is the GPU, and the CPU serving path stays |
 
-Still open on main: the README and help-text rows of the audit's claims table ("never changes what the model
-answers", the "one GPU" label, the 32-slot caution, `--gguf` "CPU only"), requests held until a run goes idle,
-sampling, and CI for `tests/learning`, `tests/runtime`, `tests/evidence` and for the GGUF engine with a real model.
+Since then (2026-11-17):
+
+- **macOS is out for now** (owner decision, AGENTS.md). CI has no macOS job; every one had been cancelled at its
+  start since 2026-11-15, so the Rust crates and the wheel had not been checked for days. CI on Linux now also runs
+  the Rust crates, the wheel in a clean environment, the quick start, and `tests/learning`, `tests/runtime` and
+  `tests/evidence`. Not covered until macOS returns: Metal and the real-model suite on Apple Silicon.
+- **The README rows of the audit's claims table are corrected**: what the Pilot changes on a GPU, the "one GPU"
+  label, and the 32-slot caution under the top table. `--gguf`'s help was already corrected on main.
+- **On main meanwhile** (LAB.md): the draft model on a T4, one request 1.23x (DM2); KV defragmentation, no gain
+  (KVD1); one KV stream per request, 1.75-1.87x the pool at 32 requests at once and half with arrivals, in work
+  (KG3).
+
+Still open: requests held until a run goes idle, sampling, the one-command install, CI for the GGUF engine with a
+real model, and vLLM AWQ's lead at 8 and 32 requests on one GPU.
 
 ## Where the project stands
 

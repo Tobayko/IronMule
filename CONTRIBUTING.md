@@ -58,7 +58,7 @@ python -m ironmule.benchmark --requests 6 --max-tokens 48
 ```
 
 On Linux without a GPU, install `".[cpu,dev]"` instead: the same suites run on MLX's
-CPU build (CI runs them on macOS).
+CPU build (CI runs them this way; macOS is out of CI since 2026-11-17, see AGENTS.md).
 
 `tests/engine/` is the engine package's own suite and runs on any Mac. A handful of
 files directly under `tests/` -- the learned-dispatch lifecycle, the portable-collection
