@@ -56,3 +56,41 @@ def test_kg4_the_engine_keeps_a_tile_count_where_its_step_is_faster(monkeypatch)
     want = (1 << 1) | sum(1 << (u - 1) for u in range(9, 17)) | sum(1 << (u - 1) for u in range(25, 33))
     assert Lib.mask == want
     assert out["tokens_served"] == [2, 16, 32] and out["entries"] == 2
+
+
+def test_kg4_q6k_is_kept_only_where_it_beats_the_step_without_it(monkeypatch):
+    from ironmule.ggml_engine import GgmlEngine
+
+    class Lib:
+        mask = mask6 = None
+
+        def __init__(self, path):
+            def set_mask(mask):
+                Lib.mask = mask
+
+            def set_mask6(mask):
+                Lib.mask6 = mask
+
+            self.ironmule_kg_set_mask, self.ironmule_kg_set_mask6 = set_mask, set_mask6
+            self.ironmule_kg_table = lambda: b'{"entries": []}'
+
+    monkeypatch.setattr(ctypes, "CDLL", Lib)
+    engine = GgmlEngine.__new__(GgmlEngine)
+
+    def prices(counts, repeats=1):  # Q4_K helps at 8 and 32; Q6_K on top helps at 8 and costs at 32
+        out = {}
+        for t in counts:
+            p = 1.0
+            if Lib.mask and t in (8, 32):
+                p = 0.8
+            if Lib.mask6 and t == 8:
+                p -= 0.2
+            if Lib.mask6 and t == 32:
+                p += 0.1
+            out[t] = p
+        return out
+
+    engine._step_prices = prices
+    out = engine.measure_kg("lib.so", repeats=3)
+    assert out["tokens_served"] == [8, 32] and out["q6k_tokens_served"] == [8]
+    assert Lib.mask6 == 1 << 7 and Lib.mask == (1 << 7) | sum(1 << (u - 1) for u in range(25, 33))

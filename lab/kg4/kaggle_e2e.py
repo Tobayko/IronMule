@@ -80,11 +80,22 @@ def main():
     import ctypes
 
     klib = ctypes.CDLL(str(lib))
-    klib.ironmule_kg_set_mask.argtypes = [ctypes.c_uint32]
-    klib.ironmule_kg_get_mask.restype = ctypes.c_uint32
-    chosen = klib.ironmule_kg_get_mask()
+    klib.ironmule_kg_set_mask.argtypes = klib.ironmule_kg_set_mask6.argtypes = [ctypes.c_uint32]
+    klib.ironmule_kg_get_mask.restype = klib.ironmule_kg_get_mask6.restype = ctypes.c_uint32
+    chosen = (klib.ironmule_kg_get_mask(), klib.ironmule_kg_get_mask6())
     OUT["mask"] = chosen
-    arms = (("kg", chosen), ("off", 0))
+    arms = (("kg", chosen), ("off", (0, 0)))
+    pads = {"kg": dict(e.pad_to)}
+
+    def use(arm, mask):  # the library's masks and the padding the engine measures for them
+        klib.ironmule_kg_set_mask(mask[0])
+        klib.ironmule_kg_set_mask6(mask[1])
+        if arm not in pads:
+            pads[arm] = e.measure_padding()
+        e.pad_to = pads[arm]
+
+    use("off", (0, 0))
+    OUT["pad_to_off"] = {str(k): v for k, v in pads["off"].items()}
     L = e.L
     rnd = random.Random(7)
     top = {}
@@ -110,7 +121,7 @@ def main():
 
     for rep in range(2):
         for arm, mask in (arms if rep == 0 else arms[::-1]):
-            klib.ironmule_kg_set_mask(mask)
+            use(arm, mask)
             for n in (1, 8, 16, 32):
                 for ctx in (300, 1000):
                     fill(n, ctx)
@@ -129,7 +140,7 @@ def main():
     answers = {}
     for rep in range(2):
         for arm, mask in (arms if rep == 0 else arms[::-1]):
-            klib.ironmule_kg_set_mask(mask)
+            use(arm, mask)
             for n in (1, 8, 32):
                 jobs = [ge.Job(tok(prompts[(rep * 7 + i) % len(prompts)]), 128) for i in range(n)]
                 t = time.perf_counter()

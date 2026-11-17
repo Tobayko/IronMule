@@ -785,9 +785,12 @@ extern "C" int kg_measure(int i, const void *w_host, int N, int K, const float *
 """
 
 LIBRARY = r"""
-static uint32_t enabled_mask = 0xFFFFFFFFu;  // bit B-1: token count B is served here
+static uint32_t enabled_mask = 0xFFFFFFFFu;  // bit B-1: token count B is served here (Q4_K)
+static uint32_t enabled_mask6 = 0xFFFFFFFFu;  // the same for Q6_K, chosen on its own
 extern "C" void ironmule_kg_set_mask(uint32_t mask) { enabled_mask = mask; }
 extern "C" uint32_t ironmule_kg_get_mask() { return enabled_mask; }
+extern "C" void ironmule_kg_set_mask6(uint32_t mask) { enabled_mask6 = mask; }
+extern "C" uint32_t ironmule_kg_get_mask6() { return enabled_mask6; }
 extern "C" const char *ironmule_kg_table() { return TABLE_JSON; }
 
 struct Repacked { uint4 *qs, *hdr; };
@@ -797,7 +800,8 @@ static std::mutex repack_lock;
 // the hook's entry: 0 when this library computed y = w x, non-zero for llama.cpp's own kernels
 extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64_t N, int64_t K, int64_t B,
                                    cudaStream_t s) {
-    if ((type != 12 && type != 14) || K % 256 != 0 || B < 1 || B > 32 || !((enabled_mask >> (B - 1)) & 1u)) return 1;
+    if ((type != 12 && type != 14) || K % 256 != 0 || B < 1 || B > 32) return 1;
+    if (!(((type == 14 ? enabled_mask6 : enabled_mask) >> (B - 1)) & 1u)) return 1;
     const Entry *hit = nullptr;
     for (const Entry &e : ENTRIES)
         if (e.type == type && e.K == K && e.N == N && e.B == B) { hit = &e; break; }
