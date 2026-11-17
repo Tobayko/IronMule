@@ -49,7 +49,8 @@ SMOKE = bool(LOCAL)
 CHECK = os.environ.get("PI3_MODE") == "check"
 PAD2 = os.environ.get("PI3_MODE") == "pad2"
 KVD = os.environ.get("PI3_MODE") == "kvd"
-DM2 = os.environ.get("PI3_MODE") == "dm2"  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
+DM2 = os.environ.get("PI3_MODE") == "dm2"
+SPAN = os.environ.get("PI3_MODE") == "span"  # KG3: does a step cost more when its cells sit high in the cache?  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
 OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
@@ -257,6 +258,55 @@ def main():
                 "ttft_mean": round(sum(ttft) / max(1, len(ttft)), 3), "ttft_p50": q(ttft, 0.5), "ttft_p90": q(ttft, 0.9),
                 "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9)}
 
+    if SPAN:
+        import ironmule.ggml_engine as ge
+
+        def steps_of(e, n, ctx_tokens, steps=24):
+            """Median milliseconds of `steps` plain decode steps of n sequences, each with ctx_tokens of context, placed
+            wherever llama.cpp's cache puts them now (free sequence ids of the pool, removed again afterwards)."""
+            bos = max(0, int(e.L.llama_vocab_bos(e.vocab)))
+            while len(e.pool.free_ids) < n and e.pool._evict(None):  # free sequence ids; the kept cells stay put
+                pass
+            seqs = list(e.pool.free_ids[:n])
+            for sq in seqs:
+                e.L.llama_memory_seq_rm(e.memory, sq, -1, -1)
+                for k in range(0, ctx_tokens, 256):
+                    e._decode([(bos, j, sq, j == ctx_tokens - 1) for j in range(k, min(ctx_tokens, k + 256))])
+            times = []
+            for t in range(steps):
+                t0 = time.perf_counter()
+                e._decode([(bos, ctx_tokens + t, sq, True) for sq in seqs])
+                times.append(time.perf_counter() - t0)
+            for sq in seqs:
+                e.L.llama_memory_seq_rm(e.memory, sq, -1, -1)
+            times.sort()
+            return round(times[len(times) // 2] * 1e3, 2)
+
+        OUT["span"] = []
+        for rep in range(1 if SMOKE else 2):
+            for thold in (0.0, 0.1):
+                ge.DEFRAG = thold
+                e, tok_ = open_engine()
+                tok = tok_
+                row = {"rep": rep, "defrag": thold}
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"low_{n}"] = steps_of(e, n, 32 if SMOKE else 200)
+                for k in range(2 if SMOKE else 60):  # long prompts that finish and stay as the prefix cache
+                    e.run([Job(ids_of(doc_text(k)), 4)])
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"high_{n}"] = steps_of(e, n, 32 if SMOKE else 200)
+                e.pool.reset() if e.pool is not None else None
+                e._clear()
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"cleared_{n}"] = steps_of(e, n, 32 if SMOKE else 200)
+                OUT["span"].append(row)
+                print(json.dumps(row), flush=True)
+                e.close()
+                save()
+        ge.DEFRAG = 0.0
+        OUT["finished"] = time.time()
+        save()
+        return
     if DM2:
         OUT["dm2"], answers = [], {}
         warm = float(os.environ.get("PI3_WARM_S", 0))  # DM2 v2: hold the T4 busy first, past its starting clock
