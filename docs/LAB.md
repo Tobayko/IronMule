@@ -1992,6 +1992,18 @@ tokens, 41.4 against 36.5 at 32). Blocks of 128 tokens, mean of two rounds: 1 re
 request at context 300: 26.4 against 60.8 ms at 8 (unpadded), 32.8 against 34.5 at 16, 49.4 against 50.7 at 32. 49 of 50
 facts either way, 48 of the 50 answers token for token the same.
 
+## 2026-11-17 PI4 (not run): would a GPU Pilot trained anew on the KG4-era costs decide better?
+
+After KG4 the T4's step costs changed (8 rows no longer dearer than 16, one row 17-19 ms, 8 / 16 / 32 rows 1.35 / 1.63
+/ 2.38 of it, 1k attended tokens about 0.028 of it with one KV stream per request). Before spending GPU quota on a new
+training from scratch, the dream world was given exactly these costs for every GPU server (v8, private, CPU only, no
+quota), with the prompt budget ignored as the engine does since PB1. 1,024 dreamed servers, 120 s of traffic each:
+engine defaults 10,932 tokens, 825 request-seconds of waiting, first token 3.26 s; the shipped GPU weights 11,047 /
+823 / 3.18 s; drafts off 10,684 / 749 / 3.08 s; a cap of 16 10,036 / 1,019 / 3.74 s; a cap of 8 8,643 / 1,607 / 5.21 s.
+Read: on such a GPU the decisions that are left (the cap, the draft) are already at their best with the shipped
+weights; a new training could gain about 1-2 %, under the T4's own spread between runs. The owner chose not to train
+(2026-11-17); the GPU weights stay.
+
 ## 2026-11-17 PB1: the GPU Pilot's prompt budget with one KV stream per request
 
 Another session read low tokens per second for bursts of medium prompts on the T4 and suspected the GPU Pilot's prompt

@@ -178,7 +178,9 @@ End to end on the T4 against the same engine without it: 8 requests 1.12x, 32 re
 against 602 tok/s), 49 of 50 facts either way. A profile showed 3.7 of the isolated 5.4 ms at 32 tokens arriving in the
 engine and Q6_K as the next cost; Q6_K on the tensor cores (KG_VERSION 4, its own mask, kept where it measures faster:
 up to 8 tokens) brings 8 requests to 1.25x (310 against 249 tok/s), 1 request 1.37x, 32 requests 1.04x, 49 of 50 facts
-either way. Open: attention (10-25 ms of a 32-request step) and Q6_K beyond 8 tokens on the same card.
+either way. Open: attention (10-25 ms of a 32-request step) and Q6_K beyond 8 tokens on the same card. A new GPU
+training on the KG4-era costs was checked first in the dream world (LAB.md, PI4): the shipped weights are already at
+the best of the remaining decisions there, so the owner chose not to spend the quota on it.
 
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
