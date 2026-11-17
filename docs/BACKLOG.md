@@ -87,7 +87,7 @@ card allows (PI3); (3) the CPU serving path, the ggml engine with the Pilot as i
 tests and numbers; (4) a gain counts only on the hardware it was measured on. The owner was told this reading and may
 correct it.
 
-### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; GPU weights shipped, two parts open)
+### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; accepted by the owner 2026-11-17)
 
 **Why.** The owner's goal above: the Pilot keeps running on the CPU, and the model it steers is to run perfectly on
 the GPU. Today the Pilot's thread head means nothing when the layers run on a GPU, and the
@@ -124,7 +124,14 @@ cache (KVD1, LAB.md): equal steps on a T4, kept off. Tokens per second (DM2, 202
 whose stop rule no longer counts reading a new prompt against drafting, one request makes 1.23x (54.1 against 44.1
 tok/s, four balanced rounds after a warm-up) and new requests one at a time 1.19x; 8 and 32 requests the same, the
 facts the same. So the kill rule's tokens-per-second part holds at 1 request with a draft model attached, not at 8
-and 32, where the draft model rests and the step is the kernels' alone. Open: why serving steps with uneven contexts in the shared pool
+and 32, where the draft model rests and the step is the kernels' alone.
+
+**Owner decision (2026-11-17).** Asked whether to go on with a kernel project for more tokens per second at 8 and
+32 requests (the generated kernels of KG1 extended to steps of 9-32 tokens; vLLM AWQ makes 419 tok/s at 8 requests on
+the T4, the engine about 270), the owner chose to accept the state: the Pilot decides on the CPU in 0.11-0.19 ms, on a
+GPU it brings the first token sooner (mixed arrivals 5.22 against 11.76 s) and, with a draft model attached, one
+request 1.23x. More tokens per second at 8 and 32 requests on a GPU is kernel work, not a Pilot decision; it stays
+open as its own entry when the owner reopens it. Open: why serving steps with uneven contexts in the shared pool
 cost up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
 
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
