@@ -1767,6 +1767,30 @@ requests one at a time 1.19x, in every one of the four pairs (+15 % to +28 %), w
 on the same as without it (it rests beyond two). DM2 ships: the rate check without the catch-up, PROBE 25, and
 `ironmule serve` naming the draft model on a GPU.
 
+## 2026-11-17 KG3: what a GPU step with many requests pays for
+
+The owner chose a kernel project for more tokens per second at 8-32 requests on a GPU (BACKLOG PI3). First where the
+time goes. From the PAD2 run: a serving step of 20 sequences cost 54 ms of llama.cpp's decode against about 59 ms in
+all (the engine's own Python about 5 ms), and 20 tokens of one sequence cost 30 ms at startup. Kaggle T4,
+`PI3_MODE=span` at bba69b0, 7 minutes: plain decode steps (median of 24) of n sequences with 200 tokens each, their
+cells low in a fresh cache, high after 60 kept long prompts, and after clearing the cache, with and without
+defragmentation, two rounds. ms per step (the four runs' range):
+
+| sequences | cells low | cells high | cleared |
+| --- | --- | --- | --- |
+| 8 | 49-66 | 62-64 | 61-65 |
+| 20 | 39-44 | 46.2-46.7 | 43.4-44.4 |
+| 32 | 47-55 | 57-61 | 54-60 |
+
+Defragmentation changed nothing. 8 sequences cost more than 20 (8 tokens use llama.cpp's vector kernels, 9 and more
+its tensor cores; in serving PAD1 fills 4-8 to 10). Read: cells high in the cache cost about 7 % at 20-32 sequences;
+the larger part is that 20 sequences of 200 tokens cost 43.5 ms where 20 tokens of one cost 30. In this llama.cpp
+(4227c9b) a GPU step with more than one query token runs the `mma_f16` flash-attention kernel over every cell up to
+the span with the mask, with no skip of masked blocks, so each request's token also reads every other request's
+cells. Across 120,000 logged T4 serving steps, steps of 20-32 rows cost about 50 ms up to 2-3k attended tokens and
+72-83 ms beyond. Next: one KV stream per request (each token reads only its own cells), measured against the pool
+without a rebuild (`PI3_MODE=streams`).
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

@@ -50,7 +50,8 @@ CHECK = os.environ.get("PI3_MODE") == "check"
 PAD2 = os.environ.get("PI3_MODE") == "pad2"
 KVD = os.environ.get("PI3_MODE") == "kvd"
 DM2 = os.environ.get("PI3_MODE") == "dm2"
-SPAN = os.environ.get("PI3_MODE") == "span"  # KG3: does a step cost more when its cells sit high in the cache?  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
+SPAN = os.environ.get("PI3_MODE") == "span"
+STREAMS = os.environ.get("PI3_MODE") == "streams"  # KG3: one KV stream per request (own-cell attention) against the pool  # KG3: does a step cost more when its cells sit high in the cache?  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
 OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
@@ -180,9 +181,9 @@ def main():
     def ids_of(text):
         return tok(f"<|im_start|>system\n/no_think<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n")
 
-    def open_engine(draft_gguf=None):
-        e = GgmlEngine(gguf, seqs=16, seq_ctx=2048, speculate=True, flash_attn=True, shared=True, cap=32,
-                       draft_gguf=draft_gguf)
+    def open_engine(draft_gguf=None, **over):
+        kw = {"seqs": 16, "seq_ctx": 2048, "speculate": True, "flash_attn": True, "shared": True, "cap": 32, **over}
+        e = GgmlEngine(gguf, draft_gguf=draft_gguf, **kw)
         e.collective = None
         ids = lambda t: e.tokenize(t)  # noqa: E731
         return e, ids
@@ -258,6 +259,61 @@ def main():
                 "ttft_mean": round(sum(ttft) / max(1, len(ttft)), 3), "ttft_p50": q(ttft, 0.5), "ttft_p90": q(ttft, 0.9),
                 "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9)}
 
+    if STREAMS:
+        def mid_text(i):  # about 400 tokens: a short report and a question
+            tag[0] += 1
+            r = random.Random(tag[0])
+            body = " ".join(f"Paragraph {k}: the harbour office of {('Arlen', 'Bree', 'Cosk', 'Dunmore')[r.randrange(4)]} "
+                            f"logged {r.randrange(40)} ships and the weather was {('calm', 'windy', 'rainy')[r.randrange(3)]}."
+                            for k in range(14))
+            return f"Report {tag[0]}.\n{body}\n\nQuestion: summarise paragraph {i % 14} in one sentence."
+
+        def mid_block(e, n, tokens, blocks=2):
+            tok_n = wall = 0.0
+            for b in range(blocks):
+                js = [Job(ids_of(mid_text(b * n + i)), tokens) for i in range(n)]
+                t = time.monotonic_ns()
+                e.run(js)
+                wall += (time.monotonic_ns() - t) / 1e9
+                tok_n += sum(len(j.tokens) for j in js)
+            return {"tok_s": round(tok_n / wall, 2), "wall": round(wall, 2)}
+
+        OUT["streams"], answers = [], {}
+        arms = [("pool", {}), ("pool_nospec", {"speculate": False}),
+                ("perseq_nospec", {"speculate": False, "shared": False, "seqs": 32, "seq_ctx": 1024, "cap": None})]
+        for rep in range(1 if SMOKE else 2):
+            for arm, over in (arms if rep == 0 else arms[::-1]):
+                e, tok_ = open_engine(**over)
+                tok = tok_
+                collect(e, f"{arm}_{rep}")
+                fact_ids = [tok(p) for p in fact_prompts]
+                e.run([Job(ids_of(chat_text(0)), 16)])
+                row = {"arm": arm, "rep": rep, "settings": e.summary().get("settings")}
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"mid{n}"] = mid_block(e, n, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
+                row["chat32"] = block(e, 4 if SMOKE else 32, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
+                row["chat"] = stream(e, "chat", 1000 + rep)
+                if rep == 0:
+                    got = []
+                    for k in range(0, 8 if SMOKE else len(fact_ids), 8):
+                        js = [Job(i, 48) for i in fact_ids[k:k + 8]]
+                        e.run(js)
+                        got += [j.tokens for j in js]
+                    answers[arm] = got
+                OUT["streams"].append(row)
+                print(json.dumps(row), flush=True)
+                e.observer = None
+                e.close()
+                save()
+        proc, port = mg2.server(gguf, 1, "0", "layer" if LOCAL else "none")
+        try:
+            OUT["facts"] = {arm: mg2.correct([mg2.detok_server(port, i) for i in v], facts) for arm, v in answers.items()}
+        finally:
+            mg2.stop(proc)
+        OUT["same_tokens"] = {arm: sum(a == b for a, b in zip(answers["pool"], v)) for arm, v in answers.items()}
+        OUT["finished"] = time.time()
+        save()
+        return
     if SPAN:
         import ironmule.ggml_engine as ge
 
