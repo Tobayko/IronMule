@@ -787,3 +787,24 @@ def test_kg3_on_a_gpu_the_gate_checks_one_kv_stream_per_request_and_a_cpu_gate_d
     monkeypatch.setattr(ggml_engine, "gpu_layers", lambda L=None: 0)
     on_cpu = ggml_engine.gate(str(tmp_path), str(tmp_path / "m2.gguf"), cache=tmp_path / "cache2")
     assert on_cpu["streams"] is None
+
+
+def test_seq1_measures_without_the_pilot(monkeypatch, tmp_path):
+    """SEQ1's KV-size probe opens 256 cells; the Pilot's cost measurement decodes past that, so with it the probe
+    failed on every machine and the width fell back to 8. Its children run with IRONMULE_PILOT=0."""
+    import subprocess
+    import types as _types
+
+    from ironmule import ggml_engine
+
+    seen = []
+
+    def run(command, env=None, **kwargs):
+        seen.append(env or {})
+        return _types.SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(ggml_engine, "file_sha256", lambda path: "0" * 64)
+    (tmp_path / "m.gguf").write_bytes(b"0")
+    ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {}, cache=tmp_path / "c")
+    assert seen and all(env.get("IRONMULE_PILOT") == "0" for env in seen)

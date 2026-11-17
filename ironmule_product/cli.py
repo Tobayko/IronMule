@@ -53,6 +53,9 @@ def inventory_rows(roots: list[Path] | None = None) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: (row["model_id"], row["revision"], row["snapshot_path"]))
 
 
+STREAMS_MIN = 16  # KG3: the fewest sequences one KV stream per request is served with; fewer keep the shared pool
+
+
 def _ggml_streams(checked: dict, gpu: bool) -> dict:
     """KG3: on a GPU one KV stream per request, where its own gate passed: each token reads only its own cells (a T4,
     Qwen3-4B Q4_K_M: 1.28x the shared pool at 20 requests, 1.78x at 32, 1.54x with documents among arriving chats,
@@ -469,9 +472,8 @@ def serve(argv: list[str]) -> int:
                 if checked.get("passes") is not True:
                     raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
                                          f"({checked.get('reason') or checked.get('interval')})")
+                pooled = checked
                 checked = _ggml_streams(checked, bool(ggml_gpu_layers()))
-                if checked.get("streams_serving"):
-                    print(json.dumps({"ggml_streams": checked["streams_serving"]}), flush=True)
                 if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine
                     from ironmule.ggml_engine import choose_sequences
 
@@ -481,6 +483,13 @@ def serve(argv: list[str]) -> int:
                                              device=devices[0], extra_bytes=draft_bytes)
                     os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
                     checked = {**checked, "sequences": width}
+                    if checked.get("streams_serving") and int(width["sequences"]) < STREAMS_MIN:
+                        # KG3: one stream per request serves as many requests at once as the width; below this the
+                        # shared pool (twice the width) serves more (a T4 with 8: 261 against 430 tok/s at 32 requests)
+                        checked = {**pooled, "sequences": width}
+                    if checked.get("streams_serving"):
+                        print(json.dumps({"ggml_streams": {**checked["streams_serving"],
+                                                           "sequences": int(width["sequences"])}}), flush=True)
                     shared = checked.get("shared") or {}
                     if (shared.get("passes") and os.environ.get("IRONMULE_GGML_SHARED", "1") != "0"
                             and not checked.get("streams_serving")):
