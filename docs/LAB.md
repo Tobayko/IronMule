@@ -1871,6 +1871,21 @@ in their own calls). So on a GPU `ironmule serve` now gates this setting (flash 
 beside the pool's and serves with it where it passes; `IRONMULE_GGML_STREAMS=0` keeps the pool. The serve path itself
 was not run on a GPU here; the engine was, through the harness.
 
+## 2026-11-17 KG3 end to end: `ironmule serve` on a T4, and SEQ1's width broken since PI1
+
+`lab/pi3/kaggle_serve.py` at 758ec73 (a first try stopped at its first start: the harness had copied MG2's build where
+its libraries could not find each other), Kaggle T4, Qwen3-4B Q4_K_M, the repository installed, `ironmule setup`,
+four starts of `ironmule serve --gguf` (streams, pool, pool, streams), chat requests through `/v1/chat/completions`
+(128 tokens), 15 minutes. tok/s for 1 / 8 / 32 requests at once: streams 45.6 / 243.9 / 260.6 and 47.4 / 244.8 /
+267.0; pool 45.4 / 266.0 / 433.1 and 42.8 / 259.7 / 426.6; 49 of 50 facts in every start. So the served streams
+were 0.61x the pool at 32 requests. `/health` showed why: every start served 8 sequences, "the KV size could not be
+read; 8 sequences as before", so the streams took 8 requests at once and the pool its cap of 16. SEQ1's KV-size probe
+opens an engine of 256 cells, and since PI1 an engine opens the Pilot, whose cost measurement decodes past 256 tokens:
+the probe failed on every machine and every server since then served 8 sequences. Fixed: SEQ1's children run without
+the Pilot, an engine of fewer than 512 cells does not open it, and `ironmule serve` keeps the pool where the streams
+would get fewer than 16 sequences. On this CPU (Qwen3-0.6B Q8_0, the streams' settings) SEQ1 now measures 8 / 16 / 32
+sequences at 179 / 286 / 319 tok/s and chooses 32.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

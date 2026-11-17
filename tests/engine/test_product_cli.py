@@ -179,3 +179,9 @@ def test_kg3_serve_takes_one_kv_stream_per_request_on_a_gpu_only_where_its_gate_
     assert "streams_serving" not in _ggml_streams({"settings": {}}, gpu=True)  # a gate stored before KG3
     monkeypatch.setenv("IRONMULE_GGML_STREAMS", "0")
     assert _ggml_streams(checked, gpu=True) is checked
+
+
+def test_kg3_streams_need_at_least_sixteen_sequences():
+    from ironmule_product.cli import STREAMS_MIN
+
+    assert STREAMS_MIN == 16  # with 8, a T4 served 32 requests at 261 tok/s against the pool's 430 (cap 16)

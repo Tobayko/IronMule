@@ -459,7 +459,9 @@ class GgmlEngine:
         if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies
             self.drafter = self._open_drafter(draft_gguf, threads)
         self.pilot = None
-        if PILOT and model is None:  # PI1: the decision network, with this machine's measured step costs
+        # PI1: the decision network, with this machine's measured step costs; its cost measurement decodes past 256
+        # tokens of one sequence, so a context too small for that (SEQ1's KV-size probe opens 256 cells) runs without it
+        if PILOT and model is None and seq_ctx >= 512:
             from .pilot import Pilot
 
             pilot = Pilot(self, self.measure_costs(), max_cap=self.cap if self.pool is not None else self.seqs,
@@ -1471,7 +1473,8 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
             pass
     root = root or Path(__file__).resolve().parents[1]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
-           "HF_HUB_OFFLINE": "1"}
+           "HF_HUB_OFFLINE": "1",
+           "IRONMULE_PILOT": "0"}  # SEQ1: its engines measure widths; the Pilot is not part of that
     env.pop("IRONMULE_GGML_SEQS", None)
     if device is not None:  # MG2: a worker per GPU; measure on one of them
         env["CUDA_VISIBLE_DEVICES"] = device
