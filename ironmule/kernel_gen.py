@@ -998,7 +998,7 @@ static uint32_t enabled_mask6 = 0xFFFFFFFFu;  // the same for Q6_K, chosen on it
 extern "C" void ironmule_kg_set_mask(uint32_t mask) { enabled_mask = mask; }
 extern "C" uint32_t ironmule_kg_get_mask() { return enabled_mask; }
 extern "C" void ironmule_kg_set_mask6(uint32_t mask) { enabled_mask6 = mask; }
-static int fa_enabled = 1;  // KG5: the decode attention, switched by the engine after its own measurement
+static int fa_enabled = 0;  // KG5: the decode attention, off until the engine measures it faster (KV streams only)
 extern "C" void ironmule_kg_set_fa(int on) { fa_enabled = on; }
 extern "C" int ironmule_kg_get_fa() { return fa_enabled; }
 extern "C" int ironmule_kg_flash_attn(const float *q, const void *k, const void *v, const void *mask, float *dst,

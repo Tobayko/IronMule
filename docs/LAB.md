@@ -1992,6 +1992,32 @@ tokens, 41.4 against 36.5 at 32). Blocks of 128 tokens, mean of two rounds: 1 re
 request at context 300: 26.4 against 60.8 ms at 8 (unpadded), 32.8 against 34.5 at 16, 49.4 against 50.7 at 32. 49 of 50
 facts either way, 48 of the 50 answers token for token the same.
 
+## 2026-11-17 KG5 (built, not yet on a GPU): attention, Q6_K repacked, CUDA graphs, a build made off Kaggle
+
+Owner (2026-11-17): overtake vLLM clearly; no Kaggle quota for now. Everything below was written, compiled for sm_75
+and checked off the GPU; nothing of it is measured yet.
+
+- *Decode attention (kg5 hook, `kfa`).* One thread block per KV head and stream serves that head's query heads
+  together (4 for Qwen3-4B), so each K and V row is read once: Q.K with 8 lanes per cell over 256 contiguous bytes, the
+  online softmax in fp32 with one lane per cell, P.V with the lanes over the head dimension, cells split across blocks
+  with a combine kernel when few streams run. Emulated in numpy with llama.cpp's strides against plain attention
+  (exact, including a masked hole, an empty stream and the split combine; a wrong head mapping shows an error of 1.7).
+  Off until the engine measures a step of several streams 3 % faster with it.
+- *Q6_K repacked once* into 16-byte aligned 224-byte blocks laid out per lane: 5 vector loads per lane and block
+  instead of 33 two-byte loads (the output matrix read at 116 GB/s at 8 tokens). Checked: every lane gets the same
+  words as before.
+- *gr2:* `IRONMULE_CUDA_GRAPHS=2` keeps CUDA graphs for steps of several tokens (the profile: 2.4-3.6 ms of gaps
+  between kernels per step at 8-32 requests).
+- *A build made here, not on Kaggle:* llama.cpp 4227c9b with gr1, kg1, kg5, gr2 for sm_75 with CUDA 12.8 (nvcc and
+  cuBLAS from NVIDIA's apt repository, 11 minutes on 4 cores), RUNPATH `$ORIGIN`, libstdc++ linked statically and a
+  small shim for glibc 2.38's `__isoc23_*` functions and 2.36's `arc4random`, so that it needs glibc 2.34 at most; the
+  CUDA 12.8 runtime and cuBLAS beside it (kg5_build.tar.gz, 631 MB). That saves the 57-minute build on Kaggle's GPU.
+- `lab/kg5/kaggle_vs_vllm.py`: base / kg4 / kg5 / kg5 with graphs against vLLM AWQ in one T4 session, the same
+  templated prompts, 1 / 8 / 32 requests, the 50 facts. Waits for the owner's approval of GPU time.
+
+Arithmetic, not a measurement: a 32-request step on the T4 is 49 ms (627 tok/s); vLLM AWQ's 861 tok/s is about 37 ms.
+Attention 10.5 ms, Q4_K 18.2, Q6_K 6.6 and 3.6 ms of gaps are where the difference has to come from.
+
 ## 2026-11-17 PI4 (not run): would a GPU Pilot trained anew on the KG4-era costs decide better?
 
 After KG4 the T4's step costs changed (8 rows no longer dearer than 16, one row 17-19 ms, 8 / 16 / 32 rows 1.35 / 1.63
