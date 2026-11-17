@@ -74,7 +74,7 @@ def main():
         sh(f"{sys.executable} -m pip install -q -e '{repo}[cpu]'")
         cached = next(iter(glob.glob("/kaggle/input/**/mg2_build.tar.gz", recursive=True)), None)
         unpacked = next(iter(glob.glob("/kaggle/input/**/build/bin/libllama.so", recursive=True)), None)
-        src = Path("/tmp/src")
+        src = W / "src"  # where MG2 built it: its libraries find each other by that absolute path
         src.mkdir(exist_ok=True)
         if cached:
             sh(f"cd {src} && tar xzf {cached}")
@@ -82,6 +82,8 @@ def main():
             sh(f"cp -r {Path(unpacked).parents[4]} {src}/")
         os.environ["IRONMULE_GGML_BINDINGS"] = str(src / "llama_cpp_python-0.3.16")
         os.environ["LLAMA_CPP_LIB_PATH"] = str(src / "llama_cpp_python-0.3.16/vendor/llama.cpp/build/bin")
+        os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [os.environ["LLAMA_CPP_LIB_PATH"],
+                                                                    os.environ.get("LD_LIBRARY_PATH")]))
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         gguf = str(W / "Qwen3-4B-Q4_K_M.gguf")
         if not Path(gguf).exists():
@@ -129,9 +131,11 @@ def main():
         except Exception as exc:  # noqa: BLE001 - recorded, the next arm still runs
             row["error"] = f"{type(exc).__name__}: {exc}"[:400]
         finally:
-            os.killpg(proc.pid, 15)
             try:
+                os.killpg(proc.pid, 15)
                 proc.wait(timeout=60)
+            except ProcessLookupError:  # it had exited already
+                pass
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, 9)
             log.close()
