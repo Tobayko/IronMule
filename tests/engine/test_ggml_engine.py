@@ -690,19 +690,61 @@ def test_kg3_with_one_kv_stream_per_sequence_a_new_prompt_gets_its_own_call():
     assert any(len({s for _, _, s in call}) == 2 and len(call) == 5 for call in fed2)
 
 
-def test_kg3_a_free_id_between_running_streams_gets_placeholder_rows_that_are_removed_again():
-    from ironmule.ggml_engine import Job
-
+def _streams_engine():
+    """The stub engine with one KV stream per sequence, which, as llama.cpp does, refuses a row that does not continue
+    its stream (a sequence's first row in a call must sit right past what the stream holds)."""
     engine, fed, removed = _stub_engine()
     engine.settings = {"kv_unified": False}
     engine.L.llama_vocab_bos = lambda vocab: 1
+    top: dict[int, int] = {}
+    decode, rm = engine.L.llama_decode, engine.L.llama_memory_seq_rm
+
+    def checked(ctx, b):
+        first: dict[int, int] = {}
+        for i in range(b.n_tokens):
+            first.setdefault(b.seq_id[i][0], b.pos[i])
+        for seq, pos in first.items():
+            assert pos == top.get(seq, -1) + 1, (seq, pos, top.get(seq, -1))
+        for i in range(b.n_tokens):
+            top[b.seq_id[i][0]] = max(top.get(b.seq_id[i][0], -1), b.pos[i])
+        return decode(ctx, b)
+
+    def trimmed(memory, seq, start, end):
+        ok = rm(memory, seq, start, end)
+        if ok:
+            top[seq] = -1 if start < 0 else min(top.get(seq, -1), start - 1)
+        return ok
+
+    engine.L.llama_decode, engine.L.llama_memory_seq_rm = checked, trimmed
+    engine.L.llama_memory_seq_pos_max = lambda memory, seq: top.get(seq, -1)
+    return engine, fed, removed
+
+
+def test_kg3_a_free_id_between_running_streams_gets_placeholder_rows_that_are_removed_again():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, removed = _streams_engine()
     a, b, c = Job([1, 2], 6), Job([3, 4], 2), Job([5, 6], 6)
     engine.run([a, b, c])  # b (the middle id) ends first; a and c run on around its free id
     assert len(b.tokens) == 2 and len(a.tokens) == len(c.tokens) == 6
-    held = len(engine._kept.get(1) or ())
-    fillers = [call for call in fed if (1, held, 1) in call]
-    assert fillers and all([s for _, _, s in call] == [0, 1, 2] for call in fillers)  # one call over ids 0..2
-    assert (1, held, -1) in removed  # the placeholder's cell is removed after each such step
+    fillers = [call for call in fed if [s for _, _, s in call] == [0, 1, 2] and call[1][0] == 1]
+    assert fillers  # one call over ids 0..2 with a placeholder for 1
+    held = fillers[0][1][1]
+    assert (1, held, -1) in removed  # the placeholder's cell is removed after the step
+
+
+def test_kg3_a_request_that_takes_a_free_id_mid_run_is_not_overwritten_by_a_placeholder():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, _ = _streams_engine()
+    a, b, c = Job([1, 2], 8), Job([3, 4], 2), Job([5, 6], 8)
+    late = [Job([7, 8, 9, 10, 11], 3)]
+
+    def admit(room):  # once b's id is free, a new request takes it (the lowest) while a and c run on
+        return [late.pop()] if late and len(b.tokens) == 2 and room else []
+
+    engine.run([a, b, c], admit=admit)  # the stub refuses any row that would not continue its stream
+    assert not late and all(len(j.tokens) == j.limit for j in (a, b, c))
 
 
 def test_kg3_a_new_request_takes_the_lowest_free_stream():

@@ -1034,28 +1034,6 @@ class GgmlEngine:
                     job = active[seq]
                     pos = len(job.ids) + len(job.tokens) - 1
                     rows += [(t, pos + j, seq, True) for j, t in enumerate([job.tokens[-1]] + list(drafts[:k]))]
-                fillers: list[tuple[int, int]] = []
-                if streams and order and max(order) - min(order) + 1 > len(order):
-                    # KG3: llama.cpp splits a call over KV streams into a pass per run of consecutive sequence ids; a
-                    # free id between running ones gets placeholder rows (the BOS token past what its stream holds,
-                    # no logits), removed again after the step, so the step stays one pass
-                    per = len(rows) // len(order)
-                    by_seq: dict[int, list[tuple[int, int, int, bool]]] = {}
-                    for row in rows:
-                        by_seq.setdefault(row[2], []).append(row)
-                    bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
-                    rows = []
-                    for sq in range(min(order), max(order) + 1):
-                        if sq in by_seq:
-                            rows += by_seq[sq]
-                        else:
-                            held = len(self._kept.get(sq) or ())
-                            if held + per > self.seq_ctx:  # a full stream gives up its kept prefix for the placeholder
-                                self.L.llama_memory_seq_rm(self.memory, sq, -1, -1)
-                                self._kept.pop(sq, None)
-                                held = 0
-                            rows += [(bos, held + j, sq, False) for j in range(per)]
-                            fillers.append((sq, held))
                 decode_rows = len(rows)
                 room = self.seq_ctx - decode_rows  # one call's tokens
                 batched: list[tuple[int, Job]] = []
@@ -1068,6 +1046,29 @@ class GgmlEngine:
                     else:  # too long to share this call: its own prefill first
                         active[seq] = job
                         take(seq, job, self._prefill(job.ids, seq, keep))
+                fillers: list[tuple[int, int]] = []
+                if streams and order and not batched and max(order) - min(order) + 1 > len(order):
+                    # KG3: llama.cpp splits a call over KV streams into a pass per run of consecutive sequence ids; a
+                    # free id between running ones gets placeholder rows (the BOS token past what its stream holds,
+                    # no logits), removed again after the step, so the step stays one pass. Computed after this
+                    # step's own prompt calls, from llama.cpp's own record of each stream.
+                    per = len(rows) // len(order)
+                    by_seq: dict[int, list[tuple[int, int, int, bool]]] = {}
+                    for row in rows:
+                        by_seq.setdefault(row[2], []).append(row)
+                    bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+                    rows = []
+                    for sq in range(min(order), max(order) + 1):
+                        if sq in by_seq:
+                            rows += by_seq[sq]
+                            continue
+                        held = int(self.L.llama_memory_seq_pos_max(self.memory, sq)) + 1
+                        if held + per > self.seq_ctx:  # a full stream gives up its kept prefix for the placeholder
+                            self.L.llama_memory_seq_rm(self.memory, sq, -1, -1)
+                            self._kept.pop(sq, None)
+                            held = 0
+                        rows += [(bos, held + j, sq, False) for j in range(per)]
+                        fillers.append((sq, held))
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
                 seconds = time.perf_counter() - started

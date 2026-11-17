@@ -1824,6 +1824,14 @@ rows for the free id (the BOS token past what its stream holds, no logits, remov
 request the lowest free id unless a kept prefix of 64 tokens or more is elsewhere; on this CPU 8 of 8 answers with
 requests arriving mid-run are the pool's.
 
+The first T4 run of that (at db6130f) stopped after its first arm: a new request that took the free id in the middle
+was prefilled in its own call in the same step, after the placeholder for that id had been planned at position 0, and
+llama.cpp refused the row ("inconsistent sequence positions"). The placeholders are now planned right before the
+step's call, after its prompt calls, at the position llama.cpp reports for the stream (`llama_memory_seq_pos_max`);
+the stub test now refuses rows as llama.cpp does and fails on the earlier code. On this CPU, with a request taking
+the free id between two running ones: 4 of 5 answers token for token the pool's, the fifth "The Rhine" against
+"Rhine" in its fifteenth token (a step of a different width rounds differently, as PAD1's do on a GPU).
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
