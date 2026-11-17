@@ -1960,6 +1960,17 @@ a 50 ms step and the engine sees 1-3 ms: unexplained so far (clock under sustain
 memset launches per matmul, or attention and Q6_K growing their share), the next profile's question. Against the
 library shipped before (KG2: 1-8 tokens) the new part is 8-32 requests; one request is KG2's gain.
 
+Profile (`lab/kg4/kaggle_prof2.py` at e822e46, T4, 4.5 minutes; the engine's steps of one token per request, context
+300, the library on for every count or its mask at 0, CUPTI over 8 steps). Steps: 8 requests 27.0 against 53.8 ms, 32
+requests 44.8 against 47.5 ms (2.0x and 1.06x). Per step at 32 requests: the Q4_K matmuls with their activation
+quantization 18.2 ms through the library against 21.9 through llama.cpp (`mul_mat_q` 19.4, stream-k fix-ups 1.7,
+quantization 0.8), so 3.7 ms of the 5.4 the isolated kernels promised arrive: the library's quantization costs 1.5 ms
+against llama.cpp's 0.8, and the kernels run about 12 % slower inside the step than alone. The rest of the 32-request
+step is not Q4_K: flash attention 10.5 ms, Q6_K 6.6 ms (`mul_mat_q`), the logits' copy to the host 1.6 ms, norms,
+rope and the like about 3 ms; the GPU is busy 91 % of the wall time either way. At 8 requests llama.cpp's Q6_K kernel
+(`mul_mat_vec_q<Q6_K, 8>`) takes 8-12 ms of the step. Next: the same tensor-core kernel for Q6_K (its weights, 0.7 GB,
+could be read in about 2.4 ms) and a cheaper activation quantization.
+
 ## 2026-11-17 PB1: the GPU Pilot's prompt budget with one KV stream per request
 
 Another session read low tokens per second for bursts of medium prompts on the T4 and suspected the GPU Pilot's prompt
