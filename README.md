@@ -103,7 +103,9 @@ Since KG3 the server on a GPU gives every request its own KV cache instead of th
 attention read every request's cells for every token. On a T4 with Qwen3-4B that is 1.78x the pool's tokens per second
 at 32 requests (89.6 against 50.4 with ~420-token prompts; 546 against 343 with short ones), 1.28x at 20, 1.21x for 8
 short requests, and 1.54x with documents among arriving chats, where the first word comes after 2.1 s instead of 6.5 s;
-the same facts right ([docs/LAB.md](docs/LAB.md), KG3). The table above was measured with the pool.
+the same facts right ([docs/LAB.md](docs/LAB.md), KG3). Through `ironmule serve` itself on that T4: 518 against 422
+tokens per second at 32 requests (1.23x), 238 against 260 at 8 (0.92x), one request the same. The table above was
+measured with the pool.
 
 One person on one GPU: IronMule writes its own GPU kernels for the 4-bit weights. On first start it generates a few
 hundred variants, checks and times each on your GPU with your model, and keeps the fastest (KG2 in

@@ -1886,6 +1886,22 @@ the Pilot, an engine of fewer than 512 cells does not open it, and `ironmule ser
 would get fewer than 16 sequences. On this CPU (Qwen3-0.6B Q8_0, the streams' settings) SEQ1 now measures 8 / 16 / 32
 sequences at 179 / 286 / 319 tok/s and chooses 32.
 
+Again on the T4 at 639de29 (SEQ1 fixed), 9 minutes, the same design. The streams' starts measured 8 / 16 / 32
+sequences and served 32; the pool's starts (llama.cpp's default setting, which the gate kept on this T4) reported "the
+width measurement failed; 8 sequences as before" and served 8 sequences with a cap of 16 (that child's error was not
+recorded; on this CPU the same measurement with the default setting works). tok/s, mean of two starts each:
+
+| `ironmule serve` | one stream per request (32) | shared pool (8, cap 16) | ratio |
+| --- | --- | --- | --- |
+| 1 request | 46.3 | 43.6 | 1.06x |
+| 8 requests at once | 238.3 | **260.0** | 0.92x |
+| 32 requests at once | **518.4** | 422.2 | **1.23x** |
+
+49 of 50 facts in every start. Read: through the server the streams default makes 32 requests 1.23x what the pool
+serves today and 8 requests 0.92x; one request the same. The pool here has 16,384 cells against 32,768 in the harness,
+so its steps read fewer cells (the harness's pool at 32 short requests: 343-386 tok/s). Open: the pool's width
+measurement with llama.cpp's default setting on a GPU, and the streams' 8-request step through the server.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

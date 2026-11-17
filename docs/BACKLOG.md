@@ -153,8 +153,11 @@ same number of drafts per stream, placeholder rows for a free id between running
 evenly to the size measured cheaper): 1.28x the pool at 20 requests, 1.78x at 32, 1.59x for 32 short requests, 1.54x
 with documents among arriving chats (first token 2.1 against 6.5 s), 1.08x for chats alone, 1.04-1.21x at 8 and
 0.98x at 4; 49 of 50 facts either way. On a GPU `ironmule serve` now serves that way where its own gate passes
-(`IRONMULE_GGML_STREAMS=0` keeps the pool). Still open: vLLM AWQ's kernels, the first token of a block of requests
-(0.73 against 0.65 s at 32), and the GPU a new request joins when there are several.
+(`IRONMULE_GGML_STREAMS=0` keeps the pool). Through `ironmule serve` itself on the T4 (after the SEQ1 fix, LAB.md): 32
+requests 518 against 422 tok/s (1.23x), 8 requests 238 against 260 (0.92x), one request the same, 49 of 50 facts;
+the pool there served 8 sequences because its width measurement fails with llama.cpp's default setting on a GPU.
+Still open: that measurement, the streams' 8-request step through the server, vLLM AWQ's kernels, the first token of
+a block of requests (0.73 against 0.65 s at 32), and the GPU a new request joins when there are several.
 
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
