@@ -533,7 +533,38 @@ class GgmlEngine:
         if six:
             out["q6k_tokens_served"] = keep6
             out["step_ms_q6k"] = {str(t): round(med(prices[2][t]) * 1000, 2) for t in counts}
+        settings = getattr(self, "settings", None) or {}
+        if hasattr(lib, "ironmule_kg_set_fa") and not settings.get("kv_unified", True):
+            # KG5: the library's decode attention (one query token per KV stream, llama.cpp's kg5 hook), kept where a
+            # step of several streams is at least 3 % faster with it
+            lib.ironmule_kg_set_fa.argtypes = [ctypes.c_int]
+            fa: dict[int, list[float]] = {0: [], 1: []}
+            for _ in range(repeats):
+                for flag in (1, 0):
+                    lib.ironmule_kg_set_fa(flag)
+                    fa[flag].append(self._streams_step_price())
+            keep_fa = med(fa[1]) <= 0.97 * med(fa[0])
+            lib.ironmule_kg_set_fa(int(keep_fa))
+            out["attention"] = {"served": keep_fa, "step_ms_on": round(med(fa[1]) * 1000, 2),
+                                "step_ms_off": round(med(fa[0]) * 1000, 2)}
         return out
+
+    def _streams_step_price(self, ctx: int = 512, repeats: int = 3) -> float:
+        """KG5: seconds of a decode step of one token in each of up to 8 sequences at a `ctx`-token context (median)."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        n = max(1, min(8, self.seqs))  # one KV stream per sequence: each has seq_ctx cells of its own
+        ctx = min(ctx, self.seq_ctx - repeats - 2)
+        self._clear()
+        for s in range(n):
+            for a in range(0, ctx, 256):
+                self._decode([(bos, a + j, s, a + j == ctx - 1) for j in range(min(256, ctx - a))])
+        times = []
+        for r in range(repeats + 1):
+            started = time.perf_counter()
+            self._decode([(bos, ctx + r, s, True) for s in range(n)])
+            times.append(time.perf_counter() - started)
+        self._clear()
+        return sorted(times[1:])[len(times[1:]) // 2]
 
     def measure_padding(self, repeats: int = 5) -> dict[int, int]:
         """PAD1: a verify step's seconds for 1 to `max_rows` tokens of one sequence (median of `repeats`), and for each

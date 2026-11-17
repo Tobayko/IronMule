@@ -14,6 +14,9 @@ variables the engine reads. Nothing is installed system-wide.
         llama.cpp turns them off there, so a one-token step launches every kernel on its own. SG1 in docs/LAB.md.
   kg1   CUDA builds only: a hook that hands a matmul to a kernel library generated and tuned for this GPU
         (IRONMULE_KG_LIB, `ironmule/kernel_gen.py`) when it has a kernel for it; llama.cpp's own kernels otherwise.
+  kg5   CUDA builds only: the same library takes the decode attention of one query token per KV stream (KG5).
+  gr2   CUDA builds only: IRONMULE_CUDA_GRAPHS=2 keeps CUDA graphs for steps of several tokens too (llama.cpp turns
+        them off from two tokens on).
 
     python tools/build_ggml.py                 # CPU build in ~/.cache/ironmule/ggml
     python tools/build_ggml.py --cuda 75,86    # with CUDA for these compute capabilities (T4 = 75)
@@ -42,6 +45,8 @@ PATCH_SETS = {
              [("row1_kern.h", "ggml/src/ggml-cpu/amx/row1_kern.h")]),
     "gr1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),
     "kg1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1, on the file gr1 left
+    "kg5": ([("ggml/src/ggml-cuda/fattn.cu", "fattn.cu.diff")], []),
+    "gr2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1 and kg1
 }
 
 
@@ -119,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     dest = args.dest / ("stock" if args.no_patches else "ironmule") / ("cuda" if args.cuda else "cpu")
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1", "kg5", "gr2"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

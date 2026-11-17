@@ -1,0 +1,14 @@
+2670c2670,2672
+<         if (node->op == GGML_OP_ADD &&
+---
+>         static const bool ironmule_graphs_batched = getenv("IRONMULE_CUDA_GRAPHS") != nullptr
+>                                                     && strcmp(getenv("IRONMULE_CUDA_GRAPHS"), "2") == 0;  // GR2
+>         if (!ironmule_graphs_batched && node->op == GGML_OP_ADD &&
+2992a2995,2996
+>         // GR2: IRONMULE_CUDA_GRAPHS=2 also keeps them for steps of several tokens (the graph is captured again when a
+>         // node's shape changes, as for one token)
+2994c2998,2999
+<                                                && strcmp(getenv("IRONMULE_CUDA_GRAPHS"), "1") == 0;
+---
+>                                                && (strcmp(getenv("IRONMULE_CUDA_GRAPHS"), "1") == 0
+>                                                    || strcmp(getenv("IRONMULE_CUDA_GRAPHS"), "2") == 0);

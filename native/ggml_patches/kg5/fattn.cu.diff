@@ -1,0 +1,48 @@
+10a11,53
+> #include <dlfcn.h>
+> 
+> // KG5 (IronMule): the generated kernel library (IRONMULE_KG_LIB, the one the kg1 hook loads) takes the decode attention
+> // of one query token per KV stream (f32 Q, f16 K and V, an f16 mask, no ALiBi, soft cap or sinks); it returns non-zero
+> // for anything else and llama.cpp's own kernels run as before.
+> typedef int (*ironmule_fa_fn)(const float * q, const void * k, const void * v, const void * mask, float * dst,
+>                               const int64_t * qne, const int64_t * qnb, const int64_t * kne, const int64_t * knb,
+>                               const int64_t * vnb, const int64_t * mne, const int64_t * mnb, float scale,
+>                               cudaStream_t stream);
+> static ironmule_fa_fn ironmule_fa_load() {
+>     const char * path = getenv("IRONMULE_KG_LIB");
+>     if (path == nullptr || *path == 0) {
+>         return nullptr;
+>     }
+>     void * handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+>     if (handle == nullptr) {
+>         return nullptr;
+>     }
+>     return (ironmule_fa_fn) dlsym(handle, "ironmule_kg_flash_attn");
+> }
+> static bool ironmule_kg_flash_attn(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+>     static const ironmule_fa_fn fn = ironmule_fa_load();
+>     const ggml_tensor * Q = dst->src[0], * K = dst->src[1], * V = dst->src[2], * mask = dst->src[3];
+>     if (fn == nullptr || mask == nullptr || dst->src[4] != nullptr || Q->type != GGML_TYPE_F32 ||
+>         K->type != GGML_TYPE_F16 || V->type != GGML_TYPE_F16 || mask->type != GGML_TYPE_F16 ||
+>         dst->type != GGML_TYPE_F32 || Q->ne[1] != 1 || K->ne[0] != V->ne[0] || !ggml_is_contiguous(dst)) {
+>         return false;
+>     }
+>     float scale, max_bias, softcap;
+>     memcpy(&scale, (const float *) dst->op_params + 0, sizeof(float));
+>     memcpy(&max_bias, (const float *) dst->op_params + 1, sizeof(float));
+>     memcpy(&softcap, (const float *) dst->op_params + 2, sizeof(float));
+>     if (max_bias != 0.0f || softcap != 0.0f) {
+>         return false;
+>     }
+>     const int64_t qne[4] = {Q->ne[0], Q->ne[1], Q->ne[2], Q->ne[3]}, qnb[4] = {(int64_t) Q->nb[0], (int64_t) Q->nb[1], (int64_t) Q->nb[2], (int64_t) Q->nb[3]};
+>     const int64_t kne[4] = {K->ne[0], K->ne[1], K->ne[2], K->ne[3]}, knb[4] = {(int64_t) K->nb[0], (int64_t) K->nb[1], (int64_t) K->nb[2], (int64_t) K->nb[3]};
+>     const int64_t vnb[4] = {(int64_t) V->nb[0], (int64_t) V->nb[1], (int64_t) V->nb[2], (int64_t) V->nb[3]};
+>     const int64_t mne[4] = {mask->ne[0], mask->ne[1], mask->ne[2], mask->ne[3]}, mnb[4] = {(int64_t) mask->nb[0], (int64_t) mask->nb[1], (int64_t) mask->nb[2], (int64_t) mask->nb[3]};
+>     return fn((const float *) Q->data, K->data, V->data, mask->data, (float *) dst->data, qne, qnb, kne, knb, vnb, mne,
+>               mnb, scale, ctx.stream()) == 0;
+> }
+> 
+278a322,324
+>     if (ironmule_kg_flash_attn(ctx, dst)) {
+>         return;  // KG5
+>     }

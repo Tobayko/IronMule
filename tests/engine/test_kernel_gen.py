@@ -94,3 +94,37 @@ def test_kg4_q6k_is_kept_only_where_it_beats_the_step_without_it(monkeypatch):
     out = engine.measure_kg("lib.so", repeats=3)
     assert out["tokens_served"] == [8, 32] and out["q6k_tokens_served"] == [8]
     assert Lib.mask6 == 1 << 7 and Lib.mask == (1 << 7) | sum(1 << (u - 1) for u in range(25, 33))
+
+
+def test_kg5_the_engine_keeps_the_library_attention_only_with_kv_streams_and_where_it_is_faster(monkeypatch):
+    from ironmule.ggml_engine import GgmlEngine
+
+    class Lib:
+        fa = None
+
+        def __init__(self, path):
+            def set_fa(on):
+                Lib.fa = on
+
+            self.ironmule_kg_set_mask = lambda mask: None
+            self.ironmule_kg_set_fa = set_fa
+            self.ironmule_kg_table = lambda: b'{"entries": []}'
+
+    monkeypatch.setattr(ctypes, "CDLL", Lib)
+    for unified, faster, want in ((False, True, True), (False, False, False), (True, True, None)):
+        Lib.fa = None
+        engine = GgmlEngine.__new__(GgmlEngine)
+        engine.settings = {"kv_unified": unified}
+        engine._step_prices = lambda counts, repeats=1: {t: 1.0 for t in counts}
+        engine._streams_step_price = lambda: (0.8 if faster and Lib.fa else 1.0)
+        out = engine.measure_kg("lib.so", repeats=3)
+        if want is None:
+            assert "attention" not in out and Lib.fa is None  # the shared pool: no KV streams, not measured
+        else:
+            assert out["attention"]["served"] is want and Lib.fa == int(want)
+
+
+def test_kg5_the_library_source_has_the_attention_entry_and_its_switch():
+    src = kg.library_source({"arch": "75", "entries": []})
+    assert 'extern "C" int ironmule_kg_flash_attn(' in src and "ironmule_kg_set_fa" in src
+    assert "kfa_combine" in src and "FA(128, 4)" in src
