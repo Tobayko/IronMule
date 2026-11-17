@@ -265,7 +265,10 @@ from a T4's measured costs (LAB.md, PI3 probe), they keep the running cap at its
 there. On a Kaggle T4 with Qwen3-4B Q4_K_M that halves the mean first token when documents arrive among chats (5.22
 against 11.76 s, 80.3 against 75.4 tokens per second) and brings it sooner for 8 and 32 requests at once (0.145 against
 0.169 s, 0.43 against 0.62 s) at the same tokens per second; for short chats alone it is within the card's spread.
-Their thread decisions were not steady on the CPU, so the CPU keeps its own weights. Open under PI3: why serving steps
+Their thread decisions were not steady on the CPU, so the CPU keeps its own weights. With a draft model attached
+(`--draft-gguf`; on a GPU `ironmule serve` names one of the same family) one request makes 1.23x the tokens per second
+on that T4 and new requests one at a time 1.19x (DM2, LAB.md), since the draft model's stop rule no longer counts
+reading a new prompt against drafting. Open under PI3: why serving steps
 with uneven contexts cost up to 1.5x a block's step of the same width on a GPU, and the choice of GPU when there are
 several (padding 17-30 rows to 32 was tried and dropped, LAB.md, PAD2). The CPU serving path stays.
 
