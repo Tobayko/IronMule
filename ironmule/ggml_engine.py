@@ -67,8 +67,8 @@ DEFRAG = float(os.environ.get("IRONMULE_GGML_DEFRAG", 0) or 0)
 # before); beyond it the least recently used go when a request ends, so fewer cells sit in every step's attended range.
 KEEP = float(os.environ.get("IRONMULE_GGML_KEEP", 1) or 1)
 # KG1 (2026-11-15): a kernel library generated and tuned for this GPU (ironmule/kernel_gen.py), loaded by llama.cpp's
-# kg1 hook from IRONMULE_KG_LIB. The engine measures its own step for 1-8 tokens with the library on and off at
-# startup and keeps it only for the token counts where the step is faster.
+# kg1 hook from IRONMULE_KG_LIB. The engine measures its own step for 1-8 tokens (KG4: and 16 / 24 / 32 for 9-32) with
+# the library on and off at startup and keeps it only for the token counts where the step is faster.
 KG_LIB = os.environ.get("IRONMULE_KG_LIB", "")
 PILOT = os.environ.get("IRONMULE_PILOT", "1") != "0"  # PI1: the decision network, when its weights are present
 DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  # DM1: it drafts up to this load
@@ -487,8 +487,8 @@ class GgmlEngine:
         return prices
 
     def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:
-        """KG1: the step for 1-8 tokens with the generated kernels on and off (alternating, median of `repeats`); the
-        library keeps the token counts where it was at least 3 % faster. {} where the library is not loaded."""
+        """KG1: the step for 1-8 tokens (KG4: and 16, 24, 32) with the generated kernels on and off (alternating, median
+        of `repeats`); the library keeps the token counts where it was at least 3 % faster. {} where it is not loaded."""
         import ctypes
 
         try:
@@ -497,16 +497,19 @@ class GgmlEngine:
             lib.ironmule_kg_table.restype = ctypes.c_char_p
         except (OSError, AttributeError) as exc:
             return {"error": f"{type(exc).__name__}: {exc}"[:200]}
-        on: dict[int, list[float]] = {t: [] for t in range(1, 9)}
-        off: dict[int, list[float]] = {t: [] for t in range(1, 9)}
+        # KG4: 9-32 tokens run the tensor-core kernels of one tile count (8 tokens each) at about one price, so 16, 24
+        # and 32 stand for 9-16, 17-24 and 25-32
+        counts = list(range(1, 9)) + [16, 24, 32]
+        on: dict[int, list[float]] = {t: [] for t in counts}
+        off: dict[int, list[float]] = {t: [] for t in counts}
         for _ in range(repeats):
             for mask, store in ((0xFFFFFFFF, on), (0, off)):
                 lib.ironmule_kg_set_mask(mask)
-                for t, v in self._step_prices(range(1, 9), repeats=1).items():
+                for t, v in self._step_prices(counts, repeats=1).items():
                     store[t].append(v)
         med = lambda v: sorted(v)[len(v) // 2]  # noqa: E731
-        keep = [t for t in range(1, 9) if med(on[t]) <= 0.97 * med(off[t])]
-        mask = sum(1 << (t - 1) for t in keep)
+        keep = [t for t in counts if med(on[t]) <= 0.97 * med(off[t])]
+        mask = sum(1 << (u - 1) for t in keep for u in ((t,) if t <= 8 else range(t - 7, t + 1)))
         lib.ironmule_kg_set_mask(mask)
         self._kg_lib = lib
         try:

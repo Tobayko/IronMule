@@ -34,11 +34,18 @@ import time
 from pathlib import Path
 from typing import Any
 
-KG_VERSION = 2  # 2 (ST2): MQ1 kernels for one token
+KG_VERSION = 3  # 2 (ST2): MQ1 kernels for one token; 3 (KG4): tensor-core kernels for 1-32 tokens
 TYPE_Q4_K = 12  # GGML_TYPE_Q4_K
 BATCHES = tuple(range(1, 9))  # from 9 tokens on llama.cpp's tensor-core kernel is faster (KG1 v2: 16.8 ms vs 42.4)
 LANES, ROWS, WARPS = (8, 16, 32), (1, 2, 4, 8), (2, 4, 8)
 ERROR_MARGIN = 1.25  # a kernel may be at most this much less exact than llama.cpp's own on the same data
+# KG4: Q4_K x 8-bit activations on tensor cores (mma.sync m8n8k16, sm_75 and later), T tiles of 8 tokens; measured
+# at the largest token count of each tile count and serving every count of that tile count
+MMA_BATCHES = (8, 16, 24, 32)
+MMA_SHAPES = ((1, 2, 1, 1), (1, 4, 1, 1), (1, 8, 1, 1), (2, 2, 1, 1), (2, 4, 1, 1), (2, 8, 1, 1), (4, 2, 1, 1),
+              (4, 4, 1, 1), (1, 4, 2, 1), (2, 4, 2, 1), (4, 4, 2, 1), (2, 8, 2, 1), (1, 4, 1, 2), (2, 4, 1, 2),
+              (1, 4, 1, 4), (2, 4, 1, 4), (1, 8, 1, 2), (1, 8, 1, 4), (2, 2, 1, 2), (4, 2, 1, 2))  # R, W, KB, SK
+MMA_VARIANTS = tuple((T,) + v for T in (1, 2, 3, 4) for v in MMA_SHAPES)  # T, R, W, KB, SK
 
 DEVICE = r"""
 #include <cuda_fp16.h>
@@ -265,6 +272,135 @@ static void quantize(const float *x, int8_t *xq, float *xd, int n, cudaStream_t 
     quant_x<<<(n / 32 + 7) / 8, 256, 0, s>>>(x, xq, xd, n);
 }
 struct Variant { int L, R, W, B; launch_t fn; };
+
+// KG4 (lab/kg4/kmma.cu): Q4_K x 8-bit activations on tensor cores, 1-32 tokens
+__device__ __forceinline__ void mma8816(int &c0, int &c1, uint32_t a, uint32_t b) {
+    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};"
+                 : "+r"(c0), "+r"(c1) : "r"(a), "r"(b));
+}
+
+// x [B][K] float -> fragment order for T tiles of 8 tokens (tokens past B are zero):
+//   xf, 8 bytes per (tile tt, sub-block s, lane): xq[8 tt + lane / 4][32 s + 8 (lane % 4) .. + 7]
+//   xs, per (tt, s, token in tile): (d, d * sum of the 32 quants)
+__global__ void quant_frag(const float *__restrict__ x, int8_t *__restrict__ xf, float2 *__restrict__ xs, int B, int K,
+                           int T) {
+    const int S = K / 32;
+    const int wid = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32, lane = threadIdx.x % 32;
+    if (wid >= T * 8 * S) return;
+    const int tok = wid / S, s = wid % S;
+    const float v = tok < B ? x[(size_t)tok * K + 32 * s + lane] : 0.f;
+    float a = fabsf(v);
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) a = fmaxf(a, __shfl_xor_sync(0xffffffffu, a, off));
+    const float d = a / 127.f;
+    const int q = d == 0.f ? 0 : __float2int_rn(v / d);
+    int sum = q;
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, off);
+    const int tt = tok / 8, g = tok % 8;
+    xf[(((size_t)tt * S + s) * 32 + g * 4 + lane / 8) * 8 + lane % 8] = (int8_t)q;
+    if (lane == 0) xs[((size_t)tt * S + s) * 8 + g] = make_float2(d, d * (float)sum);
+}
+
+template <int T, int R, int W, int KB, int SK>
+__global__ void __launch_bounds__(W * 32) kmma(const block_q4_K *__restrict__ wq, const uint2 *__restrict__ xf,
+                                               const float2 *__restrict__ xs, float *__restrict__ y, int N, int K,
+                                               int B) {
+    __shared__ uint2 sx[T * KB * 256];
+    __shared__ float2 ss[T * KB * 64];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
+    const int S = K / 32, nb = K / 256;
+    const int rbase = (blockIdx.x * W + warp) * R * 8;
+    const int per = (nb + SK - 1) / SK, kb0 = blockIdx.y * per, kb1 = min(nb, kb0 + per);
+    float acc[R][T][2];
+#pragma unroll
+    for (int r = 0; r < R; r++)
+#pragma unroll
+        for (int t = 0; t < T; t++) acc[r][t][0] = acc[r][t][1] = 0.f;
+    for (int sb0 = kb0; sb0 < kb1; sb0 += KB) {
+        const int nk = min(KB, kb1 - sb0);
+        __syncthreads();
+        for (int i = threadIdx.x; i < T * nk * 256; i += W * 32) {
+            const int tt = i / (nk * 256), j = i % (nk * 256);
+            sx[tt * KB * 256 + j] = xf[((size_t)tt * S + sb0 * 8) * 32 + j];
+        }
+        for (int i = threadIdx.x; i < T * nk * 64; i += W * 32) {
+            const int tt = i / (nk * 64), j = i % (nk * 64);
+            ss[tt * KB * 64 + j] = xs[((size_t)tt * S + sb0 * 8) * 8 + j];
+        }
+        __syncthreads();
+        for (int kb = 0; kb < nk; kb++) {
+            uint2 q[R][4];
+            uint4 h[R];
+#pragma unroll
+            for (int r = 0; r < R; r++) {
+                const int row = rbase + r * 8 + g;
+                if (row < N) {
+                    const block_q4_K *blk = wq + (size_t)row * nb + sb0 + kb;
+                    h[r] = __ldg(reinterpret_cast<const uint4 *>(blk));
+#pragma unroll
+                    for (int grp = 0; grp < 4; grp++) q[r][grp] = __ldg(reinterpret_cast<const uint2 *>(blk->qs + 32 * grp + 8 * c));
+                } else {
+                    h[r] = make_uint4(0, 0, 0, 0);
+#pragma unroll
+                    for (int grp = 0; grp < 4; grp++) q[r][grp] = make_uint2(0, 0);
+                }
+            }
+#pragma unroll
+            for (int s = 0; s < 8; s++) {
+                const int grp = s / 2, sh = (s & 1) * 4;
+                float dsc[R], dmn[R];
+#pragma unroll
+                for (int r = 0; r < R; r++) {
+                    float sc, m;
+                    scale_min(h[r].y, h[r].z, h[r].w, s, sc, m);
+                    dsc[r] = __half2float(__ushort_as_half((unsigned short)(h[r].x & 0xFFFF))) * sc;
+                    dmn[r] = __half2float(__ushort_as_half((unsigned short)(h[r].x >> 16))) * m;
+                }
+#pragma unroll
+                for (int tt = 0; tt < T; tt++) {
+                    const int at = (tt * KB + kb) * 8 + s;
+                    const uint2 b = sx[at * 32 + lane];
+                    const float2 s0 = ss[at * 8 + 2 * c], s1 = ss[at * 8 + 2 * c + 1];
+#pragma unroll
+                    for (int r = 0; r < R; r++) {
+                        int c0 = 0, c1 = 0;
+                        mma8816(c0, c1, (q[r][grp].x >> sh) & 0x0F0F0F0Fu, b.x);
+                        mma8816(c0, c1, (q[r][grp].y >> sh) & 0x0F0F0F0Fu, b.y);
+                        acc[r][tt][0] = fmaf(dsc[r], s0.x * (float)c0, fmaf(-dmn[r], s0.y, acc[r][tt][0]));
+                        acc[r][tt][1] = fmaf(dsc[r], s1.x * (float)c1, fmaf(-dmn[r], s1.y, acc[r][tt][1]));
+                    }
+                }
+            }
+        }
+    }
+#pragma unroll
+    for (int r = 0; r < R; r++) {
+        const int row = rbase + r * 8 + g;
+        if (row >= N) continue;
+#pragma unroll
+        for (int tt = 0; tt < T; tt++)
+#pragma unroll
+            for (int i = 0; i < 2; i++) {
+                const int tok = tt * 8 + 2 * c + i;
+                if (tok >= B) continue;
+                if (SK == 1) y[(size_t)tok * N + row] = acc[r][tt][i];
+                else atomicAdd(y + (size_t)tok * N + row, acc[r][tt][i]);
+            }
+    }
+}
+
+typedef void (*mma_launch_t)(const block_q4_K *, const uint2 *, const float2 *, float *, int, int, int, cudaStream_t);
+template <int T, int R, int W, int KB, int SK>
+void launch_mma(const block_q4_K *w, const uint2 *xf, const float2 *xs, float *y, int N, int K, int B, cudaStream_t s) {
+    if (SK > 1) cudaMemsetAsync(y, 0, (size_t)B * N * sizeof(float), s);
+    kmma<T, R, W, KB, SK><<<dim3((N + W * R * 8 - 1) / (W * R * 8), SK), W * 32, 0, s>>>(w, xf, xs, y, N, K, B);
+}
+static void quantize_frag(const float *x, int8_t *xf, float2 *xs, int B, int K, int T, cudaStream_t s) {
+    const int warps = T * 8 * (K / 32);
+    quant_frag<<<(warps + 7) / 8, 256, 0, s>>>(x, xf, xs, B, K, T);
+}
+struct MmaVariant { int T, R, W, KB, SK; mma_launch_t fn; };
 """
 
 TUNE = r"""
@@ -333,6 +469,54 @@ extern "C" int kg_measure_mq(int i, const void *w_host, int N, int K, const floa
     return cudaGetLastError() == cudaSuccess ? 0 : 4;
 }
 
+extern "C" int kg_mma_count() { return (int)MMA_VARIANTS.size(); }
+extern "C" void kg_mma_info(int i, int *out) {
+    const MmaVariant &v = MMA_VARIANTS[i];
+    out[0] = v.T; out[1] = v.R; out[2] = v.W; out[3] = v.KB; out[4] = v.SK;
+}
+
+// KG4 variant i at B tokens (B <= 8 T): timed with its activation quantization and checked like kg_measure
+extern "C" int kg_measure_mma(int i, const void *w_host, int N, int K, const float *x_host, int B, int copies, int reps,
+                              double *us, double *rel_err) {
+    const MmaVariant &v = MMA_VARIANTS[i];
+    if (B < 1 || B > 8 * v.T) return 5;
+    const size_t wbytes = (size_t)N * (K / 256) * 144;
+    std::vector<block_q4_K *> dw(copies);
+    float *dx, *dy; double *dr; int8_t *dxf; float2 *dxs;
+    if (cudaMalloc(&dx, (size_t)B * K * 4) || cudaMalloc(&dy, (size_t)B * N * 4) || cudaMalloc(&dr, (size_t)B * N * 8) ||
+        cudaMalloc(&dxf, (size_t)v.T * 8 * K) || cudaMalloc(&dxs, (size_t)v.T * (K / 32) * 8 * sizeof(float2))) return 1;
+    for (int c = 0; c < copies; c++) {
+        if (cudaMalloc(&dw[c], wbytes)) return 2;
+        cudaMemcpy(dw[c], w_host, wbytes, cudaMemcpyHostToDevice);
+    }
+    cudaMemcpy(dx, x_host, (size_t)B * K * 4, cudaMemcpyHostToDevice);
+    ref64<<<(N + 7) / 8, 256>>>(dw[0], dx, dr, N, K, B);
+    quantize_frag(dx, dxf, dxs, B, K, v.T, 0);
+    v.fn(dw[0], (const uint2 *)dxf, dxs, dy, N, K, B, 0);
+    if (cudaDeviceSynchronize() != cudaSuccess) return 3;
+    std::vector<float> hy((size_t)B * N); std::vector<double> hr((size_t)B * N);
+    cudaMemcpy(hy.data(), dy, hy.size() * 4, cudaMemcpyDeviceToHost);
+    cudaMemcpy(hr.data(), dr, hr.size() * 8, cudaMemcpyDeviceToHost);
+    double num = 0, den = 0;
+    for (size_t k = 0; k < hy.size(); k++) { num += (hy[k] - hr[k]) * (hy[k] - hr[k]); den += hr[k] * hr[k]; }
+    *rel_err = sqrt(num / den);
+    cudaEvent_t e0, e1; cudaEventCreate(&e0); cudaEventCreate(&e1);
+    for (int r = 0; r < 3; r++) for (int c = 0; c < copies; c++) {
+        quantize_frag(dx, dxf, dxs, B, K, v.T, 0); v.fn(dw[c], (const uint2 *)dxf, dxs, dy, N, K, B, 0);
+    }
+    cudaEventRecord(e0);
+    for (int r = 0; r < reps; r++) for (int c = 0; c < copies; c++) {
+        quantize_frag(dx, dxf, dxs, B, K, v.T, 0); v.fn(dw[c], (const uint2 *)dxf, dxs, dy, N, K, B, 0);
+    }
+    cudaEventRecord(e1); cudaEventSynchronize(e1);
+    float ms; cudaEventElapsedTime(&ms, e0, e1);
+    *us = 1000.0 * ms / ((double)reps * copies);
+    cudaEventDestroy(e0); cudaEventDestroy(e1);
+    for (int c = 0; c < copies; c++) cudaFree(dw[c]);
+    cudaFree(dx); cudaFree(dy); cudaFree(dr); cudaFree(dxf); cudaFree(dxs);
+    return cudaGetLastError() == cudaSuccess ? 0 : 4;
+}
+
 extern "C" int kg_count() { return (int)VARIANTS.size(); }
 extern "C" void kg_info(int i, int *out) { out[0] = VARIANTS[i].L; out[1] = VARIANTS[i].R; out[2] = VARIANTS[i].W; out[3] = VARIANTS[i].B; }
 
@@ -387,7 +571,7 @@ static std::mutex repack_lock;
 // the hook's entry: 0 when this library computed y = w x, non-zero for llama.cpp's own kernels
 extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64_t N, int64_t K, int64_t B,
                                    cudaStream_t s) {
-    if (type != 12 || K % 256 != 0 || B < 1 || B > 8 || !((enabled_mask >> (B - 1)) & 1u)) return 1;
+    if (type != 12 || K % 256 != 0 || B < 1 || B > 32 || !((enabled_mask >> (B - 1)) & 1u)) return 1;
     const Entry *hit = nullptr;
     for (const Entry &e : ENTRIES)
         if (e.K == K && e.N == N && e.B == B) { hit = &e; break; }
@@ -411,6 +595,21 @@ extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, floa
             }
         }
         hit->mq(r.qs, r.hdr, x, y, (int)N, (int)K, s);
+        return cudaPeekAtLastError() == cudaSuccess ? 0 : 1;
+    }
+    if (hit->mm != nullptr) {  // KG4: the activations in fragment order, T tiles of 8 tokens
+        static int8_t *xf[16]; static float2 *xs[16]; static size_t fcap[16];
+        const size_t need = (size_t)hit->T * 8 * K;
+        if (fcap[dev] < need) {
+            if (xf[dev]) { cudaFree(xf[dev]); cudaFree(xs[dev]); }
+            if (cudaMalloc(&xf[dev], need) != cudaSuccess ||
+                cudaMalloc(&xs[dev], need / 32 * sizeof(float2)) != cudaSuccess) {
+                fcap[dev] = 0; xf[dev] = nullptr; return 1;
+            }
+            fcap[dev] = need;
+        }
+        quantize_frag(x, xf[dev], xs[dev], (int)B, (int)K, hit->T, s);
+        hit->mm((const block_q4_K *)w, (const uint2 *)xf[dev], xs[dev], y, (int)N, (int)K, (int)B, s);
         return cudaPeekAtLastError() == cudaSuccess ? 0 : 1;
     }
     launch_t fn = hit->fn;
@@ -440,17 +639,24 @@ def variants(batches=BATCHES) -> list[tuple[int, int, int, int]]:
 def tune_source(vs: list[tuple[int, int, int, int]]) -> str:
     rows = "\n".join(f"    {{{L}, {R}, {W}, {B}, launch<{L}, {R}, {W}, {B}>}}," for L, R, W, B in vs)
     mq = "\n".join(f"    {{{W}, {R}, {U}, launch_mq<{W}, {R}, {U}>}}," for W, R, U in MQ_VARIANTS)
+    mma = "\n".join(f"    {{{', '.join(map(str, v))}, launch_mma<{', '.join(map(str, v))}>}}," for v in MMA_VARIANTS)
     return (DEVICE + "static const std::vector<Variant> VARIANTS = {\n" + rows + "\n};\n"
-            + "static const std::vector<MqVariant> MQ_VARIANTS = {\n" + mq + "\n};\n" + TUNE)
+            + "static const std::vector<MqVariant> MQ_VARIANTS = {\n" + mq + "\n};\n"
+            + "static const std::vector<MmaVariant> MMA_VARIANTS = {\n" + mma + "\n};\n" + TUNE)
 
 
 def library_source(table: dict[str, Any]) -> str:
-    rows = "\n".join(f"    {{{e['K']}, {e['N']}, {e['B']}, nullptr, launch_mq<{e['W']}, {e['R']}, {e['U']}>}},"
-                     if e.get("kind") == "mq1" else
-                     f"    {{{e['K']}, {e['N']}, {e['B']}, launch<{e['L']}, {e['R']}, {e['W']}, {e['B']}>, nullptr}},"
-                     for e in table["entries"])
+    def row(e: dict[str, Any]) -> str:
+        if e.get("kind") == "mq1":
+            return f"    {{{e['K']}, {e['N']}, {e['B']}, nullptr, launch_mq<{e['W']}, {e['R']}, {e['U']}>, nullptr, 0}},"
+        if e.get("kind") == "mma":
+            v = ", ".join(str(e[k]) for k in ("T", "R", "W", "KB", "SK"))
+            return f"    {{{e['K']}, {e['N']}, {e['B']}, nullptr, nullptr, launch_mma<{v}>, {e['T']}}},"
+        return f"    {{{e['K']}, {e['N']}, {e['B']}, launch<{e['L']}, {e['R']}, {e['W']}, {e['B']}>, nullptr, nullptr, 0}},"
+
+    rows = "\n".join(row(e) for e in table["entries"])
     text = json.dumps(table, sort_keys=True).replace("\\", "\\\\").replace('"', '\\"')
-    return (DEVICE + "struct Entry { int K, N, B; launch_t fn; mq_launch_t mq; };\n"
+    return (DEVICE + "struct Entry { int K, N, B; launch_t fn; mq_launch_t mq; mma_launch_t mm; int T; };\n"
             + "static const std::vector<Entry> ENTRIES = {\n" + rows + "\n};\n"
             + f'static const char *TABLE_JSON = "{text}";\n' + LIBRARY)
 
@@ -536,12 +742,32 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                                   ctypes.POINTER(ctypes.c_double)]
     lib.kg_measure.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int,
                                ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
+    lib.kg_measure_mma.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_double),
+                                   ctypes.POINTER(ctypes.c_double)]
     rng = np.random.default_rng(0)
     bound = ERROR_MARGIN * reference_error
     entries, measured = [], []
     for (K, N), t in sorted(q4k_tensors(gguf_path).items()):
         w = np.ascontiguousarray(np.asarray(t["data"]))
-        x = rng.standard_normal((max(BATCHES), K)).astype(np.float32)
+        x = rng.standard_normal((max(MMA_BATCHES), K)).astype(np.float32)
+        mma_best: dict[int, dict[str, Any]] = {}
+        for B in MMA_BATCHES:  # KG4: the tensor-core kernels at the largest token count of each tile count
+            for i, (Tt, R, W, KB, SK) in enumerate(MMA_VARIANTS):
+                if Tt != (B + 7) // 8:
+                    continue
+                us, err = ctypes.c_double(), ctypes.c_double()
+                code = lib.kg_measure_mma(i, w.ctypes.data, N, K, x.ctypes.data, B, copies, reps, ctypes.byref(us),
+                                          ctypes.byref(err))
+                row = {"K": K, "N": N, "B": B, "kind": "mma", "T": Tt, "R": R, "W": W, "KB": KB, "SK": SK,
+                       "us": round(us.value, 2), "rel_err": err.value, "code": code}
+                measured.append(row)
+                if code == 0 and err.value <= bound and (B not in mma_best or us.value < mma_best[B]["us"]):
+                    mma_best[B] = row
+        for B in range(max(BATCHES) + 1, max(MMA_BATCHES) + 1):
+            top = mma_best.get(-(-B // 8) * 8)
+            if top is not None:
+                entries.append({**{k: top[k] for k in ("K", "N", "kind", "T", "R", "W", "KB", "SK", "us")}, "B": B})
         for B in BATCHES:
             best = None
             for i, (L, R, W, b) in enumerate(vs):
@@ -565,8 +791,12 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                     measured.append(row)
                     if code == 0 and err.value <= bound and (best is None or us.value < best["us"]):
                         best = row
+            top = mma_best.get(8)  # one tile of 8 tokens serves 1-8 at about the price measured at 8
+            if top is not None and (best is None or top["us"] < best["us"]):
+                best = {**top, "B": B}
             if best is not None:
-                entries.append({k: best[k] for k in ("K", "N", "B", "L", "R", "W", "U", "kind", "us") if k in best})
+                keys = ("K", "N", "B", "L", "R", "W", "U", "KB", "SK", "T", "kind", "us")
+                entries.append({k: best[k] for k in keys if k in best})
                 log(json.dumps({"kg_tuned": entries[-1]}))
     return {"version": KG_VERSION, "fingerprint": fingerprint(), "arch": arch, "entries": entries,
             "error_bound": bound, "compile_s": round(compile_s, 1), "tune_s": round(time.time() - started, 1),
@@ -597,5 +827,5 @@ def ensure(gguf_path: str, cache: Path, log=print) -> Path | None:
     return build(table, out)
 
 
-__all__ = ["BATCHES", "KG_VERSION", "build", "ensure", "fingerprint", "library_source", "q4k_tensors", "tune",
+__all__ = ["BATCHES", "KG_VERSION", "MMA_BATCHES", "MMA_VARIANTS", "build", "ensure", "fingerprint", "library_source", "q4k_tensors", "tune",
            "tune_source", "variants"]
