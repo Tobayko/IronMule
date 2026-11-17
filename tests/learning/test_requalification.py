@@ -279,6 +279,7 @@ def test_the_lineage_reads_as_a_story(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- the command
 
 
+@pytest.mark.integration  # resolves the cached model snapshot before it refuses
 def test_the_command_refuses_without_a_requalification(tmp_path: Path) -> None:
     record = requalify(state_path=tmp_path / "absent.json")
     assert record["outcome"] == "REFUSED"

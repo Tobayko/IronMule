@@ -12,6 +12,7 @@
 - [LIMITS.md](LIMITS.md) — what is and is not qualified, and why.
 - [RELEASING.md](RELEASING.md) — the release checklist.
 - [BACKLOG.md](BACKLOG.md) — open performance hypotheses and Tier 0's rejected ones.
+- [ROADMAP.md](ROADMAP.md) — the review of 2026-11-15: where the project stands and the phases to a product.
 - [PRODUCT_QUICKSTART.md](PRODUCT_QUICKSTART.md) — HTTP service preview: serving, calibration jobs, network exposure.
 - [PAIRED_OPT_IN.md](PAIRED_OPT_IN.md) — the opt-in paired-decode service mode.
 - [DATA1_PORTABLE_COLLECTION.md](DATA1_PORTABLE_COLLECTION.md) — portable, quota-bounded collection in `friday_evidence`.
