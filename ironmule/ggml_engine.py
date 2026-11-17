@@ -995,6 +995,11 @@ class GgmlEngine:
                             budget -= ks[i]
                 else:
                     ks = self.policy.choose(offers) if self.policy is not None and order else [0] * len(order)
+                streams = getattr(self, "settings", None) is not None and not self.settings.get("kv_unified")
+                if ks and streams and len(set(ks)) > 1:
+                    # KG3: with one KV stream per sequence llama.cpp splits a call whose sequences carry different token
+                    # counts into a pass per count; every sequence verifies as many drafts as the one with the fewest
+                    ks = [min(ks)] * len(ks)
                 real = list(ks)
                 pad_to = getattr(self, "pad_to", None)
                 want = pad_to.get(len(order) + sum(ks)) if pad_to else None
@@ -1022,7 +1027,8 @@ class GgmlEngine:
                 room = self.seq_ctx - decode_rows  # one call's tokens
                 batched: list[tuple[int, Job]] = []
                 for seq, job, keep in fresh:
-                    if len(job.ids) - keep <= room:
+                    # KG3: with one KV stream per sequence a prompt beside others' rows would split the call into passes
+                    if len(job.ids) - keep <= room and not (streams and (rows or batched) and len(job.ids) - keep > 1):
                         rows += [(t, j, seq, j == len(job.ids) - 1) for j, t in enumerate(job.ids) if j >= keep]
                         room -= len(job.ids) - keep
                         batched.append((seq, job))

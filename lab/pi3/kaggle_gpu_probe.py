@@ -279,10 +279,24 @@ def main():
             return {"tok_s": round(tok_n / wall, 2), "wall": round(wall, 2)}
 
         OUT["streams"], answers = [], {}
-        arms = [("pool", {}), ("pool_nospec", {"speculate": False}),
-                ("perseq_nospec", {"speculate": False, "shared": False, "seqs": 32, "seq_ctx": 1024, "cap": None})]
-        for rep in range(1 if SMOKE else 2):
-            for arm, over in (arms if rep == 0 else arms[::-1]):
+        if os.environ.get("PI3_STREAMS_V") == "2":  # KG3 v2: prompts in their own call, equal drafts per stream
+            arms = [("pool", {}), ("perseq", {"shared": False, "seqs": 2 if SMOKE else 32, "seq_ctx": 2048, "cap": None})]
+            warm = 0 if SMOKE else 120
+        else:
+            arms = [("pool", {}), ("pool_nospec", {"speculate": False}),
+                    ("perseq_nospec", {"speculate": False, "shared": False, "seqs": 32, "seq_ctx": 1024, "cap": None})]
+            warm = 0
+        if warm:
+            e, tok_ = open_engine()
+            tok = tok_
+            t0 = time.time()
+            while time.time() - t0 < warm:
+                e.run([Job(ids_of(chat_text(k)), 128) for k in range(8)])
+            e.close()
+        order = [arms, arms[::-1], arms[::-1], arms] if len(arms) == 2 and not SMOKE else \
+            [arms, arms[::-1]][:1 if SMOKE else 2]
+        for rep, pair in enumerate(order):
+            for arm, over in pair:
                 e, tok_ = open_engine(**over)
                 tok = tok_
                 collect(e, f"{arm}_{rep}")
@@ -290,10 +304,12 @@ def main():
                 e.run([Job(ids_of(chat_text(0)), 16)])
                 row = {"arm": arm, "rep": rep, "settings": e.summary().get("settings")}
                 for n in ((2,) if SMOKE else (8, 20, 32)):
-                    row[f"mid{n}"] = mid_block(e, n, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
+                    row[f"mid{n}"] = mid_block(e, n, 8 if SMOKE else 128, blocks=1 if SMOKE or len(arms) == 2 else 2)
                 row["chat32"] = block(e, 4 if SMOKE else 32, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
                 row["chat"] = stream(e, "chat", 1000 + rep)
-                if rep == 0:
+                if len(arms) == 2:
+                    row["mixed"] = stream(e, "mixed", 1100 + rep)
+                if rep == 0 or (len(arms) == 2 and arm not in answers):
                     got = []
                     for k in range(0, 8 if SMOKE else len(fact_ids), 8):
                         js = [Job(i, 48) for i in fact_ids[k:k + 8]]

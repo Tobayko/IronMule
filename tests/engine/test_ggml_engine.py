@@ -661,3 +661,30 @@ def test_pi2_the_shared_pool_starts_prompts_within_a_set_budget(monkeypatch):
         assert staggered >= together + 3
     finally:
         built.close()
+
+
+def test_kg3_with_one_kv_stream_per_sequence_a_new_prompt_gets_its_own_call():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, _ = _stub_engine()
+    engine.settings = {"kv_unified": False}  # one KV stream per sequence
+    first = Job([1, 2, 3], 4)
+    late = [Job([5, 6, 7, 8], 2)]
+
+    def admit(room):
+        return [late.pop()] if late and len(fed) >= 2 else []
+
+    engine.run([first], admit=admit)
+    for call in fed:  # no call mixes another sequence's single token with a prompt of several tokens
+        seqs = {s for _, _, s in call}
+        assert len(seqs) == 1 or len(call) == len(seqs), call
+    assert any(len(call) == 4 and {s for _, _, s in call} == {call[0][2]} for call in fed)  # the late prompt alone
+    engine2, fed2, _ = _stub_engine()
+    engine2.settings = {"kv_unified": True}  # the shared pool keeps batching a prompt into the running step
+    late = [Job([5, 6, 7, 8], 2)]
+
+    def admit2(room):
+        return [late.pop()] if late and len(fed2) >= 2 else []
+
+    engine2.run([Job([1, 2, 3], 4)], admit=admit2)
+    assert any(len({s for _, _, s in call}) == 2 and len(call) == 5 for call in fed2)

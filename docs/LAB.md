@@ -1791,6 +1791,26 @@ cells. Across 120,000 logged T4 serving steps, steps of 20-32 rows cost about 50
 72-83 ms beyond. Next: one KV stream per request (each token reads only its own cells), measured against the pool
 without a rebuild (`PI3_MODE=streams`).
 
+`PI3_MODE=streams` at 6d578e6, 12.5 minutes, each arm on a fresh engine, two rounds in reversed order, the GPU Pilot
+deciding: the shared pool (16 x 2,048 cells), the pool without speculation, and one KV stream per request (32 x 1,024
+cells, the engine's per-sequence mode) without speculation. tok/s, mean of the two rounds:
+
+| | pool | pool, no speculation | one stream per request, no speculation |
+| --- | --- | --- | --- |
+| 8 requests, ~420-token prompts | **82.4** | 60.0 | 57.1 |
+| 20 requests, ~420-token prompts | 60.4 | 55.0 | **79.6** |
+| 32 requests, ~420-token prompts | 42.0 | 39.6 | **73.4** |
+| 32 short requests at once | 301.4 | 308.5 | **564.3** (first token 0.44 against 0.71 s) |
+| chat arrivals | **305.6** | 306.8 | 148.6 |
+
+49 of 50 facts in every arm. Read: with one stream per request a token reads only its own cells, and 32 requests at
+once make 1.75-1.87x the pool's tokens per second; with requests arriving it makes half. The likely reason is llama.cpp's
+split of a call with one KV stream per sequence: sequences with different token counts in one call (a new prompt beside
+running requests, or uneven drafts) go into a pass per count. The engine now gives a new prompt its own call and every
+stream the same number of drafts in that mode (the pool is unchanged); 8 of 8 answers on this CPU the same as the
+pool's with requests arriving mid-run. (The prompt budget of 128 the GPU Pilot holds lets in one 420-token prompt per
+step, which is why those blocks are slow in every arm.)
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
