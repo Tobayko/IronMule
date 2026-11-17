@@ -918,6 +918,11 @@ class GgmlEngine:
                 budget = min(PROMPT_BUDGET or self.seq_ctx, decision["budget"])
                 if self.pool is not None and not PROMPT_BUDGET and decision["budget"] >= 1 << 30:
                     budget = 1 << 62  # the shared pool takes every waiting prompt that fits, unless a budget is set
+                if (not PROMPT_BUDGET and self.pool is None and self.gpu_layers
+                        and not getattr(self, "settings", {}).get("kv_unified", True)):
+                    # PB1: one KV stream per request on a GPU: the Pilot's prompt budget cost 2-9 % on a T4 and gained
+                    # nothing there, so the step takes what the Pilot-off engine takes
+                    budget = self.seq_ctx
                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
