@@ -303,9 +303,12 @@ def main():
                 fact_ids = [tok(p) for p in fact_prompts]
                 e.run([Job(ids_of(chat_text(0)), 16)])
                 row = {"arm": arm, "rep": rep, "settings": e.summary().get("settings")}
-                for n in ((2,) if SMOKE else (8, 20, 32)):
+                for n in ((2,) if SMOKE else (4, 8, 20, 32) if len(arms) == 2 else (8, 20, 32)):
                     row[f"mid{n}"] = mid_block(e, n, 8 if SMOKE else 128, blocks=1 if SMOKE or len(arms) == 2 else 2)
                 row["chat32"] = block(e, 4 if SMOKE else 32, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
+                if len(arms) == 2:
+                    row["chat8"] = block(e, 4 if SMOKE else 8, 8 if SMOKE else 128, blocks=1 if SMOKE else 2)
+                    row["padded"] = getattr(e, "padded", 0)
                 row["chat"] = stream(e, "chat", 1000 + rep)
                 if len(arms) == 2:
                     row["mixed"] = stream(e, "mixed", 1100 + rep)

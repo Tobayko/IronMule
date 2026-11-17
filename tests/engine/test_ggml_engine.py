@@ -5,6 +5,7 @@ installed `llama-cpp-python`) and `IRONMULE_TEST_GGUF` are set, and are skipped 
 
 from __future__ import annotations
 
+import collections
 import importlib.util
 import os
 from pathlib import Path
@@ -754,3 +755,18 @@ def test_kg3_a_new_request_takes_the_lowest_free_stream():
     assert engine._take_sequence([5, 6, 7]) == (1, 0)
     engine._kept = {3: list(range(80))}
     assert engine._take_sequence(list(range(70)) + [5]) == (3, 70)  # a long kept prefix still wins
+
+
+def test_pad3_streams_are_padded_evenly_to_the_size_measured_cheaper():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, _ = _streams_engine()
+    engine.pad_to, engine.padded = {4: 10}, 0  # 4 rows would be dear; 10 measured cheaper
+    jobs = [Job([10 * k + 1, 10 * k + 2], 6) for k in range(4)]
+    engine.run(jobs)
+    padded = [call for call in fed if len(call) == 12]
+    assert padded and engine.padded > 0  # 4 streams x 3 tokens: one pass, past the 10 measured cheaper
+    for call in padded:
+        counts = collections.Counter(s for _, _, s in call)
+        assert set(counts.values()) == {3}  # every stream the same number of tokens, so the call does not split
+    assert all(len(j.tokens) == 6 for j in jobs)

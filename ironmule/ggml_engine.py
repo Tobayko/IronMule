@@ -452,7 +452,8 @@ class GgmlEngine:
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
-        if self.speculate and PAD != "0" and (self.gpu_layers or PAD == "1") and self.settings.get("kv_unified"):
+        if self.speculate and PAD != "0" and (self.gpu_layers or PAD == "1") and (
+                self.settings.get("kv_unified") or self.gpu_layers):  # PAD3: KV streams on a GPU pad evenly
             self.pad_to = self.measure_padding()
         self.drafter = None
         if draft_gguf and speculate:  # DM1: a small model of the same family drafts, this one verifies
@@ -1014,6 +1015,22 @@ class GgmlEngine:
                 real = list(ks)
                 pad_to = getattr(self, "pad_to", None)
                 want = pad_to.get(len(order) + sum(ks)) if pad_to else None
+                if want and streams:
+                    # PAD3: with one KV stream per sequence every stream must carry the same number of tokens, or the
+                    # call splits; each verifies `per` (its own drafts first, then its last token again), so the step
+                    # reaches the size measured cheaper, or the step is not padded
+                    per = -(-want // len(order))
+                    caps = [min(MAX_DRAFT, active[sq].limit - len(active[sq].tokens) - 1,
+                                self.seq_ctx - len(active[sq].ids) - len(active[sq].tokens)) for sq in order]
+                    if not modelled and all(per - 1 <= cap for cap in caps):
+                        for i, sq in enumerate(order):
+                            job = active[sq]
+                            drafts = list(offers[i][0][:per - 1])
+                            drafts += [job.tokens[-1]] * (per - 1 - len(drafts))
+                            offers[i] = (drafts, offers[i][1])
+                            ks[i] = per - 1
+                        self.padded += sum(ks) - sum(real)
+                    want = None
                 if want:  # PAD1: guesses (the last token again) fill the step to the size measured cheaper
                     extra = want - len(order) - sum(ks)
                     for i, seq in enumerate(order * MAX_DRAFT):
