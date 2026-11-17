@@ -611,6 +611,11 @@ __global__ void __launch_bounds__(W * 32) kfa(const float *__restrict__ q, const
                                                      + 4 * d) * scale;
     }
     __syncthreads();
+    float qr[G][KH];  // this lane's slice of every query head for Q.K (from shared memory once: no bank conflicts later)
+#pragma unroll
+    for (int g = 0; g < G; g++)
+#pragma unroll
+        for (int d = 0; d < KH; d++) qr[g][d] = qs[g][sub * KH + d];
     const half *mrow = reinterpret_cast<const half *>(mask + (s % mne3) * mnb3);
     const char *kb = k + s * knb3 + h * knb2, *vb = v + s * vnb3 + h * vnb2;
     const int chunks = (n_kv + 31) / 32, per = (chunks + splits - 1) / splits;
@@ -642,9 +647,9 @@ __global__ void __launch_bounds__(W * 32) kfa(const float *__restrict__ q, const
 #pragma unroll
                     for (int e = 0; e < 4; e++) {
                         const float2 kf = __half22float2(*reinterpret_cast<const half2 *>(&ws4[e]));
-                        const int d = sub * KH + u * 8 + 2 * e;
+                        const int d = u * 8 + 2 * e;
 #pragma unroll
-                        for (int g = 0; g < G; g++) part[g] = fmaf(qs[g][d], kf.x, fmaf(qs[g][d + 1], kf.y, part[g]));
+                        for (int g = 0; g < G; g++) part[g] = fmaf(qr[g][d], kf.x, fmaf(qr[g][d + 1], kf.y, part[g]));
                     }
                 }
             }
