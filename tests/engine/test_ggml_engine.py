@@ -770,3 +770,20 @@ def test_pad3_streams_are_padded_evenly_to_the_size_measured_cheaper():
         counts = collections.Counter(s for _, _, s in call)
         assert set(counts.values()) == {3}  # every stream the same number of tokens, so the call does not split
     assert all(len(j.tokens) == 6 for j in jobs)
+
+
+def test_kg3_on_a_gpu_the_gate_checks_one_kv_stream_per_request_and_a_cpu_gate_does_not(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.0 + 0.002] * 16)
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda L=None: 999)
+    result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    streams = result["streams"]
+    assert streams["passes"] and streams["settings"]["flash_attn"] and not streams["settings"]["kv_unified"]
+    stored = next((tmp_path / "cache").glob("*.json"))
+    old = {k: v for k, v in result.items() if k != "streams"}
+    stored.write_text(__import__("json").dumps(old))  # a gate stored before KG3 is run again on a GPU
+    assert "streams" in ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda L=None: 0)
+    on_cpu = ggml_engine.gate(str(tmp_path), str(tmp_path / "m2.gguf"), cache=tmp_path / "cache2")
+    assert on_cpu["streams"] is None

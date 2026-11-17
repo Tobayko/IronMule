@@ -163,3 +163,19 @@ def test_the_agents_width_reaches_the_stacked_worker_and_nothing_else(tmp_path, 
     assert engine_bridge.dense_width(None) == 8 and engine_bridge.dense_width(6) == 6
     with pytest.raises(ValueError):
         engine_bridge.dense_width(9)
+
+
+def test_kg3_serve_takes_one_kv_stream_per_request_on_a_gpu_only_where_its_gate_passed(monkeypatch):
+    from ironmule_product.cli import _ggml_streams
+
+    streams = {"settings": {"flash_attn": True, "kv_unified": False, "kv_f32": False}, "ratio": 1.001,
+               "interval": [0.999, 1.003], "passes": True}
+    checked = {"settings": {"flash_attn": False, "kv_unified": False, "kv_f32": False}, "streams": streams}
+    monkeypatch.delenv("IRONMULE_GGML_STREAMS", raising=False)
+    chosen = _ggml_streams(checked, gpu=True)
+    assert chosen["settings"] == streams["settings"] and chosen["streams_serving"]["ratio"] == 1.001
+    assert _ggml_streams(checked, gpu=False) is checked  # a CPU keeps its own choice (the shared pool, FA1u)
+    assert _ggml_streams({**checked, "streams": {**streams, "passes": False}}, gpu=True)["settings"] == checked["settings"]
+    assert "streams_serving" not in _ggml_streams({"settings": {}}, gpu=True)  # a gate stored before KG3
+    monkeypatch.setenv("IRONMULE_GGML_STREAMS", "0")
+    assert _ggml_streams(checked, gpu=True) is checked

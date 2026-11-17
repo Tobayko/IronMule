@@ -1850,6 +1850,27 @@ the pool from 20 requests on and 1.53x with documents among arriving chats, 1.06
 at 8 requests, where PAD1 fills a step to 10 rows (the tensor cores), which needs the one pool. Next: the same
 filling for streams (every stream verifies the same number of guesses), then streams as the GPU default.
 
+PAD3 and the check at 70ece6b, 18.6 minutes (the same design, 4 and 8 requests and 8 short ones at once added).
+tok/s, mean of four rounds, one stream per request against the pool:
+
+| | one stream per request | shared pool | ratio |
+| --- | --- | --- | --- |
+| 4 requests, ~420-token prompts | 68.5 | 69.8 | 0.98x |
+| 8 requests, ~420-token prompts | **81.6** | 78.2 | 1.04x |
+| 8 short requests at once | **234.6** (first token 0.17 s) | 194.4 (0.15 s) | **1.21x** |
+| 20 requests | **88.7** | 69.1 | **1.28x** |
+| 32 requests | **89.6** | 50.4 | **1.78x** |
+| 32 short requests at once | **545.8** (first token 0.73 s) | 343.3 (0.65 s) | **1.59x** |
+| chat arrivals | **343.9** (first token 0.07 s) | 319.4 (0.15 s) | 1.08x |
+| mixed arrivals | **123.6** (first token 2.07 s) | 80.0 (6.47 s) | **1.54x** |
+
+About 2,300 PAD3 guesses per round; 49 of 50 facts either way, 49 of 50 fact answers token for token the pool's. Read:
+with PAD3 one stream per request is at least level with the pool everywhere measured (4 requests inside the spread)
+and 1.28-1.78x from 20 requests on; the first token of a block of requests comes 0.02-0.08 s later (its prompts run
+in their own calls). So on a GPU `ironmule serve` now gates this setting (flash attention, one KV stream per request)
+beside the pool's and serves with it where it passes; `IRONMULE_GGML_STREAMS=0` keeps the pool. The serve path itself
+was not run on a GPU here; the engine was, through the harness.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

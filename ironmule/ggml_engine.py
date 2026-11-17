@@ -1606,7 +1606,9 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     stored = cache / f"{key}.json"
     if stored.exists():
         try:
-            return json.loads(stored.read_text())
+            kept = json.loads(stored.read_text())
+            if not (gpu_layers() > 0 and kept.get("ran") and "streams" not in kept):  # KG3: gate the streams too
+                return kept
         except (OSError, ValueError):
             pass
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
@@ -1656,7 +1658,15 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         shared = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
                   else {"settings": settings, "error": error})
         shared["passes"] = rows is not None and shared["interval"][1] <= OPTION_BOUND
-    result = {"ran": True, "shared": shared, **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
+    streams = None
+    if gpu_layers() > 0:  # KG3: one KV stream per request (flash attention, no unified cache) is gated on its own
+        settings = {**chosen["settings"], "flash_attn": True, "kv_unified": False}
+        rows, error = nll(settings)
+        streams = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
+                   else {"settings": settings, "error": error})
+        streams["passes"] = rows is not None and streams["interval"][1] <= OPTION_BOUND
+    result = {"ran": True, "shared": shared, "streams": streams,
+              **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
               "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
               "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}

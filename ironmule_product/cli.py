@@ -53,6 +53,17 @@ def inventory_rows(roots: list[Path] | None = None) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: (row["model_id"], row["revision"], row["snapshot_path"]))
 
 
+def _ggml_streams(checked: dict, gpu: bool) -> dict:
+    """KG3: on a GPU one KV stream per request, where its own gate passed: each token reads only its own cells (a T4,
+    Qwen3-4B Q4_K_M: 1.28x the shared pool at 20 requests, 1.78x at 32, 1.54x with documents among arriving chats,
+    0.98-1.21x at 4-8 with PAD3; the same facts; docs/LAB.md, KG3). IRONMULE_GGML_STREAMS=0 keeps the shared pool."""
+    gate = checked.get("streams") or {}
+    if not (gpu and gate.get("passes") and os.environ.get("IRONMULE_GGML_STREAMS", "1") != "0"):
+        return checked
+    return {**checked, "settings": gate["settings"],
+            "streams_serving": {k: gate.get(k) for k in ("settings", "ratio", "interval")}}
+
+
 def models(action: str, argv: list[str]) -> int:
     parser = _parser(f"models {action}", "Manage local model registrations; removing a registration keeps weight files.")
     if action in ("add", "remove"):
@@ -458,6 +469,9 @@ def serve(argv: list[str]) -> int:
                 if checked.get("passes") is not True:
                     raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
                                          f"({checked.get('reason') or checked.get('interval')})")
+                checked = _ggml_streams(checked, bool(ggml_gpu_layers()))
+                if checked.get("streams_serving"):
+                    print(json.dumps({"ggml_streams": checked["streams_serving"]}), flush=True)
                 if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine
                     from ironmule.ggml_engine import choose_sequences
 
@@ -468,7 +482,8 @@ def serve(argv: list[str]) -> int:
                     os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
                     checked = {**checked, "sequences": width}
                     shared = checked.get("shared") or {}
-                    if shared.get("passes") and os.environ.get("IRONMULE_GGML_SHARED", "1") != "0":
+                    if (shared.get("passes") and os.environ.get("IRONMULE_GGML_SHARED", "1") != "0"
+                            and not checked.get("streams_serving")):
                         from ironmule.ggml_engine import LLAMA_MAX_SEQ, fa1_version, gpu_layers
 
                         # SP1: one pool, prefixes shared; twice the requests at once. On a CPU through FA1u; on a GPU
@@ -481,7 +496,8 @@ def serve(argv: list[str]) -> int:
                                                          "ratio": shared.get("ratio"),
                                                          "interval": shared.get("interval")}
                             print(json.dumps({"ggml_shared_pool": checked["shared_serving"]}), flush=True)
-                    plan = _ggml_agent_plan(width, store.root, flash_only=bool(checked.get("shared_serving")))
+                    plan = (None if checked.get("streams_serving")  # KG3: the agent's KV switches would undo the streams
+                            else _ggml_agent_plan(width, store.root, flash_only=bool(checked.get("shared_serving"))))
                     if plan is not None:  # AG10: the agent may switch among the measured widths while it serves
                         checked["agent"] = plan
                         os.environ["IRONMULE_GGML_SEQS"] = str(max(c["seqs"] for c in plan["configs"].values()))
