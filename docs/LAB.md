@@ -1832,6 +1832,24 @@ the stub test now refuses rows as llama.cpp does and fails on the earlier code. 
 the free id between two running ones: 4 of 5 answers token for token the pool's, the fifth "The Rhine" against
 "Rhine" in its fifteenth token (a step of a different width rounds differently, as PAD1's do on a GPU).
 
+KG3 v3 at 63e6e13 (the same design as v2), 16 minutes, complete. tok/s, mean of four rounds, one stream per request
+against the pool (each round's numbers within a few per cent of each other):
+
+| | one stream per request | shared pool | ratio |
+| --- | --- | --- | --- |
+| 8 requests, ~420-token prompts | 67.7 | **84.3** | 0.80x |
+| 20 requests, ~420-token prompts | **89.4** | 75.7 | **1.18x** |
+| 32 requests, ~420-token prompts | **92.4** | 54.5 | **1.70x** |
+| 32 short requests at once | **567.8** (first token 0.72 s) | 385.6 (0.60 s) | **1.47x** |
+| chat arrivals | **354.1** (first token 0.07 s) | 332.9 (0.11 s) | **1.06x** |
+| mixed arrivals | **129.6** (first token 2.04 s) | 85.0 (5.25 s) | **1.53x** |
+
+49 of 50 facts either way; 47 of the 50 fact answers token for token the pool's (a step of a different width rounds
+differently). A step of 32 streams cost 44 ms and no step split any more. Read: one KV stream per request is 1.18-1.70x
+the pool from 20 requests on and 1.53x with documents among arriving chats, 1.06x for chats alone; the pool stays ahead
+at 8 requests, where PAD1 fills a step to 10 rows (the tensor cores), which needs the one pool. Next: the same
+filling for streams (every stream verifies the same number of guesses), then streams as the GPU default.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
