@@ -171,6 +171,13 @@ in every arm), so with one KV stream per request on a GPU the engine no longer h
 there); the shared pool and the CPU keep it. Confirmed on the T4 after the merge: the Pilot equals the Pilot-off
 engine on the blocks (32 medium prompts 102.3 against 102.4 tok/s), 49 of 50 facts.
 
+**KG4 (2026-11-17, owner's choice of the kernel project, LAB.md).** A probe showed where a T4 step of 8-32 requests
+goes (Q4_K matmuls at 97 GB/s, 8 rows dearer than 16); a Q4_K kernel on the tensor cores (`mma.sync`, generated and
+tuned per GPU by `ironmule/kernel_gen.py`, KG_VERSION 3) now serves 1-32 tokens where the engine measures it faster.
+End to end on the T4 against the same engine without it: 8 requests 1.12x, 32 requests 1.07x (280 against 251, 642
+against 602 tok/s), 49 of 50 facts either way. Open: why the isolated kernels' 5.4 ms at 32 tokens arrive as 1-3 ms in
+the engine, Q6_K (6.5 ms at 32 tokens) and attention (10-25 ms) on the same card.
+
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
 `ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among
