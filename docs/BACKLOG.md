@@ -164,6 +164,12 @@ stream per request by load (the pool wins at few requests when its cache is smal
 chose to leave the state as it is: streams on a GPU from 16 sequences on, the pool below. The points above stay open
 until the owner reopens them.
 
+**PB1 (2026-11-17, LAB.md).** Measured after another session suspected the GPU Pilot's prompt budget (128) of
+costing 4-5x on bursts of medium prompts: refuted, the low numbers came from short answers. On the T4 with one KV
+stream per request the budget cost 2-9 % on blocks of 8-32 medium prompts and gained nothing elsewhere (facts 49 of 50
+in every arm), so with one KV stream per request on a GPU the engine no longer holds it (every prompt has its own call
+there); the shared pool and the CPU keep it.
+
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
 `ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among

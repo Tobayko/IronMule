@@ -1902,6 +1902,30 @@ serves today and 8 requests 0.92x; one request the same. The pool here has 16,38
 so its steps read fewer cells (the harness's pool at 32 short requests: 343-386 tok/s). Open: the pool's width
 measurement with llama.cpp's default setting on a GPU, and the streams' 8-request step through the server.
 
+## 2026-11-17 PB1: the GPU Pilot's prompt budget with one KV stream per request
+
+Another session read low tokens per second for bursts of medium prompts on the T4 and suspected the GPU Pilot's prompt
+budget (128 tokens a step) of costing 4-5x. `lab/pi3/kaggle_gpu_probe.py` (`PI3_MODE=budget`) at 5abba8d, Kaggle T4,
+Qwen3-4B Q4_K_M, the shipped GPU engine (one KV stream per request, PAD3), 120 s warm-up, two rounds, 9.9 minutes.
+Arms: the GPU Pilot, the Pilot off (every waiting prompt that fits), a fixed budget of 512 (cap 32). Workloads: blocks
+of 8 / 20 / 32 medium prompts (about 400 tokens, a one-sentence answer asked, at most 128), 32 short chats, mixed arrivals (chats and documents), chats arriving.
+tok/s, round 1 / round 2:
+
+| Workload | Pilot | Pilot off | budget 512 |
+| --- | --- | --- | --- |
+| 8 medium | 88.1 / 81.8 | **89.6 / 84.3** | 84.0 / 80.9 |
+| 20 medium | 95.2 / 86.9 | **98.7 / 92.9** | 93.5 / 87.1 |
+| 32 medium | 96.4 / 89.4 | **102.7 / 98.3** | 96.2 / 88.6 |
+| 32 chats | 591.8 / 570.8 | **610.5 / 591.3** | 604.7 / 599.0 |
+| mixed arrivals | 118.5 / 162.6 | 121.7 / 158.0 | 120.0 / 161.6 |
+| chats arriving | 366.2 / 318.0 | 365.0 / 318.1 | 353.9 / 319.4 |
+
+49 of 50 facts in every arm. The suspicion is refuted: the medium blocks are slow in tokens per second because their
+answers are short and the prompts dominate, for every arm alike. The budget itself cost 2-9 % on the blocks and gained
+nothing on arrivals. Shipped: with one KV stream per request on a GPU each prompt already gets its own call, so the
+engine no longer holds the Pilot's prompt budget there (as the "Pilot off" arm); the shared pool and the CPU keep it.
+`IRONMULE_GGML_PROMPT_BUDGET` still sets one by hand.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

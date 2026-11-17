@@ -46,12 +46,13 @@ COMMIT = os.environ["MG2_COMMIT"]
 LOCAL = os.environ.get("PI3_LOCAL")  # a CPU smoke of this file: the repository, a local build and models in PI3_LOCAL
 W = Path(LOCAL or "/kaggle/working")
 SMOKE = bool(LOCAL)
-CHECK = os.environ.get("PI3_MODE") == "check"
-PAD2 = os.environ.get("PI3_MODE") == "pad2"
-KVD = os.environ.get("PI3_MODE") == "kvd"
-DM2 = os.environ.get("PI3_MODE") == "dm2"
-SPAN = os.environ.get("PI3_MODE") == "span"
-STREAMS = os.environ.get("PI3_MODE") == "streams"  # KG3: one KV stream per request (own-cell attention) against the pool  # KG3: does a step cost more when its cells sit high in the cache?  # DM2: the draft model with its rate check fixed, against no draft model  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone  # the check of a newly trained Pilot (step 3 of PI3), see below
+CHECK = os.environ.get("PI3_MODE") == "check"  # the check of a newly trained Pilot (step 3 of PI3), see below
+PAD2 = os.environ.get("PI3_MODE") == "pad2"  # PAD2: steps of 17-30 rows filled to 32, against PAD1 alone
+KVD = os.environ.get("PI3_MODE") == "kvd"  # KVD1: llama.cpp's KV defragmentation (and a kept-cell budget) on a GPU
+DM2 = os.environ.get("PI3_MODE") == "dm2"  # DM2: the draft model with its rate check fixed, against no draft model
+SPAN = os.environ.get("PI3_MODE") == "span"  # KG3: does a step cost more when its cells sit high in the cache?
+STREAMS = os.environ.get("PI3_MODE") == "streams"  # KG3: one KV stream per request (own-cell attention) against the pool
+BUDGET = os.environ.get("PI3_MODE") == "budget"  # PB1: the GPU Pilot's prompt budget on a burst of medium prompts
 OLD_WEIGHTS = "7d097025bcc370671eafae7b0b87cc6aa90de703"  # the version-2 Pilot of PI2 (world v6)
 OUT = {"commit": COMMIT, "started": time.time(), "A": [], "B": [], "C": [], "steps": {}}
 CELL_LIMIT_S = 90.0
@@ -259,25 +260,72 @@ def main():
                 "ttft_mean": round(sum(ttft) / max(1, len(ttft)), 3), "ttft_p50": q(ttft, 0.5), "ttft_p90": q(ttft, 0.9),
                 "e2e_p50": q(e2e, 0.5), "e2e_p90": q(e2e, 0.9)}
 
+    def mid_text(i):  # about 400 tokens: a short report and a question
+        tag[0] += 1
+        r = random.Random(tag[0])
+        body = " ".join(f"Paragraph {k}: the harbour office of {('Arlen', 'Bree', 'Cosk', 'Dunmore')[r.randrange(4)]} "
+                        f"logged {r.randrange(40)} ships and the weather was {('calm', 'windy', 'rainy')[r.randrange(3)]}."
+                        for k in range(14))
+        return f"Report {tag[0]}.\n{body}\n\nQuestion: summarise paragraph {i % 14} in one sentence."
+
+    def mid_block(e, n, tokens, blocks=2):
+        tok_n = wall = 0.0
+        for b in range(blocks):
+            js = [Job(ids_of(mid_text(b * n + i)), tokens) for i in range(n)]
+            t = time.monotonic_ns()
+            e.run(js)
+            wall += (time.monotonic_ns() - t) / 1e9
+            tok_n += sum(len(j.tokens) for j in js)
+        return {"tok_s": round(tok_n / wall, 2), "wall": round(wall, 2)}
+
+    if BUDGET:
+        # PB1: the shipped GPU engine (one KV stream per request) with the GPU Pilot (its prompt budget of 128), the
+        # Pilot off (the engine's defaults: every waiting prompt that fits) and a prompt budget of 512 held
+        OUT["budget"] = []
+        e, tok_ = open_engine(**{"shared": False, "seqs": 2 if SMOKE else 32, "seq_ctx": 2048, "cap": None})
+        tok = tok_
+        collect(e, "budget")
+        fact_ids = [tok(p) for p in fact_prompts]
+        pilot = e.pilot
+        cores = e.threads
+        if not SMOKE:
+            t0 = time.time()
+            while time.time() - t0 < 120:  # the T4 past its starting clock
+                e.run([Job(ids_of(chat_text(k)), 128) for k in range(8)])
+        arms = [("pilot", pilot), ("off", None), ("budget512", Fixed(cores, 32, 512))]
+        answers = {}
+        for rep in range(1 if SMOKE else 2):
+            for arm, src_ in (arms if rep == 0 else arms[::-1]):
+                e.pilot = src_
+                e.set_threads(cores)
+                row = {"arm": arm, "rep": rep}
+                for n in ((2,) if SMOKE else (8, 20, 32)):
+                    row[f"mid{n}"] = mid_block(e, n, 8 if SMOKE else 128, blocks=1)
+                row["chat32"] = block(e, 2 if SMOKE else 32, 8 if SMOKE else 128, blocks=1)
+                row["mixed"] = stream(e, "mixed", 1200 + rep)
+                row["chat"] = stream(e, "chat", 1300 + rep)
+                if rep == 0:
+                    got = []
+                    for k in range(0, 8 if SMOKE else len(fact_ids), 8):
+                        js = [Job(i, 48) for i in fact_ids[k:k + 8]]
+                        e.run(js)
+                        got += [j.tokens for j in js]
+                    answers[arm] = got
+                OUT["budget"].append(row)
+                print(json.dumps(row), flush=True)
+                save()
+        e.pilot = None
+        e.observer = None
+        e.close()
+        proc, port = mg2.server(gguf, 1, "0", "layer" if LOCAL else "none")
+        try:
+            OUT["facts"] = {arm: mg2.correct([mg2.detok_server(port, i) for i in v], facts) for arm, v in answers.items()}
+        finally:
+            mg2.stop(proc)
+        OUT["finished"] = time.time()
+        save()
+        return
     if STREAMS:
-        def mid_text(i):  # about 400 tokens: a short report and a question
-            tag[0] += 1
-            r = random.Random(tag[0])
-            body = " ".join(f"Paragraph {k}: the harbour office of {('Arlen', 'Bree', 'Cosk', 'Dunmore')[r.randrange(4)]} "
-                            f"logged {r.randrange(40)} ships and the weather was {('calm', 'windy', 'rainy')[r.randrange(3)]}."
-                            for k in range(14))
-            return f"Report {tag[0]}.\n{body}\n\nQuestion: summarise paragraph {i % 14} in one sentence."
-
-        def mid_block(e, n, tokens, blocks=2):
-            tok_n = wall = 0.0
-            for b in range(blocks):
-                js = [Job(ids_of(mid_text(b * n + i)), tokens) for i in range(n)]
-                t = time.monotonic_ns()
-                e.run(js)
-                wall += (time.monotonic_ns() - t) / 1e9
-                tok_n += sum(len(j.tokens) for j in js)
-            return {"tok_s": round(tok_n / wall, 2), "wall": round(wall, 2)}
-
         OUT["streams"], answers = [], {}
         if os.environ.get("PI3_STREAMS_V") == "2":  # KG3 v2: prompts in their own call, equal drafts per stream
             arms = [("pool", {}), ("perseq", {"shared": False, "seqs": 2 if SMOKE else 32, "seq_ctx": 2048, "cap": None})]

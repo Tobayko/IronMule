@@ -772,6 +772,37 @@ def test_pad3_streams_are_padded_evenly_to_the_size_measured_cheaper():
     assert all(len(j.tokens) == 6 for j in jobs)
 
 
+def test_pb1_on_a_gpu_with_one_kv_stream_per_request_the_pilots_prompt_budget_is_not_held(monkeypatch):
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "PROMPT_BUDGET", 0)
+
+    class Pilot:  # the GPU Pilot's choice on a T4: a prompt budget of 32 tokens
+        def decide(self, running, queued, waiting, ctx):
+            return {"threads": 1, "cap": 32, "budget": 32, "draft": True}
+
+        def observe(self, *args):
+            pass
+
+        def status(self):
+            return {}
+
+        def close(self):
+            pass
+
+    def first_call(gpu_layers):
+        engine, fed, _ = _streams_engine()
+        engine.pilot, engine.pool, engine.gpu_layers = Pilot(), None, gpu_layers
+        engine.run([Job([10 * k + j for j in range(20)], 2) for k in range(4)])
+        return {s for _, _, s in fed[0]}, len(fed)
+
+    on_gpu, gpu_calls = first_call(1)
+    on_cpu, cpu_calls = first_call(0)
+    assert len(on_cpu) == 1  # on a CPU the budget holds: one 20-token prompt per step
+    assert gpu_calls < cpu_calls  # on a GPU every prompt starts in the first step (each in its own call)
+
+
 def test_kg3_on_a_gpu_the_gate_checks_one_kv_stream_per_request_and_a_cpu_gate_does_not(monkeypatch, tmp_path):
     from ironmule import ggml_engine
 
