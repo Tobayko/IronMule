@@ -1926,6 +1926,22 @@ nothing on arrivals. Shipped: with one KV stream per request on a GPU each promp
 engine no longer holds the Pilot's prompt budget there (as the "Pilot off" arm); the shared pool and the CPU keep it.
 `IRONMULE_GGML_PROMPT_BUDGET` still sets one by hand.
 
+Confirmed on the T4 at a1ac392 (the change merged), the same harness and design, 9.6 minutes. The "pilot" arm now runs
+the shipped path; the "budget 512" arm, a fixed decision passed as a Pilot, now also has its budget ignored, so it
+differs from the Pilot only in its fixed cap of 32. tok/s, round 1 / round 2:
+
+| Workload | Pilot (shipped) | Pilot off | budget 512 (ignored) |
+| --- | --- | --- | --- |
+| 8 medium | 90.0 / 83.3 | 86.7 / 81.8 | 85.1 / 86.8 |
+| 20 medium | 97.9 / 91.8 | 97.3 / 91.5 | 94.6 / 97.2 |
+| 32 medium | 102.3 / 95.8 | 102.4 / 96.4 | 102.3 / 103.5 |
+| 32 chats | 602.9 / 571.6 | 596.9 / 571.6 | 591.3 / 592.2 |
+| mixed arrivals | 119.3 / 156.5 | 119.2 / 160.5 | 115.0 / 160.8 |
+| chats arriving | 349.2 / 318.6 | 354.8 / 321.8 | 352.6 / 318.7 |
+
+49 of 50 facts in every arm. The Pilot now equals the Pilot-off engine on the blocks (32 medium: 102.3 against 102.4,
+before the change 96.4 against 102.7), first token with mixed arrivals 2.29 / 2.02 s against 2.41 / 2.02 s.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
