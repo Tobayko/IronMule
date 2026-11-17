@@ -1960,6 +1960,38 @@ a 50 ms step and the engine sees 1-3 ms: unexplained so far (clock under sustain
 memset launches per matmul, or attention and Q6_K growing their share), the next profile's question. Against the
 library shipped before (KG2: 1-8 tokens) the new part is 8-32 requests; one request is KG2's gain.
 
+Profile (`lab/kg4/kaggle_prof2.py` at e822e46, T4, 4.5 minutes; the engine's steps of one token per request, context
+300, the library on for every count or its mask at 0, CUPTI over 8 steps). Steps: 8 requests 27.0 against 53.8 ms, 32
+requests 44.8 against 47.5 ms (2.0x and 1.06x). Per step at 32 requests: the Q4_K matmuls with their activation
+quantization 18.2 ms through the library against 21.9 through llama.cpp (`mul_mat_q` 19.4, stream-k fix-ups 1.7,
+quantization 0.8), so 3.7 ms of the 5.4 the isolated kernels promised arrive: the library's quantization costs 1.5 ms
+against llama.cpp's 0.8, and the kernels run about 12 % slower inside the step than alone. The rest of the 32-request
+step is not Q4_K: flash attention 10.5 ms, Q6_K 6.6 ms (`mul_mat_q`), the logits' copy to the host 1.6 ms, norms,
+rope and the like about 3 ms; the GPU is busy 91 % of the wall time either way. At 8 requests llama.cpp's Q6_K kernel
+(`mul_mat_vec_q<Q6_K, 8>`) takes 8-12 ms of the step. Next: the same tensor-core kernel for Q6_K (its weights, 0.7 GB,
+could be read in about 2.4 ms) and a cheaper activation quantization.
+
+Q6_K on the tensor cores (KG_VERSION 4, at fc13ca2, `lab/kg4/kaggle_e2e.py` as above, 9.7 minutes; the layout emulated
+in numpy first, exact). The 210-byte Q6_K blocks are read with 2-byte loads, every 16-weight chunk of the tensor cores
+lies inside one scale group (the activations in a second lane order), and the two chunks of a 32-value group are
+scaled in int32. Against llama.cpp's Q6_K matmuls of one step (the KG4 v1 run): 5.61 against 7.30 ms at 8 tokens (the
+output matrix 2.76 against 3.90 ms), but 5.61 against 3.97 at 1 token and 6.60 / 8.11 / 8.51 against 5.25 / 5.83 / 6.45
+at 16 / 24 / 32, where llama.cpp's own tensor-core kernel is better; error 5.2-5.4e-3 against float64 on every
+variant. In the engine (the library's one mask then served Q4_K and Q6_K together, so the engine kept 1-8 and 16 and
+dropped 24 and 32 for both): blocks of 8 requests 322.7 tok/s (the run before, Q4_K alone: 280.3), 32 requests 631.4
+against 630.2 without the library, 1 request 56.4 against 46.0; 49 of 50 facts either way and 49 of the 50 answers
+token for token the same. The off arm here kept the padding measured with the library on, so its 8-request blocks
+(141.9) are not the engine's own (250.6 in the run before). Fixed since: Q6_K has its own mask and the engine keeps
+it only for the token counts where Q4_K and Q6_K together beat Q4_K alone and the step without the library; the
+harness measures each arm's own padding.
+
+Confirmed at 5972eac (T4, 9.7 minutes, each arm on its own padding table): the engine kept the library's Q4_K kernels
+for 1-8, 16, 24 and 32 tokens and its Q6_K kernels for 3 and 5-8 (Q4_K and Q6_K together 23.3 against 27.0 ms at 8
+tokens, 41.4 against 36.5 at 32). Blocks of 128 tokens, mean of two rounds: 1 request 56.3 against 41.2 tok/s
+(1.37x), **8 requests 310.4 against 249.2 (1.25x)**, 32 requests 626.9 against 602.2 (1.04x); steps of one token per
+request at context 300: 26.4 against 60.8 ms at 8 (unpadded), 32.8 against 34.5 at 16, 49.4 against 50.7 at 32. 49 of 50
+facts either way, 48 of the 50 answers token for token the same.
+
 ## 2026-11-17 PB1: the GPU Pilot's prompt budget with one KV stream per request
 
 Another session read low tokens per second for bursts of medium prompts on the T4 and suspected the GPU Pilot's prompt

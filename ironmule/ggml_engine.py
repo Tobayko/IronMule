@@ -498,27 +498,42 @@ class GgmlEngine:
         except (OSError, AttributeError) as exc:
             return {"error": f"{type(exc).__name__}: {exc}"[:200]}
         # KG4: 9-32 tokens run the tensor-core kernels of one tile count (8 tokens each) at about one price, so 16, 24
-        # and 32 stand for 9-16, 17-24 and 25-32
+        # and 32 stand for 9-16, 17-24 and 25-32. Q6_K is chosen on its own where the library has a mask for it: the
+        # step with Q4_K alone, and with Q4_K and Q6_K, each against the better of the arms without it
         counts = list(range(1, 9)) + [16, 24, 32]
-        on: dict[int, list[float]] = {t: [] for t in counts}
-        off: dict[int, list[float]] = {t: [] for t in counts}
+        six = hasattr(lib, "ironmule_kg_set_mask6")
+        if six:
+            lib.ironmule_kg_set_mask6.argtypes = [ctypes.c_uint32]
+        arms = ((0, 0), (0xFFFFFFFF, 0), (0xFFFFFFFF, 0xFFFFFFFF)) if six else ((0, None), (0xFFFFFFFF, None))
+        prices: list[dict[int, list[float]]] = [{t: [] for t in counts} for _ in arms]
         for _ in range(repeats):
-            for mask, store in ((0xFFFFFFFF, on), (0, off)):
-                lib.ironmule_kg_set_mask(mask)
+            for (mask4, mask6), store in zip(arms, prices):
+                lib.ironmule_kg_set_mask(mask4)
+                if mask6 is not None:
+                    lib.ironmule_kg_set_mask6(mask6)
                 for t, v in self._step_prices(counts, repeats=1).items():
                     store[t].append(v)
         med = lambda v: sorted(v)[len(v) // 2]  # noqa: E731
+        off, on = prices[0], prices[1]
         keep = [t for t in counts if med(on[t]) <= 0.97 * med(off[t])]
-        mask = sum(1 << (u - 1) for t in keep for u in ((t,) if t <= 8 else range(t - 7, t + 1)))
+        keep6 = [t for t in counts if six and med(prices[2][t]) <= 0.97 * min(med(off[t]), med(on[t]))]
+        bits = lambda ts: sum(1 << (u - 1) for t in ts for u in ((t,) if t <= 8 else range(t - 7, t + 1)))  # noqa: E731
+        mask = bits(keep)
+        if six:
+            lib.ironmule_kg_set_mask6(bits(keep6))
         lib.ironmule_kg_set_mask(mask)
         self._kg_lib = lib
         try:
             entries = len(json.loads(lib.ironmule_kg_table().decode()).get("entries", []))
         except (ValueError, AttributeError):
             entries = None
-        return {"lib": os.path.basename(path), "entries": entries, "tokens_served": keep,
-                "step_ms_on": {str(t): round(med(on[t]) * 1000, 2) for t in on},
-                "step_ms_off": {str(t): round(med(off[t]) * 1000, 2) for t in off}}
+        out = {"lib": os.path.basename(path), "entries": entries, "tokens_served": keep,
+               "step_ms_on": {str(t): round(med(on[t]) * 1000, 2) for t in on},
+               "step_ms_off": {str(t): round(med(off[t]) * 1000, 2) for t in off}}
+        if six:
+            out["q6k_tokens_served"] = keep6
+            out["step_ms_q6k"] = {str(t): round(med(prices[2][t]) * 1000, 2) for t in counts}
+        return out
 
     def measure_padding(self, repeats: int = 5) -> dict[int, int]:
         """PAD1: a verify step's seconds for 1 to `max_rows` tokens of one sequence (median of `repeats`), and for each

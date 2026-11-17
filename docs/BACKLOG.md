@@ -175,8 +175,10 @@ engine on the blocks (32 medium prompts 102.3 against 102.4 tok/s), 49 of 50 fac
 goes (Q4_K matmuls at 97 GB/s, 8 rows dearer than 16); a Q4_K kernel on the tensor cores (`mma.sync`, generated and
 tuned per GPU by `ironmule/kernel_gen.py`, KG_VERSION 3) now serves 1-32 tokens where the engine measures it faster.
 End to end on the T4 against the same engine without it: 8 requests 1.12x, 32 requests 1.07x (280 against 251, 642
-against 602 tok/s), 49 of 50 facts either way. Open: why the isolated kernels' 5.4 ms at 32 tokens arrive as 1-3 ms in
-the engine, Q6_K (6.5 ms at 32 tokens) and attention (10-25 ms) on the same card.
+against 602 tok/s), 49 of 50 facts either way. A profile showed 3.7 of the isolated 5.4 ms at 32 tokens arriving in the
+engine and Q6_K as the next cost; Q6_K on the tensor cores (KG_VERSION 4, its own mask, kept where it measures faster:
+up to 8 tokens) brings 8 requests to 1.25x (310 against 249 tok/s), 1 request 1.37x, 32 requests 1.04x, 49 of 50 facts
+either way. Open: attention (10-25 ms of a 32-request step) and Q6_K beyond 8 tokens on the same card.
 
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
