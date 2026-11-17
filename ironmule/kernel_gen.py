@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-KG_VERSION = 3  # 2 (ST2): MQ1 kernels for one token; 3 (KG4): tensor-core kernels for 1-32 tokens
+KG_VERSION = 4  # 2 (ST2): MQ1 kernels for one token; 3 (KG4): tensor-core kernels for 1-32 tokens; 4: and Q6_K
 TYPE_Q4_K = 12  # GGML_TYPE_Q4_K
 BATCHES = tuple(range(1, 9))  # from 9 tokens on llama.cpp's tensor-core kernel is faster (KG1 v2: 16.8 ms vs 42.4)
 LANES, ROWS, WARPS = (8, 16, 32), (1, 2, 4, 8), (2, 4, 8)
@@ -45,8 +45,12 @@ MMA_BATCHES = (8, 16, 24, 32)
 MMA_SHAPES = ((1, 4, 2, 1), (2, 4, 2, 1), (1, 8, 2, 1), (2, 8, 2, 1), (1, 4, 4, 1), (2, 4, 4, 1), (1, 8, 4, 1),
               (1, 4, 2, 2), (2, 4, 2, 2), (1, 8, 2, 2), (1, 4, 2, 4), (1, 8, 2, 4), (1, 4, 4, 2), (1, 4, 1, 1),
               (1, 4, 1, 4), (2, 2, 2, 1), (1, 4, 8, 1), (1, 8, 8, 1), (2, 4, 8, 1), (1, 4, 8, 2))  # R, W, KB, SK
-MMA_VARIANTS = tuple((T,) + v for T in (1, 2, 3, 4) for v in MMA_SHAPES if T * v[2] <= 16)  # T, R, W, KB, SK;
-# T * KB <= 16 keeps a thread block's staged activations under 40 KB
+# T, R, W, KB, SK; T * KB <= 16 keeps a thread block's staged activations under 40 KB
+MMA_VARIANTS = tuple((T,) + v for T in (1, 2, 3, 4) for v in MMA_SHAPES if T * v[2] <= 16)
+MMA6_SHAPES = ((1, 4, 2, 1), (2, 4, 2, 1), (1, 8, 2, 1), (2, 8, 2, 1), (1, 4, 4, 1), (1, 8, 4, 1), (1, 4, 2, 2),
+               (1, 8, 2, 2), (1, 4, 2, 4), (1, 8, 2, 4), (2, 4, 4, 1), (1, 4, 8, 1))  # R, W, KB, SK
+MMA6_VARIANTS = tuple((T,) + v for T in (1, 2, 3, 4) for v in MMA6_SHAPES if T * v[2] <= 16)
+TYPE_Q6_K = 14  # GGML_TYPE_Q6_K
 
 DEVICE = r"""
 #include <cuda_fp16.h>
@@ -287,8 +291,9 @@ __device__ __forceinline__ float i2f(int v) { return __int_as_float(0x4B400000 +
 // x [B][K] float -> fragment order for T tiles of 8 tokens (tokens past B are zero):
 //   xf, 8 bytes per (tile tt, sub-block s, lane): xq[8 tt + lane / 4][32 s + 8 (lane % 4) .. + 7]
 //   xs, per (tt, s, token in tile): (d, d * sum of the 32 quants) as half2, as llama.cpp's q8_1 keeps them
+//   layout 1 (Q6_K, whose scales cover 16 weights): lane c holds 32 s + 4c .. + 3 and 32 s + 16 + 4c .. + 3 instead
 __global__ void quant_frag(const float *__restrict__ x, int8_t *__restrict__ xf, half2 *__restrict__ xs, int B, int K,
-                           int T) {
+                           int T, int layout) {
     const int S = K / 32;
     const int wid = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32, lane = threadIdx.x % 32;
     if (wid >= T * 8 * S) return;
@@ -303,7 +308,8 @@ __global__ void quant_frag(const float *__restrict__ x, int8_t *__restrict__ xf,
 #pragma unroll
     for (int off = 16; off > 0; off >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, off);
     const int tt = tok / 8, g = tok % 8;
-    xf[(((size_t)tt * S + s) * 32 + g * 4 + lane / 8) * 8 + lane % 8] = (int8_t)q;
+    const int at = layout ? (lane % 16) / 4 : lane / 8, byte = layout ? (lane / 16) * 4 + lane % 4 : lane % 8;
+    xf[(((size_t)tt * S + s) * 32 + g * 4 + at) * 8 + byte] = (int8_t)q;
     if (lane == 0) xs[((size_t)tt * S + s) * 8 + g] = __floats2half2_rn(d, d * (float)sum);
 }
 
@@ -411,11 +417,144 @@ void launch_mma(const block_q4_K *w, const uint2 *xf, const half2 *xs, float *y,
     if (SK > 1) cudaMemsetAsync(y, 0, (size_t)B * N * sizeof(float), s);
     kmma<T, R, W, KB, SK><<<dim3((N + W * R * 8 - 1) / (W * R * 8), SK), W * 32, 0, s>>>(w, xf, xs, y, N, K, B);
 }
-static void quantize_frag(const float *x, int8_t *xf, half2 *xs, int B, int K, int T, cudaStream_t s) {
+static void quantize_frag(const float *x, int8_t *xf, half2 *xs, int B, int K, int T, cudaStream_t s, int layout = 0) {
     const int warps = T * 8 * (K / 32);
-    quant_frag<<<(warps + 7) / 8, 256, 0, s>>>(x, xf, xs, B, K, T);
+    quant_frag<<<(warps + 7) / 8, 256, 0, s>>>(x, xf, xs, B, K, T, layout);
 }
 struct MmaVariant { int T, R, W, KB, SK; mma_launch_t fn; };
+
+// KG4 for Q6_K (the output matrix and some FFN layers): 210-byte blocks of 256 weights, 6-bit quants (4 low bits in ql,
+// 2 high in qh) less 32, one int8 scale per 16 weights, one half scale per block. A tensor-core chunk of 16 weights is
+// one scale group, so the two chunks of a 32-weight group are scaled in int32 and turned into float once.
+struct block_q6_K { uint8_t ql[128]; uint8_t qh[64]; int8_t scales[16]; uint16_t d; };
+static_assert(sizeof(block_q6_K) == 210, "Q6_K block");
+__device__ __forceinline__ uint32_t ld32a2(const uint8_t *p) {  // blocks of 210 bytes: only 2-byte aligned
+    const uint16_t *q = reinterpret_cast<const uint16_t *>(p);
+    return (uint32_t)__ldg(q) | ((uint32_t)__ldg(q + 1) << 16);
+}
+struct Q6Row { uint32_t qa[2][2], qb[2][2], qh[2][2], sc[4]; float d; };
+__device__ __forceinline__ Q6Row load_row6(const block_q6_K *__restrict__ wq, int row, int N, int nb, int ib, int c) {
+    Q6Row r;
+    if (row < N) {
+        const block_q6_K *blk = wq + (size_t)row * nb + ib;
+#pragma unroll
+        for (int n = 0; n < 2; n++)
+#pragma unroll
+            for (int w = 0; w < 2; w++) {
+                r.qa[n][w] = ld32a2(blk->ql + 64 * n + 16 * w + 4 * c);
+                r.qb[n][w] = ld32a2(blk->ql + 64 * n + 32 + 16 * w + 4 * c);
+                r.qh[n][w] = ld32a2(blk->qh + 32 * n + 16 * w + 4 * c);
+            }
+#pragma unroll
+        for (int k = 0; k < 4; k++) r.sc[k] = ld32a2(reinterpret_cast<const uint8_t *>(blk->scales) + 4 * k);
+        r.d = __half2float(__ushort_as_half(__ldg(&blk->d)));
+    } else {
+#pragma unroll
+        for (int n = 0; n < 2; n++)
+#pragma unroll
+            for (int w = 0; w < 2; w++) r.qa[n][w] = r.qb[n][w] = r.qh[n][w] = 0;
+#pragma unroll
+        for (int k = 0; k < 4; k++) r.sc[k] = 0;
+        r.d = 0.f;
+    }
+    return r;
+}
+__device__ __forceinline__ int sc8(const uint32_t *sc, int i) { return (int)(int8_t)((sc[i >> 2] >> (8 * (i & 3))) & 0xFF); }
+
+template <int T, int R, int W, int KB, int SK>
+__global__ void __launch_bounds__(W * 32) kmma6(const block_q6_K *__restrict__ wq, const uint2 *__restrict__ xf,
+                                                const half2 *__restrict__ xs, float *__restrict__ y, int N, int K,
+                                                int B) {
+    __shared__ uint2 sx[T * KB * 256];
+    __shared__ half2 ss[T * KB * 64];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
+    const int S = K / 32, nb = K / 256;
+    const int rbase = (blockIdx.x * W + warp) * R * 8;
+    const int per = (nb + SK - 1) / SK, kb0 = blockIdx.y * per, kb1 = min(nb, kb0 + per);
+    float acc[R][T][2];
+#pragma unroll
+    for (int r = 0; r < R; r++)
+#pragma unroll
+        for (int t = 0; t < T; t++) acc[r][t][0] = acc[r][t][1] = 0.f;
+    Q6Row cur[R];
+#pragma unroll
+    for (int r = 0; r < R; r++) cur[r] = load_row6(wq, rbase + r * 8 + g, N, nb, kb0 < kb1 ? kb0 : 0, c);
+    for (int sb0 = kb0; sb0 < kb1; sb0 += KB) {
+        const int nk = min(KB, kb1 - sb0);
+        __syncthreads();
+        for (int i = threadIdx.x; i < T * nk * 256; i += W * 32) {
+            const int tt = i / (nk * 256), j = i % (nk * 256);
+            sx[tt * KB * 256 + j] = xf[((size_t)tt * S + sb0 * 8) * 32 + j];
+        }
+        for (int i = threadIdx.x; i < T * nk * 64; i += W * 32) {
+            const int tt = i / (nk * 64), j = i % (nk * 64);
+            ss[tt * KB * 64 + j] = xs[((size_t)tt * S + sb0 * 8) * 8 + j];
+        }
+        __syncthreads();
+        for (int kb = 0; kb < nk; kb++) {
+            const int ib = sb0 + kb;
+            Q6Row nxt[R];
+#pragma unroll
+            for (int r = 0; r < R; r++) nxt[r] = load_row6(wq, rbase + r * 8 + g, N, nb, ib + 1 < kb1 ? ib + 1 : ib, c);
+#pragma unroll
+            for (int n = 0; n < 2; n++)
+#pragma unroll
+                for (int j = 0; j < 4; j++) {
+                    const int s = 4 * n + j;
+                    uint32_t a0[R], a1[R];
+                    int s0w[R], s1w[R];
+#pragma unroll
+                    for (int r = 0; r < R; r++) {
+                        const uint32_t src0 = (j & 1) ? cur[r].qb[n][0] : cur[r].qa[n][0];
+                        const uint32_t src1 = (j & 1) ? cur[r].qb[n][1] : cur[r].qa[n][1];
+                        const uint32_t lo0 = (j >= 2 ? src0 >> 4 : src0) & 0x0F0F0F0Fu;
+                        const uint32_t lo1 = (j >= 2 ? src1 >> 4 : src1) & 0x0F0F0F0Fu;
+                        a0[r] = __vsub4(lo0 | (((cur[r].qh[n][0] >> (2 * j)) & 0x03030303u) << 4), 0x20202020u);
+                        a1[r] = __vsub4(lo1 | (((cur[r].qh[n][1] >> (2 * j)) & 0x03030303u) << 4), 0x20202020u);
+                        s0w[r] = sc8(cur[r].sc, 8 * n + 2 * j);
+                        s1w[r] = sc8(cur[r].sc, 8 * n + 2 * j + 1);
+                    }
+#pragma unroll
+                    for (int tt = 0; tt < T; tt++) {
+                        const int at = (tt * KB + kb) * 8 + s;
+                        const uint2 b = sx[at * 32 + lane];
+                        const float d0 = __low2float(ss[at * 8 + 2 * c]), d1 = __low2float(ss[at * 8 + 2 * c + 1]);
+#pragma unroll
+                        for (int r = 0; r < R; r++) {
+                            int c00 = 0, c01 = 0, c10 = 0, c11 = 0;
+                            mma8816(c00, c01, a0[r], b.x);
+                            mma8816(c10, c11, a1[r], b.y);
+                            acc[r][tt][0] = fmaf(cur[r].d * d0, (float)(s0w[r] * c00 + s1w[r] * c10), acc[r][tt][0]);
+                            acc[r][tt][1] = fmaf(cur[r].d * d1, (float)(s0w[r] * c01 + s1w[r] * c11), acc[r][tt][1]);
+                        }
+                    }
+                }
+#pragma unroll
+            for (int r = 0; r < R; r++) cur[r] = nxt[r];
+        }
+    }
+#pragma unroll
+    for (int r = 0; r < R; r++) {
+        const int row = rbase + r * 8 + g;
+        if (row >= N) continue;
+#pragma unroll
+        for (int tt = 0; tt < T; tt++)
+#pragma unroll
+            for (int i = 0; i < 2; i++) {
+                const int tok = tt * 8 + 2 * c + i;
+                if (tok >= B) continue;
+                if (SK == 1) y[(size_t)tok * N + row] = acc[r][tt][i];
+                else atomicAdd(y + (size_t)tok * N + row, acc[r][tt][i]);
+            }
+    }
+}
+typedef void (*mma6_launch_t)(const block_q6_K *, const uint2 *, const half2 *, float *, int, int, int, cudaStream_t);
+template <int T, int R, int W, int KB, int SK>
+void launch_mma6(const block_q6_K *w, const uint2 *xf, const half2 *xs, float *y, int N, int K, int B, cudaStream_t s) {
+    if (SK > 1) cudaMemsetAsync(y, 0, (size_t)B * N * sizeof(float), s);
+    kmma6<T, R, W, KB, SK><<<dim3((N + W * R * 8 - 1) / (W * R * 8), SK), W * 32, 0, s>>>(w, xf, xs, y, N, K, B);
+}
+struct Mma6Variant { int T, R, W, KB, SK; mma6_launch_t fn; };
 """
 
 TUNE = r"""
@@ -481,6 +620,78 @@ extern "C" int kg_measure_mq(int i, const void *w_host, int N, int K, const floa
     cudaEventDestroy(e0); cudaEventDestroy(e1);
     for (int c = 0; c < copies; c++) { cudaFree(dq[c]); cudaFree(dh[c]); }
     cudaFree(dw); cudaFree(dx); cudaFree(dy); cudaFree(dr);
+    return cudaGetLastError() == cudaSuccess ? 0 : 4;
+}
+
+// float64 reference for Q6_K (dequantize_row_q6_K of ggml-quants.c), the first `rows` rows
+__global__ void ref64_q6(const block_q6_K *__restrict__ wq, const float *__restrict__ x, double *__restrict__ y, int N,
+                         int K, int B, int rows) {
+    const int row = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32, lane = threadIdx.x % 32;
+    if (row >= rows || row >= N) return;
+    const int nb = K / 256;
+    for (int b = 0; b < B; b++) {
+        double s = 0.0;
+        for (int k = lane; k < K; k += 32) {
+            const block_q6_K *blk = wq + (size_t)row * nb + k / 256;
+            const int e = k % 256, n = e / 128, r = e % 128, j = r / 32, l = r % 32;
+            const uint8_t byte = blk->ql[64 * n + ((j & 1) ? 32 : 0) + l];
+            const int nib = j >= 2 ? byte >> 4 : byte & 0xF;
+            const int h = (blk->qh[32 * n + l] >> (2 * j)) & 3;
+            const int q = (nib | (h << 4)) - 32;
+            s += (double)__half2float(__ushort_as_half(blk->d)) * blk->scales[8 * n + l / 16 + 2 * j] * q *
+                 (double)x[(size_t)b * K + k];
+        }
+        for (int off = 16; off > 0; off >>= 1) s += __shfl_xor_sync(0xffffffffu, s, off);
+        if (lane == 0) y[(size_t)b * rows + row] = s;
+    }
+}
+
+extern "C" int kg_mma6_count() { return (int)MMA6_VARIANTS.size(); }
+
+// KG4 Q6_K variant i at B tokens; the error is checked on the first 4,096 rows (the output matrix has 151,936)
+extern "C" int kg_measure_mma6(int i, const void *w_host, int N, int K, const float *x_host, int B, int copies,
+                               int reps, double *us, double *rel_err) {
+    const Mma6Variant &v = MMA6_VARIANTS[i];
+    if (B < 1 || B > 8 * v.T) return 5;
+    const int rows = N < 4096 ? N : 4096;
+    const size_t wbytes = (size_t)N * (K / 256) * 210;
+    std::vector<block_q6_K *> dw(copies);
+    float *dx, *dy; double *dr; int8_t *dxf; half2 *dxs;
+    if (cudaMalloc(&dx, (size_t)B * K * 4) || cudaMalloc(&dy, (size_t)B * N * 4) || cudaMalloc(&dr, (size_t)B * rows * 8) ||
+        cudaMalloc(&dxf, (size_t)v.T * 8 * K) || cudaMalloc(&dxs, (size_t)v.T * (K / 32) * 8 * sizeof(half2))) return 1;
+    for (int c = 0; c < copies; c++) {
+        if (cudaMalloc(&dw[c], wbytes)) return 2;
+        cudaMemcpy(dw[c], w_host, wbytes, cudaMemcpyHostToDevice);
+    }
+    cudaMemcpy(dx, x_host, (size_t)B * K * 4, cudaMemcpyHostToDevice);
+    ref64_q6<<<(rows + 7) / 8, 256>>>(dw[0], dx, dr, N, K, B, rows);
+    quantize_frag(dx, dxf, dxs, B, K, v.T, 0, 1);
+    v.fn(dw[0], (const uint2 *)dxf, dxs, dy, N, K, B, 0);
+    if (cudaDeviceSynchronize() != cudaSuccess) return 3;
+    std::vector<float> hy((size_t)B * N); std::vector<double> hr((size_t)B * rows);
+    cudaMemcpy(hy.data(), dy, hy.size() * 4, cudaMemcpyDeviceToHost);
+    cudaMemcpy(hr.data(), dr, hr.size() * 8, cudaMemcpyDeviceToHost);
+    double num = 0, den = 0;
+    for (int b = 0; b < B; b++)
+        for (int k = 0; k < rows; k++) {
+            const double e = hy[(size_t)b * N + k] - hr[(size_t)b * rows + k];
+            num += e * e; den += hr[(size_t)b * rows + k] * hr[(size_t)b * rows + k];
+        }
+    *rel_err = sqrt(num / den);
+    cudaEvent_t e0, e1; cudaEventCreate(&e0); cudaEventCreate(&e1);
+    for (int r = 0; r < 3; r++) for (int c = 0; c < copies; c++) {
+        quantize_frag(dx, dxf, dxs, B, K, v.T, 0, 1); v.fn(dw[c], (const uint2 *)dxf, dxs, dy, N, K, B, 0);
+    }
+    cudaEventRecord(e0);
+    for (int r = 0; r < reps; r++) for (int c = 0; c < copies; c++) {
+        quantize_frag(dx, dxf, dxs, B, K, v.T, 0, 1); v.fn(dw[c], (const uint2 *)dxf, dxs, dy, N, K, B, 0);
+    }
+    cudaEventRecord(e1); cudaEventSynchronize(e1);
+    float ms; cudaEventElapsedTime(&ms, e0, e1);
+    *us = 1000.0 * ms / ((double)reps * copies);
+    cudaEventDestroy(e0); cudaEventDestroy(e1);
+    for (int c = 0; c < copies; c++) cudaFree(dw[c]);
+    cudaFree(dx); cudaFree(dy); cudaFree(dr); cudaFree(dxf); cudaFree(dxs);
     return cudaGetLastError() == cudaSuccess ? 0 : 4;
 }
 
@@ -586,10 +797,10 @@ static std::mutex repack_lock;
 // the hook's entry: 0 when this library computed y = w x, non-zero for llama.cpp's own kernels
 extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64_t N, int64_t K, int64_t B,
                                    cudaStream_t s) {
-    if (type != 12 || K % 256 != 0 || B < 1 || B > 32 || !((enabled_mask >> (B - 1)) & 1u)) return 1;
+    if ((type != 12 && type != 14) || K % 256 != 0 || B < 1 || B > 32 || !((enabled_mask >> (B - 1)) & 1u)) return 1;
     const Entry *hit = nullptr;
     for (const Entry &e : ENTRIES)
-        if (e.K == K && e.N == N && e.B == B) { hit = &e; break; }
+        if (e.type == type && e.K == K && e.N == N && e.B == B) { hit = &e; break; }
     if (hit == nullptr) return 1;
     int dev = 0;
     cudaGetDevice(&dev);
@@ -612,7 +823,7 @@ extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, floa
         hit->mq(r.qs, r.hdr, x, y, (int)N, (int)K, s);
         return cudaPeekAtLastError() == cudaSuccess ? 0 : 1;
     }
-    if (hit->mm != nullptr) {  // KG4: the activations in fragment order, T tiles of 8 tokens
+    if (hit->mm != nullptr || hit->mm6 != nullptr) {  // KG4: the activations in fragment order, T tiles of 8 tokens
         static int8_t *xf[16]; static half2 *xs[16]; static size_t fcap[16];
         const size_t need = (size_t)hit->T * 8 * K;
         if (fcap[dev] < need) {
@@ -623,8 +834,9 @@ extern "C" int ironmule_kg_mul_mat(int type, const void *w, const float *x, floa
             }
             fcap[dev] = need;
         }
-        quantize_frag(x, xf[dev], xs[dev], (int)B, (int)K, hit->T, s);
-        hit->mm((const block_q4_K *)w, (const uint2 *)xf[dev], xs[dev], y, (int)N, (int)K, (int)B, s);
+        quantize_frag(x, xf[dev], xs[dev], (int)B, (int)K, hit->T, s, hit->mm6 != nullptr);
+        if (hit->mm6 != nullptr) hit->mm6((const block_q6_K *)w, (const uint2 *)xf[dev], xs[dev], y, (int)N, (int)K, (int)B, s);
+        else hit->mm((const block_q4_K *)w, (const uint2 *)xf[dev], xs[dev], y, (int)N, (int)K, (int)B, s);
         return cudaPeekAtLastError() == cudaSuccess ? 0 : 1;
     }
     launch_t fn = hit->fn;
@@ -655,23 +867,28 @@ def tune_source(vs: list[tuple[int, int, int, int]]) -> str:
     rows = "\n".join(f"    {{{L}, {R}, {W}, {B}, launch<{L}, {R}, {W}, {B}>}}," for L, R, W, B in vs)
     mq = "\n".join(f"    {{{W}, {R}, {U}, launch_mq<{W}, {R}, {U}>}}," for W, R, U in MQ_VARIANTS)
     mma = "\n".join(f"    {{{', '.join(map(str, v))}, launch_mma<{', '.join(map(str, v))}>}}," for v in MMA_VARIANTS)
+    mma6 = "\n".join(f"    {{{', '.join(map(str, v))}, launch_mma6<{', '.join(map(str, v))}>}}," for v in MMA6_VARIANTS)
     return (DEVICE + "static const std::vector<Variant> VARIANTS = {\n" + rows + "\n};\n"
             + "static const std::vector<MqVariant> MQ_VARIANTS = {\n" + mq + "\n};\n"
-            + "static const std::vector<MmaVariant> MMA_VARIANTS = {\n" + mma + "\n};\n" + TUNE)
+            + "static const std::vector<MmaVariant> MMA_VARIANTS = {\n" + mma + "\n};\n"
+            + "static const std::vector<Mma6Variant> MMA6_VARIANTS = {\n" + mma6 + "\n};\n" + TUNE)
 
 
 def library_source(table: dict[str, Any]) -> str:
     def row(e: dict[str, Any]) -> str:
+        head = f"    {{{e.get('type', TYPE_Q4_K)}, {e['K']}, {e['N']}, {e['B']}, "
+        v = ", ".join(str(e.get(k)) for k in ("T", "R", "W", "KB", "SK"))
         if e.get("kind") == "mq1":
-            return f"    {{{e['K']}, {e['N']}, {e['B']}, nullptr, launch_mq<{e['W']}, {e['R']}, {e['U']}>, nullptr, 0}},"
+            return head + f"nullptr, launch_mq<{e['W']}, {e['R']}, {e['U']}>, nullptr, nullptr, 0}},"
         if e.get("kind") == "mma":
-            v = ", ".join(str(e[k]) for k in ("T", "R", "W", "KB", "SK"))
-            return f"    {{{e['K']}, {e['N']}, {e['B']}, nullptr, nullptr, launch_mma<{v}>, {e['T']}}},"
-        return f"    {{{e['K']}, {e['N']}, {e['B']}, launch<{e['L']}, {e['R']}, {e['W']}, {e['B']}>, nullptr, nullptr, 0}},"
+            return head + f"nullptr, nullptr, launch_mma<{v}>, nullptr, {e['T']}}},"
+        if e.get("kind") == "mma6":
+            return head + f"nullptr, nullptr, nullptr, launch_mma6<{v}>, {e['T']}}},"
+        return head + f"launch<{e['L']}, {e['R']}, {e['W']}, {e['B']}>, nullptr, nullptr, nullptr, 0}},"
 
     rows = "\n".join(row(e) for e in table["entries"])
     text = json.dumps(table, sort_keys=True).replace("\\", "\\\\").replace('"', '\\"')
-    return (DEVICE + "struct Entry { int K, N, B; launch_t fn; mq_launch_t mq; mma_launch_t mm; int T; };\n"
+    return (DEVICE + "struct Entry { int type, K, N, B; launch_t fn; mq_launch_t mq; mma_launch_t mm; mma6_launch_t mm6; int T; };\n"
             + "static const std::vector<Entry> ENTRIES = {\n" + rows + "\n};\n"
             + f'static const char *TABLE_JSON = "{text}";\n' + LIBRARY)
 
@@ -719,8 +936,8 @@ def compile_cuda(source: str, out: Path, arch: str) -> None:
         raise RuntimeError(f"nvcc failed: {done.stderr[-2000:]}")
 
 
-def q4k_tensors(gguf_path: str, bindings: str | None = None) -> dict[tuple[int, int], dict[str, Any]]:
-    """The model's Q4_K matrices by shape (K inputs, N outputs): how many, and one of them to tune on."""
+def q4k_tensors(gguf_path: str, bindings: str | None = None, kind: str = "Q4_K") -> dict[tuple[int, int], dict[str, Any]]:
+    """The model's Q4_K (or `kind`) matrices by shape (K inputs, N outputs): how many, and one of them to tune on."""
     root = Path(bindings or os.environ.get("IRONMULE_GGML_BINDINGS", "")) / "vendor" / "llama.cpp" / "gguf-py"
     if root.exists() and str(root) not in sys.path:
         sys.path.insert(0, str(root))
@@ -728,7 +945,7 @@ def q4k_tensors(gguf_path: str, bindings: str | None = None) -> dict[tuple[int, 
 
     shapes: dict[tuple[int, int], dict[str, Any]] = {}
     for t in gguf.GGUFReader(gguf_path).tensors:
-        if t.tensor_type.name != "Q4_K" or len(t.shape) != 2:
+        if t.tensor_type.name != kind or len(t.shape) != 2:
             continue
         key = (int(t.shape[0]), int(t.shape[1]))
         entry = shapes.setdefault(key, {"count": 0, "name": t.name, "data": t.data})
@@ -813,6 +1030,30 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                 keys = ("K", "N", "B", "L", "R", "W", "U", "KB", "SK", "T", "kind", "us")
                 entries.append({k: best[k] for k in keys if k in best})
                 log(json.dumps({"kg_tuned": entries[-1]}))
+    lib.kg_measure_mma6.argtypes = lib.kg_measure_mma.argtypes
+    for (K, N), t in sorted(q4k_tensors(gguf_path, kind="Q6_K").items()):  # KG4: Q6_K on the tensor cores
+        w = np.ascontiguousarray(np.asarray(t["data"]))
+        x = rng.standard_normal((max(MMA_BATCHES), K)).astype(np.float32)
+        copies6 = 2 if w.nbytes > 100e6 else copies  # the output matrix: 319 MB a copy
+        best6: dict[int, dict[str, Any]] = {}
+        for B in MMA_BATCHES:
+            for i, (Tt, R, W, KB, SK) in enumerate(MMA6_VARIANTS):
+                if Tt != (B + 7) // 8:
+                    continue
+                us, err = ctypes.c_double(), ctypes.c_double()
+                code = lib.kg_measure_mma6(i, w.ctypes.data, N, K, x.ctypes.data, B, copies6, reps, ctypes.byref(us),
+                                           ctypes.byref(err))
+                row = {"K": K, "N": N, "B": B, "kind": "mma6", "type": TYPE_Q6_K, "T": Tt, "R": R, "W": W, "KB": KB,
+                       "SK": SK, "us": round(us.value, 2), "rel_err": err.value, "code": code}
+                measured.append(row)
+                if code == 0 and err.value <= bound and (B not in best6 or us.value < best6[B]["us"]):
+                    best6[B] = row
+        for B in range(1, max(MMA_BATCHES) + 1):  # one tile of 8 tokens serves 1-8 at about the price measured at 8
+            top = best6.get(-(-B // 8) * 8)
+            if top is not None:
+                entries.append({**{k: top[k] for k in ("K", "N", "kind", "type", "T", "R", "W", "KB", "SK", "us")},
+                                "B": B})
+                log(json.dumps({"kg_tuned": entries[-1]}))
     return {"version": KG_VERSION, "fingerprint": fingerprint(), "arch": arch, "entries": entries,
             "error_bound": bound, "compile_s": round(compile_s, 1), "tune_s": round(time.time() - started, 1),
             "measured": measured}
@@ -828,7 +1069,7 @@ def ensure(gguf_path: str, cache: Path, log=print) -> Path | None:
     if nvcc_path() is None or compute_capability() is None:
         return None
     fp = fingerprint()
-    shapes = sorted(q4k_tensors(gguf_path))
+    shapes = sorted(q4k_tensors(gguf_path)) + sorted(q4k_tensors(gguf_path, kind="Q6_K"))
     if not shapes:
         return None
     key = hashlib.sha256(json.dumps({"fp": fp, "shapes": shapes}, sort_keys=True).encode()).hexdigest()[:16]
@@ -842,5 +1083,5 @@ def ensure(gguf_path: str, cache: Path, log=print) -> Path | None:
     return build(table, out)
 
 
-__all__ = ["BATCHES", "KG_VERSION", "MMA_BATCHES", "MMA_VARIANTS", "build", "ensure", "fingerprint", "library_source", "q4k_tensors", "tune",
+__all__ = ["BATCHES", "KG_VERSION", "MMA6_VARIANTS", "MMA_BATCHES", "MMA_VARIANTS", "build", "ensure", "fingerprint", "library_source", "q4k_tensors", "tune",
            "tune_source", "variants"]

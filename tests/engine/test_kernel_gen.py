@@ -16,9 +16,18 @@ def test_kg4_library_serves_up_to_32_tokens_and_builds_tensor_core_entries():
         {"K": 2560, "N": 9728, "B": 3, "L": 8, "R": 2, "W": 4, "us": 1.0},
         {"K": 2560, "N": 9728, "B": 20, "kind": "mma", "T": 3, "R": 2, "W": 4, "KB": 1, "SK": 1, "us": 1.0}]}
     src = kg.library_source(table)
-    assert "{2560, 9728, 20, nullptr, nullptr, launch_mma<3, 2, 4, 1, 1>, 3}," in src
-    assert "{2560, 9728, 3, launch<8, 2, 4, 3>, nullptr, nullptr, 0}," in src
+    assert "{12, 2560, 9728, 20, nullptr, nullptr, launch_mma<3, 2, 4, 1, 1>, nullptr, 3}," in src
+    assert "{12, 2560, 9728, 3, launch<8, 2, 4, 3>, nullptr, nullptr, nullptr, 0}," in src
     assert "B > 32" in src and "quantize_frag(" in src
+
+
+def test_kg4_q6k_entries_are_typed_and_dispatched_with_their_own_layout():
+    table = {"arch": "75", "entries": [
+        {"K": 2560, "N": 151936, "B": 32, "kind": "mma6", "type": 14, "T": 4, "R": 1, "W": 8, "KB": 2, "SK": 1, "us": 1.0}]}
+    src = kg.library_source(table)
+    assert "{14, 2560, 151936, 32, nullptr, nullptr, nullptr, launch_mma6<4, 1, 8, 2, 1>, 4}," in src
+    assert "type != 14" in src and "e.type == type" in src and "hit->mm6 != nullptr" in src
+    assert {v[0] for v in kg.MMA6_VARIANTS} == {1, 2, 3, 4}
 
 
 def test_kg4_the_engine_keeps_a_tile_count_where_its_step_is_faster(monkeypatch):
