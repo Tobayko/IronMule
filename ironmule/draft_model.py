@@ -33,7 +33,10 @@ class DraftStop:
     that steps with drafts really made against what plain steps make; where drafting measured slower it stops, and is
     tried again once in `PROBE` steps (the load or the text may have changed)."""
 
-    PROBE, TRUST = 200, 8
+    # DM2: once measured slower, drafting is tried again every PROBE steps; at 200 a few bad samples (a T4 at one
+    # request: 24.2 tok/s measured with drafts) kept it off for a whole stream of requests, at 25 it costs at most 4 %
+    # of the steps where drafting really is slower
+    PROBE, TRUST = 25, 8
 
     def __init__(self) -> None:
         self.tried = [2.0] * BINS
@@ -167,6 +170,9 @@ class Drafter:
         self.slot_of: dict[int, int] = {}  # the target's sequence -> slot
         self._pending: dict[int, tuple[int, list[float]]] = {}  # sequence -> (context length, confidences) of its drafts
         self.step_seconds = 0.0  # seconds the draft model took for the step being built
+        # DM2: of those, the seconds it spent reading a request's new tokens (a new prompt) before its first draft: paid
+        # once per request, not per draft, so the check of whether drafting pays at this load leaves them out
+        self.catchup_seconds = 0.0
 
     def _assign(self, key: int, context: Sequence[int]) -> int | None:
         free = [slot for slot in self.held if slot not in self.slot_of.values()]
@@ -181,13 +187,15 @@ class Drafter:
         self.slot_of.pop(key, None)
         self._pending.pop(key, None)
 
-    def _call(self, rows: list[tuple[int, int, int, bool]]) -> list[tuple[int, float]]:
+    def _call(self, rows: list[tuple[int, int, int, bool]], catchup: float = 0.0) -> list[tuple[int, float]]:
+        """One draft-model call; `catchup` is the share of its rows that only read new context (DM2)."""
         import time
 
         started = time.perf_counter()
         out = self.e._decode_conf(rows)
         seconds = time.perf_counter() - started
         self.step_seconds += seconds
+        self.catchup_seconds += seconds * catchup
         if len(out) == len(rows):  # a call of draft rows only (a catch-up carries more tokens than drafts)
             self.stop.observe_call(seconds, len(rows))
         return out
@@ -195,7 +203,7 @@ class Drafter:
     def draft(self, wants: dict[int, tuple[Sequence[int], int]], running: int) -> dict[int, list[int]]:
         """Drafts for the requests in `wants` (sequence -> (its tokens so far, how many drafts it has room for)), as
         many as the rule gives; {} where it gives none. `running` is the number of requests in the step."""
-        self.step_seconds = 0.0
+        self.step_seconds = self.catchup_seconds = 0.0
         if running > self.max_running:
             return {}
         keys = [k for k in wants if k in self.slot_of or self._assign(k, wants[k][0]) is not None]
@@ -214,11 +222,11 @@ class Drafter:
             feed = context[shared:]
             while len(feed) > CHUNK:  # a long catch-up (a new prompt) goes first on its own, without logits
                 part, feed = feed[:CHUNK], feed[CHUNK:]
-                self._call([(t, len(held) + j, slot, False) for j, t in enumerate(part)])
+                self._call([(t, len(held) + j, slot, False) for j, t in enumerate(part)], catchup=1.0)
                 held.extend(part)
             rows += [(t, len(held) + j, slot, j == len(feed) - 1) for j, t in enumerate(feed)]
             held.extend(feed)
-        picks = self._call(rows)
+        picks = self._call(rows, catchup=(len(rows) - len(keys)) / max(1, len(rows)))  # one row per request drafts
         state = {key: {"next": picks[i], "drafts": [], "conf": [], "q": 1.0} for i, key in enumerate(keys)}
         expected, spent, going = 0.0, self.step_seconds, list(keys)
         while going:
@@ -267,8 +275,9 @@ class Drafter:
 
     def end_step(self, seconds: float, running: int, draft_rows: int, tokens: int) -> None:
         """The step the drafts were for took `seconds` and made `tokens` tokens."""
-        self.stop.observe_step(seconds, running, draft_rows, tokens, self.step_seconds if draft_rows else 0.0)
-        self.step_seconds = 0.0
+        self.stop.observe_step(seconds, running, draft_rows, tokens,
+                               max(1e-6, self.step_seconds - self.catchup_seconds) if draft_rows else 0.0)
+        self.step_seconds = self.catchup_seconds = 0.0
 
     def summary(self) -> dict[str, Any]:
         return {"slots": len(self.held), "max_running": self.max_running, **self.stop.summary()}
@@ -279,4 +288,21 @@ class Drafter:
             close()
 
 
-__all__ = ["DraftStop", "Drafter"]
+# DM2: a draft model measured on a T4 for each family (SG1 v3), named for `ironmule serve` to suggest; it is never
+# downloaded without the user's own command. Gemma 3's 1B model is left out: its vocabulary is not the 4B model's.
+DRAFTS = (("qwen3", "Qwen/Qwen3-0.6B-GGUF", "Qwen3-0.6B-Q8_0.gguf"),
+          ("llama-3.1", "bartowski/Llama-3.2-1B-Instruct-GGUF", "Llama-3.2-1B-Instruct-Q8_0.gguf"))
+
+
+def suggest_draft(gguf: str) -> dict[str, str] | None:
+    """A draft model of the same family as `gguf` (by its file name), with the command that would download it."""
+    name = gguf.replace("\\", "/").rsplit("/", 1)[-1].lower().replace("_", "-")
+    for family, repo, file in DRAFTS:
+        if family in name and file.lower().replace("_", "-") not in name:
+            return {"repo": repo, "file": file,
+                    "download": f"curl -L -o {file} https://huggingface.co/{repo}/resolve/main/{file}",
+                    "use": f"--draft-gguf {file}"}
+    return None
+
+
+__all__ = ["DRAFTS", "DraftStop", "Drafter", "suggest_draft"]

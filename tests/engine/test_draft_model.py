@@ -82,3 +82,36 @@ def test_unsure_drafts_end_the_chain_early():
     drafter = prepared(confidence=0.15)
     out = drafter.draft({1: ([5, 6], 6)}, running=1)
     assert len(out[1]) == 1  # the first draft is computed and offered (a row is cheap); no second call
+
+
+def test_dm2_reading_a_new_prompt_once_is_not_counted_against_drafting():
+    import time
+
+    class Slow(Engine):
+        def _decode_conf(self, rows):
+            time.sleep(0.0005 * len(rows))  # a call's seconds grow with its rows, as on a real machine
+            return super()._decode_conf(rows)
+
+    drafter = Drafter(Slow())
+    drafter.stop.by_rows, drafter.stop.call = {1: 0.080, 4: 0.088}, {1: 0.016, 2: 0.018}
+    for _ in range(300):
+        drafter.stop.learn([0.9, 0.9, 0.9], 3)
+    prompt = list(range(600))  # a new request: 600 tokens to read before the first draft (two chunks and the rest)
+    out = drafter.draft({1: (prompt, 3)}, running=1)
+    assert out[1] and drafter.catchup_seconds > 0.25 and drafter.step_seconds > drafter.catchup_seconds
+    drafting = drafter.step_seconds - drafter.catchup_seconds
+    drafter.end_step(0.088, running=1, draft_rows=len(out[1]), tokens=3)
+    made = drafter.stop.rate[1][0]
+    assert abs(made - 3 / (0.088 + drafting)) < 1e-6  # the rate check sees the drafts' cost, not the prompt's reading
+    assert drafter.catchup_seconds == 0.0 and drafter.step_seconds == 0.0
+
+
+def test_dm2_serve_names_a_measured_draft_model_of_the_same_family_and_downloads_nothing():
+    from ironmule.draft_model import suggest_draft
+
+    qwen = suggest_draft("/models/Qwen3-4B-Q4_K_M.gguf")
+    assert qwen["file"] == "Qwen3-0.6B-Q8_0.gguf" and qwen["download"].startswith("curl -L -o Qwen3-0.6B-Q8_0.gguf ")
+    assert suggest_draft("Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")["repo"] == "bartowski/Llama-3.2-1B-Instruct-GGUF"
+    assert suggest_draft("gemma-3-4b-it-Q4_K_M.gguf") is None  # its 1B model's vocabulary differs
+    assert suggest_draft("Qwen3-0.6B-Q8_0.gguf") is None  # the draft model itself needs none
+    assert suggest_draft("Mistral-7B-Instruct-v0.3-Q4_K_M.gguf") is None

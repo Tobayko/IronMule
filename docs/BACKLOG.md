@@ -120,7 +120,11 @@ spread between rounds (207-255 for the same arm). Tried and dropped: padding 17-
 (PAD2, LAB.md: the probe's serving steps of 17-30 rows cost 74-88 ms against 48-61 ms for 32, but a step of 17-32 tokens
 measured on its own rises evenly, 29-36 ms, and blocks of 20 / 24 / 28 requests cost 58 / 59 / 65 ms a step, so the gap
 came from the steps' contexts, not their width). Also tried: compacting the KV cache and bounding the kept prefix
-cache (KVD1, LAB.md): equal steps on a T4, kept off. Open: why serving steps with uneven contexts in the shared pool
+cache (KVD1, LAB.md): equal steps on a T4, kept off. Tokens per second (DM2, 2026-11-17, LAB.md): with the draft model,
+whose stop rule no longer counts reading a new prompt against drafting, one request makes 1.23x (54.1 against 44.1
+tok/s, four balanced rounds after a warm-up) and new requests one at a time 1.19x; 8 and 32 requests the same, the
+facts the same. So the kill rule's tokens-per-second part holds at 1 request with a draft model attached, not at 8
+and 32, where the draft model rests and the step is the kernels' alone. Open: why serving steps with uneven contexts in the shared pool
 cost up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
 
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
