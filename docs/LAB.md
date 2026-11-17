@@ -1684,6 +1684,89 @@ Read: a step's width is not what made the probe's 17-30-row steps dear; those st
 whose contexts in the shared pool are uneven, while the 32-row steps came mostly from blocks. Dropped (the engine
 change reverted, the harness mode kept). Open: why such steps cost up to 1.5x a block's step of the same width.
 
+## 2026-11-16 KVD1: the attended KV range on a T4, no gain, kept off
+
+Hypothesis from PAD2: every step attends over the cells up to the highest one in use (llama.cpp `used_max_p1`), and
+the shared pool's 32,768 cells fill from wherever llama.cpp's head stands, so after many requests a step reads most of
+the cache. Two levers, both off unless set: llama.cpp's defragmentation threshold (`IRONMULE_GGML_DEFRAG`) and a budget
+for the cells finished sequences keep as a prefix cache (`IRONMULE_GGML_KEEP`). On this CPU neither changed a step (255
+ms for 8 rows fresh, 231 after 40 kept prompts; 287 with defragmentation). Kaggle T4, `lab/pi3/kaggle_gpu_probe.py` in
+`PI3_MODE=kvd` at e2da4dd, 18 minutes: per arm its own engine, 8 requests fresh, then 60 kept 1,364-token prompts, then
+8 and 32 requests and both arrival patterns; two rounds, the order reversed. tok/s (round 1, round 2):
+
+| arm | 8 fresh | 8 after the fill | 32 after the fill | chat | mixed | cells in use |
+| --- | --- | --- | --- | --- | --- | --- |
+| base | 289, 237 | 230, 212 | 525, 495 | 260, 302 | 84.6, 58.5 | 24,027, 26,389 |
+| defrag 0.1 | 253, 254 | 225, 226 | 502, 498 | 264, 299 | 84.9, 58.1 | 22,757, 26,486 |
+| defrag 0.1, keep a quarter | 252, 253 | 225, 223 | 494, 490 | 260, 300 | 94.6, 60.9 | 7,596, 7,953 |
+
+Facts 49 of 50 in every arm, the 50 fact answers token for token the same as the base's in both others.
+
+Read: after the fill the steps are equally dear in all three arms, though the budget cut the cells in use from about
+25,000 to 7,700; so a step's attended range is not what makes it dear on a T4, and defragmentation does nothing
+measurable either. Mixed traffic with the budget: 94.6 against 84.6 tok/s in the first round, 60.9 against 58.5 in
+the second (all arms lost a third between the rounds), inside the T4's spread. Both levers stay off; the code stays
+for a machine where they pay. The fresh-to-filled drop (about 11 % in every arm) and the 1.5x of uneven serving steps
+remain unexplained.
+
+## 2026-11-16 DM2: the draft model on a T4, its rate check fixed
+
+The draft model's stop rule pauses drafting for PROBE steps where steps with drafts measured slower than plain ones.
+Their cost included the draft model's catch-up on a new request's prompt, paid once per request, so a stream of new
+requests turned drafting off (PI3 probe: 35.3 tok/s measured with drafts for one request; its first round 57 against 39
+without). Catch-up seconds are now kept out of that check. On this CPU (Qwen3-4B Q4_K_M with Qwen3-0.6B Q8_0, 12
+requests one after another with new 200-400-token prompts, 64 tokens): 365 drafts in 768 tokens instead of 139, 7.3
+tok/s measured with drafts against 7.0 plain; overall 4.62 against 4.64 tok/s (prompts dominate on a CPU, and the draft
+model reads them too). On a GPU, `ironmule serve` now names a draft model of the same family measured on a T4 (Qwen3,
+Llama 3.1) with the command that would download it, and downloads nothing.
+
+Kaggle T4, `lab/pi3/kaggle_gpu_probe.py` in `PI3_MODE=dm2` at 12af3c0, 10 minutes, each arm on its own fresh engine, two
+rounds in reversed order. (The harness fetched `pilot_weights.npz` only, so here and in PAD2 and KVD1 the CPU weights
+decided on the GPU; the same in both arms. Fixed for later runs.) tok/s, round 1 and round 2:
+
+| | with the draft model | without |
+| --- | --- | --- |
+| 1 request (4 x 128 tokens) | **60.2, 52.2** | 45.2, 43.8 |
+| 16 requests one after another, new prompts | **53.4**, 40.7 | 40.2, 40.2 |
+| 8 at once | 265.7, 260.8 | 264.2, 262.9 |
+| 32 at once | 604.7, 602.3 | 599.8, 591.8 |
+| chat arrivals | 329.5, 324.8 | 332.5, 335.0 |
+| mixed arrivals | 73.0, 115.7 | 72.8, 115.8 |
+
+Answers: 49 of 50 facts with and without it, the 50 fact answers token for token the same. 1,955 and 852 drafts, 74 %
+and 79 % accepted. Read: one request 1.26x on average (1.33x and 1.19x); 8 and 32 requests and both arrival patterns
+the same within 2 % (the draft model rests beyond 2 running requests, by design). In the second round the check
+measured 24.2 tok/s with drafts for one request and paused drafting, so the requests one after another gained 1 %
+there against 33 % in the first; it tried again only every 200 steps. PROBE is now 25.
+
+Confirmation at cfa3049 (PROBE 25, the GPU weights now fetched and deciding), 10 minutes, the same design: one request
+60.7 / 46.2 with the draft model against 46.1 / 44.0 without (round 1 / round 2), one after another 53.9 / 39.8 against
+39.2 / 38.9, 8 and 32 requests and both arrival patterns the same within 2 %; 49 of 50 facts, 48 of 50 fact answers the
+same; drafts measured at 56.3 tok/s for one request (no pause). Read: in both runs the draft model won most where it
+ran first in the session (+32-37 %), where the T4 still runs at its higher starting clock (the probe: 55 against 42
+tok/s in its first cell), and less where it ran second (+19 % and +5 %). So the gain for one request lies between
+about 5 % and 20 %, not settled; a run that warms the T4 first and orders the arms with, without, without, with
+settles it.
+
+The settling run at 982f9bc (`PI3_WARM_S=180`, `PI3_ABBA=1`), 23.5 minutes: 3 minutes of 8-request blocks first (41
+blocks, the last at 218 tok/s), then four rounds in the order with, without / without, with / without, with / with,
+without, each arm on a fresh engine, the GPU weights deciding. tok/s per round and the mean:
+
+| | with the draft model | without | ratio |
+| --- | --- | --- | --- |
+| 1 request (4 x 128 tokens) | 51.8, 53.6, 55.2, 55.7: **54.1** | 45.0, 43.7, 43.5, 44.3: 44.1 | **1.23x** |
+| 16 requests one after another, new prompts | 48.3, 49.8, 48.6, 48.3: **48.8** | 40.6, 40.0, 41.3, 41.7: 40.9 | **1.19x** |
+| 8 at once | 261.4 | 263.8 | 0.99x |
+| 32 at once | 598.1 | 598.1 | 1.00x |
+| chat arrivals | 341.9 | 342.2 | 1.00x |
+| mixed arrivals | 89.5 | 89.7 | 1.00x |
+
+1,910-2,009 drafts per round, 74-76 % accepted; 49 of 50 facts with and without it, 49 of 50 fact answers token for
+token the same. Read: with the draft model one request on a T4 makes 1.23x the tokens per second and a stream of new
+requests one at a time 1.19x, in every one of the four pairs (+15 % to +28 %), whichever arm ran first; from 8 requests
+on the same as without it (it rests beyond two). DM2 ships: the rate check without the catch-up, PROBE 25, and
+`ironmule serve` naming the draft model on a GPU.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

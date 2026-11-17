@@ -98,6 +98,7 @@ def build():
     pkg.mkdir(parents=True, exist_ok=True)
     (pkg / "__init__.py").write_text("")
     for name in ("ggml_engine.py", "speculation.py", "ggml_agent.py", "pilot.py", "draft_model.py", "pilot_weights.npz",
+                 "pilot_weights_gpu.npz",
                  "kernel_gen.py"):
         url = f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/ironmule/{name}"
         (pkg / name).write_bytes(urllib.request.urlopen(url, timeout=60).read())

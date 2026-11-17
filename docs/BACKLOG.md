@@ -99,7 +99,7 @@ passes when its share of correct answers is not lower than the reference's by mo
 noise. It joins the perplexity gate for every path that changes tokens; its protocol is fixed before it serves a
 decision.
 
-### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; GPU weights shipped, two parts open)
+### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; accepted by the owner 2026-11-17)
 
 **Why.** The owner's goal above: the Pilot keeps running on the CPU, and the model it steers is to run perfectly on
 the GPU. Today the Pilot's thread head means nothing when the layers run on a GPU, and the
@@ -131,8 +131,20 @@ open. Short chats alone: 228.5 against 238.6 tokens per second, first token 0.83
 spread between rounds (207-255 for the same arm). Tried and dropped: padding 17-30 rows to 32
 (PAD2, LAB.md: the probe's serving steps of 17-30 rows cost 74-88 ms against 48-61 ms for 32, but a step of 17-32 tokens
 measured on its own rises evenly, 29-36 ms, and blocks of 20 / 24 / 28 requests cost 58 / 59 / 65 ms a step, so the gap
-came from the steps' contexts, not their width). Open: why serving steps with uneven contexts in the shared pool cost
-up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
+came from the steps' contexts, not their width). Also tried: compacting the KV cache and bounding the kept prefix
+cache (KVD1, LAB.md): equal steps on a T4, kept off. Tokens per second (DM2, 2026-11-17, LAB.md): with the draft model,
+whose stop rule no longer counts reading a new prompt against drafting, one request makes 1.23x (54.1 against 44.1
+tok/s, four balanced rounds after a warm-up) and new requests one at a time 1.19x; 8 and 32 requests the same, the
+facts the same. So the kill rule's tokens-per-second part holds at 1 request with a draft model attached, not at 8
+and 32, where the draft model rests and the step is the kernels' alone.
+
+**Owner decision (2026-11-17).** Asked whether to go on with a kernel project for more tokens per second at 8 and
+32 requests (the generated kernels of KG1 extended to steps of 9-32 tokens; vLLM AWQ makes 419 tok/s at 8 requests on
+the T4, the engine about 270), the owner chose to accept the state: the Pilot decides on the CPU in 0.11-0.19 ms, on a
+GPU it brings the first token sooner (mixed arrivals 5.22 against 11.76 s) and, with a draft model attached, one
+request 1.23x. More tokens per second at 8 and 32 requests on a GPU is kernel work, not a Pilot decision; it stays
+open as its own entry when the owner reopens it. Open: why serving steps with uneven contexts in the shared pool
+cost up to 1.5x a block's step of the same width, and the GPU a new request joins when there are several.
 
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 

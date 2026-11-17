@@ -60,6 +60,12 @@ COLLECTIVE = os.environ.get("IRONMULE_GGML_COLLECTIVE", "1") != "0"  # SP4
 # Only with one unified KV cache: per-sequence caches split a step whose sequences carry different token counts into
 # several passes (MG2 v5, 8 requests on a T4: 271 tok/s with the shared pool, 95 per-sequence, 150 per-sequence unpadded).
 PAD = os.environ.get("IRONMULE_GGML_PAD", "")
+# KVD1 (experiment): llama.cpp's KV defragmentation threshold (0 = off, its default). Every step attends over the cells
+# up to the highest one in use, so a pool whose kept and running sequences drift up the cache pays for its holes.
+DEFRAG = float(os.environ.get("IRONMULE_GGML_DEFRAG", 0) or 0)
+# KVD1 (experiment): the share of the pool's cells that finished sequences may keep as a prefix cache (1 = all, as
+# before); beyond it the least recently used go when a request ends, so fewer cells sit in every step's attended range.
+KEEP = float(os.environ.get("IRONMULE_GGML_KEEP", 1) or 1)
 # KG1 (2026-11-15): a kernel library generated and tuned for this GPU (ironmule/kernel_gen.py), loaded by llama.cpp's
 # kg1 hook from IRONMULE_KG_LIB. The engine measures its own step for 1-8 tokens with the library on and off at
 # startup and keeps it only for the token counts where the step is faster.
@@ -264,6 +270,7 @@ class SharedPool:
         from collections import OrderedDict
 
         self.e, self.cells, self.cap, self.slack = engine, cells, cap, slack
+        self.keep_cells = int(KEEP * cells) if KEEP < 1 else None  # KVD1: the cells finished sequences may hold
         self.free_ids = list(range(ids))
         self.tokens: dict[int, list[int]] = {}  # sequence -> the tokens its cells hold, from position 0
         self.nodes: dict[int, list[int]] = {}  # sequence -> one node per held position
@@ -278,6 +285,11 @@ class SharedPool:
     @property
     def used(self) -> int:
         return len(self.ref)
+
+    def kept_cells(self) -> int:
+        """Cells that only finished sequences hold (the prefix cache)."""
+        running = {node for seq in self.active for node in self.nodes.get(seq, [])}
+        return self.used - len(running)
 
     def slots(self) -> int:
         return max(0, self.cap - len(self.active))
@@ -380,6 +392,9 @@ class SharedPool:
             self.sync(seq, held, 0)
             self.reserve.pop(seq, None)
             self.kept[seq] = None
+            if self.keep_cells is not None:  # KVD1: the oldest finished sequences go beyond the budget
+                while self.kept_cells() > self.keep_cells and self._evict(None):
+                    pass
         else:
             self.e.L.llama_memory_seq_rm(self.e.memory, seq, -1, -1)
             self._unref(self.nodes.pop(seq, []))
@@ -605,6 +620,8 @@ class GgmlEngine:
         params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, seq_ctx, 512
         params.n_seq_max, params.n_threads, params.n_threads_batch = ids, threads, threads
         params.flash_attn, params.kv_unified = bool(flash_attn), bool(kv_unified)  # GG1: measured at the first start
+        if DEFRAG > 0:  # KVD1: llama.cpp compacts the cache when holes reach this share of its attended range
+            params.defrag_thold = DEFRAG
         if kv_f32:  # GG1, second amendment: the KV cache in full precision (GGML_TYPE_F32) instead of f16
             params.type_k = params.type_v = 0
         if kv_q8:  # KV1 (2026-11-13): llama.cpp's 8-bit KV cache (GGML_TYPE_Q8_0, `-ctk q8_0 -ctv q8_0`), half the bytes
