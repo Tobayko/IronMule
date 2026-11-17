@@ -9,7 +9,7 @@ against the shared pool (`IRONMULE_GGML_STREAMS=0`), through the HTTP API.
    counted), and the 50 facts of lab/row1/facts.py 8 at a time.
 Writes /kaggle/working/kg3_serve.json. LOCAL=dir runs the same on this machine (CPU: the pool arm only).
 """
-import glob, http.client, json, os, socket, subprocess, sys, threading, time, urllib.request
+import glob, http.client, json, os, socket, subprocess, sys, threading, time
 from pathlib import Path
 
 COMMIT = os.environ.get("MG2_COMMIT", "main")
