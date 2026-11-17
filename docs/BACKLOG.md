@@ -168,7 +168,8 @@ until the owner reopens them.
 costing 4-5x on bursts of medium prompts: refuted, the low numbers came from short answers. On the T4 with one KV
 stream per request the budget cost 2-9 % on blocks of 8-32 medium prompts and gained nothing elsewhere (facts 49 of 50
 in every arm), so with one KV stream per request on a GPU the engine no longer holds it (every prompt has its own call
-there); the shared pool and the CPU keep it.
+there); the shared pool and the CPU keep it. Confirmed on the T4 after the merge: the Pilot equals the Pilot-off
+engine on the blocks (32 medium prompts 102.3 against 102.4 tok/s), 49 of 50 facts.
 
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
