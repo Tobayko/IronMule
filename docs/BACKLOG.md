@@ -182,6 +182,35 @@ either way. Open: attention (10-25 ms of a 32-request step) and Q6_K beyond 8 to
 training on the KG4-era costs was checked first in the dream world (LAB.md, PI4): the shipped weights are already at
 the best of the remaining decisions there, so the owner chose not to spend the quota on it.
 
+### NEXT — What would take the GPU further, by what it is worth (noted 2026-11-17 at the owner's request; not started)
+
+Measured on a Kaggle T4 with Qwen3-4B Q4_K_M after KG4 (LAB.md, KG4 and PI4); each item needs the owner's approval
+before it spends GPU quota.
+
+1. **KG5: attention for one query per KV stream.** The largest single cost left: llama.cpp's flash attention takes
+   10.5 ms of a 49 ms step at 32 requests and context 300, about 25 ms at context 1,000, reading the KV cache at about
+   134 GB/s of the card's 320. On Turing with f16 KV and grouped heads llama.cpp always picks its tensor-core kernel
+   (`fattn.cu`: `mma_faster_for_bs1`); a decode kernel that reads each KV head once for its 4 query heads could near
+   halve it. Needs a hook in `ggml-cuda/fattn.cu` (a patch beside kg1) and one rebuild of llama.cpp (about 57 minutes,
+   kept as a kernel output as KG2's build is). Kill: no 10 % shorter 32-request step at context 1,000.
+2. **The library's activation quantization.** `quant_frag` costs 1.5 ms of a 32-request step against llama.cpp's 0.8
+   (one warp per 32 values, 216 launches). Wider work per warp, or one quantization shared by the matmuls that read the
+   same activations (Q, K, V; gate and up), with a check that the buffer is unchanged. Worth about 0.7-1.5 ms (2-3 %).
+3. **Q6_K from 16 tokens on.** llama.cpp's own kernel wins there (5.25 against 6.60 ms at 16 tokens); the output
+   matrix alone is 2.8-3.8 ms of it, read at about 100 GB/s. Worth up to about 2 ms at 32 requests.
+4. **A tuning memory (idea from arXiv 2611.18856, "Self-Improvement Memory").** The paper keeps, beside each change,
+   why it was tried, what it was predicted to fix and what it fixed, and continues better from that record than from the
+   result alone (+2.4 points on average over ten paired coding runs; agent harnesses, not serving). For IronMule: the
+   kernel library is tuned from nothing for every GPU and model (3-4 minutes on a T4 at the first start); a record of
+   which variants won on which GPU and shape, and by how much, could start the tuning from the few likely winners.
+   Shortens the first start, not the answers.
+5. **The gap to vLLM.** vLLM AWQ on the same T4: 419 / 861 tok/s at 8 / 32 requests against IronMule's 310 / 627 (one
+   GPU). Items 1-3 together would close part of it at 32 requests; CUDA graphs (off on Turing in llama.cpp, gr1 can
+   force them for one token) are the other known difference.
+
+Not worth the quota now: a new GPU Pilot training (PI4: the shipped weights are already at the best decisions left
+on such a GPU).
+
 ### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
 
 `ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among
