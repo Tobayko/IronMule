@@ -1811,6 +1811,19 @@ stream the same number of drafts in that mode (the pool is unchanged); 8 of 8 an
 pool's with requests arriving mid-run. (The prompt budget of 128 the GPU Pilot holds lets in one 420-token prompt per
 step, which is why those blocks are slow in every arm.)
 
+KG3 v2 at 9cbd5a2 (prompts in their own call, equal drafts per stream; `PI3_STREAMS_V=2`), 19.4 minutes: two
+minutes of warm-up, four rounds (pool, streams / streams, pool / streams, pool / pool, streams), one stream per request
+with 32 x 2,048 cells and speculation. tok/s, mean of four rounds, streams against the pool: 8 requests of ~420-token
+prompts 63.3 against 82.6 (0.77x), 20 requests 80.2 against 73.9 (1.08x), 32 requests 75.1 against 52.2 (1.44x), 32
+short requests at once 473 against 348 (1.36x), mixed arrivals 88.3 against 79.8 (1.11x, first token 2.4 against 5.6
+s), chat arrivals 154 against 320 (0.48x); 49 of 50 facts either way. The logged steps show why chat lost: with streams
+a step of 32 rows cost 46 ms but one of 10 rows 209 ms and of 5 rows 103 ms. llama.cpp keeps a call over KV streams in
+one pass only while its sequence ids run consecutively (`split_equal(..., sequential=true)`); once a request ends, the
+running ones leave gaps and every step splits into a pass per run. The engine now fills such a gap with placeholder
+rows for the free id (the BOS token past what its stream holds, no logits, removed after the step) and gives a new
+request the lowest free id unless a kept prefix of 64 tokens or more is elsewhere; on this CPU 8 of 8 answers with
+requests arriving mid-run are the pool's.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the

@@ -688,3 +688,27 @@ def test_kg3_with_one_kv_stream_per_sequence_a_new_prompt_gets_its_own_call():
 
     engine2.run([Job([1, 2, 3], 4)], admit=admit2)
     assert any(len({s for _, _, s in call}) == 2 and len(call) == 5 for call in fed2)
+
+
+def test_kg3_a_free_id_between_running_streams_gets_placeholder_rows_that_are_removed_again():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, removed = _stub_engine()
+    engine.settings = {"kv_unified": False}
+    engine.L.llama_vocab_bos = lambda vocab: 1
+    a, b, c = Job([1, 2], 6), Job([3, 4], 2), Job([5, 6], 6)
+    engine.run([a, b, c])  # b (the middle id) ends first; a and c run on around its free id
+    assert len(b.tokens) == 2 and len(a.tokens) == len(c.tokens) == 6
+    held = len(engine._kept.get(1) or ())
+    fillers = [call for call in fed if (1, held, 1) in call]
+    assert fillers and all([s for _, _, s in call] == [0, 1, 2] for call in fillers)  # one call over ids 0..2
+    assert (1, held, -1) in removed  # the placeholder's cell is removed after each such step
+
+
+def test_kg3_a_new_request_takes_the_lowest_free_stream():
+    engine, _, _ = _stub_engine()
+    engine.settings = {"kv_unified": False}
+    engine._free, engine._kept = [3, 1, 2], {3: [9, 9, 9]}
+    assert engine._take_sequence([5, 6, 7]) == (1, 0)
+    engine._kept = {3: list(range(80))}
+    assert engine._take_sequence(list(range(70)) + [5]) == (3, 70)  # a long kept prefix still wins
