@@ -259,9 +259,21 @@ def main():
 
     if DM2:
         OUT["dm2"], answers = [], {}
+        warm = float(os.environ.get("PI3_WARM_S", 0))  # DM2 v2: hold the T4 busy first, past its starting clock
+        if warm > 0:
+            e, tok_ = open_engine()
+            tok = tok_
+            t0, n = time.time(), 0
+            while time.time() - t0 < warm:
+                e.run([Job(ids_of(chat_text(k)), 128) for k in range(8)])
+                n += 1
+            OUT["warm"] = {"seconds": round(time.time() - t0, 1), "blocks": n, "last8": block(e, 8, 128, blocks=1)}
+            e.close()
         arms = [("draft", draft), ("plain", None)]
-        for rep in range(1 if SMOKE else 2):
-            for arm, dg in (arms if rep == 0 else arms[::-1]):
+        order = ([arms, arms[::-1], arms[::-1], arms] if os.environ.get("PI3_ABBA")  # with, without, without, with
+                 else [arms, arms[::-1]][:1 if SMOKE else 2])
+        for rep, pair in enumerate(order):
+            for arm, dg in pair:
                 e, tok_ = open_engine(dg)
                 tok = tok_
                 collect(e, f"{arm}_{rep}")

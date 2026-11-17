@@ -1739,6 +1739,15 @@ the same within 2 % (the draft model rests beyond 2 running requests, by design)
 measured 24.2 tok/s with drafts for one request and paused drafting, so the requests one after another gained 1 %
 there against 33 % in the first; it tried again only every 200 steps. PROBE is now 25.
 
+Confirmation at cfa3049 (PROBE 25, the GPU weights now fetched and deciding), 10 minutes, the same design: one request
+60.7 / 46.2 with the draft model against 46.1 / 44.0 without (round 1 / round 2), one after another 53.9 / 39.8 against
+39.2 / 38.9, 8 and 32 requests and both arrival patterns the same within 2 %; 49 of 50 facts, 48 of 50 fact answers the
+same; drafts measured at 56.3 tok/s for one request (no pause). Read: in both runs the draft model won most where it
+ran first in the session (+32-37 %), where the T4 still runs at its higher starting clock (the probe: 55 against 42
+tok/s in its first cell), and less where it ran second (+19 % and +5 %). So the gain for one request lies between
+about 5 % and 20 %, not settled; a run that warms the T4 first and orders the arms with, without, without, with
+settles it.
+
 ## 2026-11-15 ST1: per-step Python that no longer grows with the context (tokens identical)
 
 Owner's plan (2026-11-15): algorithms first, then language, then kernels; what runs per token must not grow with the
