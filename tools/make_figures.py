@@ -645,62 +645,9 @@ def t4_plan_gates() -> dict:
     }
 
 
-#: PERF1-U step 1: per layer and position, the sorted top-8 of 256 experts Qwen3.6 35B-A3B's
-#: router picked, four WikiText-2 chunks, one fresh two-card process per arm.
-PERF1U = PERF1 / "perf1u-run1-b0cce87b" / "perf1u-summary.json"
-PERF1U_PAIRS = (
-    ("stock / stock again (A/A)", "stock_a|stock_b", "CONTROL"),
-    ("stock bf16 / float32", "fp32|stock_a", "BASELINE"),
-    ("stock bf16 / native", "native|stock_a", "CANDIDATE"),
-    ("float32 / native", "fp32|native", "SECONDARY"),
-)
-
-
-# -- figure 10: why Qwen3.6's experts cannot be gated against emulated bf16 -------
-def t4_qwen36_routing() -> dict:
-    """How often two arms pick a different expert set, against the 2% the rule allowed."""
-
-    pairs = load(PERF1U)["pairs"]
-    fig, ax = plt.subplots(figsize=(style.WIDTH_IN, 3.1))
-    for index, (label, key, colour) in enumerate(PERF1U_PAIRS):
-        y = len(PERF1U_PAIRS) - 1 - index
-        rates = [chunk["flip_rate"] * 100 for chunk in pairs[key]]
-        cells = sum(chunk["cells"] for chunk in pairs[key])
-        flips = sum(chunk["flips"] for chunk in pairs[key])
-        ax.barh(y, flips / cells * 100, height=0.6, color=getattr(style, colour))
-        ax.scatter(rates, [y] * len(rates), s=14, color=style.TEXT, zorder=4)
-        text = (f"{min(rates):.1f}-{max(rates):.1f}% per chunk" if flips
-                else f"0 of {cells:,} cells".replace(",", " "))
-        ax.annotate(text, (max(rates + [2.0]), y), textcoords="offset points", xytext=(7, 0),
-                    va="center", fontsize=9, color=style.TEXT)
-    ax.axvline(2.0, color=style.ACCENT, linewidth=1.6, zorder=3)
-    ax.annotate("the rule's bound: 2%", (2.0, len(PERF1U_PAIRS) - 0.45),
-                textcoords="offset points", xytext=(4, 0), fontsize=8.5, color=style.ACCENT)
-    ax.set_yticks(range(len(PERF1U_PAIRS)))
-    ax.set_yticklabels([label for label, *_ in reversed(PERF1U_PAIRS)])
-    ax.set_xlim(0, 36)
-    ax.set_ylim(-0.6, len(PERF1U_PAIRS) - 0.2)
-    ax.set_xlabel("cells whose top-8 of 256 experts differ, % of 40 layers x 512 positions")
-    ax.set_title("Qwen3.6 35B-A3B on a T4: bf16 and float32 route a quarter of cells differently")
-    ax.grid(axis="y", visible=False)
-
-    written = emit(fig, "t4-qwen36-routing")
-    plt.close(fig)
-    return {
-        "figure": written,
-        "sources": [PERF1U.as_posix()],
-        "device": T4,
-        "models": ["mlx-community/Qwen3.6-35B-A3B-4bit"],
-        "samples": "PERF1-U step 1: 4 WikiText-2 chunks x 512 tokens through the prefill path, "
-                   "two T4s pipelined, one fresh process per arm; bars pool the four chunks, "
-                   "dots are the chunks",
-        "intervals": "none; exact counts of 20 480 cells per chunk",
-    }
-
-
 FIGURES = (paired_ratios, session_ratios, prefill_phases, cross_platform_speedup,
            t4_native_kernels, t4_server_batching, t4_native_quality, t4_run18_rerun,
-           t4_plan_gates, t4_qwen36_routing)
+           t4_plan_gates)
 
 
 def render(destination: Path) -> list[dict]:

@@ -39,7 +39,8 @@ waiter notices and plans around it.
 
 **IronMule is that kitchen, and its head waiter is the Pilot**: a small neural network (about 22,000 numbers) that
 looks at your machine and the people asking, and decides again before every step of the language model how that step
-runs, in about a fifth of a millisecond. It never changes what the model answers. It only decides how the work is done.
+runs, in about a fifth of a millisecond. It decides how the work is done, not what the model knows: on a CPU every
+answer stays token for token the same, on a GPU a few change in wording and none in a checked fact.
 
 For developers: IronMule is a local, OpenAI-compatible LLM server. It serves GGUF models through llama.cpp's kernels
 plus its own (continuous batching, a shared prefix cache, AVX-512 and AMX attention kernels, a draft model) and MLX
@@ -59,7 +60,10 @@ machine.
 | Fact check, 50 questions (right answers) | 49 | 49 | 49 | 49 |
 
 Ollama ran with 16 parallel slots (its 32-slot setting ran out of memory on this machine; with its default it made
-7.8 tokens per second). Every engine got the same answers right: the speed costs no quality.
+7.8 tokens per second). Every engine got the same answers right: the speed costs no quality. The llama.cpp server ran
+with 32 slots, as 32 people need; it pays for every slot in each step, so with fewer people a server sized to them does
+better than these rows show: 27.3 and 40.9 tokens per second for 8 and 16 people, against IronMule's 50.4 and 71.3
+(CMP1 in [docs/LAB.md](docs/LAB.md)).
 
 **A busy server.** Real servers are rarely alone: a backup, a build or another program keeps some cores busy.
 llama.cpp-based servers then use every core anyway, and their threads keep waiting for the one that was pushed
@@ -87,7 +91,7 @@ step with checked guesses up to a size CUDA computes faster:
 
 | | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
 | :-- | --: | --: | --: | --: |
-| 8 requests, one GPU: best llama.cpp server setup | 193.5 | 195.2 | 128.0 | 119.1 |
+| 8 requests: best llama.cpp server setup (some use both GPUs) | 193.5 | 195.2 | 128.0 | 119.1 |
 | 8 requests, one GPU: IronMule | **270.7** | **263.6** | **175.1** | **157.7** |
 | 32 requests, one engine per GPU: llama.cpp server | 786.0 | 713.2 | 614.1 | 544.1 |
 | 32 requests, one engine per GPU: IronMule | **1026.9** | **1007.3** | **679.1** | **633.2** |
@@ -150,7 +154,7 @@ The Pilot has two sets of weights for this, one for CPUs and one for GPUs ([docs
 | In the dream | 240 s of dreamed serving on 1,024 random machines: 9.5 % more tokens than the engine's defaults and 74 % less waiting, and slightly ahead of the best hand rule ("threads = free cores") |
 | On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy. One busy program: 7.38 and 28.9 tokens per second for 1 and 8 users, against 1.59 and 6.65 with the defaults (4.6x and 4.3x); two: 5.56 and 20.7 against 0.29 and 1.75 (19x and 12x); half-busy: 7.64 and 28.2 against 5.90 and 23.1 (1.3x and 1.2x); idle as fast as the defaults (10.1 and 36.0 against 10.1 and 36.2). Mean of two rounds, 64-token answers ([docs/LAB.md](docs/LAB.md), PI2). On a second, older CPU it never saw (a Kaggle Xeon with 2 cores and hyper-threads) it is 3.1x the defaults for one user beside one busy program (4.25 against 1.36 tokens per second) and 4.8x beside two (2.75 against 0.57), equal when idle |
 | On a GPU | Kaggle T4, Qwen3-4B Q4_K_M, GPU weights trained from scratch in 41 minutes on two T4 in a dream built from the T4's measured costs. Requests arriving one after another, 30 % of them a 1,364-token document: the first word after 5.2 s on average instead of 11.8 s (median 1.35 s instead of 13.3 s), 80.3 against 75.4 tokens per second. 8 and 32 requests at once: the same speed (206.5 against 205.9 and 486.7 against 490.0 tokens per second), the first word sooner (0.15 against 0.17 s and 0.43 against 0.62 s). Short chats only: within the card's own spread (228.5 against 238.6 tokens per second, first word 0.83 against 0.68 s on average). 49 of 50 facts right with and without it. With a draft model attached one person gets 1.23x the tokens per second (54.1 against 44.1), new people one after another 1.19x (DM2) |
-| Answers | unchanged: every decision is a scheduling or threading choice |
+| Answers | on a CPU unchanged, token for token (checked at 4, 3, 2 and 1 threads). On a GPU its choices change how many rows a step computes, and CUDA's multi-row kernels round differently: with the draft model on or off, 48 to 49 of 50 fact answers were token for token the same and the same 49 facts right (DM2 in [docs/LAB.md](docs/LAB.md)) |
 | Safety | without weights, with inputs outside what it was trained on, or with `IRONMULE_PILOT=0`, the engine keeps its own defaults |
 
 The weights are open ([ironmule/pilot_weights.npz](ironmule/pilot_weights.npz)), and so is the code that runs them

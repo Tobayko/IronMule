@@ -5,11 +5,14 @@ on:
   pull_request:
 
 jobs:
-  # The same product suites on Linux with MLX's CPU build (AGENTS.md: cloud sessions run them this way). A hosted
-  # Linux runner costs a tenth of a macOS one; the macOS jobs below stay the reference for Apple Silicon.
+  # macOS is out of CI by the owner's decision of 2026-11-17 ("no macOS tests or checks for now; that comes
+  # later"). Its jobs had been cancelled at their start on every run since 2026-11-15, so they checked nothing.
+  # What they covered and Linux can run is here: the wheel in a clean environment, the CLI smoke, the Rust crates,
+  # the quick start from a clone, and every product suite on MLX's CPU build. Not covered until macOS returns: Metal,
+  # and the real-model integration suite on Apple Silicon (git history has the three jobs).
   linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     name: linux / py3.12 (MLX CPU)
     steps:
       - uses: actions/checkout@v4
@@ -22,30 +25,37 @@ jobs:
           python -m pip install -e ".[cpu,dev]" "ruff==0.16.6" "matplotlib==3.11.1"
       - name: Static product and measurement checks
         run: ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tools/export_evidence.py training tests/engine tests/agent tests/conftest.py tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py --select F
+      - name: Rust learning core
+        run: |
+          cargo test --offline --release --manifest-path native/experiment_planner/Cargo.toml
+          cargo build --offline --release --manifest-path native/experiment_planner/Cargo.toml
+          cargo test --offline --release --manifest-path native/online_controller/Cargo.toml
+          cargo test --offline --release --manifest-path native/serving_learner/Cargo.toml
+          cargo build --offline --release --manifest-path native/serving_learner/Cargo.toml
+          # The optimizer's process tests (tests/*.rs) size their actions to the machine's cores
+          # and expect a candidate a small runner never makes; they run on development machines.
+          cargo test --offline --release --manifest-path native/optimizer/Cargo.toml --lib
       - name: Engine test suite
         run: python -m pytest tests/engine -m "not integration"
       - name: Agent test suite
         run: python -m pytest tests/agent -m "not integration"
+      - name: Learning, runtime and evidence suites
+        run: python -m pytest tests/learning tests/runtime tests/evidence -m "not integration" -rs
       - name: Documented claims
         run: python -m pytest tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py -n 0 -rs
       - name: Figures match their evidence
         run: python tools/make_figures.py --check
 
-  macos:
-    runs-on: macos-14
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        # The engine package claims >= 3.10; tested on the two most recent series it
-        # supports.
-        python-version: ["3.11", "3.12"]
-    name: macos / py${{ matrix.python-version }}
+  # The wheel in a clean environment, and the first commands a new clone runs.
+  packaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: linux / wheel and quick start
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
       - name: Build wheel
         run: |
           python -m pip install --upgrade build
@@ -54,107 +64,14 @@ jobs:
         run: |
           python -m venv .ci-venv
           .ci-venv/bin/python -m pip install --upgrade pip
-          .ci-venv/bin/python -m pip install dist/*.whl
-          .ci-venv/bin/python -m pip install "pytest>=8" "pytest-xdist>=3" "numpy>=2"
-      - name: CLI smoke (no model)
+          .ci-venv/bin/python -m pip install "$(ls dist/*.whl)[cpu]"
+      # `doctor` exits 1 when a prerequisite is missing, which on a hosted runner is a
+      # true report rather than a failure of this job; exit 2 or a traceback still fails.
+      - name: CLI smoke and quick start (no model)
         run: |
           .ci-venv/bin/python -m ironmule_cli --help
           .ci-venv/bin/python -m ironmule_cli info
-      - name: Static product and measurement checks
-        run: |
-          .ci-venv/bin/python -m pip install "ruff==0.16.6"
-          .ci-venv/bin/ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tools/export_evidence.py training tests/engine tests/agent tests/conftest.py tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py --select F
-      # The engine package's own suite depends on nothing outside the repository, so
-      # it runs anywhere. AGENTS.md keeps hardware/speed claims on the target device;
-      # this runner establishes correctness, not performance.
-      - name: Rust learning core (planner and online controller)
-        run: |
-          cargo test --offline --release --manifest-path native/experiment_planner/Cargo.toml
-          cargo build --offline --release --manifest-path native/experiment_planner/Cargo.toml
-          cargo test --offline --release --manifest-path native/online_controller/Cargo.toml
-          cargo test --offline --release --manifest-path native/serving_learner/Cargo.toml
-          cargo build --offline --release --manifest-path native/serving_learner/Cargo.toml
-          # The optimizer's process tests (tests/*.rs) size their actions to the machine's cores
-          # and expect a candidate the 3-core runner never makes; they run on development machines.
-          cargo test --offline --release --manifest-path native/optimizer/Cargo.toml --lib
-      - name: Engine test suite (no real-model integration)
-        run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
-      # The agent (AG1/AG2), its simulator and its Kaggle harness (training/); no model, no GPU.
-      - name: Agent test suite
-        run: .ci-venv/bin/python -m pytest tests/agent -n 0 -m "not integration"
-      # These two check public claims (README, docs/PROJECT_STATUS.md) against the redacted
-      # summaries committed under evidence/ (see evidence/README.md), so they run in full on
-      # a plain checkout. A handful of older claims still cite raw files that predate that
-      # export and remain private; those keep their own skip (tests/conftest.py) and run
-      # only on the machine that recorded them.
-      - name: Claims against their evidence
-        run: .ci-venv/bin/python -m pytest tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py -n 0 -rs
-      - name: Figures match their evidence
-        run: |
-          .ci-venv/bin/python -m pip install "matplotlib==3.11.1"
-          .ci-venv/bin/python tools/make_figures.py --check
-
-  # R8: the real-model integration suite on a hosted Apple-Silicon runner, which does run
-  # Metal (the doctor step above verifies the device). This is a compatibility check on a
-  # machine that is not the target device, never evidence about its speed; AGENTS.md keeps
-  # hardware claims on the target device. The pinned snapshot is cached across runs.
-  macos-real-model:
-    runs-on: macos-14
-    timeout-minutes: 45
-    name: macos / real model
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install
-        run: |
-          python -m venv .ci-venv
-          .ci-venv/bin/python -m pip install --upgrade pip
-          .ci-venv/bin/python -m pip install . "pytest>=8" "pytest-xdist>=3"
-      - name: Cache the pinned Gemma 3 4B snapshot
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit
-          key: hf-gemma-3-4b-it-4bit-93724907d4ed1745d2fe50baadf3b0b01a65abf2
-      - name: Download the snapshot the integration tests pin
-        run: >
-          .ci-venv/bin/python -c "from huggingface_hub import snapshot_download as s;
-          s('mlx-community/gemma-3-4b-it-4bit', revision='93724907d4ed1745d2fe50baadf3b0b01a65abf2')"
-      - name: Doctor
-        run: .ci-venv/bin/python -m ironmule_cli doctor
-      # The two `process_table` tests read every process this user owns and refuse any new one
-      # they cannot attribute; the runner's own agent starts processes throughout, so they
-      # failed here in two of four runs (2026-09-26). They need a quiet machine, not a runner.
-      - name: Real-model integration suite
-        run: .ci-venv/bin/python -m pytest tests/engine -m "integration and not process_table" -n 0 -rs
-
-  # The README quick start is a contract. This job runs it the way a reader does:
-  # a clone this workflow did not prepare, an editable install, and the commands
-  # the README prints -- so a change that breaks the first five minutes fails here
-  # rather than in somebody's terminal.
-  fresh-clone:
-    runs-on: macos-14
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
-    name: fresh clone / py${{ matrix.python-version }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Editable install from the clone
-        run: python -m pip install -e .
-      # `doctor` exits 1 when a prerequisite is missing, which on a virtualised
-      # runner is a true report rather than a failure of this job. What is checked
-      # here is that it runs and prints a report; exit 2 or a traceback still fails.
-      - name: Quick start, verbatim
-        run: |
-          ironmule doctor || test $? -eq 1
-          ironmule models list
-          ironmule benchmark --help
-          ironmule serve --help
-          ironmule info
+          .ci-venv/bin/ironmule doctor || test $? -eq 1
+          .ci-venv/bin/ironmule models list
+          .ci-venv/bin/ironmule benchmark --help
+          .ci-venv/bin/ironmule serve --help

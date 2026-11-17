@@ -243,8 +243,12 @@ file uncollected only when it needs `mlx` and `mlx` is not installed; do not dis
 that gate or present skipped/uncollected tests as passes. Scripted contract tests do
 not replace execution on the target hardware for hardware claims. On Linux without a
 GPU (cloud sessions), `pip install -e ".[cpu,dev]"` runs the same suites on MLX's CPU
-build, while CI runs them on macOS; a CPU smoke of a hardware tool checks the tool, not a
+build, and CI runs them the same way; a CPU smoke of a hardware tool checks the tool, not a
 hardware claim.
+
+**macOS is out for now (owner decision, 2026-11-17).** "Leave macOS out; that comes later; no macOS tests or checks
+any more." CI has no macOS job, and work does not wait for or ask for a check on a Mac. The Apple Silicon path
+stays in the tree as it is; nothing about it is claimed as checked after that date until the owner brings it back.
 
 Use existing CI checks for affected packaging, static-check and figure surfaces.
 Releases require the broader RELEASING checklist, including clean installed-package

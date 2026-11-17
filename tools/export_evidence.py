@@ -66,7 +66,6 @@ KAGGLE_SOURCES = (
     "gate-q38-run1-a8f88fc2/gate-qwen38-27b-stock-prefill.json",
     "gate-q38-run1-a8f88fc2/gate-qwen38-27b-kernel-decode.json",
     "gate-q38-run1-a8f88fc2/gate-qwen38-27b-stock-decode.json",
-    "perf1u-run1-b0cce87b/perf1u-summary.json",
     "port2-run6-59ce8efc/cross-fp16-gemma3-4b.json",
     "port2k-run2-39af179b/quality-gemma3-4b-float16.json",
     "port2k-run2-39af179b/quality-gemma3-4b-bf16.json",
