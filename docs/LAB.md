@@ -1902,6 +1902,41 @@ serves today and 8 requests 0.92x; one request the same. The pool here has 16,38
 so its steps read fewer cells (the harness's pool at 32 short requests: 343-386 tok/s). Open: the pool's width
 measurement with llama.cpp's default setting on a GPU, and the streams' 8-request step through the server.
 
+## 2026-11-17 KG4: where a GPU step of 8-32 requests goes, and a Q4_K tensor-core kernel for 1-32 tokens
+
+Owner's choice (2026-11-17): the kernel project for more tokens per second at 8 and 32 requests.
+
+Probe (`lab/kg4/kaggle_prof.py` at 43c15e0, Kaggle T4, Qwen3-4B Q4_K_M, the engine as `ironmule serve` runs it on a
+GPU: one KV stream per request, 32 sequences, speculation off, 2.6 minutes). A step of one token per request, ms (tok/s):
+1 request 18.1 (55), 8 requests 49.3 (162), 16 requests 30.9 (518), 32 requests 46.1 (695) at context 300; at context
+1,000 52.7 / 37.3 / 60.9 ms for 8 / 16 / 32. Logits for every row or for one row: the same within noise (the copy and
+the argmax on the host cost about 3 ms at 32 rows, hidden behind the GPU). CUPTI kernel profile, GPU busy 92-98 % of
+the wall time: at 8 rows llama.cpp's `mul_mat_vec_q<Q4_K, 8>` takes 41.7 of 57.4 ms (so 8 rows cost more than 16, which
+the engine's padding works around); at 32 rows `mul_mat_q` takes 20.7 ms on Q4_K, 6.6 on Q6_K and 2.2 in stream-k
+fix-ups, flash attention 10.5 ms (context 300). Q4_K at 32 tokens reads its weights at about 97 GB/s of the T4's 320.
+
+`lab/kg4/kmma.cu` v1 (at 0514e0f, `lab/kg4/kaggle_kmma.py`, 23 minutes): Q4_K x 8-bit activations on Turing's tensor
+cores (`mma.sync m8n8k16 s8`), activations in fragment order staged in shared memory, the weights read once per row;
+its layout emulated in numpy first (exact against plain dequantisation). Against `ggml_mul_mat` on the same data,
+all Q4_K matmuls of one step weighted by how often the model has each shape, the faster of the two per shape:
+
+| tokens | llama.cpp | with kmma v1 | kmma error / llama.cpp's (float64) |
+| --- | --- | --- | --- |
+| 1 | 9.89 ms | 9.42 | 5.2e-3 / 5.2e-3 |
+| 8 | 29.13 ms | **11.36** | 5.4e-3 / 5.4e-3 |
+| 16 | 16.44 ms | 13.80 | 5.4e-3 / 1.2e-2 |
+| 24 | 17.60 ms | 15.83 | 5.4e-3 / 1.2e-2 |
+| 32 | 20.11 ms | 17.44 | 5.4e-3 / 1.2e-2 |
+
+Read: correct everywhere and half llama.cpp's error from 16 tokens on. At 8 tokens 2.6x; at 16-32 tokens 8-16 %, the
+2560 x 1024 shape 2.5x, the large ones even. The kernel reads 160-170 GB/s at 1-8 tokens (each 144-byte block was
+loaded and then computed, a barrier per block) and 87-112 GB/s at 32, where turning every sub-block's int32 into
+float (a quarter-rate instruction on Turing) costs about as much as the reads. v2: the next block's weights loaded
+while the current one is computed, activations staged 2-8 blocks per barrier, their scales as half2 (as llama.cpp's
+q8_1), and int32 to float through an exact integer-and-float add. `ironmule/kernel_gen.py` (KG_VERSION 3) tunes it
+beside the dp4a and MQ1 kernels and serves up to 32 tokens through the kg1 hook; the engine measures 16 / 24 / 32 at
+startup for 9-32. Next: the end-to-end run (`lab/kg4/kaggle_e2e.py`).
+
 ## 2026-11-17 PB1: the GPU Pilot's prompt budget with one KV stream per request
 
 Another session read low tokens per second for bursts of medium prompts on the T4 and suspected the GPU Pilot's prompt

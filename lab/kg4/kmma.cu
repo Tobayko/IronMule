@@ -41,10 +41,14 @@ __device__ __forceinline__ void mma8816(int &c0, int &c1, uint32_t a, uint32_t b
                  : "+r"(c0), "+r"(c1) : "r"(a), "r"(b));
 }
 
+// an int32 of magnitude below 2^22 as float, exactly: an integer add and a float add instead of I2F (a quarter-rate
+// instruction on Turing)
+__device__ __forceinline__ float i2f(int v) { return __int_as_float(0x4B400000 + v) - 12582912.0f; }
+
 // x [B][K] float -> fragment order for T tiles of 8 tokens (tokens past B are zero):
 //   xf, 8 bytes per (tile tt, sub-block s, lane): xq[8 tt + lane / 4][32 s + 8 (lane % 4) .. + 7]
-//   xs, per (tt, s, token in tile): (d, d * sum of the 32 quants)
-__global__ void quant_frag(const float *__restrict__ x, int8_t *__restrict__ xf, float2 *__restrict__ xs, int B, int K,
+//   xs, per (tt, s, token in tile): (d, d * sum of the 32 quants) as half2, as llama.cpp's q8_1 keeps them
+__global__ void quant_frag(const float *__restrict__ x, int8_t *__restrict__ xf, half2 *__restrict__ xs, int B, int K,
                            int T) {
     const int S = K / 32;
     const int wid = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32, lane = threadIdx.x % 32;
@@ -61,15 +65,32 @@ __global__ void quant_frag(const float *__restrict__ x, int8_t *__restrict__ xf,
     for (int off = 16; off > 0; off >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, off);
     const int tt = tok / 8, g = tok % 8;
     xf[(((size_t)tt * S + s) * 32 + g * 4 + lane / 8) * 8 + lane % 8] = (int8_t)q;
-    if (lane == 0) xs[((size_t)tt * S + s) * 8 + g] = make_float2(d, d * (float)sum);
+    if (lane == 0) xs[((size_t)tt * S + s) * 8 + g] = __floats2half2_rn(d, d * (float)sum);
+}
+
+// one 144-byte Q4_K block of the row this lane serves: its header and its 4 x 8 bytes of quants
+struct Q4Row { uint4 h; uint2 q[4]; };
+__device__ __forceinline__ Q4Row load_row(const block_q4_K *__restrict__ wq, int row, int N, int nb, int ib, int c) {
+    Q4Row r;
+    if (row < N) {
+        const block_q4_K *blk = wq + (size_t)row * nb + ib;
+        r.h = __ldg(reinterpret_cast<const uint4 *>(blk));
+#pragma unroll
+        for (int grp = 0; grp < 4; grp++) r.q[grp] = __ldg(reinterpret_cast<const uint2 *>(blk->qs + 32 * grp + 8 * c));
+    } else {
+        r.h = make_uint4(0, 0, 0, 0);
+#pragma unroll
+        for (int grp = 0; grp < 4; grp++) r.q[grp] = make_uint2(0, 0);
+    }
+    return r;
 }
 
 template <int T, int R, int W, int KB, int SK>
 __global__ void __launch_bounds__(W * 32) kmma(const block_q4_K *__restrict__ wq, const uint2 *__restrict__ xf,
-                                               const float2 *__restrict__ xs, float *__restrict__ y, int N, int K,
+                                               const half2 *__restrict__ xs, float *__restrict__ y, int N, int K,
                                                int B) {
     __shared__ uint2 sx[T * KB * 256];
-    __shared__ float2 ss[T * KB * 64];
+    __shared__ half2 ss[T * KB * 64];
     const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
     const int S = K / 32, nb = K / 256;
     const int rbase = (blockIdx.x * W + warp) * R * 8;
@@ -79,6 +100,9 @@ __global__ void __launch_bounds__(W * 32) kmma(const block_q4_K *__restrict__ wq
     for (int r = 0; r < R; r++)
 #pragma unroll
         for (int t = 0; t < T; t++) acc[r][t][0] = acc[r][t][1] = 0.f;
+    Q4Row cur[R];  // the next block's weights are loaded while this one is computed
+#pragma unroll
+    for (int r = 0; r < R; r++) cur[r] = load_row(wq, rbase + r * 8 + g, N, nb, kb0 < kb1 ? kb0 : 0, c);
     for (int sb0 = kb0; sb0 < kb1; sb0 += KB) {
         const int nk = min(KB, kb1 - sb0);
         __syncthreads();
@@ -92,22 +116,10 @@ __global__ void __launch_bounds__(W * 32) kmma(const block_q4_K *__restrict__ wq
         }
         __syncthreads();
         for (int kb = 0; kb < nk; kb++) {
-            uint2 q[R][4];
-            uint4 h[R];
+            const int ib = sb0 + kb;
+            Q4Row nxt[R];
 #pragma unroll
-            for (int r = 0; r < R; r++) {
-                const int row = rbase + r * 8 + g;
-                if (row < N) {
-                    const block_q4_K *blk = wq + (size_t)row * nb + sb0 + kb;
-                    h[r] = __ldg(reinterpret_cast<const uint4 *>(blk));
-#pragma unroll
-                    for (int grp = 0; grp < 4; grp++) q[r][grp] = __ldg(reinterpret_cast<const uint2 *>(blk->qs + 32 * grp + 8 * c));
-                } else {
-                    h[r] = make_uint4(0, 0, 0, 0);
-#pragma unroll
-                    for (int grp = 0; grp < 4; grp++) q[r][grp] = make_uint2(0, 0);
-                }
-            }
+            for (int r = 0; r < R; r++) nxt[r] = load_row(wq, rbase + r * 8 + g, N, nb, ib + 1 < kb1 ? ib + 1 : ib, c);
 #pragma unroll
             for (int s = 0; s < 8; s++) {
                 const int grp = s / 2, sh = (s & 1) * 4;
@@ -115,25 +127,27 @@ __global__ void __launch_bounds__(W * 32) kmma(const block_q4_K *__restrict__ wq
 #pragma unroll
                 for (int r = 0; r < R; r++) {
                     float sc, m;
-                    scale_min(h[r].y, h[r].z, h[r].w, s, sc, m);
-                    dsc[r] = __half2float(__ushort_as_half((unsigned short)(h[r].x & 0xFFFF))) * sc;
-                    dmn[r] = __half2float(__ushort_as_half((unsigned short)(h[r].x >> 16))) * m;
+                    scale_min(cur[r].h.y, cur[r].h.z, cur[r].h.w, s, sc, m);
+                    dsc[r] = __half2float(__ushort_as_half((unsigned short)(cur[r].h.x & 0xFFFF))) * sc;
+                    dmn[r] = __half2float(__ushort_as_half((unsigned short)(cur[r].h.x >> 16))) * m;
                 }
 #pragma unroll
                 for (int tt = 0; tt < T; tt++) {
                     const int at = (tt * KB + kb) * 8 + s;
                     const uint2 b = sx[at * 32 + lane];
-                    const float2 s0 = ss[at * 8 + 2 * c], s1 = ss[at * 8 + 2 * c + 1];
+                    const float2 s0 = __half22float2(ss[at * 8 + 2 * c]), s1 = __half22float2(ss[at * 8 + 2 * c + 1]);
 #pragma unroll
                     for (int r = 0; r < R; r++) {
                         int c0 = 0, c1 = 0;
-                        mma8816(c0, c1, (q[r][grp].x >> sh) & 0x0F0F0F0Fu, b.x);
-                        mma8816(c0, c1, (q[r][grp].y >> sh) & 0x0F0F0F0Fu, b.y);
-                        acc[r][tt][0] = fmaf(dsc[r], s0.x * (float)c0, fmaf(-dmn[r], s0.y, acc[r][tt][0]));
-                        acc[r][tt][1] = fmaf(dsc[r], s1.x * (float)c1, fmaf(-dmn[r], s1.y, acc[r][tt][1]));
+                        mma8816(c0, c1, (cur[r].q[grp].x >> sh) & 0x0F0F0F0Fu, b.x);
+                        mma8816(c0, c1, (cur[r].q[grp].y >> sh) & 0x0F0F0F0Fu, b.y);
+                        acc[r][tt][0] = fmaf(dsc[r], s0.x * i2f(c0), fmaf(-dmn[r], s0.y, acc[r][tt][0]));
+                        acc[r][tt][1] = fmaf(dsc[r], s1.x * i2f(c1), fmaf(-dmn[r], s1.y, acc[r][tt][1]));
                     }
                 }
             }
+#pragma unroll
+            for (int r = 0; r < R; r++) cur[r] = nxt[r];
         }
     }
 #pragma unroll
@@ -152,24 +166,24 @@ __global__ void __launch_bounds__(W * 32) kmma(const block_q4_K *__restrict__ wq
     }
 }
 
-typedef void (*mma_launch_t)(const block_q4_K *, const uint2 *, const float2 *, float *, int, int, int, cudaStream_t);
+typedef void (*mma_launch_t)(const block_q4_K *, const uint2 *, const half2 *, float *, int, int, int, cudaStream_t);
 template <int T, int R, int W, int KB, int SK>
-void launch_mma(const block_q4_K *w, const uint2 *xf, const float2 *xs, float *y, int N, int K, int B, cudaStream_t s) {
+void launch_mma(const block_q4_K *w, const uint2 *xf, const half2 *xs, float *y, int N, int K, int B, cudaStream_t s) {
     if (SK > 1) cudaMemsetAsync(y, 0, (size_t)B * N * sizeof(float), s);
     kmma<T, R, W, KB, SK><<<dim3((N + W * R * 8 - 1) / (W * R * 8), SK), W * 32, 0, s>>>(w, xf, xs, y, N, K, B);
 }
-static void quantize_frag(const float *x, int8_t *xf, float2 *xs, int B, int K, int T, cudaStream_t s) {
+static void quantize_frag(const float *x, int8_t *xf, half2 *xs, int B, int K, int T, cudaStream_t s) {
     const int warps = T * 8 * (K / 32);
     quant_frag<<<(warps + 7) / 8, 256, 0, s>>>(x, xf, xs, B, K, T);
 }
 struct MmaVariant { int T, R, W, KB, SK; mma_launch_t fn; };
 
 #define V(T, R, W, KB, SK) {T, R, W, KB, SK, launch_mma<T, R, W, KB, SK>}
-#define VT(T) V(T, 1, 2, 1, 1), V(T, 1, 4, 1, 1), V(T, 1, 8, 1, 1), V(T, 2, 2, 1, 1), V(T, 2, 4, 1, 1), \
-    V(T, 2, 8, 1, 1), V(T, 4, 2, 1, 1), V(T, 4, 4, 1, 1), V(T, 1, 4, 2, 1), V(T, 2, 4, 2, 1), V(T, 4, 4, 2, 1), \
-    V(T, 2, 8, 2, 1), V(T, 1, 4, 1, 2), V(T, 2, 4, 1, 2), V(T, 1, 4, 1, 4), V(T, 2, 4, 1, 4), V(T, 1, 8, 1, 2), \
-    V(T, 1, 8, 1, 4), V(T, 2, 2, 1, 2), V(T, 4, 2, 1, 2)
-static const std::vector<MmaVariant> VARIANTS = {VT(1), VT(2), VT(3), VT(4)};
+#define VT(T) V(T, 1, 4, 2, 1), V(T, 2, 4, 2, 1), V(T, 1, 8, 2, 1), V(T, 2, 8, 2, 1), V(T, 1, 4, 4, 1), \
+    V(T, 2, 4, 4, 1), V(T, 1, 8, 4, 1), V(T, 1, 4, 2, 2), V(T, 2, 4, 2, 2), V(T, 1, 8, 2, 2), V(T, 1, 4, 2, 4), \
+    V(T, 1, 8, 2, 4), V(T, 1, 4, 4, 2), V(T, 1, 4, 1, 1), V(T, 1, 4, 1, 4), V(T, 2, 2, 2, 1)
+#define VT8(T) VT(T), V(T, 1, 4, 8, 1), V(T, 1, 8, 8, 1), V(T, 2, 4, 8, 1), V(T, 1, 4, 8, 2)
+static const std::vector<MmaVariant> VARIANTS = {VT8(1), VT8(2), VT(3), VT(4)};  // T * KB <= 16
 
 // float64 reference: one warp per output row, element by element (dequantize_row_q4_K of ggml-quants.c)
 __global__ void ref64(const block_q4_K *__restrict__ wq, const float *__restrict__ x, double *__restrict__ y, int N,
@@ -224,9 +238,9 @@ int main(int argc, char **argv) {
         if (cudaMalloc(&dw[c], wn)) return 3;
         cudaMemcpy(dw[c], w, wn, cudaMemcpyHostToDevice);
     }
-    float *dx, *dy; double *dr; int8_t *dxf; float2 *dxs;
+    float *dx, *dy; double *dr; int8_t *dxf; half2 *dxs;
     if (cudaMalloc(&dx, xn) || cudaMalloc(&dy, (size_t)32 * N * 4) || cudaMalloc(&dr, (size_t)32 * N * 8) ||
-        cudaMalloc(&dxf, (size_t)32 * K) || cudaMalloc(&dxs, (size_t)4 * (K / 32) * 8 * sizeof(float2))) return 3;
+        cudaMalloc(&dxf, (size_t)32 * K) || cudaMalloc(&dxs, (size_t)4 * (K / 32) * 8 * sizeof(half2))) return 3;
     cudaMemcpy(dx, x, xn, cudaMemcpyHostToDevice);
     cudaEvent_t e0, e1; cudaEventCreate(&e0); cudaEventCreate(&e1);
     for (int a = 8; a < argc; a++) {
