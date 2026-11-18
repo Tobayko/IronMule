@@ -210,26 +210,108 @@ def refresh_identity(engine, server, deadline):
 class StartupError(RuntimeError):
     """A public failure code and stage from the serving process' bounded, private log."""
 
-    def __init__(self, message, stage, code):
+    def __init__(self, message, stage, code, *, qualification=None, traceback_summary=None, exit_code=None):
         self.code = code
         self.stage = stage
+        self.qualification = qualification or []
+        self.traceback_summary = traceback_summary
+        self.exit_code = exit_code
         super().__init__(f'{message} (stage={stage} reason={code})')
 
+    def report_fields(self):
+        fields = {'startup_stage': self.stage, 'startup_reason': self.code}
+        if self.qualification:
+            fields['qualification'] = self.qualification
+        if self.traceback_summary is not None:
+            fields['traceback_summary'] = self.traceback_summary
+        if self.exit_code is not None:
+            fields['exit_code'] = self.exit_code
+        return fields
 
-def _startup_detail(logpath):
-    """Convert a bounded private log tail to fixed public status codes without returning log contents."""
-    try:
-        with logpath.open('rb') as stream:
-            stream.seek(0, os.SEEK_END)
-            stream.seek(max(0, stream.tell() - 128 * 1024))
-            log = stream.read().decode('utf-8', errors='replace')
-    except OSError:
-        return 'unknown', 'log_unavailable'
+    @classmethod
+    def from_log(cls, engine, logpath, message, exit_code=None):
+        try:
+            with logpath.open('rb') as stream:
+                stream.seek(0, os.SEEK_END)
+                stream.seek(max(0, stream.tell() - 128 * 1024))
+                log = stream.read().decode('utf-8', errors='replace')
+        except OSError:
+            return cls(message, 'unknown', 'log_unavailable', exit_code=exit_code)
+        qualification = _gate_attempts(log) if engine == 'ironmule' else []
+        stage, code = _classify_log(log, gate_passed=bool(qualification and qualification[-1]['passes']))
+        return cls(message, stage, code, exit_code=exit_code, qualification=qualification,
+                   traceback_summary=_vllm_traceback(log) if engine == 'vllm' else None)
+
+
+class StartupTimeout(StartupError, TimeoutError):
+    """Preserve timeout semantics alongside the last known startup stage."""
+
+
+def _gate_attempts(log):
+    from ironmule.ggml_gate_diagnostics import sanitize
+
+    attempts = {}
+    for line in log.splitlines():
+        line = line.lstrip()
+        if len(line) > 48_000 or not line.startswith('{"ggml_gate"'):
+            continue
+        try:
+            gate = json.loads(line).get('ggml_gate')
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(gate, dict) or type(gate.get('passes')) is not bool:
+            continue
+        mode = gate.get('kernel_mode')
+        if mode not in ('generated', 'stock'):
+            continue
+        result = {'kernel_mode': mode, 'passes': gate['passes']}
+        diagnostic = sanitize(gate.get('diagnostic'))
+        if diagnostic:
+            result['diagnostic'] = diagnostic
+        attempts[mode] = result
+    return list(attempts.values())
+
+
+def _vllm_traceback(log):
+    """Only emit fixed package names, exception types and numeric source lines."""
+    classes = ('ImportError', 'ModuleNotFoundError', 'OSError', 'FileNotFoundError', 'KeyError', 'TypeError',
+               'ValueError', 'RuntimeError', 'ValidationError', 'AssertionError', 'AttributeError', 'MemoryError',
+               'NotImplementedError', 'OutOfMemoryError', 'BackendCompilerFailed', 'CalledProcessError',
+               'HFValidationError', 'OfflineModeIsEnabled', 'PermissionError', 'TimeoutError', 'IndexError',
+               'NotADirectoryError', 'FileExistsError', 'JSONDecodeError', 'UnicodeDecodeError', 'PydanticUserError',
+               'NVMLError_LibraryNotFound', 'NVMLError_DriverNotLoaded', 'EngineCoreProcError')
+    component_paths = ('vllm/entrypoints/', 'vllm/engine/', 'vllm/config/', 'vllm/platforms/',
+                       'vllm/model_executor/model_loader/', 'vllm/model_executor/layers/quantization/',
+                       'vllm/model_executor/models/', 'vllm/transformers_utils/', 'vllm/compilation/',
+                       'vllm/v1/worker/', 'vllm/v1/engine/', 'gguf/', 'transformers/', 'huggingface_hub/',
+                       'torch/', 'triton/', 'flashinfer/', 'xformers/', 'pydantic/', 'uvloop/')
+    files = ('vllm/config/model.py', 'vllm/engine/arg_utils.py', 'vllm/entrypoints/cli/main.py',
+             'vllm/entrypoints/cli/serve.py', 'vllm/entrypoints/openai/api_server.py',
+             'vllm/model_executor/model_loader/gguf_loader.py', 'vllm/model_executor/layers/quantization/gguf.py',
+             'vllm/model_executor/model_loader/weight_utils.py', 'vllm/model_executor/models/qwen3.py',
+             'vllm/transformers_utils/config.py', 'vllm/platforms/cuda.py', 'vllm/v1/worker/gpu_worker.py',
+             'vllm/v1/worker/gpu_model_runner.py', 'gguf/gguf_reader.py', 'transformers/configuration_utils.py')
+    frames = []
+    for path, number in re.findall(r'File "([^"\n]+)", line ([0-9]{1,6})\b', log):
+        component = next((part.rstrip('/') for part in component_paths if '/' + part in path), None)
+        if component:
+            frame = {'component': component, 'line': int(number)}
+            known_file = next((f for f in files if path.endswith('/' + f)), None)
+            if known_file:
+                frame['source'] = known_file
+            if frame not in frames:
+                frames.append(frame)
+    exceptions = re.findall(r'\b(' + '|'.join(classes) + r')(?=[:\n]|$)', log)
+    return {'traceback_seen': 'Traceback (most recent call last)' in log,
+            'exceptions': list(dict.fromkeys(exceptions))[-8:], 'frames': frames[-8:]}
+
+
+def _classify_log(log, *, gate_passed=False):
     stages = (
         ('worker', r'"agent":\s*\{'), ('width_selection', r'"ggml_sequences":'),
         ('quality_gate', r'"ggml_gate":'), ('gguf_identified', r'"gguf_model":'),
-        ('vllm_engine', r'Initializing a V\d+ LLM engine|EngineCore'),
         ('model_loading', r'Loading model weights|Starting to load model|loading model tensors'),
+        ('vllm_engine', r'Initializing a V\d+ LLM engine|EngineCore'),
     )
     stage = next((key for key, pattern in stages if re.search(pattern, log)), 'startup')
     causes = (
@@ -237,13 +319,16 @@ def _startup_detail(logpath):
         ('missing_gguf', r"No module named ['\"]gguf(?:\.|['\"])"),
         ('missing_accelerator_dependency', r"No module named ['\"](?:vllm|triton|torch|flashinfer|xformers)(?:\.|['\"])"),
         ('missing_python_dependency', r'ModuleNotFoundError|No module named'),
+        ('native_symbol_unavailable', r'undefined symbol:|version [`\']GLIBC(?:XX)?_[^\n]+not found'),
+        ('incompatible_python_api', r'cannot import name|unexpected keyword argument|operator [^\n]+ does not exist'),
+        ('device_detection_failed', r'Failed to infer device type|No CUDA GPUs are available|Found no NVIDIA driver'),
         ('cuda_library_unavailable', r'lib(?:cuda|cublas|cudart|nvrtc)[^\s:]*: cannot open shared object'),
         ('cuda_driver_incompatible', r'driver version is insufficient|driver.*too old|CUDA_ERROR_UNSUPPORTED_PTX_VERSION'),
         ('insufficient_free_gpu_memory', r'less than (?:the )?desired GPU memory utilization'),
         ('gpu_out_of_memory', r'CUDA out of memory|OutOfMemoryError|cudaMalloc failed|out of memory on device'),
         ('incompatible_gpu_architecture', r'no kernel image is available|invalid device function|compute capability.*not supported'),
         ('unsupported_gguf', r'unsupported (?:model architecture|quantization)|model type .*not supported|cannot map tensor'),
-        ('invalid_model_config', r'Unrecognized model|Unrecognized configuration|Invalid repository ID|Repository id must'),
+        ('invalid_model_config', r'Unrecognized model|Unrecognized configuration|Invalid repository ID|Repo(?:sitory)? id must|validation errors? for ModelConfig'),
         ('missing_weight_files', r'(?:GGUF|weight|model).*(?:file not found|no such file)|FileNotFoundError'),
         ('cuda_graph_or_compiler', r'TritonCompilationError|TorchInductorError|BackendCompilerFailed|\binductor[^\n]*(?:failed|error)|CUDA error[^\n]*captur|CUDAGraph[^\n]*(?:failed|error)'),
         ('collective_initialization', r'NCCL error|NCCL.*failed|ncclSystemError'),
@@ -254,7 +339,8 @@ def _startup_detail(logpath):
         ('worker_unavailable', r'backend worker|backend(?: is)?[_ ]unavailable|worker failed to start'),
         ('engine_initialization', r'engine core initialization failed|EngineCore failed to start|engine process failed'),
     )
-    reason = next((key for key, pattern in causes if re.search(pattern, log, re.IGNORECASE)), 'unclassified')
+    reason = next((key for key, pattern in causes if not (gate_passed and key == 'quality_gate_refused')
+                   and re.search(pattern, log, re.IGNORECASE)), 'unclassified')
     return stage, reason
 
 
@@ -281,7 +367,7 @@ def open_server(engine, args, repeat, deadline):
             while time.monotonic() < until:
                 code = process.poll()
                 if code is not None:
-                    raise StartupError(f'{engine} exited with status {code} during startup', *_startup_detail(logpath))
+                    raise StartupError.from_log(engine, logpath, f'{engine} exited with status {code} during startup', code)
                 try:
                     timeout = max(0.05, min(2, until - time.monotonic()))
                     models = _json(base, '/v1/models', timeout).get('data', [])
@@ -292,8 +378,7 @@ def open_server(engine, args, repeat, deadline):
                     pass
                 time.sleep(min(0.2, max(0, until-time.monotonic())))
             else:
-                stage, code = _startup_detail(logpath)
-                raise TimeoutError(f'{engine} startup expired (stage={stage} reason={code})')
+                raise StartupTimeout.from_log(engine, logpath, f'{engine} startup expired')
             model_id = health.get('loaded_model') if engine == 'ironmule' else 'compare'
             if model_id not in [m.get('id') for m in models]:
                 raise RuntimeError(f'{engine} did not advertise its requested model')
@@ -325,6 +410,10 @@ def open_server(engine, args, repeat, deadline):
                     'prefix_caching': 'engine default',
                     'startup_seconds': time.monotonic() - started, 'log_file': str(logpath),
                     'launcher_executable': shutil.which(cmd[0], path=env.get('PATH')) or cmd[0]}
+            if engine == 'ironmule':
+                qualification = _gate_attempts(log)
+                if qualification:
+                    info['qualification'] = qualification
             yield info
             prepare_artifacts(args)
         finally:

@@ -16,7 +16,8 @@ def test_only_a_compile_failure_retries_and_all_other_servers_are_kept(monkeypat
     @contextmanager
     def server(engine, args, rep, deadline):
         if engine == 'vllm' and not args.vllm_enforce_eager:
-            raise compare_servers.StartupError('/secret/private', 'model_loading', failure)
+            raise compare_servers.StartupError('/secret/private', 'model_loading', failure, exit_code=1,
+                                              traceback_summary={'exceptions': ['RuntimeError']})
         yield {'version': 'x', 'placement_verified': True, 'baseline_stock': True, 'autonomous': True}
 
     def reply(engine, server, prompt, limit, deadline):
@@ -33,4 +34,6 @@ def test_only_a_compile_failure_retries_and_all_other_servers_are_kept(monkeypat
     assert result['vllm_mode'] == ('enforce_eager' if len(modes) == 2 else None)
     assert result['status'] == ('ready' if len(modes) == 2 else 'partial')
     assert result['attempts'][0]['startup_stage'] == 'model_loading'
+    assert result['attempts'][0]['exit_code'] == 1
+    assert result['attempts'][0]['traceback_summary']['exceptions'] == ['RuntimeError']
     assert 'private' not in str(result)

@@ -22,6 +22,8 @@ def run(args, save):
         try:
             compare.remaining(deadline)
             with compare_servers.open_server(engine, args, 0, deadline) as server:
+                if server.get("qualification"):
+                    row["qualification"] = server["qualification"]
                 row["stage"] = "chat"
                 save(report)
                 reply = compare.stream(engine, server, "Count from one to five, in words.", 4, deadline)
@@ -44,8 +46,8 @@ def run(args, save):
         except Exception as exc:
             # Only export the launcher's enumerated diagnostics. HTTP errors can contain prompts or log paths.
             if isinstance(exc, compare_servers.StartupError):
-                code = exc.code
-                row["startup_stage"] = exc.stage
+                code = "timeout" if isinstance(exc, TimeoutError) else exc.code
+                row.update(exc.report_fields())
             elif isinstance(exc, TimeoutError):
                 code = "timeout"
             else:

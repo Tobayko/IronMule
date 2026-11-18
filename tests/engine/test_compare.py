@@ -100,13 +100,15 @@ def test_controlled_cli_rotates_arms_and_keeps_real_partial_evidence(tmp_path, m
     @contextmanager
     def broken(engine, args, repeat, deadline):
         if engine == "llama_cpp":
-            raise RuntimeError("missing competitor executable")
+            raise compare_servers.StartupError("/private/log", "model_loading", "gpu_out_of_memory", exit_code=1)
         with server(engine, args, repeat, deadline) as info:
             yield info
     monkeypatch.setattr(compare_servers, "open_server", broken)
     assert ironmule_cli.main(argv) == 1
     partial = json.loads(report_file.read_text())
     assert partial["error_code"] == "launch_failed" and len(partial["failures"]) == 3
+    assert partial["failures"][0]["startup_reason"] == "gpu_out_of_memory"
+    assert partial["failures"][0]["exit_code"] == 1 and "/private/log" not in str(partial["failures"])
     assert {r["engine"] for r in partial["runs"]} == {"ironmule", "vllm"}
     assert len(partial["runs"]) == 12
     assert partial["verdict"]["by_opponent"]["llama_cpp"]["status"] == "incomplete"

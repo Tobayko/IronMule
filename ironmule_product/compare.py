@@ -258,7 +258,7 @@ def run(args, report, save, deadline):
     from ironmule.factual_gate import MAX_TOKENS, correct
 
     from .code_identity import sources_digest
-    from .compare_servers import open_server, prepare_artifacts, refresh_identity
+    from .compare_servers import StartupError, open_server, prepare_artifacts, refresh_identity
     from .compare_tokenizer import preflight
 
     prepare_artifacts(args)
@@ -333,13 +333,15 @@ def run(args, report, save, deadline):
                     arm["tokenization"] = {"verified": True, "digest": proof["digest"]}
                     save("preflight")
             except Exception as exc:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("comparison budget exhausted") from exc
                 code = ("identity_unverified" if isinstance(exc, Unverified) or report["stage"] == "preflight"
                         else "launch_failed" if report["stage"] == "starting" else "measurement_failed")
+                details = exc.report_fields() if isinstance(exc, StartupError) else {}
+                error = f"{engine} server startup failed" if details else str(exc)[:600]
                 report["failures"].append({**report["current"], "stage": report["stage"], "code": code,
-                                           "error": str(exc)[:600]})
+                                           "error": error, **details})
                 save(report["stage"])
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("comparison budget exhausted") from exc
     save("evaluating")
     report["verdict"] = evaluate(report)
 
