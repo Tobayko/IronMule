@@ -210,3 +210,20 @@ scoped experiment and preserves completed measurements. The paired report
 records identical-token-and-stop checks, answer gains and losses, per-wave
 shape counts, latency and throughput. A completed study leaves serving
 configuration selection to the caller.
+
+### Cold 444-token prompt experiment
+
+This opt-in study checks whether a single CUDA GPU can process two or four independent 444-token prompts together on separate KV streams. A machine-local receipt binds the exact model, native libraries, GPU, worker implementation, settings and context. Each proposed rectangle must reproduce the individual requests' greedy token IDs, stop reasons and answers on two cold reference passes and a candidate pass. Only shapes with measured candidate dispatch in performance traffic can enter the worker's receipt. Short prompts, retained prefixes and other rectangles use the ordinary path. The physical microbatch limit is 512 throughout.
+
+Start from the pinned Qwen3-32B Q4_K_M GGUF and its local base tokenizer. Both commands must use the same product interpreter, native GGML libraries, full CUDA device UUID and environment. Set the thread count and full GPU offload identically in both processes.
+
+```bash
+export CUDA_VISIBLE_DEVICES=GPU-... IRONMULE_GGML_THREADS=2 IRONMULE_GGML_GPU_LAYERS=999
+python -m lab.portable_gpu.long_prefill_native --gguf "$MODEL" \
+  --output "$RESULTS/native.json" --threads 2 --budget-seconds 360
+python -m lab.portable_gpu.prefill_http --gguf "$MODEL" --tokenizer "$TOKENIZER" \
+  --state-dir "$RESULTS/state" --output "$RESULTS/http.json" \
+  --long-native-receipt "$RESULTS/native.json"
+```
+
+The first command verifies 65 of 65 offloaded layers and runs 16 held-out questions in the target rectangles. A rejection stops the native trial before performance timing. On a pass it measures three paired bursts at each concurrency (8 and 32), checks complete outputs and a separate default-context likelihood and factual comparison, and records device-calibrated throughput. The HTTP step requires a qualifying receipt, starts the ordinary agent-enabled service, checks both workloads against the incumbent, and independently observes grouped calls in the actual worker. A receipt alone does not change a production service. Training data and language-model weights are unaffected.

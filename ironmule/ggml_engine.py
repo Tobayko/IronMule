@@ -2019,7 +2019,8 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     stored = cache / f"{key}.json"
     # A fresh worker in the opposite benchmark order may reuse its own content-matched gate.
     experimental = os.environ.get("IRONMULE_KG5") == "1"
-    prefill_batch = os.environ.get("IRONMULE_GGML_PREFILL_BATCH") in ("1", "long-444") and gpu_layers() > 0
+    batch_mode = os.environ.get("IRONMULE_GGML_PREFILL_BATCH")
+    prefill_batch = (batch_mode == "1" or (batch_mode == "long-444" and cuda_kernel_device())) and gpu_layers() > 0
     shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
     cacheable = _kernel_digest() is not None and (not experimental or bool(_kg5_files()))
     if cacheable and stored.exists():

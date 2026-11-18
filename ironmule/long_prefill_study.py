@@ -167,7 +167,7 @@ def qualified_receipt(
             ratios[pair[1]].append(a["seconds"] / b["seconds"])
         med = [statistics.median(v) for v in ratios.values()]
         return min(med) >= 1.0 and max(med) >= 1.03
-    except (TypeError, KeyError, ValueError, AttributeError, OSError, OverflowError):
+    except (TypeError, KeyError, IndexError, ValueError, AttributeError, OSError, OverflowError):
         return False
 
 

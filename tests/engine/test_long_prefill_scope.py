@@ -127,3 +127,27 @@ def test_no_worker_receipt_keeps_incumbent(monkeypatch):
         engine, None, "a" * 64, {"passes": True, "streams_serving": {"settings": {}}}
     )
     assert not engine.prefill_batch
+
+
+def test_only_time_witnessed_receipt_shapes_become_eligible():
+    r = example()
+    assert study.measured_shapes(r["long_gate"], r["waves"]) == {444: (4,)}
+    r["waves"][1]["hits"]["2"] = 1
+    assert study.measured_shapes(r["long_gate"], r["waves"]) == {444: (2, 4)}
+
+
+def test_all_and_long_and_default_results_have_distinct_cache_keys(
+    tmp_path, monkeypatch
+):
+    from ironmule import ggml_engine as ge
+
+    model = tmp_path / "sample.gguf"
+    model.write_bytes(b"test")
+    monkeypatch.delenv("IRONMULE_KG5", raising=False)
+    monkeypatch.setattr(ge, "machine_key", lambda: "this machine")
+    monkeypatch.setattr(ge, "_kernel_digest", lambda: "")
+    keys = set()
+    for mode in ("0", "1", "long-444"):
+        monkeypatch.setenv("IRONMULE_GGML_PREFILL_BATCH", mode)
+        keys.add(ge.gate_key(model, model))
+    assert len(keys) == 3
