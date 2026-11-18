@@ -85,14 +85,20 @@ def stage(folder, label, run, counts, valid):
     from ironmule_product.errors import StateError
     from ironmule_product.state import _atomic_write, _locked, _read_json
 
+    def measure():
+        output, error = run()
+        if output is not None and not error and valid(output):
+            counts["measured"] += 1
+        return output, error
+
     if folder is None:
-        return run()
+        return measure()
     path = folder / (_digest(label) + ".json")
     with ExitStack() as stack:
         try:
             stack.enter_context(_locked(folder))
         except (StateError, OSError):
-            return run()
+            return measure()
         try:
             record = _read_json(path)
             if (record["label"] == label and valid(record["output"])
@@ -101,9 +107,8 @@ def stage(folder, label, run, counts, valid):
                 return record["output"], ""
         except (StateError, OSError, KeyError, ValueError, TypeError):
             pass
-        output, error = run()
+        output, error = measure()
         if output is not None and not error and valid(output):
-            counts["measured"] += 1
             try:
                 _atomic_write(path, {"label": label, "output": output, "digest": _digest([folder.name, label, output])})
             except (StateError, OSError, ValueError):
