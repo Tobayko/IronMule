@@ -217,7 +217,12 @@ is cheaper per attended token. `ironmule/ggml_agent.py` makes that choice while 
    state directory.
 4. *Dreaming:* after 3 s without a request, and only when new traffic came since the last dream, windows of 32
    recorded arrivals (gaps scaled 0.5-1.5, three in four from the last 256) run through a simulation of the engine's
-   continuous batching under every configuration's price, on the same windows.
+   continuous batching under every configuration's price, on the same windows. When local GPU context timings
+   are available, an optional switch must repay the measured rebuild within the latest busy period, up to 32
+   arrivals. Rebuilding the candidate delays arrivals in the simulation. Throughput also reserves time to return to
+   the incumbent. Width calibration times each context's release, creation and warmup on the loaded model.
+   Completed switches supply directional measurements for the same context sizes and pool. Old unpriced
+   plans retain their existing dream, with unknown timings recorded as null.
 5. *Switch and guard:* a configuration replaces the incumbent when the 2.5 % bootstrap bound of its dreamed
    tokens-per-second gain is above 3 % and its mean first token is at most 2 % later. The context is rebuilt on the
    loaded model in that idle spell (a request that arrives meanwhile waits for it, a few seconds at most). While the

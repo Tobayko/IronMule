@@ -130,14 +130,14 @@ class Scaled:
 # --- the engine, simulated ---------------------------------------------------------------------------------------------
 
 def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple], seq_ctx: int = 2048,
-             trace: list[tuple[int, int, int, float]] | None = None) -> dict[str, float]:
+             trace: list[tuple[int, int, int, float]] | None = None, *, start_delay_s: float = 0.0) -> dict[str, float]:
     """The engine's continuous batching on `arrivals` [(time, prompt tokens, answer tokens[, prompt tokens computed])],
     priced by `cost` (a prompt's kept prefix costs no prefill but is attended to): in each
     step every waiting request that has arrived takes a free sequence and its prompt goes into the step's one call
     (up to `seq_ctx` prompt tokens, at least one prompt), every running request gets one token, a finished request
     frees its sequence. Returns tokens, seconds from the first arrival to the last token, and mean first-token time."""
     pending = sorted((a[0], a[1], a[2], a[3] if len(a) > 3 else a[1]) for a in arrivals)
-    i, now, free = 0, (pending[0][0] if pending else 0.0), width
+    i, now, free = 0, (pending[0][0] if pending else 0.0) + start_delay_s, width
     waiting: deque[tuple[float, int, int, int]] = deque()
     active: list[list[float]] = []  # [remaining tokens, context tokens]
     tokens, ttft = 0, []
@@ -203,14 +203,29 @@ def windows(memory: Sequence[tuple[float, int, int]], rng: random.Random, count:
 
 
 def dream(configs: dict[str, dict[str, Any]], costs: dict[str, StepCost], incumbent: str,
-          memory: Sequence[tuple[float, int, int]], rng: random.Random, resamples: int = 1000) -> dict[str, Any]:
+          memory: Sequence[tuple[float, int, int]], rng: random.Random, resamples: int = 1000, *,
+          switch_costs: dict[str, tuple[float | None, float | None]] | None = None,
+          window_size: int = WINDOW) -> dict[str, Any]:
     """Every configuration on the same windows; per candidate the mean relative tokens-per-second gain over the
-    incumbent with a bootstrap 2.5 % bound, and its mean first-token ratio."""
-    sampled = windows(memory, rng)
-    runs = {name: [simulate(costs[name], int(c["seqs"]), w, int(c.get("seq_ctx", 2048))) for w in sampled]
-            for name, c in configs.items()}
+    incumbent with a bootstrap 2.5 % bound, and its mean first-token ratio. Optional local rebuild times
+    charge entry at the first arrival and reserve a return after the sampled window."""
+    sampled = windows(memory, rng, size=window_size)
+    runs = {}
+    for name, config in configs.items():
+        enter, leave = (switch_costs or {}).get(name, (None, None))
+        rows = [simulate(costs[name], int(config["seqs"]), w, int(config.get("seq_ctx", 2048)), start_delay_s=enter or 0.0)
+                for w in sampled]
+        if leave:
+            # Reserve one restoration after this finite traffic window. It adds no
+            # delay to first tokens already delivered within the window.
+            for row in rows:
+                row["tok_s"] = row["tokens"] / (row["seconds"] + leave)
+        runs[name] = rows
     base = runs[incumbent]
-    out: dict[str, Any] = {"windows": len(sampled), "candidates": {}}
+    out: dict[str, Any] = {"windows": len(sampled), "window_requests": window_size, "candidates": {}}
+    if switch_costs is not None:
+        out["switch_costs_s"] = {name: {"enter": enter, "return": leave}
+                                 for name, (enter, leave) in switch_costs.items()}
     for name, rows in runs.items():
         gains = [r["tok_s"] / b["tok_s"] - 1.0 for r, b in zip(rows, base)]
         boots = sorted(sum(gains[rng.randrange(len(gains))] for _ in gains) / len(gains) for _ in range(resamples))
@@ -239,7 +254,7 @@ class GgmlAgent:
     "step_full", "prefill_per_1k"}; every configuration here has passed the quality gate."""
 
     def __init__(self, root: str | Path | None, binding: dict[str, Any], configs: dict[str, dict[str, Any]],
-                 incumbent: str, seed: int = 0):
+                 incumbent: str, seed: int = 0, *, shared_cap: int | None = None):
         if incumbent not in configs:
             raise ValueError("the incumbent must be one of the configurations")
         self.configs = {k: dict(v) for k, v in configs.items()}
@@ -271,6 +286,12 @@ class GgmlAgent:
         self.trial: dict[str, Any] | None = None  # {"from": name, "since": requests}
         self.rejected: dict[str, int] = {}  # name -> request count at rejection
         self.requests = 0
+        self.switch_seconds: dict[str, dict[str, float]] = {}
+        # The width plan's historical state key predates context-size and pool
+        # pricing. Keep learned traffic compatible, but never transfer rebuild
+        # timings to a different context shape or shared-pool allocation.
+        self.switch_scope = {"shared_cap": shared_cap, "configs": {
+            name: [c["seqs"], c.get("seq_ctx", 2048), c.get("settings") or {}] for name, c in configs.items()}}
         self.history: list[dict[str, Any]] = []
         self.pending_switch: str | None = None
         self.recovery: dict[str, Any] | None = None
@@ -442,7 +463,17 @@ class GgmlAgent:
                                 matching=recovery["matching"])
                 self._remember(decision)
                 return None
-        result = dream(self.configs, prices, self.current, memory, self._rng)
+        if self.binding.get("gpu_layers"):
+            switch_costs = {name: (self._switch_cost(self.current, name), self._switch_cost(name, self.current))
+                            for name in self.configs if name != self.current}
+            # A short observed busy period cannot pay the measured rebuild using
+            # savings from 32 imagined requests. Old unpriced plans retain their window.
+            measured = any(t is not None for pair in switch_costs.values() for t in pair)
+            horizon = min(WINDOW, len(completed)) if measured and completed else WINDOW
+            result = dream(self.configs, prices, self.current, memory, self._rng,
+                           switch_costs=switch_costs, window_size=horizon)
+        else:
+            result = dream(self.configs, prices, self.current, memory, self._rng)
         decision["dream"] = result
         best, best_low = None, MARGIN
         for name, row in result["candidates"].items():
@@ -482,8 +513,21 @@ class GgmlAgent:
                 out[name] = Scaled(self.base[name], self.machine_factor(name))
         return out
 
-    def switched(self, name: str) -> None:
-        """The engine now serves `name`."""
+    def _switch_cost(self, source: str, target: str) -> float | None:
+        release = self.configs[source].get("context_release_s")
+        build = self.configs[target].get("context_build_s")
+        observed = self.switch_seconds.get(source, {}).get(target)
+        if self.switch_scope["shared_cap"] is not None or not _positive_seconds(release) or not _positive_seconds(build):
+            return observed  # width calibration uses separate KV streams; price a shared pool only after observing it
+        # Include any higher observed cost for this exact direction (e.g. the
+        # live configuration has a larger occupied cache than the startup probe).
+        return max(release + build, observed or 0.0)
+
+    def switched(self, name: str, *, seconds: float | None = None) -> None:
+        """The engine now serves `name`. Record only completed, elapsed local rebuilds."""
+        if self.current != name and _positive_seconds(seconds):
+            revised = {**self.switch_seconds.get(self.current, {}), name: seconds}
+            self.switch_seconds = {**self.switch_seconds, self.current: revised}
         self.current, self.pending_switch = name, None
         self._save()
 
@@ -491,6 +535,7 @@ class GgmlAgent:
         return {"version": VERSION, "serving": self.current, "configs": {k: {"seqs": v["seqs"],
                                                                            "settings": v.get("settings")}
                                                                        for k, v in self.configs.items()},
+                "observed_switch_s": {s: dict(v) for s, v in self.switch_seconds.items()},
                 "requests": self.requests, "live_windows": len(self.observations), "recovery": self.recovery, "trial": self.trial, "rejected": sorted(self.rejected),
                 "live_factor": {k: round(v, 4) for k, v in self.factors.items()}, "live_steps": dict(self.live),
                 "world_model": {k: {"theta": [round(t, 6) for t in c.theta], "steps": c.n}
@@ -507,7 +552,7 @@ class GgmlAgent:
         if self.path is None:
             return
         state = {"version": VERSION, "binding": self.binding, "current": self.current, "rejected": self.rejected,
-                 "factors": self.factors, "live": self.live,
+                 "factors": self.factors, "live": self.live, "switch_seconds": self.switch_seconds, "switch_scope": self.switch_scope,
                  "requests": self.requests, "memory": list(self.memory), "trial": self.trial,
                  "recovery": self.recovery, "observations": list(self.observations), "costs": {k: c.to_json() for k, c in self.costs.items()}, "history": self.history[-20:]}
         try:
@@ -531,6 +576,12 @@ class GgmlAgent:
         self.costs.update({k: StepCost.from_json(v) for k, v in state.get("costs", {}).items() if k in self.configs})
         self.rejected = {k: int(v) for k, v in state.get("rejected", {}).items() if k in self.configs}
         self.requests = int(state.get("requests", 0))
+        observed = state.get("switch_seconds")
+        if state.get("switch_scope") == self.switch_scope and isinstance(observed, dict):
+            for src, destinations in observed.items():
+                if src in self.configs and isinstance(destinations, dict):
+                    self.switch_seconds[src] = {dst: t for dst, t in destinations.items()
+                                                if dst in self.configs and _positive_seconds(t)}
         self.factors.update({k: float(v) for k, v in state.get("factors", {}).items() if k in self.configs})
         self.live.update({k: int(v) for k, v in state.get("live", {}).items() if k in self.configs})
         self.history = list(state.get("history", []))
@@ -565,6 +616,10 @@ def anchors_of(config: dict[str, Any]) -> list[tuple[int, int, int, float]]:
     return points
 
 
+def _positive_seconds(value: Any) -> bool:
+    return type(value) in (int, float) and value > 0 and math.isfinite(value)
+
+
 def configs_from_measurement(measured: Iterable[dict[str, Any]], seq_ctx: int) -> dict[str, dict[str, Any]]:
     """Configurations from `ggml_engine.choose_sequences`'s measured rows: one per (settings, width)."""
     out = {}
@@ -584,6 +639,10 @@ def configs_from_measurement(measured: Iterable[dict[str, Any]], seq_ctx: int) -
                          "step_one": float(one), "kv_per_1k": kv, "prefill_per_1k": float(prefill),
                          "short_ctx": int(row.get("short_ctx", 64)), "long_ctx": int(row.get("long_ctx", 0)),
                          "step_long": None if long is None else float(long)}
+            for key in ("context_build_s", "context_release_s"):
+                price = row.get(key, {}).get(width)
+                if _positive_seconds(price):
+                    out[name][key] = price
             if point := row.get("workload_steps", {}).get(width):
                 out[name]["workload_step"] = point
     return out

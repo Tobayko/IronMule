@@ -442,10 +442,12 @@ class GgmlEngine:
         self._lock = threading.Lock()
         self.shared = bool(shared)  # SP1: one pool, prefixes shared; `seqs * seq_ctx` cells, up to `cap` running
         self.cap = int(cap or min(LLAMA_MAX_SEQ, 2 * seqs)) if shared else seqs
+        context_started = time.perf_counter()
         self._open(seqs, seq_ctx, flash_attn=flash_attn, kv_unified=kv_unified or self.shared, kv_f32=kv_f32,
                    kv_q8=kv_q8)
         self.steps = 0
         self._warm_up()
+        self.context_build_s = time.perf_counter() - context_started
         self.kg: dict[str, Any] = {}
         if KG_LIB and self.gpu_layers:
             self.kg = self.measure_kg(KG_LIB)
@@ -1501,7 +1503,10 @@ def measure_widths(gguf: str, settings: dict[str, bool], seq_ctx: int, widths: S
                         "rows": rows_now, "kv": rows_now * (length + (steps - 1) // 2),
                         "seconds": statistics.median(prices)}
             finally:
+                releasing = time.perf_counter()
                 engine.close_context()
+                out.setdefault("context_release_s", {})[str(width)] = time.perf_counter() - releasing
+                out.setdefault("context_build_s", {})[str(width)] = engine.context_build_s
     finally:
         first.close_context()
         first.L.llama_model_free(model)

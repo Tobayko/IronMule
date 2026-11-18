@@ -307,3 +307,51 @@ def test_continually_changing_load_eventually_leaves_recovery_without_old_eviden
         agent.idle()
     assert seen == [module.RETRY_AFTER]
     assert agent.recovery is None
+
+
+def test_gpu_burst_must_repay_actual_rebuilds_within_the_observed_window(tmp_path):
+    # Four requests can run faster side by side after widening. Restoring the
+    # incumbent consumes that saving for a small burst; 32 requests repay it.
+    configs = {
+        "one": {"seqs": 1, "step_one": .01, "step_full": .01, "context_build_s": .109, "context_release_s": .001},
+        "four": {"seqs": 4, "step_one": .01, "step_full": .01, "context_build_s": .009, "context_release_s": .001},
+    }
+    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one")
+    for batch in range(12):
+        for _ in range(4):
+            agent.observe_request(1, 8, 3)
+        assert agent.idle() is None
+    forecast = agent.history[-1]["dream"]
+    assert forecast["window_requests"] == 4
+    assert math.isclose(forecast["switch_costs_s"]["four"]["enter"], .01)
+    assert math.isclose(forecast["switch_costs_s"]["four"]["return"], .11)
+    assert forecast["candidates"]["four"]["low"] < 0
+    for _ in range(32):
+        agent.observe_request(1, 8, 3)
+    assert agent.idle() == "four"
+    agent.switched("four", seconds=.08)
+    restored = GgmlAgent(tmp_path, agent.binding, configs, "one")
+    assert restored.current == "one"  # restore the incumbent after an unconfirmed trial
+    assert restored._switch_cost("one", "four") == .08
+    assert math.isclose(restored._switch_cost("four", "one"), .11)
+    pooled = GgmlAgent(tmp_path, agent.binding, configs, "one", shared_cap=16)
+    assert pooled.requests == restored.requests
+    assert pooled._switch_cost("one", "four") is None
+    assert pooled._switch_cost("four", "one") is None
+
+
+def test_gpu_existing_unpriced_plans_retain_their_dream_and_unknown_costs(tmp_path):
+    configs = {"one": {"seqs": 1, "step_one": .01, "step_full": .01},
+               "four": {"seqs": 4, "step_one": .01, "step_full": .01}}
+    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one")
+    for _ in range(48):
+        agent.observe_request(1, 8, 3)
+    assert agent.idle() == "four"
+    forecast = agent.history[-1]["dream"]
+    assert forecast["switch_costs_s"]["four"] == {"enter": None, "return": None}
+    assert forecast["window_requests"] == 32
+    agent.switched("four", seconds=0)
+    assert agent._switch_cost("one", "four") is None
+    agent.switched("one", seconds=.04)
+    assert agent._switch_cost("four", "one") == .04
+    assert agent._switch_cost("one", "four") is None

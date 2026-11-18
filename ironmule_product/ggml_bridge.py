@@ -77,7 +77,8 @@ class GgmlBridge:
                    "gpu_layers": self._engine.gpu_layers}
         if "experience_sha256" in plan:
             binding["width_experience"] = plan["experience_sha256"]
-        self._agent = GgmlAgent(plan.get("root"), binding, configs, incumbent)
+        self._agent = GgmlAgent(plan.get("root"), binding, configs, incumbent,
+                                shared_cap=self._engine.cap if getattr(self._engine, "shared", False) else None)
         serving = configs[self._agent.current]  # resumed: what this binding learned last time
         wanted = {k: bool(v) for k, v in (serving.get("settings") or {}).items() if v}
         if self._engine.seqs != int(serving["seqs"]) or wanted != {k: v for k, v in self._engine.settings.items() if v}:
@@ -102,9 +103,11 @@ class GgmlBridge:
     def _switch(self, name: str) -> None:
         config = self._agent.configs[name]
         with self._run_lock:
+            started = time.perf_counter()
             self._engine.reconfigure(int(config["seqs"]), config.get("settings") or {})
             self._bind_pilot_learning()
-        self._agent.switched(name)
+            elapsed = time.perf_counter() - started
+        self._agent.switched(name, seconds=elapsed if self._engine.gpu_layers else None)
 
     def _idle_loop(self) -> None:
         dreamt_at = -1  # dream again only after new traffic: a quiet server spends no CPU on it

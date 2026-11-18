@@ -448,6 +448,7 @@ def test_seq1_widths_are_measured_on_one_loaded_model(engine):
 
     out = measure_widths(GGUF, dict(engine.settings), 256, [1, 2], steps=2, repeats=1)
     assert out["cell_bytes"] > 0 and set(out["rates"]) == {"1", "2"} and all(r > 0 for r in out["rates"].values())
+    assert all(out[key][width] > 0 for key in ("context_build_s", "context_release_s") for width in ("1", "2"))
 
 
 def test_seq1_the_memory_seen_is_the_container_s_limit_with_its_file_cache_free(monkeypatch, tmp_path):
