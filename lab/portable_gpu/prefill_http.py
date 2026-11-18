@@ -140,7 +140,7 @@ def run(args):
         _atomic_write(args.output, dict(public, stage=stage, elapsed_seconds=round(time.monotonic()-started, 3)))
 
     save("binding")
-    failed = set()
+    unavailable = set()
     try:
         artifacts = compare_servers.prepare_artifacts(args)
         _, _, _, size, sha = fetch.MODELS["qwen3-32b"]
@@ -152,7 +152,7 @@ def run(args):
             data = compare.workloads(args, rep)
             start = rep % len(args.arms)
             for name in args.arms[start:] + args.arms[:start]:
-                if name in failed:
+                if name in unavailable:
                     continue
                 os.environ["IRONMULE_PREFILL_STUDY"] = "1"
                 os.environ["IRONMULE_GGML_STREAMS"], os.environ["IRONMULE_GGML_PREFILL_BATCH"] = ARMS[name]
@@ -163,23 +163,31 @@ def run(args):
                 try:
                     production_compare.measure(args, "ironmule_gguf", rep, data, report, save, deadline,
                                                profile=profile, label=name)
-                except (compare.Unverified, compare_servers.StartupError) as exc:
-                    error = exc.report_fields() if isinstance(exc, compare_servers.StartupError) else {"reason": str(exc)[:180]}
+                except (compare.Unverified, RuntimeError, OSError) as exc:
+                    if isinstance(exc, compare_servers.StartupError):
+                        error = exc.report_fields()
+                    elif isinstance(exc, compare.Unverified):
+                        error = {"reason": str(exc)[:180]}
+                    else:
+                        # A streaming exception can contain a response body. Keep only a bounded error class.
+                        error = {"reason": "request transport or worker error", "type": type(exc).__name__}
                     if profile.placement:
                         error["placement"] = profile.placement
                     report["errors"].append({"deployment": name, "repeat": rep, **error})
-                    failed.add(name)
+                    if isinstance(exc, (compare.Unverified, compare_servers.StartupError)):
+                        unavailable.add(name)
                     save("arm_unavailable")
-                    if name == "stock":
+                    if name == "stock" and name in unavailable:
                         raise
-        report["status"] = "partial" if failed else "measured"
+                    compare.remaining(deadline)
+        report["status"] = "partial" if report["errors"] else "measured"
     except (Exception, KeyboardInterrupt) as exc:
         report["status"] = "incomplete"
         report["failure"] = {"type": type(exc).__name__}
         raise
     finally:
         save("finished")
-    return int(bool(failed))
+    return int(bool(report["errors"]))
 
 
 if __name__ == "__main__":
