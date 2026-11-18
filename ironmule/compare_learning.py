@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import secrets
@@ -25,7 +26,18 @@ def digest(value):
 def engine_binding(engine, model):
     from . import ggml_engine as ge
 
-    return {"machine": ge.machine_key(), "gguf_sha256": model, "engine_version": ge.ENGINE_VERSION,
+    host = None
+    for path in (Path("/etc/machine-id"), Path("/proc/sys/kernel/random/boot_id")):
+        try:
+            value = path.read_text().strip()
+        except OSError:
+            continue
+        if value:
+            host = digest(value)
+            break
+    return {"machine": ge.machine_key(), "host_sha256": host,
+            "cpu_affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
+            "gguf_sha256": model, "engine_version": ge.ENGINE_VERSION,
             "gpu_layers": engine.gpu_layers, "seqs": engine.seqs, "seq_ctx": engine.seq_ctx, "threads": engine.threads,
             "shared": engine.shared, "cap": engine.cap, "speculate": engine.speculate, "max_rows": engine.max_rows,
             "settings": engine.settings, "prefix_reuse": engine.prefix_reuse, "prompt_budget": ge.PROMPT_BUDGET,
@@ -46,6 +58,8 @@ def rule_directory(state, binding):
 
 
 def read_rules(state, binding):
+    if not binding.get("host_sha256"):
+        return {}
     try:
         record = json.loads((rule_directory(state, binding) / "qualified.json").read_text())
         if record["binding"] == binding:
@@ -217,7 +231,7 @@ def respond(report, *, gguf, state, provider, deadline):
     if not choice:
         return {**result, "reason": "no verified rival gap at a supported concurrent workload"}
     b = choice["binding"]
-    if (not b or b.get("gguf_sha256") != choice["model"] or b.get("has_drafter")
+    if (not b or not b.get("host_sha256") or b.get("gguf_sha256") != choice["model"] or b.get("has_drafter")
             or b.get("prompt_budget") != 0 or provider not in ("cpu", "cuda", "rocm")):
         return {**result, "reason": "missing or unsupported native serving configuration"}
     lengths, limit = choice["prompt_lengths"], report["protocol"]["max_tokens"]

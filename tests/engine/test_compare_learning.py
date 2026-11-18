@@ -10,7 +10,7 @@ from ironmule import compare_learning as learn
 
 
 def comparison():
-    b = {"gguf_sha256": "1" * 64, "machine": "fixture", "seq_ctx": 512, "prompt_budget": 0}
+    b = {"gguf_sha256": "1" * 64, "machine": "fixture", "host_sha256": "2" * 64, "seq_ctx": 512, "prompt_budget": 0}
     report = {"schema": "ironmule.compare.v1", "device": "cpu:host", "protocol": {"max_tokens": 6},
               "arms": [], "runs": []}
     for engine, rate, ttft in (("ironmule", 10, 40), ("vllm", 15, 37), ("llama_cpp", 9, 43)):
