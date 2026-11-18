@@ -227,3 +227,10 @@ python -m lab.portable_gpu.prefill_http --gguf "$MODEL" --tokenizer "$TOKENIZER"
 ```
 
 The first command verifies 65 of 65 offloaded layers and runs 16 held-out questions in the target rectangles. A rejection stops the native trial before performance timing. On a pass it measures three paired bursts at each concurrency (8 and 32), checks complete outputs and a separate default-context likelihood and factual comparison, and records device-calibrated throughput. The HTTP step requires a qualifying receipt, starts the ordinary agent-enabled service, checks both workloads against the incumbent, and independently observes grouped calls in the actual worker. A receipt alone does not change a production service. Training data and language-model weights are unaffected.
+
+A qualifying 512 receipt can also fund a separate native microbatch experiment on that same device. The probe keeps the 32-stream, 2,048-token context and tries physical limits of 1,024 and 2,048. It checks available GPU memory before allocation and observes the physical row count on the native attention-normalization node. Each larger geometry must reproduce the earlier answers and pass the likelihood comparison. Three paired bursts at each concurrency quantify any change in native throughput. The outputs stay in the study directory.
+
+```bash
+python -m lab.portable_gpu.long_prefill_ubatch --gguf "$MODEL" --receipt "$RESULTS/native.json" \
+  --out-dir "$RESULTS/physical" --budget-seconds 360
+```
