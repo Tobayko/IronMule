@@ -166,26 +166,42 @@ def _sample(engine, tasks, limit, budget, key):
             "execution_shape": digest(steps)}
 
 
+class BindingMismatch(ValueError):
+    def __init__(self, actual, expected):
+        # Names come from engine_binding(), never from report keys or paths.
+        self.fields = sorted(k for k in actual if k not in expected or expected[k] != actual[k])
+        if expected.keys() - actual.keys():
+            self.fields.append("unexpected_field")
+        super().__init__("current native engine differs from measured incumbent: " + ", ".join(self.fields))
+
+
 def trial(payload):
     import random
+    from ironmule_product.compare_holdout import worker_environment
 
     b, gguf = payload["binding"], payload["gguf"]
+    # Apply the original worker mask before any GGML/CUDA import or model allocation. The
+    # parent bounds driver discovery, allocation and all four holdout pairs with one deadline.
+    os.environ.update(worker_environment(payload["device"], b, payload["provider"]))
     affinity = b.get("cpu_affinity")
     if affinity and hasattr(os, "sched_setaffinity"):
         if not set(affinity).issubset(os.sched_getaffinity(0)):
             raise ValueError("the serving worker's CPUs are unavailable")
         os.sched_setaffinity(0, affinity)
-    from .ggml_engine import GgmlEngine, SETTING_KEYS, file_sha256, ggml_devices
+    from .ggml_engine import GgmlEngine, SETTING_KEYS, _kernel_digest, file_sha256, ggml_devices
 
     if file_sha256(gguf) != b["gguf_sha256"]:
         raise ValueError("GGUF changed")
+    if b.get("kg_sha256") and _kernel_digest() != b["kg_sha256"]:
+        raise BindingMismatch({"kg_sha256": None}, {"kg_sha256": b["kg_sha256"]})
     opened = {k: b[k] for k in ("threads", "seqs", "seq_ctx", "speculate", "shared", "cap", "max_rows")}
     settings = {k: b["settings"][k] for k in SETTING_KEYS if k in b["settings"]}
     engine = GgmlEngine(gguf, **opened, **settings)
     try:
         provider = payload["provider"]
-        if engine_binding(engine, b["gguf_sha256"]) != b:
-            raise ValueError("current native engine differs from measured incumbent")
+        actual = engine_binding(engine, b["gguf_sha256"])
+        if actual != b:
+            raise BindingMismatch(actual, b)
         if provider == "cpu" and engine.gpu_layers or (provider != "cpu" and
                 (not engine.gpu_layers or [d["provider"] for d in ggml_devices(engine.L)] != [provider])):
             raise ValueError("local native backend differs from comparison")
@@ -241,6 +257,7 @@ def rejections(pairs):
 def respond(report, *, gguf, state, provider, deadline):
     """Bounded child owns the native context. Only a complete local holdout can change the scoped rule."""
     from ironmule_product.state import _atomic_write, _ensure_directory
+    from ironmule_product.compare_holdout import verified_device
 
     choice = select(report, required_implementation=implementation())
     result = {"schema": SCHEMA, "status": "deferred", "selection": choice}
@@ -285,7 +302,11 @@ def respond(report, *, gguf, state, provider, deadline):
         if candidate is None:
             return {**result, "reason": "no distinct bounded prompt budget"}
         result.update(source_sha256=source, workload_key=key, incumbent_budget=baseline, candidate_budget=candidate)
-        payload = {"binding": b, "gguf": str(gguf), "lengths": lengths, "limit": limit, "provider": provider,
+        try:
+            device = verified_device(report, b, provider)
+        except ValueError as exc:
+            return {**result, "reason": str(exc)}
+        payload = {"binding": b, "gguf": str(gguf), "lengths": lengths, "limit": limit, "provider": provider, "device": device,
                    "incumbent": baseline, "candidate": candidate, "key": key, "seed": secrets.randbits(64)}
         result["holdout_seed"] = payload["seed"]
         try:
@@ -294,6 +315,12 @@ def respond(report, *, gguf, state, provider, deadline):
                 return {**result, "reason": "comparison budget exhausted"}
             child = subprocess.run([sys.executable, "-m", "ironmule.compare_learning"], input=json.dumps(payload),
                                    text=True, capture_output=True, timeout=remaining)
+            if child.returncode == 3 and child.stdout:
+                fields = json.loads(child.stdout).get("binding_mismatch")
+                if isinstance(fields, list) and len(fields) <= 40 and all(
+                    isinstance(k, str) and re.fullmatch("[a-z0-9_]{1,32}", k) for k in fields):
+                    return {**result, "reason": "current native engine differs from measured incumbent",
+                            "binding_mismatch": fields}
             if child.returncode:
                 return {**result, "reason": "local trial unavailable", "detail": child.stderr.splitlines()[-1][:300]
                         if child.stderr else str(child.returncode)}
@@ -315,4 +342,8 @@ def respond(report, *, gguf, state, provider, deadline):
 
 
 if __name__ == "__main__":
-    print(json.dumps(trial(json.load(sys.stdin)), allow_nan=False))
+    try:
+        print(json.dumps(trial(json.load(sys.stdin)), allow_nan=False))
+    except BindingMismatch as exc:
+        print(json.dumps({"binding_mismatch": exc.fields}))
+        sys.exit(3)

@@ -121,7 +121,72 @@ def test_shared_pool_probe_recreates_derived_prefix_setting(monkeypatch):
 
     monkeypatch.setattr(ggml_engine, "file_sha256", lambda path: "model")
     monkeypatch.setattr(ggml_engine, "GgmlEngine", open_instrumented)
+    for key in ("IRONMULE_GGML_SEQS", "IRONMULE_GGML_SEQ_CTX", "IRONMULE_KG_LIB"):
+        monkeypatch.setenv(key, "")
     binding = {"gguf_sha256": "model", "threads": 2, "seqs": 4, "seq_ctx": 512, "speculate": True, "shared": True,
                "cap": 8, "max_rows": 16, "settings": {"shared_prefix": True, "kv_unified": True}}
     with pytest.raises(RuntimeError, match="reached native constructor"):
-        learn.trial({"binding": binding, "gguf": "test.gguf"})
+        learn.trial({"binding": binding, "gguf": "test.gguf", "provider": "cpu", "device": "cpu:fixture"})
+
+
+def test_cuda_holdout_reconstructs_physical_mask_before_native_initialization(monkeypatch):
+    from ironmule_product import compare_holdout as launcher, compare_servers
+
+    uid = "GPU-e66e3a63-7a14-4ff0-5f1c-3d6ee532c695"
+    binding = {"seq_ctx": 2048, "seqs": 64, "kg_sha256": None}
+    arm = {"device": uid, "cuda_visible_devices": uid, "provider": "cuda", "placement_verified": True, "ggml": binding}
+    report = {"device": uid, "arms": [{"engine": "ironmule", "identity": arm}]}
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+    monkeypatch.setenv("IRONMULE_KG_LIB", "other.so")
+    selected = launcher.verified_device(report, binding, "cuda")
+    def physical_device(env, engine):
+        assert engine == "ironmule" and env["CUDA_VISIBLE_DEVICES"] == "0,1"
+        env["CUDA_VISIBLE_DEVICES"] = uid
+        return uid, "NVIDIA L40S"
+    monkeypatch.setattr(compare_servers, "_device", physical_device)
+    env = launcher.worker_environment(selected, binding, "cuda")
+    assert env["CUDA_VISIBLE_DEVICES"] == uid and env["IRONMULE_KG_LIB"] == ""
+    assert (env["IRONMULE_GGML_SEQS"], env["IRONMULE_GGML_SEQ_CTX"]) == ("64", "2048")
+    monkeypatch.setattr(compare_servers, "_device", lambda env, engine: ("GPU-other", "L40S"))
+    with pytest.raises(ValueError, match="device differs"):
+        launcher.worker_environment(selected, binding, "cuda")
+    arm["cuda_visible_devices"] = "0"
+    with pytest.raises(ValueError, match="verified CUDA selector"):
+        launcher.verified_device(report, binding, "cuda")
+
+
+def test_binding_difference_lists_only_known_field_names_and_never_promotes(monkeypatch, tmp_path):
+    actual = {"machine": "current", "pilot": "present", "settings": {}}
+    old = {"machine": "other", "pilot": None, "settings": {}, "/private/path": "extra"}
+    difference = learn.BindingMismatch(actual, old)
+    assert difference.fields == ["machine", "pilot", "unexpected_field"]
+    monkeypatch.setattr(learn.subprocess, "run", lambda *a, **kw: SimpleNamespace(
+        returncode=3, stdout=json.dumps({"binding_mismatch": difference.fields})))
+    result = learn.respond(comparison(), gguf="model", state=tmp_path, provider="cpu", deadline=time.monotonic() + 10)
+    assert result["status"] == "deferred" and result["binding_mismatch"] == difference.fields
+    assert "/private/path" not in json.dumps(result) and not list(tmp_path.rglob("qualified.json"))
+
+
+def test_retry_uses_separate_output_and_refuses_different_model_or_service_state(monkeypatch, tmp_path):
+    from ironmule_product.compare_holdout import replay
+
+    report = comparison()
+    report["status"] = "complete"
+    model, state = tmp_path / "m.gguf", tmp_path / "worker"
+    arm = report["arms"][0]["identity"]
+    arm.update(provider="cpu", argv=["serve", "--state-dir", str(state), "--gguf", str(model)])
+    source, output = tmp_path / "raw.json", tmp_path / "holdout.json"
+    original = json.dumps(report)
+    source.write_text(original)
+    base = ["--report", str(source), "--gguf", str(model), "--output", str(output), "--state"]
+    with pytest.raises(SystemExit):
+        replay([*base, str(tmp_path / "other-state")])
+    assert not output.exists()
+    monkeypatch.setattr(learn, "respond", lambda *args, **kw: {"status": "retained_incumbent"})
+    for key in ("IRONMULE_GGML_SEQ_CTX", "IRONMULE_KG_LIB"):
+        monkeypatch.setenv(key, "")
+    replay([*base, str(state)])
+    assert json.loads(output.read_text())["status"] == "retained_incumbent"
+    assert source.read_text() == original
+    with pytest.raises(SystemExit):
+        replay([*base, str(state)])

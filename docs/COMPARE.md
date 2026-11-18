@@ -36,6 +36,13 @@ For a quick compatibility check, `--concurrency 1 --requests 1 --repeats 1` stil
 
 After the servers stop, IronMule can use paired results at a supported concurrency to select one local prompt-admission experiment. It checks the bound GGUF engine, model, hardware and remaining budget, then compares a candidate with the incumbent on fresh held-out requests. A qualified local rule is scoped to the measured configuration in the benchmark agent state. Failed trials retain the incumbent. The report records the outcome under `learning`. A later full comparison is required to establish whether the change improves the public three-engine result.
 
+On CUDA, the holdout independently resolves the physical GPU from the current visibility mask and restores the measured worker's UUID before GGML initializes. A different binding defers the trial. The `binding_mismatch` list identifies differences such as the native implementation, machine or pilot. To retry a completed comparison on its original host with the same installed release, pass the product worker's state directory and a fresh output filename.
+
+```sh
+python -m ironmule_product.compare_holdout --report comparison.json --gguf model.gguf \
+  --state /path/to/agent-state --output holdout.json --budget-seconds 240
+```
+
 ## Unattended comparisons
 
 On a dedicated host, start the watch once and pass your regular comparison options after
