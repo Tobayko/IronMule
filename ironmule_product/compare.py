@@ -186,6 +186,8 @@ def evaluate(report):
                     reasons_here.append("unverified_device_placement")
                 if engine == "llama_cpp" and opponent_identity.get("identity", {}).get("baseline_stock") is not True:
                     reasons_here.append("stock_provenance_unverified")
+                if engine == "vllm" and protocol.get("vllm_mode") == "enforce_eager":
+                    reasons_here.append("nondefault_vllm_configuration")
                 if tested["generation"] != reference["generation"]:
                     reasons_here.append("generated_lengths_or_stops_differ")
                 if ratio < 1.03:
@@ -207,16 +209,31 @@ def evaluate(report):
                                "ironmule_implementation": native,
                                "ttft_p95_ratio": latency, "lost_answers": lost, "reasons": reasons_here})
                 reasons.update(reasons_here)
-    def mixed_versions(rows):
-        return len({row["ironmule_implementation"] for row in rows if row["ironmule_implementation"]}) > 1
+    def changed_runtime(engine):
+        versions = set()
+        for (name, _), arm in arms.items():
+            if name != engine:
+                continue
+            server = arm.get("identity", {})
+            native = server.get("ggml") or {}
+            stock = server.get("identity") or {}
+            # The native machine key fingerprints the backend DSOs and provider. Learned plans may evolve.
+            signature = [server.get(key) for key in ("version", "device", "gguf_sha256", "tokenizer_sha256")]
+            if engine == "ironmule":
+                signature += [native.get(key) for key in ("implementation", "machine", "engine_version", "kg_sha256")]
+            elif engine == "llama_cpp":
+                signature += [stock.get(key) for key in ("executable_sha256", "library_sha256", "verified_upstream_commit")]
+            versions.add(json.dumps(signature, sort_keys=True))
+        return len(versions) > 1
 
-    if mixed_versions(checks):
-        reasons.add("mixed_ironmule_implementations")
+    changed = {name for name in engines if changed_runtime(name)}
+    reasons.update(f"mixed_{name}_implementations" for name in changed)
 
     def classify(flags):
         incomplete = {"failed_arm", "missing_arm", "insufficient_repeats_or_loads", "served_prompt_lengths_differ",
                       "prompt_ids_unmatched", "stock_provenance_unverified", "unverified_device_placement",
-                      "generated_lengths_or_stops_differ", "mixed_ironmule_implementations"}
+                      "generated_lengths_or_stops_differ", "nondefault_vllm_configuration"}
+        incomplete.update(f"mixed_{name}_implementations" for name in engines)
         if flags & incomplete:
             return "incomplete"
         return "does_not_qualify" if flags else "qualifies"
@@ -229,8 +246,7 @@ def evaluate(report):
             flags.add("insufficient_repeats_or_loads")
         if len(rows) != protocol["repeats"] * len(protocol["concurrency"]):
             flags.add("missing_arm")
-        if mixed_versions(rows):
-            flags.add("mixed_ironmule_implementations")
+        flags.update(f"mixed_{name}_implementations" for name in changed if name in ("ironmule", engine))
         if any(f["engine"] in ("ironmule", engine) for f in report.get("failures", [])):
             flags.add("failed_arm")
         by_opponent[engine] = {"status": classify(flags), "paired_cells": len(rows), "reasons": sorted(flags)}
@@ -336,6 +352,8 @@ def arguments(argv):
     p.add_argument("--llama-server", type=Path, help="stock llama-server executable")
     p.add_argument("--stock-manifest", type=Path, help="attested clean-upstream executable and library SHA manifest")
     p.add_argument("--vllm", type=Path, help="vLLM executable")
+    p.add_argument("--vllm-enforce-eager", action="store_true",
+                   help="measure a vLLM eager fallback separately from its default configuration")
     p.add_argument("--ironmule", type=Path, help="IronMule executable; defaults to this interpreter's CLI")
     p.add_argument("--output", type=Path, help="live JSON report; defaults to benchmark-progress.json in product state")
     p.add_argument("--state-dir", type=Path, help="IronMule product state root")
@@ -409,7 +427,8 @@ def main(argv=None):
     args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     report = {"schema": "ironmule.compare.v1", "protocol": {"id": PROTOCOL, "seed": args.seed,
               "engines": list(args.engines), "repeats": args.repeats, "concurrency": args.concurrency, "requests": args.requests,
-              "max_tokens": args.max_tokens, "context": args.context, "budget_seconds": args.budget_seconds},
+              "max_tokens": args.max_tokens, "context": args.context, "budget_seconds": args.budget_seconds,
+              "vllm_mode": "enforce_eager" if args.vllm_enforce_eager else "default"},
               "run_id": uuid.uuid4().hex, "status": "running", "stage": "initializing", "started_at": utc_now(),
               "model": args.gguf.name, "device": "unverified", "host_arch": platform.machine(),
               "current": {}, "arms": [], "runs": [], "failures": [], "verdict": {"status": "pending", "reasons": []}}

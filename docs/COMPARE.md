@@ -71,3 +71,9 @@ python -m ironmule_product.compare_stock \
 ```
 
 Pass `--stock-manifest stock-reference.json` to `ironmule compare`. At startup IronMule checks the revision reported by `llama-server --version`, the running executable, and its complete set of mapped llama.cpp libraries. Linux uses `/proc` and macOS uses `ps` and `lsof`. The arm's `identity` records the `built-in` or `caller-pinned` provenance, the commit, and all measured SHA-256 digests. A caller-pinned result relies on the builder's identification of the source used for the binary. A manifest declaring patches, an incomplete library set, or a mismatched revision leaves the stock comparison unverified.
+
+### One-request startup check
+
+From the repository, run `python -m lab.portable_gpu.compare_readiness` with the same model, tokenizer, server paths, context and maximum concurrency as the planned comparison. Set `--output readiness.json`, `--log-dir` and `--budget-seconds` separately. Each selected server receives one greedy streaming request capped at four output tokens. The report records startup, device placement, stock or agent identity, a completed response and any classified startup failure. Its `ready_engines` list identifies which servers completed the check. No speed verdict is produced.
+
+A vLLM startup failure classified as a CUDA graph or compiler error triggers one additional startup with `--enforce-eager`. If that request succeeds, `vllm_mode` is `enforce_eager`. For a separate fallback comparison, pass `--vllm-enforce-eager` and select a new output file. Its rows remain available with an explicit nondefault configuration and cannot qualify a performance claim against default vLLM.

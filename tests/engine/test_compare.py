@@ -132,6 +132,16 @@ def test_gate_rejects_lost_answer_and_p95_even_if_tok_s_improve():
              "tokenization": {"digest": "a" * 64}} for e in compare.ENGINES for r in range(3)]
     report = {"protocol": protocol, "runs": runs, "arms": arms}
     assert compare.evaluate(report)["status"] == "qualifies"
+    protocol["vllm_mode"] = "enforce_eager"
+    eager = compare.evaluate(report)["by_opponent"]
+    assert eager["vllm"]["status"] == "incomplete" and eager["llama_cpp"]["status"] == "qualifies"
+    protocol["vllm_mode"] = "default"
+    for engine in ("vllm", "llama_cpp"):
+        sample = next(a["identity"] for a in arms if a["engine"] == engine)
+        sample["version"] = "changed"
+        outcome = compare.evaluate(report)["by_opponent"]
+        assert outcome[engine]["reasons"] == [f"mixed_{engine}_implementations"]
+        sample.pop("version")
     for arm in arms:
         if arm["engine"] == "ironmule":
             arm["identity"]["ggml"] = {"implementation": "older" if arm["repeat"] == 0 else "current"}
