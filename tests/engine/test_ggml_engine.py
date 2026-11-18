@@ -197,7 +197,7 @@ def test_the_gate_s_reference_is_llama_cpp_s_default_setting():
     assert not hasattr(ggml_engine, "GATE_REFERENCE")  # the float32-on-MLX reference is gone for this engine
 
 
-def _fake_gate_children(monkeypatch, option_nll):
+def _fake_gate_children(monkeypatch, option_nll, *, factual_regression=False):
     """`gate`'s child processes, stubbed: the tuning puts flash attention first, the reference is 16 chunks of 2.0."""
     import json as _json
     import subprocess
@@ -216,7 +216,18 @@ def _fake_gate_children(monkeypatch, option_nll):
             out = {"ids": [1, 2, 3], "bos": 1}
         else:
             settings = _json.loads(input)["settings"]
-            out = {"nll": [2.0] * 16 if settings == ggml_engine.DEFAULT_SETTINGS else option_nll}
+            from ironmule.factual_gate import _protocol
+            protocol = _protocol(0, _json.loads(input)["kg5_shape"])
+            facts = {case.key: True for case in protocol}
+            if _json.loads(input)["kg5_shape"]:
+                assert kwargs["env"]["IRONMULE_GGML_PROMPT_BUDGET"] == "32768"
+                assert kwargs["env"]["IRONMULE_PILOT"] == "0"
+            if _json.loads(input)["reference"]:
+                assert kwargs["env"]["IRONMULE_KG_LIB"] == "" and kwargs["env"]["IRONMULE_KG5"] == "0"
+            if factual_regression and (settings != ggml_engine.DEFAULT_SETTINGS or kwargs["env"].get("IRONMULE_KG_LIB")):
+                facts[protocol[0].key] = False
+            out = {"nll": [2.0] * 16 if settings == ggml_engine.DEFAULT_SETTINGS else option_nll,
+                   "facts": facts, "repeat": facts if _json.loads(input)["reference"] else None}
         return _types.SimpleNamespace(returncode=0, stdout=_json.dumps(out) + "\n", stderr="")
 
     monkeypatch.setattr(subprocess, "run", run)
@@ -240,6 +251,45 @@ def test_gg3_an_option_beyond_the_bound_does_not_serve_and_the_default_does(monk
     result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
     assert result["passes"] and result["settings"] == ggml_engine.DEFAULT_SETTINGS
     assert [row["passes"] for row in result["tried"]] == [False, True] and result["tried"][0]["ratio"] > 1.005
+
+
+def test_qg1_rejects_fast_option_with_one_lost_answer_even_if_likelihood_matches(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.0] * 16, factual_regression=True)
+    result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    assert result["passes"] and result["settings"] == ggml_engine.DEFAULT_SETTINGS
+    assert result["tried"][0]["ratio"] == 1
+    factual = result["tried"][0]["factual"]
+    assert not factual["passes"] and not factual["by_category"]["arithmetic"]["passes"]
+
+
+def test_qg1_kg5_requires_actual_candidate_dispatch(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.0] * 16)
+    monkeypatch.setenv("IRONMULE_KG5", "1")
+    monkeypatch.setenv("IRONMULE_KG5_SHAPE", "1024,32,8")
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda L=None: 999)
+    result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    assert result["settings"] == ggml_engine.DEFAULT_SETTINGS
+    assert result["tried"][0]["factual"]["passes"] and not result["tried"][0]["passes"]
+    assert not result["streams"]["passes"]
+    assert result["tried"][0]["factual"]["total"] == 32
+    assert result["tried"][0]["factual"]["shape"] == "1024,32,8"
+
+
+def test_qg1_cannot_choose_uncertified_generated_weights_at_default_settings(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.0] * 16, factual_regression=True)
+    library = tmp_path / "kg.so"
+    library.write_bytes(b"stand-in")
+    monkeypatch.setenv("IRONMULE_KG_LIB", str(library))
+    result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    assert not result["passes"]
+    assert result["tried"][-1]["settings"] == ggml_engine.DEFAULT_SETTINGS
+    assert not result["tried"][-1]["factual"]["passes"]
 
 
 def _stub_engine(seqs: int = 4, seq_rm_ok: bool = True):
@@ -375,6 +425,9 @@ def test_seq1_the_choice_is_measured_once_and_remembered(monkeypatch, tmp_path):
     # AG10: the widths are measured under the gated setting and under llama.cpp's default, for the agent's choice
     assert first["sequences"] == 16 and first["fitting"] == [8, 16, 32, 64] and again == first and len(calls) == 3
     assert len(first["measured"]) == 2
+    monkeypatch.setenv("IRONMULE_KG_LIB", str(tmp_path / "kg.so"))
+    custom = ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {"flash_attn": True}, cache=tmp_path / "c")
+    assert len(custom["measured"]) == 1, "the default setting is not prequalified with generated kernels"
 
 
 def test_seq1_a_failed_measurement_keeps_eight_sequences(monkeypatch, tmp_path):
@@ -839,3 +892,27 @@ def test_seq1_measures_without_the_pilot(monkeypatch, tmp_path):
     (tmp_path / "m.gguf").write_bytes(b"0")
     ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {}, cache=tmp_path / "c")
     assert seen and all(env.get("IRONMULE_PILOT") == "0" for env in seen)
+
+
+def test_kg5_gate_key_binds_to_the_native_backend_and_probe(monkeypatch, tmp_path):
+    from ironmule import ggml_engine as gg
+
+    gguf = tmp_path / "model.gguf"
+    gguf.write_bytes(b"model")
+    monkeypatch.setenv("IRONMULE_KG5", "1")
+    monkeypatch.setenv("LLAMA_CPP_LIB_PATH", str(tmp_path))
+    monkeypatch.setenv("LD_PRELOAD", str(tmp_path / "probe.so"))
+    monkeypatch.setattr(gg, "gpu_layers", lambda: 999)
+    for name in ("libllama.so", "libggml-cuda.so", "probe.so"):
+        (tmp_path / name).write_bytes(name.encode())
+    def key():
+        return gg.gate_key(str(gguf), str(gguf))
+
+    original = key()
+    assert len(gg._kg5_files()) == 3 and key() == original
+    (tmp_path / "probe.so").write_bytes(b"new probe")
+    probe = key()
+    (tmp_path / "libggml-cuda.so").write_bytes(b"another CUDA build")
+    assert len({original, probe, key()}) == 3
+    monkeypatch.setenv("LD_PRELOAD", "unresolved-name.so")
+    assert not gg._kg5_files()

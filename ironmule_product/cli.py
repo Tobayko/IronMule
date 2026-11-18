@@ -525,6 +525,8 @@ def serve(argv: list[str]) -> int:
                     hint = suggest_draft(str(args.gguf))
                     if hint is not None:
                         print(json.dumps({"draft_model_suggestion": hint}), flush=True)
+                if os.environ.get("IRONMULE_PILOT_LEARN") == "1":
+                    checked = {**checked, "pilot_state_root": str(store.root)}
                 # PI1: the worker loads the GGUF, measures this machine's step costs for the Pilot and, with a draft
                 # model, its draft calls before it is ready; on a 4-vCPU Xeon that took about 105 s of the default 120
                 ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),

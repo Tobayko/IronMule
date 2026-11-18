@@ -54,7 +54,12 @@ class GgmlBridge:
         self._last_run = time.monotonic()
         self._agent = None
         self._stop = threading.Event()
+        self._demand_lock = threading.Lock()
+        self._demand = 0
         self._start_agent()
+        self._bind_pilot_learning()
+        if self._agent is not None or getattr(getattr(self._engine, "pilot", None), "learning", None) is not None:
+            threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True).start()
 
     def _start_agent(self) -> None:
         """AG10: the agent learns, dreams and switches the engine's configuration among those the cli measured and the
@@ -76,12 +81,27 @@ class GgmlBridge:
         if self._engine.seqs != int(serving["seqs"]) or wanted != {k: v for k, v in self._engine.settings.items() if v}:
             self._switch(self._agent.current)
         self._engine.observer = self._agent.observe_step
-        threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True).start()
+
+    def _bind_pilot_learning(self) -> None:
+        engine = self._engine
+        pilot = getattr(engine, "pilot", None)
+        if (os.environ.get("IRONMULE_PILOT_LEARN") != "1" or pilot is None or self._speculate
+                or engine.gpu_layers or pilot.cores < 2):
+            return
+        from pathlib import Path
+        from ironmule.ggml_engine import file_sha256
+        from ironmule.hw import STORE
+        from ironmule.pilot_learning import ThreadLearning
+
+        root = (self._gate or {}).get("pilot_state_root")
+        pilot.learning = ThreadLearning(engine, Path(root) if root else STORE, self._gguf_sha256,
+                                        file_sha256(str(pilot.weights_path)))
 
     def _switch(self, name: str) -> None:
         config = self._agent.configs[name]
         with self._run_lock:
             self._engine.reconfigure(int(config["seqs"]), config.get("settings") or {})
+            self._bind_pilot_learning()
         self._agent.switched(name)
 
     def _idle_loop(self) -> None:
@@ -89,7 +109,16 @@ class GgmlBridge:
         while not self._stop.wait(1.0):
             if self._run_lock.locked() or time.monotonic() - self._last_run < 3.0:
                 continue
-            if self._agent.requests == dreamt_at:
+            learning = getattr(getattr(self._engine, "pilot", None), "learning", None)
+            if learning is not None and self._run_lock.acquire(blocking=False):
+                try:
+                    learning.idle(self._interrupted)
+                except Exception as exc:  # an unavailable probe cannot supply serving weights
+                    learning.weights.clear()
+                    learning.last = {"result": "replay failed", "error": type(exc).__name__}
+                finally:
+                    self._run_lock.release()
+            if self._agent is None or self._agent.requests == dreamt_at:
                 continue
             dreamt_at = self._agent.requests
             try:
@@ -98,6 +127,10 @@ class GgmlBridge:
                     self._switch(target)
             except Exception:  # noqa: BLE001 - the agent never stops the server; the incumbent keeps serving
                 self._agent.pending_switch = None
+
+    def _interrupted(self) -> bool:
+        with self._demand_lock:
+            return self._stop.is_set() or self._demand > 0
 
     @property
     def gguf_sha256(self) -> str:
@@ -158,11 +191,20 @@ class GgmlBridge:
                 arrived[id(fresh[-1])] = time.monotonic()
             return fresh
 
-        with self._run_lock:
-            try:
-                served = self._engine.run(jobs, admit=take if admit is not None else None)
-            finally:
-                self._last_run = time.monotonic()
+        demand = getattr(getattr(self._engine, "pilot", None), "learning", None) is not None
+        if demand:
+            with self._demand_lock:
+                self._demand += 1
+        try:
+            with self._run_lock:
+                try:
+                    served = self._engine.run(jobs, admit=take if admit is not None else None)
+                finally:
+                    self._last_run = time.monotonic()
+        finally:
+            if demand:
+                with self._demand_lock:
+                    self._demand -= 1
         if self._agent is not None:  # the traffic memory: arrival, prompt and answer lengths, no text
             for job in served:
                 if job.reason != "cancelled":

@@ -122,3 +122,46 @@ def test_both_shipped_weight_files_load_for_this_version():
     for path in (pl.WEIGHTS, pl.WEIGHTS_GPU):
         pilot = pl.Pilot(engine(), COSTS, max_cap=32, gpu=path is pl.WEIGHTS_GPU, weights=path)
         assert pilot.active, (path.name, pilot.reason)
+
+
+def test_local_thread_head_qualifies_rechecks_and_reverts(tmp_path, monkeypatch):
+    from ironmule.pilot_learning import MIN_STEPS, ThreadLearning
+
+    e = types.SimpleNamespace(settings={}, seqs=2, seq_ctx=512, shared=False, cap=2,
+                              pilot=types.SimpleNamespace(cores=4))
+    learner = ThreadLearning(e, tmp_path, "model", "weights")
+    def replay(context, base, threads, seed, interrupted):
+        return (0.8 if threads == 2 else 1.0), (1, 2, 3)
+    monkeypatch.setattr(learner, "_probe", replay)
+    for _ in range(MIN_STEPS):
+        assert learner.choose(90, 0.1, 3) == 3
+    learner.idle(lambda: False)
+    assert learner.choose(90, 0.1, 3) == 2
+    assert learner.choose(90, 1.0, 3) == learner.choose(150, 0.1, 3) == 3
+    assert learner.status()["last"]["result"] == "qualified"
+    resumed = ThreadLearning(e, tmp_path, "model", "weights")
+    assert resumed.choose(90, 0.1, 3) == 3 and resumed.proposals
+    assert not ThreadLearning(e, tmp_path, "different-model", "weights").proposals
+    for _ in range(MIN_STEPS):
+        learner.choose(90, 0.1, 3)
+    monkeypatch.setattr(learner, "_probe", lambda context, base, threads, seed, interrupted: (1.0, (threads,)))
+    learner.idle(lambda: False)
+    assert learner.choose(90, 0.1, 3) == 3 and learner.last["result"] == "reverted"
+
+
+def test_local_thread_head_refuses_aa_noise_and_interruption(tmp_path, monkeypatch):
+    from ironmule.pilot_learning import MIN_STEPS, ThreadLearning
+
+    e = types.SimpleNamespace(settings={}, seqs=2, seq_ctx=512, shared=False, cap=2,
+                              pilot=types.SimpleNamespace(cores=4))
+    learner = ThreadLearning(e, tmp_path, "m", "w")
+    controls = iter([1.0, 1.3, 1.0, 1.3, 1.0, 1.3, 1.0, 1.3, 1.0])
+    def noisy(context, base, threads, seed, interrupted):
+        return (next(controls) if threads == base else 0.96), (1,)
+    monkeypatch.setattr(learner, "_probe", noisy)
+    for _ in range(MIN_STEPS):
+        learner.choose(300, 0.1, 4)
+    learner.idle(lambda: True)
+    assert learner.last is None
+    learner.idle(lambda: False)
+    assert not learner.weights and learner.last["result"] == "refused"

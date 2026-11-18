@@ -768,14 +768,14 @@ class GgmlEngine:
         return tuple(sorted(found))
 
     # --- decode calls -------------------------------------------------------------------------------------------------
-    def _decode(self, rows: list[tuple[int, int, int, bool]]) -> list[int]:
+    def _decode(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         b = self.batch
         b.n_tokens = len(rows)
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
             b.seq_id[i][0] = seq
         status = self.L.llama_decode(self.ctx, b)
-        if status == 1 and getattr(self, "pool", None) is not None:  # SP1: no free cells; drop the cached sequences
+        if status == 1 and evict and getattr(self, "pool", None) is not None:  # SP1: no free cells; drop the cached sequences
             with self._lock:
                 while self.pool._evict(None):
                     pass
@@ -919,8 +919,6 @@ class GgmlEngine:
                 if self.pilot is not None:  # PI1: threads, running cap, prompt budget and drafting for this step
                     ctx = (sum(len(j.ids) + len(j.tokens) for j in active.values()) / len(active)) if active else 0.0
                     decision = self.pilot.decide(len(active), len(pending), sum(len(j.ids) for j in pending), ctx)
-                    if decision["threads"] != self.threads:
-                        self.set_threads(decision["threads"])
 
                 def room() -> int:
                     return max(0, min(self._slots(), decision["cap"] - len(active)))
@@ -930,6 +928,13 @@ class GgmlEngine:
                     served.extend(more)
                     pending.extend(more)
                     arrived += len(more)
+                if self.pilot is not None:
+                    threads = decision["threads"]
+                    learning = getattr(self.pilot, "learning", None)
+                    if learning is not None and len(active) == 1 and not pending and not self.pilot.last_fallback:
+                        threads = learning.choose(ctx, self.pilot.load.foreign, threads)
+                    if threads != self.threads:
+                        self.set_threads(threads)
                 # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
                 # budget (whole prompts, at least one), and one passed over too often first
                 fresh: list[tuple[int, Job, int]] = []
@@ -1483,7 +1488,11 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         found = gpu_memory_bytes(device)
         if found is not None:
             available, total = found
+    # Under generated matmuls even the default attention setting can change answers. AG10 may then
+    # vary width only within the settings actually chosen by the gate.
+    default_alternative = not os.environ.get("IRONMULE_KG_LIB")
     key = hashlib.sha256(json.dumps([file_sha256(gguf), settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS,
+                                     default_alternative,
                                      int(extra_bytes) >> 28,
                                      WIDTH_GAIN, machine_key(), round(total / 2**30)], sort_keys=True).encode()
                          ).hexdigest()[:24]
@@ -1536,7 +1545,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         # by definition and differs from flash attention in what a step pays per attended token
         alternatives = [measured]
         default = {k: False for k in DEFAULT_SETTINGS}
-        if {k: v for k, v in settings.items() if v} and os.environ.get("IRONMULE_GGML_AGENT", "1") != "0":
+        if default_alternative and any(settings.values()) and os.environ.get("IRONMULE_GGML_AGENT", "1") != "0":
             other = child(WIDTH_CHILD, {"settings": default, "seq_ctx": seq_ctx, "widths": widths,
                                         "long_ctx": AGENT_LONG_CTX})
             if other is not None:
@@ -1576,16 +1585,35 @@ GATE_CANDIDATE = r"""
 import json, sys
 from ironmule.ggml_engine import GgmlEngine
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, gate_lead
+from ironmule.factual_gate import ggml_scores
+from pathlib import Path
 data = json.loads(sys.stdin.read())
-engine = GgmlEngine(sys.argv[1], speculate=False, **data["settings"])
+fixture = {"seqs": 32, "seq_ctx": 1024, "max_rows": 32} if data["kg5_shape"] else {}
+engine = GgmlEngine(sys.argv[1], speculate=False, shared=data["shared"], **fixture, **data["settings"])
 ids, bos, rows = data["ids"], data["bos"], []
 for index in range(CHUNKS):
     chunk = ids[index * CHUNK_TOKENS:(index + 1) * CHUNK_TOKENS + 1]
     if len(chunk) < CHUNK_TOKENS + 1:
         break
     rows.append(engine.chunk_nll(chunk, gate_lead(chunk, bos)))
+snapshot = Path(data["snapshot"])
+if snapshot.suffix.lower() == ".gguf":
+    from ironmule.gguf_tokenizer import GgufTokenizer
+    tokenizer = GgufTokenizer(snapshot)
+else:
+    from mlx_lm.tokenizer_utils import load
+    tokenizer = load(snapshot)
+import os
+require_dispatch = os.environ.get("IRONMULE_KG5") == "1" and data["settings"].get("flash_attn")
+if require_dispatch:
+    from ironmule.factual_gate import kg5_counter
+    launches = kg5_counter(engine)
+    before = launches()
+facts = ggml_scores(engine, tokenizer, kg5=data["kg5_shape"])
+dispatched = launches() - before if require_dispatch else None
+repeat = ggml_scores(engine, tokenizer, kg5=data["kg5_shape"]) if data["reference"] else None
 engine.close()
-print(json.dumps({"nll": rows}))
+print(json.dumps({"nll": rows, "facts": facts, "repeat": repeat, "kg5_launches": dispatched}))
 """
 
 
@@ -1605,14 +1633,44 @@ DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
 SETTING_KEYS = ("flash_attn", "kv_unified", "kv_f32", "kv_q8")
 
 
+def _kg5_files() -> tuple[Path, ...]:
+    """Identify the CUDA build and optional interposers. An ambiguous loader path disables cache reuse."""
+    folder = Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+    if not folder.is_absolute():
+        return ()
+    files = []
+    for stem in ("libllama.so", "libggml-cuda.so"):
+        linked = folder / stem
+        if linked.is_file():
+            files.append(linked.resolve())
+        else:
+            found = {p.resolve() for p in folder.glob(stem + ".*") if p.is_file()}
+            if len(found) != 1:
+                return ()
+            files.extend(found)
+    for entry in os.environ.get("LD_PRELOAD", "").replace(":", " ").split():
+        path = Path(entry)
+        if not path.is_absolute() or not path.is_file():
+            return ()
+        files.append(path.resolve())
+    return tuple(files)
+
+
 def gate_key(snapshot: str, gguf: str) -> str:
     """The gate's cache key: the GGUF, the snapshot (or the GGUF itself, GG4), the gate rule, the engine, the machine,
     and the generated kernel library the gate ran with (KG1: IRONMULE_KG_LIB), so that a new library is gated anew."""
+    from .factual_gate import VERSION as FACT_VERSION
     from .numeric_choice import GATE_VERSION
 
     kg = os.environ.get("IRONMULE_KG_LIB") or ""
-    return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
-                                     OPTION_BOUND, machine_key(), file_sha256(kg) if kg and Path(kg).is_file() else ""],
+    kg5 = None
+    if os.environ.get("IRONMULE_KG5") == "1":
+        kg5 = {"libraries": [file_sha256(str(p)) for p in _kg5_files()],
+               "device": os.environ.get("CUDA_VISIBLE_DEVICES"), "gpu_layers": gpu_layers(),
+               "width": SEQS, "context": SEQ_CTX}
+    return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, FACT_VERSION,
+                                     ENGINE_VERSION, OPTION_BOUND, machine_key(), kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
+                                     file_sha256(kg) if kg and Path(kg).is_file() else ""],
                                     sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -1620,17 +1678,22 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     """The owner's bar (2026-11-10, 2026-11-11): answer quality at least llama.cpp's, its own options included. The
     engine's settings (all llama.cpp options) are timed (`autotune`), and the fastest one whose perplexity on the
     numeric gate's chunks, through the multi-position decode, is within `OPTION_BOUND` of llama.cpp's default setting
-    on the same GGUF (the ratio's 95 % upper end) serves; the default passes by definition. Cached by the GGUF,
-    snapshot, gate rule, engine version and machine."""
+    on the same GGUF (the ratio's 95 % upper end) serves when it also preserves short-answer accuracy under QG1.
+    Reference and candidate see the same questions. Cached by the GGUF, snapshot, gate rule, engine version and machine."""
     import subprocess
 
+    from .factual_gate import KG5_SHAPE, VERSION as FACT_VERSION, compare
     from .numeric_choice import GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
     key = gate_key(snapshot, gguf)
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"{key}.json"
-    if stored.exists():
+    # A fresh worker in the opposite benchmark order may reuse its own content-matched gate.
+    experimental = os.environ.get("IRONMULE_KG5") == "1"
+    shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
+    cacheable = not experimental or bool(_kg5_files())
+    if cacheable and stored.exists():
         try:
             kept = json.loads(stored.read_text())
             if not (gpu_layers() > 0 and kept.get("ran") and "streams" not in kept):  # KG3: gate the streams too
@@ -1641,8 +1704,12 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
            "HF_HUB_OFFLINE": "1"}
     started = time.perf_counter()
 
-    def child(code: str, argument: str, payload: str | None = None) -> tuple[dict[str, Any] | None, str]:
-        done = subprocess.run([sys.executable, "-c", code, argument], env=env, input=payload, capture_output=True,
+    def child(code: str, argument: str, payload: str | None = None, *, stock: bool = False):
+        child_env = {**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0"} if stock else env
+        if shape and code == GATE_CANDIDATE:
+            # Admit all 32 near-1k prompts on the first step. Width and context are fixed in the measuring child.
+            child_env = {**child_env, "IRONMULE_PILOT": "0", "IRONMULE_GGML_PROMPT_BUDGET": str(32 * 1024)}
+        done = subprocess.run([sys.executable, "-c", code, argument], env=child_env, input=payload, capture_output=True,
                               text=True, timeout=7200, check=False)
         if done.returncode != 0:
             return None, done.stderr[-300:]
@@ -1655,47 +1722,62 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     if text is None:
         return {"ran": False, "passes": False, "reason": f"the gate's text could not be tokenized: {error}"}
 
-    def nll(settings: dict[str, bool]) -> tuple[list[float] | None, str]:
-        out, why = child(GATE_CANDIDATE, gguf, json.dumps({**text, "settings": settings}))
-        return (None, why) if out is None else (out["nll"], "")
+    def measure(settings: dict[str, bool], *, reference: bool = False, shared: bool = False):
+        payload = json.dumps({**text, "snapshot": str(snapshot), "settings": settings, "reference": reference,
+                              "shared": shared, "kg5_shape": shape})
+        return child(GATE_CANDIDATE, gguf, payload, stock=reference)
 
-    reference, error = nll(DEFAULT_SETTINGS)
+    reference, error = measure(DEFAULT_SETTINGS, reference=True)
     if reference is None:
         return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}"}
+
+    measured: dict[tuple, dict[str, Any]] = {}
+
+    def check(settings: dict[str, bool], *, shared: bool = False) -> dict[str, Any]:
+        identity = (shared, tuple(sorted(settings.items())))
+        if identity in measured:
+            return measured[identity]
+        output, error = measure(settings, shared=shared)
+        if output is None:
+            return {"settings": settings, "passes": False, "error": error}
+        interval = ratio_interval(reference["nll"], output["nll"])
+        factual = compare(reference["facts"], reference["repeat"], output["facts"], kg5=shape)
+        launches = output.get("kg5_launches")
+        hit = not (experimental and settings.get("flash_attn")) or isinstance(launches, int) and launches > 0
+        record = {"settings": settings, **interval, "factual": factual, "kg5_launches": launches,
+                  "passes": interval["interval"][1] <= OPTION_BOUND and factual["passes"] and hit}
+        measured[identity] = record
+        return record
+
     tried = []
-    for settings in tune["order"]:  # the fastest setting that is not worse than llama.cpp's default serves
-        if settings == DEFAULT_SETTINGS:
-            tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference),
+    for settings in tune["order"]:  # the fastest option passing likelihood and factual correctness serves
+        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB"):
+            tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference["nll"]),
                           "passes": True})
             break
-        rows, error = nll(settings)
-        if rows is None:
-            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}", "tried": tried}
-        interval = ratio_interval(reference, rows)
-        tried.append({"settings": settings, **interval, "passes": interval["interval"][1] <= OPTION_BOUND})
-        if tried[-1]["passes"]:
+        row = check(settings)
+        if "error" in row:
+            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {row['error']}", "tried": tried}
+        tried.append(row)
+        if row["passes"]:
             break
     chosen = tried[-1]
+    if not chosen["passes"]:
+        return {"ran": True, "passes": False, "reason": "no configuration passed both quality checks", "tried": tried}
     shared = None
-    if fa1_version() >= 3 or gpu_layers() > 0:  # SP1: the shared pool (unified KV, flash attention: FA1u on a CPU,
-        # llama.cpp's own on a GPU) is gated on its own
-        settings = {**chosen["settings"], "flash_attn": True, "kv_unified": True}
-        rows, error = nll(settings)
-        shared = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
-                  else {"settings": settings, "error": error})
-        shared["passes"] = rows is not None and shared["interval"][1] <= OPTION_BOUND
+    if fa1_version() >= 3 or gpu_layers() > 0:
+        shared = check({**chosen["settings"], "flash_attn": True, "kv_unified": True}, shared=True)
     streams = None
-    if gpu_layers() > 0:  # KG3: one KV stream per request (flash attention, no unified cache) is gated on its own
-        settings = {**chosen["settings"], "flash_attn": True, "kv_unified": False}
-        rows, error = nll(settings)
-        streams = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
-                   else {"settings": settings, "error": error})
-        streams["passes"] = rows is not None and streams["interval"][1] <= OPTION_BOUND
+    if gpu_layers() > 0:
+        streams = check({**chosen["settings"], "flash_attn": True, "kv_unified": False})
     result = {"ran": True, "shared": shared, "streams": streams,
               **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
               "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
-              "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}
+              "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION,
+              "factual_version": FACT_VERSION, "key": key}
+    if not cacheable:
+        return result
     try:
         cache.mkdir(parents=True, exist_ok=True)
         stored.write_text(json.dumps(result))
