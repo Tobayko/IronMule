@@ -2752,3 +2752,28 @@ wheel, two stock runs agreed. Grouped processing changed one of eight short
 continuations and three of the 32 mixed requests. All four cold 444-token prompts
 matched in an isolated run and shared a single 1,776-row native call.
 [Native timings, dispatch counts and quality results](../evidence/runtime/qwen3-32b-l40s-kernel-screen.json)
+
+### Follow-up for the Qwen3-32B L40S kernel
+
+The earlier native screen already enabled KG4 only for Q4_K matrix products with
+six, seven or eight input rows. Its local probe measured 41.36, 41.73 and
+42.16 ms for those steps, against 47.51, 55.56 and 56.41 ms on stock. A
+32-request wave still made 384 KG4 submissions at each of those three row
+counts. A typical eight-request wave made 384, 384 and 10,752, respectively.
+These counts motivated a separate test of the request load surrounding each
+matrix product. [Original native screen](../evidence/runtime/qwen3-32b-l40s-kernel-screen.json)
+
+The experimental selector remeasures those three row counts on the target L40S.
+It retains a row count only if its median step time improves by at least 3%.
+It enables the resulting mask while the current group has six to eight active
+and pending requests. If the group ever exceeds eight, stock kernels handle
+its remaining requests through the last straggler. A new group can reactivate
+the mask on the resident model. A change in the measured KV settings or
+sequence capacity also returns dispatch to stock. Q6_K stays on stock.
+
+The opt-in trial uses a pinned kernel and disabled CUDA graphs. Its native arms
+bracket the candidate with stock runs on held-out eight- and 32-request waves.
+The trial records native submissions, first-token latencies, answers and
+teacher-forced loss at each enabled width. A native pass unlocks the same
+bracketing comparison through the HTTP service, which checks the serving
+worker's own layer placement. [Native study](../lab/kg4/scoped_native.py) · [HTTP study](../lab/kg4/scoped_http.py)
