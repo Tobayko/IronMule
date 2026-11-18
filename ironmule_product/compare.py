@@ -388,7 +388,10 @@ def main(argv=None):
                 "starting": "launch_failed", "initializing": "invalid_input", "preflight": "identity_unverified",
                 "learning": "learning_failed"}.get(report["stage"], "measurement_failed")
             timed_out = isinstance(exc, TimeoutError) or time.monotonic() >= started + args.budget_seconds
-            code = "budget_exhausted" if timed_out else code
+            if isinstance(exc, KeyboardInterrupt):
+                code = "interrupted"
+            elif timed_out:
+                code = "budget_exhausted"
             report.update(status="timeout" if timed_out else "error", error_code=code, error=str(exc)[:600],
                           verdict={"status": "incomplete", "reasons": [code]})
             failed_stage = report["stage"]
@@ -397,6 +400,8 @@ def main(argv=None):
                 learn(args, report, save, deadline)
             save(failed_stage)
             print(f"{code}: {report['error']} (report {args.output})", file=sys.stderr)
+            if isinstance(exc, KeyboardInterrupt):
+                return 130
             return 124 if timed_out else 1
         learn(args, report, save, deadline)
         report["status"] = "error" if report["failures"] else "complete"

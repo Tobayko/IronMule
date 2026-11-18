@@ -139,3 +139,13 @@ def test_pair_scope_does_not_require_omitted_vllm(tmp_path):
     opts = compare.arguments(["--engines", "ironmule,llama_cpp", "--gguf", "m.gguf", "--tokenizer", ".",
                               "--llama-server", "llama-server", "--state-dir", str(tmp_path)])
     assert opts.engines == ("ironmule", "llama_cpp") and opts.vllm is None
+
+
+def test_ctrl_c_persists_report_and_stops_watcher(tmp_path, monkeypatch):
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(compare, "run", interrupt)
+    out = tmp_path / "interrupted.json"
+    assert compare.main(["--engines", "ironmule,llama_cpp", "--gguf", "m.gguf", "--tokenizer", ".",
+                         "--llama-server", "llama-server", "--output", str(out)]) == 130
+    assert json.loads(out.read_text())["error_code"] == "interrupted"
