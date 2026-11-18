@@ -33,6 +33,11 @@ def test_projection_tracks_active_model_and_reports_setup_and_interruption(tmp_p
     (tmp_path / "status.json").write_text('{"state":"running","stage":"fetch_qwen3_32b"}')
     large = public_snapshot(tmp_path)["benchmark"]
     assert large["model"] == "Qwen3-32B" and large["runs"] == [] and large["status"] == "preparing"
+    for phase in ("readiness_qwen3-32b", "readiness_saved_qwen3-32b", "compare_qwen3-32b"):
+        (tmp_path / "status.json").write_text(json.dumps({"state": "running", "stage": phase}))
+        current = public_snapshot(tmp_path)["benchmark"]
+        assert current["model"] == "Qwen3-32B" and current["runs"] == []
+        assert current["status"] == "preparing" and current["provider"]["event"]
     (tmp_path / "qwen3-32b.json").write_text(json.dumps(doc))
     (tmp_path / "status.json").write_text('{"state":"error","stage":"compare_qwen3_32b"}')
     interrupted = public_snapshot(tmp_path)["benchmark"]

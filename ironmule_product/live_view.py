@@ -30,12 +30,22 @@ PROVIDER_EVENTS = {
     "fetch_qwen3_06b": "Downloading Qwen3-0.6B", "tokenizer_qwen3_06b": "Preparing Qwen3-0.6B tokenizer",
     "compare_qwen3_06b": "Comparing Qwen3-0.6B", "fetch_qwen3_32b": "Downloading Qwen3-32B",
     "tokenizer_qwen3_32b": "Preparing Qwen3-32B tokenizer", "compare_qwen3_32b": "Comparing Qwen3-32B",
+    "readiness_qwen3_06b": "Checking Qwen3-0.6B server readiness",
+    "readiness_qwen3_32b": "Checking Qwen3-32B server readiness",
+    "readiness_saved_qwen3_06b": "Saved Qwen3-0.6B readiness results",
+    "readiness_saved_qwen3_32b": "Saved Qwen3-32B readiness results",
     "bundle_timeout": "Benchmark file transfer timed out", "finished": "Finished remote workload",
     "cleanup_requested": "Requested instance shutdown", "operator_deadline": "Reached the time limit",
     "operator_interrupted": "Remote run interrupted", "operator_error": "Remote setup failed",
 }
 LABEL = re.compile(r"[\w ./+():@-]{1,180}\Z")
 CONFIG = re.compile(r"w\d+(?:-(?:fa|uni|f32|kv8))*\Z")
+
+
+def provider_event(value):
+    if isinstance(value, str):
+        return PROVIDER_EVENTS.get(value.replace("-", "_"))
+    return None
 
 
 def number(value):
@@ -101,8 +111,8 @@ def benchmark(path):
         operator = data.get("operator") or {}
         provider = {}
         if isinstance(operator, dict) and operator.get("provider") == "Runpod":
-            provider = {"name": "Runpod", "phase": PROVIDER_EVENTS.get(current.get("phase")),
-                        "event": PROVIDER_EVENTS.get(operator.get("last_remote_event")),
+            provider = {"name": "Runpod", "phase": provider_event(current.get("phase")),
+                        "event": provider_event(operator.get("last_remote_event")),
                         "updated_at": timestamp(operator.get("last_remote_event_at"))}
         verdict = data.get("verdict") or {}
         reasons = verdict.get("reasons") if isinstance(verdict, dict) else None

@@ -40,9 +40,11 @@ def _lifecycle(root):
 def public_snapshot(root):
     life, stamp = _lifecycle(root)
     phase = life.get("stage")
+    if isinstance(phase, str):
+        phase = phase.replace("-", "_")
     if not isinstance(phase, str) or phase not in PROVIDER_EVENTS:
         phase = None
-    large = phase in {"fetch_qwen3_32b", "tokenizer_qwen3_32b", "compare_qwen3_32b", "finished"}
+    large = phase == "finished" or bool(phase and phase.endswith("_qwen3_32b"))
     model = "qwen3-32b" if large else "qwen3-06b"
     summary = benchmark(root / (model + ".json"))
     if phase == "finished" and summary["status"] == "idle":
