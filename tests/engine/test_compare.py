@@ -54,7 +54,7 @@ def test_controlled_cli_rotates_arms_and_keeps_real_partial_evidence(tmp_path, m
 
     @contextmanager
     def server(engine, args, repeat, deadline):
-        record = {**artifact, "version": "fixture", "device": "cpu:fixture", "baseline_stock": True, "autonomous": engine == "ironmule"}
+        record = {**artifact, "version": "fixture", "device": "cpu:fixture", "baseline_stock": True, "placement_verified": True, "autonomous": engine == "ironmule"}
         calls.append((repeat, engine))
         yield record
 
@@ -126,10 +126,13 @@ def test_gate_rejects_lost_answer_and_p95_even_if_tok_s_improve():
                              "requests_per_second": 3, "ttft_p95_ms": 100, "performance_prompt_tokens": [8],
                              "generation": [[3, "stop"]],
                              "quality": {"answers": dict(cases), "prompt_tokens": [8]}})
-    arms = [{"engine": e, "repeat": r, "identity": {"baseline_stock": True},
+    arms = [{"engine": e, "repeat": r, "identity": {"baseline_stock": True, "placement_verified": True},
              "tokenization": {"digest": "a" * 64}} for e in compare.ENGINES for r in range(3)]
     report = {"protocol": protocol, "runs": runs, "arms": arms}
     assert compare.evaluate(report)["status"] == "qualifies"
+    arms[0]["identity"]["placement_verified"] = False
+    assert compare.evaluate(report)["status"] == "incomplete"
+    arms[0]["identity"]["placement_verified"] = True
     runs[0]["ttft_p95_ms"] = 110
     runs[0]["quality"]["answers"]["1:extraction-0"] = False
     assert set(compare.evaluate(report)["reasons"]) == {"quality_regressed", "first_token_regressed"}

@@ -172,6 +172,9 @@ def evaluate(report):
                 if not candidate_identity.get("tokenization", {}).get("digest") or (
                         candidate_identity["tokenization"]["digest"] != opponent_identity.get("tokenization", {}).get("digest")):
                     reasons_here.append("prompt_ids_unmatched")
+                if not all(a.get("identity", {}).get("placement_verified") is True
+                           for a in (candidate_identity, opponent_identity)):
+                    reasons_here.append("unverified_device_placement")
                 if engine == "llama_cpp" and opponent_identity.get("identity", {}).get("baseline_stock") is not True:
                     reasons_here.append("stock_provenance_unverified")
                 if tested["generation"] != reference["generation"]:
@@ -194,7 +197,7 @@ def evaluate(report):
                                "ttft_p95_ratio": latency, "lost_answers": lost, "reasons": reasons_here})
                 reasons.update(reasons_here)
     incomplete = reasons.intersection({"missing_arm", "insufficient_repeats_or_loads", "served_prompt_lengths_differ",
-                                       "prompt_ids_unmatched", "stock_provenance_unverified",
+                                       "prompt_ids_unmatched", "stock_provenance_unverified", "unverified_device_placement",
                                        "generated_lengths_or_stops_differ"})
     status = "incomplete" if incomplete else ("does_not_qualify" if reasons else "qualifies")
     return {"status": status, "engines": list(engines), "reasons": sorted(reasons), "comparisons": checks}
@@ -232,22 +235,17 @@ def run(args, report, save, deadline):
                     if not isinstance(device, str) or not device or (ref_device and device != ref_device):
                         raise Unverified("hardware identity unavailable or changed between arms")
                     ref_device = report["device"] = device
-                    tokenization = preflight(engine, server, args, [conversation(t) for t in texts], deadline)
                     arm = {"engine": engine, "repeat": rep, "identity": server,
-                           "tokenization": {k: tokenization.get(k) for k in ("verified", "digest", "reason")}}
-
+                           "tokenization": {"verified": False, "digest": None}}
                     report["arms"].append(arm)
                     save("preflight")
-                    ids = tokenization.get("digest")
-                    if tokenization.get("verified") is not True or not isinstance(ids, str) or len(ids) != 64:
-                        raise Unverified(f"{engine} input verification failed: {tokenization.get('reason', 'unknown')}")
-                    lengths = tokenization.get("prompt_tokens", [])
-                    if len(lengths) != len(texts):
-                        raise Unverified("verification did not cover every request")
-                    token_counts = dict(zip(texts, lengths))
+                    probe = preflight(engine, server, args, [conversation(WARMUP)], deadline)
+                    if probe.get("verified") is not True or len(probe.get("prompt_tokens", [])) != 1:
+                        raise Unverified(f"{engine} warmup tokenization failed: {probe.get('reason')}")
                     save("warmup")
                     warm = stream(engine, server, WARMUP, min(8, args.max_tokens), deadline)
-                    check_usage([WARMUP], [warm], token_counts)
+                    check_usage([WARMUP], [warm], {WARMUP: probe["prompt_tokens"][0]})
+                    served_lengths = [warm["prompt_tokens"]]
                     refresh_identity(engine, server, deadline)
                     if engine == "ironmule" and server.get("autonomous") is not True:
                         raise Unverified("autonomous IronMule serving was not verified after warmup")
@@ -255,7 +253,7 @@ def run(args, report, save, deadline):
                         report["current"]["concurrency"] = width
                         save("benchmark")
                         rows, wall = batch(engine, server, prompts, width, args.max_tokens, deadline)
-                        check_usage(prompts, rows, token_counts)
+                        served_lengths.extend(r["prompt_tokens"] for r in rows)
                         tokens = sum(row["tokens"] for row in rows)
                         firsts = sorted(row["ttft_ms"] for row in rows)
                         result = {"engine": engine, "repeat": rep, "concurrency": width, "requests": len(rows),
@@ -268,11 +266,21 @@ def run(args, report, save, deadline):
                         report["runs"].append(result)
                         save("quality")
                         rows, _ = batch(engine, server, [q.prompt for q in cases], width, MAX_TOKENS, deadline)
-                        check_usage([q.prompt for q in cases], rows, token_counts)
+                        served_lengths.extend(r["prompt_tokens"] for r in rows)
                         answers = {q.key: correct(q, row["text"]) for q, row in zip(cases, rows)}
                         result["quality"] = {"passed": sum(answers.values()), "total": len(answers), "answers": answers,
                                              "prompt_tokens": [r["prompt_tokens"] for r in rows]}
                         save("quality")
+                    # Tokenize the timed inputs only now, so a server's tokenizer or template
+                    # cache cannot be primed by our verifier before its first timed request.
+                    save("preflight")
+                    proof = preflight(engine, server, args, [conversation(t) for t in texts], deadline)
+                    if proof.get("verified") is not True or len(proof.get("digest") or "") != 64:
+                        raise Unverified(f"{engine} prompt verification failed: {proof.get('reason')}")
+                    if proof.get("prompt_tokens") != served_lengths:
+                        raise Unverified(f"{engine} served prompt lengths differ from its verified token IDs")
+                    arm["tokenization"] = {"verified": True, "digest": proof["digest"]}
+                    save("preflight")
             except Exception as exc:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("comparison budget exhausted") from exc
