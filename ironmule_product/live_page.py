@@ -117,6 +117,7 @@ main{padding:16px 13px 32px}
 <p class="sr" role="status" id="announce"></p></main></div>
 <script>
 "use strict";
+const sharedWatch = document.documentElement.dataset.watch === "shared";
 const $ = (id) => document.getElementById(id),
   present = (n) => typeof n === "number" && Number.isFinite(n);
 const fmt = (n, d = 1) => (present(n) ? n.toLocaleString(undefined, { maximumFractionDigits: d }) : "—");
@@ -146,7 +147,7 @@ let data = null,
   lastState = "",
   points = [];
 try {
-  key = sessionStorage.getItem("ironmule-key") || "";
+  if (!sharedWatch) key = sessionStorage.getItem("ironmule-key") || "";
 } catch {}
 function notice(value) {
   txt("message", value);
@@ -275,8 +276,9 @@ function draw() {
   const r = data.runtime,
     b = data.benchmark;
   if (b.status === "running" || b.status === "preparing") sawBenchmark = true;
-  const isBench =
+  const isBench = sharedWatch ||
     (chosen || (sawBenchmark || r.status === "detached" ? "benchmark" : "runtime")) === "benchmark";
+  $("runtimeTab").hidden = sharedWatch;
   $("runtimeTab").setAttribute("aria-current", isBench ? "false" : "page");
   $("benchTab").setAttribute("aria-current", isBench ? "page" : "false");
   $("chat").hidden = r.status === "detached";
@@ -422,12 +424,13 @@ async function poll() {
   const abort = new AbortController(),
     watch = setTimeout(() => abort.abort(), 5000);
   try {
-    const response = await fetch("/v1/ironmule/live", {
+    const response = await fetch(sharedWatch ? "data" : "/v1/ironmule/live", {
+      credentials: sharedWatch ? "omit" : "same-origin",
       cache: "no-store",
       signal: abort.signal,
-      headers: key ? { Authorization: "Bearer " + key } : {}
+      headers: !sharedWatch && key ? { Authorization: "Bearer " + key } : {}
     });
-    if (response.status === 401) {
+    if (!sharedWatch && response.status === 401) {
       locked = true;
       connected = false;
       status("unavailable");

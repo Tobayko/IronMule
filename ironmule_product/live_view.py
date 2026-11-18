@@ -11,8 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .state import ProductStore
-
 STATUSES = {"preparing", "running", "complete", "error", "timeout"}
 STAGES = {"initializing", "preflight", "starting", "warmup", "benchmark", "quality", "learning", "evaluating", "finished"}
 ERRORS = {"launch_failed", "identity_unverified", "measurement_failed", "learning_failed", "budget_exhausted",
@@ -66,7 +64,12 @@ def progress_path(service=None, explicit=None):
     given = explicit or os.environ.get("IRONMULE_BENCH_PROGRESS")
     if given:
         return Path(given).expanduser()
-    return Path(getattr(getattr(service, "store", None), "root", None) or ProductStore().root) / "benchmark-progress.json"
+    root = getattr(getattr(service, "store", None), "root", None)
+    if root is None:
+        from .state import ProductStore
+
+        root = ProductStore().root
+    return Path(root) / "benchmark-progress.json"
 
 
 def benchmark(path):
@@ -172,6 +175,7 @@ def snapshot(service: Any, path: Path):
 
 def main():
     from .http_server import create_server
+    from .state import ProductStore
 
     parser = argparse.ArgumentParser(description="Watch benchmark progress on a local read-only dashboard.")
     parser.add_argument("--state-dir", type=Path)

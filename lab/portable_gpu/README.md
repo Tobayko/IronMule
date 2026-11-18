@@ -92,3 +92,21 @@ selected widths, switch timings and complete-run wall time before comparing poli
 python lab/portable_gpu/switch_probe.py --gguf /models/Qwen3-4B-Q4_K_M.gguf \
   --provider cuda --long-prompt 1024 --repeats 2 --budget-s 240 --output switches.json
 ```
+
+### Read-only browser view for a remote comparison
+
+Build the view into the job's bootstrap gateway before starting the provider job.
+The generator accepts the existing Python gateway template with a `Handler.do_GET`,
+a `ROOT` result directory and a `TOKEN` for private operator requests.
+
+```sh
+python -m lab.portable_gpu.watch_gateway gateway_template.py --output gateway_watch.py
+```
+
+Launch the generated gateway with a new random `WATCH_ID` from
+`secrets.token_urlsafe(24)` and a separate `RESULT_TOKEN`. Share
+`https://<gateway>/watch/<WATCH_ID>/` with the viewer. The page and its relative
+`data` route work before the benchmark bundle has been installed. They read the
+job's fixed Qwen3-0.6B and Qwen3-32B reports and the bootstrap status from
+`ROOT`. The view exposes aggregate scores, timings, model names and setup events.
+The original gateway continues to authenticate its private result and upload routes.
