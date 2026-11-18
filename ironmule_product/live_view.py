@@ -24,6 +24,18 @@ REASONS = {"insufficient_repeats_or_loads", "missing_arm", "throughput_margin", 
            "served_prompt_lengths_differ", "failed_arm", "prompt_ids_unmatched", "unverified_device_placement",
            "stock_provenance_unverified", "generated_lengths_or_stops_differ", *ERRORS}
 LEARNING = {"deferred", "qualified", "retained_incumbent", "error"}
+PROVIDER_EVENTS = {
+    "local_preflight": "Checking local prerequisites", "preflight": "Checking runtime",
+    "create_requested": "Requested a GPU", "pod_booting": "Starting GPU instance",
+    "container_boot": "Starting container", "awaiting_bundle": "Waiting for benchmark files",
+    "verify_bundle": "Verifying benchmark files", "bootstrap_runtime": "Preparing runtime",
+    "fetch_qwen3_06b": "Downloading Qwen3-0.6B", "tokenizer_qwen3_06b": "Preparing Qwen3-0.6B tokenizer",
+    "compare_qwen3_06b": "Comparing Qwen3-0.6B", "fetch_qwen3_32b": "Downloading Qwen3-32B",
+    "tokenizer_qwen3_32b": "Preparing Qwen3-32B tokenizer", "compare_qwen3_32b": "Comparing Qwen3-32B",
+    "bundle_timeout": "Benchmark file transfer timed out", "finished": "Finished remote workload",
+    "cleanup_requested": "Requested instance shutdown", "operator_deadline": "Reached the time limit",
+    "operator_interrupted": "Remote run interrupted", "operator_error": "Remote setup failed",
+}
 LABEL = re.compile(r"[\w ./+():@-]{1,180}\Z")
 CONFIG = re.compile(r"w\d+(?:-(?:fa|uni|f32|kv8))*\Z")
 
@@ -83,6 +95,12 @@ def benchmark(path):
                 if type(passed) is int and type(total) is int and 0 <= passed <= total and total > 0:
                     row["quality"] = {"passed": passed, "total": total}
             rows.append(row)
+        operator = data.get("operator") or {}
+        provider = {}
+        if isinstance(operator, dict) and operator.get("provider") == "Runpod":
+            provider = {"name": "Runpod", "phase": PROVIDER_EVENTS.get(current.get("phase")),
+                        "event": PROVIDER_EVENTS.get(operator.get("last_remote_event")),
+                        "updated_at": timestamp(operator.get("last_remote_event_at"))}
         verdict = data.get("verdict") or {}
         reasons = verdict.get("reasons") if isinstance(verdict, dict) else None
         failures = data.get("failures") or []
@@ -99,7 +117,7 @@ def benchmark(path):
                 "updated_at": timestamp(data.get("updated_at")),
                 "engine": current.get("engine") if current.get("engine") in ENGINES else None,
                 "repeat": number(current.get("repeat")), "concurrency": number(current.get("concurrency")),
-                "runs": rows, "run_count": len(runs),
+                "runs": rows, "run_count": len(runs), "provider": provider,
                 "verdict": verdict.get("status") if isinstance(verdict, dict) and verdict.get("status") in VERDICTS else None,
                 "reasons": [r for r in reasons if isinstance(r, str) and r in REASONS] if isinstance(reasons, list) else [],
                 "failed_engine": failure.get("engine") if failure.get("engine") in ENGINES else None,

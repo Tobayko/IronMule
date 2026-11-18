@@ -109,6 +109,7 @@ main{padding:16px 13px 32px}
 <div id="message" class="notice" role="status" hidden></div><form id="auth" class="notice auth" hidden><label>Server API key <input id="key" type="password" autocomplete="off"></label> <button>Connect</button></form>
 <div class="title"><h1 id="title">Inference</h1><span class="state" id="state"><i class="dot"></i><span id="stateText">Connecting</span></span></div>
 <p class="context" id="context">Waiting for the first update</p>
+<p class="notice" id="provider" hidden></p>
 <section class="hero" aria-labelledby="rateLabel"><div><div id="rateLabel" class="kicker">Last completion throughput</div><div class="big"><strong id="rate">—</strong><span>tok/s</span></div><small class="herotext" id="scope"></small></div><div class="chart"><canvas id="plot" aria-hidden="true"></canvas><small id="plotLabel"></small></div></section>
 <div class="cards" id="cards"></div>
 <section class="panel"><div class="panelhead"><h2 id="tableTitle">Request history</h2><span id="rowCount" class="caption"></span></div><div class="table-shelf"><table class="rows" id="table"></table></div><p id="empty" class="empty"></p></section>
@@ -279,6 +280,7 @@ function draw() {
   $("runtimeTab").setAttribute("aria-current", isBench ? "false" : "page");
   $("benchTab").setAttribute("aria-current", isBench ? "page" : "false");
   $("chat").hidden = r.status === "detached";
+  $("provider").hidden = true;
   if (!isBench) {
     status(r.status);
     txt("title", "Inference");
@@ -340,7 +342,18 @@ function draw() {
       stale =
         ["running", "preparing"].includes(b.status) &&
         (!Number.isFinite(stamp) || Math.abs(data.observed_at * 1000 - stamp) > 120000);
-    status(b.status, stale);
+    const provider = b.provider || {};
+    const eventStamp = Date.parse(provider.updated_at || "");
+    if (provider.name && (provider.phase || provider.event || Number.isFinite(eventStamp))) {
+      const phases = [...new Set([provider.phase, provider.event].filter(Boolean))];
+      const detail = [provider.name, ...phases];
+      if (Number.isFinite(eventStamp)) detail.push("Last provider update " + new Date(eventStamp).toLocaleString());
+      txt("provider", detail.join(" · "));
+      $("provider").hidden = false;
+    }
+    const preparing = !rows.length && b.status === "running" && (provider.phase || provider.event)
+      && (!b.stage || b.stage === "preflight" || b.stage === "initializing");
+    status(preparing ? "preparing" : b.status, stale);
     txt("title", "Engine comparison");
     txt("context", [b.model, b.device].filter(Boolean).join("  /  ") || "No benchmark model reported");
     txt("rateLabel", "Latest measured throughput");
@@ -390,7 +403,7 @@ function draw() {
       b.updated_at && Number.isFinite(stamp) ? "Updated " + new Date(stamp).toLocaleString() : ""
     );
     details([
-      ["Stage", b.stage],
+      ["Stage", b.stage || provider.phase || provider.event],
       ["Current engine", engineName(b.engine)],
       ["Concurrency", fmt(b.concurrency, 0)],
       ["Verdict", (b.verdict || "").replaceAll("_", " ") || null],

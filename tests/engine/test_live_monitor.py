@@ -54,6 +54,24 @@ def test_unreadable_report_has_no_live_claim(tmp_path, value):
     assert benchmark(path) == {"status": "unavailable", "runs": [], "run_count": 0}
 
 
+def test_provider_setup_is_projected_without_operator_logs(tmp_path):
+    path = tmp_path / "progress"
+    base = {"schema": "ironmule.compare.v1", "status": "running", "stage": "preflight",
+            "current": {"phase": "fetch_qwen3_32b", "error": "private"},
+            "operator": {"provider": "Runpod", "last_remote_event": "container_boot",
+                         "last_remote_event_at": "2026-11-18T12:30:00Z", "run_name": "private"},
+            "runs": []}
+    path.write_text(json.dumps(base))
+    data = benchmark(path)
+    assert data["provider"] == {"name": "Runpod", "phase": "Downloading Qwen3-32B",
+                                "event": "Starting container", "updated_at": "2026-11-18T12:30:00+00:00"}
+    assert "private" not in json.dumps(data)
+    base["current"]["phase"] = base["operator"]["last_remote_event"] = "private"
+    path.write_text(json.dumps(base))
+    assert benchmark(path)["provider"]["phase"] is None
+    assert benchmark(path)["provider"]["event"] is None
+
+
 def test_runtime_projects_status_recent_requests_and_width_decisions():
     health = {"ready": True, "active_requests": 0, "queued_requests": 0, "completed_requests": 33,
               "ggml": {"gate": {"passes": True}, "agent": {"serving": "w4", "last_decisions": [
