@@ -1,0 +1,37 @@
+# Compare IronMule with llama.cpp and vLLM
+
+`ironmule compare` launches the normal IronMule GGUF server with `--agent on`, stock `llama-server`, and `vllm serve` one at a time on the same machine. It sends chat requests to the production `/v1/chat/completions` routes. For a two-engine comparison, pass `--engines ironmule,llama_cpp` and omit `--vllm`, or select `ironmule,vllm` and omit `--llama-server`. The report names the engines in scope. Existing model and tokenizer files are required. Choose competitors that support the GGUF model on this device.
+
+```bash
+ironmule compare \
+  --gguf /models/Qwen3-0.6B-Q4_K_M.gguf \
+  --tokenizer /models/tokenizers/qwen3-06b \
+  --llama-server /opt/stock/bin/llama-server \
+  --vllm /opt/vllm/bin/vllm \
+  --agent-dir ./comparison-state \
+  --log-dir ./comparison-logs \
+  --concurrency 1,8,32 --repeats 3 --seed 7301 \
+  --budget-seconds 2700 --output ./comparison.json
+```
+
+Prepare IronMule's GGUF backend first and export the bindings and library locations printed by its build. Supply a separately built stock llama.cpp binary and a vLLM installation that supports this GGUF and its HF architecture configuration. Use a writable state directory dedicated to the experiment to retain the agent's observations across starts. Exact model and tokenizer pins for the small and 32B Qwen3 examples are documented in the [portable GPU workflow](../lab/portable_gpu/README.md).
+
+## What gets measured
+
+The launcher hashes the GGUF and the local tokenizer files, records the serving commands and versions, and binds the processes to the same device. A preflight renders and tokenizes the actual conversations for each engine. The runner checks the ordered token-ID digests across the engines and verifies the prompt length reported by each real generation request. An incompatible backend, a missing runtime or a template mismatch leaves an explicit incomplete result.
+
+After one untimed warmup, each load receives identical seeded short writing tasks and document summaries at temperature zero, with a fixed answer-token limit and thinking disabled. Each engine gets the same request count at that load. The timer includes request submission, queueing and streaming to the last response. Output tokens/s use the server's completion-token counts, requests/s use completed responses, and time to first token starts at the individual HTTP request and ends at its first visible text. Startup time is recorded separately. Three repetitions rotate which engine runs first, second and third. The two-engine protocol alternates the order. Use the saved seed and identical files to replay the traffic.
+
+A separate holdout contains 18 short-answer problems for each load and repetition, covering arithmetic, extraction from records, and factual recall. The seeded arithmetic and record values vary between cells; the six factual questions remain fixed. The runner grades entire answers. It records per-question scores, throughput, requests/s and median/p95 time to first token. A controlled result applies to this workload and these specific binaries, quantization, device and concurrency levels.
+
+## Reading the report
+
+The output JSON is replaced atomically as each server starts, its identity is checked, and each workload or holdout completes. By default it lives in `benchmark-progress.json` in the IronMule product state directory; `IRONMULE_BENCH_PROGRESS` or `--output` can select another path. Use a different output filename to retain another run. A failing engine is recorded under `failures`; remaining engines and repetitions run within the budget. The report preserves every completed cell at timeout. An existing comparison writing the same file prevents a second writer.
+
+A verdict of `qualifies` requires at least three repetitions and two loads. Against **each** competitor **in every paired cell**, IronMule must deliver at least 3% higher output tokens/s, at least the same requests/s, no higher p95 time to first visible token, and retain every correctly answered reference question. Timed generations must agree on per-request output-token count and stop reason, and the compared prompt-ID digests must match. A stock llama.cpp claim requires verified stock binary provenance. Each reference must answer at least one question correctly in each category. The reported threshold is an engineering acceptance criterion for the measured deployment. Larger experiments are needed to characterize run-to-run variability. A successful command can report `does_not_qualify` when a competitor wins or quality or latency regresses; inspect `verdict.status` before interpreting results.
+
+For a quick compatibility check, `--concurrency 1 --requests 1 --repeats 1` still exercises all three servers and the factual workload. Its verdict stays `incomplete`. The benchmark never treats a missing competitor as a win.
+
+## How the agent uses a measured gap
+
+After the servers stop, IronMule can use paired results at a supported concurrency to select one local prompt-admission experiment. It checks the bound GGUF engine, model, hardware and remaining budget, then compares a candidate with the incumbent on fresh held-out requests. A qualified local rule is scoped to the measured configuration in the benchmark agent state. Failed trials retain the incumbent. The report records the outcome under `learning`. A later full comparison is required to establish whether the change improves the public three-engine result.
