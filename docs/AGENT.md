@@ -197,6 +197,12 @@ off), as `llama-server` does.
 
 ## The ggml engine's own agent: learning, dreaming, switching (AG10, 2026-11-13)
 
+A cold GGUF quality gate saves completed tuning, reference and option measurements under
+`STATE/ggml-gate/stages-*`. After interruption a fresh start verifies the model, native runtime, hardware,
+settings, tokenizer inputs and rendered factual tasks before resuming. The interrupted measurement runs again.
+The final gate record's `checkpoint_stages` counts locally measured and reused stages. The checkpoint contains
+timings, per-chunk likelihoods and boolean factual scores. Prompt text and token sequences are represented by hashes.
+
 SEQ1 chooses the width once, at full load and at a short context. Which configuration serves best also depends on the
 traffic: KV1 (docs/LAB.md) measured that on a CPU a decode step at long contexts is dominated by attention, and that
 llama.cpp's flash attention is the cheaper setting at short contexts while its matmul attention (flash attention off)

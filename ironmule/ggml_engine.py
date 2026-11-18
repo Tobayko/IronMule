@@ -1700,6 +1700,7 @@ print(json.dumps(autotune(sys.argv[1])))
 GATE_CANDIDATE = r"""
 import json, sys
 from ironmule.ggml_engine import GgmlEngine, SEQ_CTX
+from ironmule.ggml_gate_checkpoint import fixture_signature
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, gate_lead
 from ironmule.factual_gate import ggml_scores
 from pathlib import Path
@@ -1727,6 +1728,8 @@ if snapshot.suffix.lower() == ".gguf":
 else:
     from mlx_lm.tokenizer_utils import load
     tokenizer = load(snapshot)
+if fixture_signature(tokenizer, data["kg5_shape"]) != data["facts_sha256"]:
+    raise ValueError("the factual qualification fixture changed between children")
 import os
 require_dispatch = os.environ.get("IRONMULE_KG5") == "1" and data["settings"].get("flash_attn")
 if require_dispatch:
@@ -1742,8 +1745,10 @@ print(json.dumps({"nll": rows, "facts": facts, "repeat": repeat, "kg5_launches":
 
 
 GATE_IDS = r"""
-import json, sys
+import json, os, sys
 from pathlib import Path
+from ironmule.ggml_gate_checkpoint import fixture_signature
+from ironmule.factual_gate import KG5_SHAPE
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, _text_ids, gate_bos
 if sys.argv[1].lower().endswith(".gguf"):  # GG4: a GGUF served on its own tokenizes the gate's text itself
     from ironmule.gguf_tokenizer import GgufTokenizer
@@ -1751,7 +1756,9 @@ if sys.argv[1].lower().endswith(".gguf"):  # GG4: a GGUF served on its own token
 else:
     from mlx_lm.tokenizer_utils import load
     tokenizer = load(Path(sys.argv[1]))
-print(json.dumps({"ids": _text_ids(tokenizer)[:CHUNKS * CHUNK_TOKENS + 1], "bos": gate_bos(tokenizer)}))
+shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
+print(json.dumps({"ids": _text_ids(tokenizer)[:CHUNKS * CHUNK_TOKENS + 1], "bos": gate_bos(tokenizer),
+                  "facts_sha256": fixture_signature(tokenizer, shape)}))
 """
 DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
 SETTING_KEYS = ("flash_attn", "kv_unified", "kv_f32", "kv_q8")
@@ -1806,10 +1813,19 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     Reference and candidate see the same questions. Cached by the GGUF, snapshot, gate rule, engine version and machine."""
     import subprocess
 
-    from .factual_gate import KG5_SHAPE, VERSION as FACT_VERSION, compare
-    from .numeric_choice import GATE_VERSION, ratio_interval
+    from .factual_gate import KG5_SHAPE, VERSION as FACT_VERSION, _protocol, compare
+    from . import ggml_gate_checkpoint as checkpoint
+    from .numeric_choice import CHUNKS, CHUNK_TOKENS, GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
+    def model_identity():
+        try:
+            s = os.stat(gguf)
+            return s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns
+        except OSError:
+            return None
+
+    original = model_identity()
     key = gate_key(snapshot, gguf)
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"{key}.json"
@@ -1820,36 +1836,65 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     if cacheable and stored.exists():
         try:
             kept = json.loads(stored.read_text())
-            if not (gpu_layers() > 0 and kept.get("ran") and "streams" not in kept):  # KG3: gate the streams too
+            optional_failed = any("error" in (kept.get(k) or {}) for k in ("streams", "shared"))
+            if (model_identity() == original and not optional_failed
+                    and not (gpu_layers() > 0 and kept.get("ran") and "streams" not in kept)):
                 return kept
-        except (OSError, ValueError):
+        except (OSError, ValueError, TypeError, AttributeError):
             pass
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
            "HF_HUB_OFFLINE": "1"}
     started = time.perf_counter()
 
     def child(code: str, argument: str, payload: str | None = None, *, stock: bool = False):
+        if model_identity() != original:
+            return None, "the GGUF changed during qualification"
         child_env = {**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0"} if stock else env
         if shape and code == GATE_CANDIDATE:
             # Admit all 32 near-1k prompts on the first step. Width and context are fixed in the measuring child.
             child_env = {**child_env, "IRONMULE_PILOT": "0", "IRONMULE_GGML_PROMPT_BUDGET": str(32 * 1024)}
         done = subprocess.run([sys.executable, "-c", code, argument], env=child_env, input=payload, capture_output=True,
                               text=True, timeout=7200, check=False)
+        if model_identity() != original:
+            return None, "the GGUF changed during qualification"
         if done.returncode != 0:
             return None, done.stderr[-300:]
         return json.loads(done.stdout.strip().splitlines()[-1]), ""
 
-    tune, error = child(TUNE_CHILD, gguf)
-    if tune is None:
-        return {"ran": False, "passes": False, "reason": f"the tuning child failed: {error}"}
     text, error = child(GATE_IDS, snapshot)
     if text is None:
         return {"ran": False, "passes": False, "reason": f"the gate's text could not be tokenized: {error}"}
+    folder = checkpoint.directory(cache, key=key, snapshot=snapshot, gguf=gguf, text=text,
+                                  flags=[shape, experimental, SEQS, SEQ_CTX, THREADS, MAX_ROWS]) if cacheable else None
+    completed = {"measured": 0, "reused": 0}
+    def valid_tune(output):
+        return (isinstance(output, dict) and isinstance(output.get("measured"), list)
+                and isinstance(output.get("order"), list) and bool(output["order"])
+                and all(settings in SETTINGS for settings in output["order"]))
+
+    tune, error = checkpoint.stage(folder, {"role": "tuning"}, lambda: child(TUNE_CHILD, gguf), completed, valid_tune)
+    if tune is None:
+        return {"ran": False, "passes": False, "reason": f"the tuning child failed: {error}"}
+
+    fact_keys = {case.key for case in _protocol(0, shape)}
+    chunks = min(CHUNKS, (len(text["ids"]) - 1) // CHUNK_TOKENS)
 
     def measure(settings: dict[str, bool], *, reference: bool = False, shared: bool = False):
+        def complete(output):
+            if not isinstance(output, dict):
+                return False
+            nll = output.get("nll")
+            return (isinstance(nll, list) and len(nll) == chunks >= 4
+                    and all(type(v) in (int, float) and 0 <= v < math.inf for v in nll)
+                    and all(isinstance(output.get(k), dict) and output[k].keys() == fact_keys
+                            and all(type(v) is bool for v in output[k].values())
+                            for k in (("facts", "repeat") if reference else ("facts",))))
+
         payload = json.dumps({**text, "snapshot": str(snapshot), "settings": settings, "reference": reference,
                               "shared": shared, "kg5_shape": shape})
-        return child(GATE_CANDIDATE, gguf, payload, stock=reference)
+        label = {"role": "reference" if reference else "candidate", "settings": settings, "shared": shared}
+        return checkpoint.stage(folder, label, lambda: child(GATE_CANDIDATE, gguf, payload, stock=reference),
+                                completed, complete)
 
     reference, error = measure(DEFAULT_SETTINGS, reference=True)
     if reference is None:
@@ -1894,17 +1939,27 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     streams = None
     if gpu_layers() > 0:
         streams = check({**chosen["settings"], "flash_attn": True, "kv_unified": False})
+    if model_identity() != original:
+        return {"ran": False, "passes": False, "reason": "the GGUF changed during qualification"}
     result = {"ran": True, "shared": shared, "streams": streams,
               **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
               "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
               "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION,
-              "factual_version": FACT_VERSION, "key": key}
-    if not cacheable:
+              "factual_version": FACT_VERSION, "key": key, "checkpoint_stages": completed}
+    if not cacheable or any("error" in (row or {}) for row in (shared, streams)):
         return result
     try:
         cache.mkdir(parents=True, exist_ok=True)
-        stored.write_text(json.dumps(result))
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", dir=cache, delete=False) as handle:
+            try:
+                json.dump(result, handle, allow_nan=False)
+                handle.close()
+                os.replace(handle.name, stored)
+            finally:
+                Path(handle.name).unlink(missing_ok=True)
     except OSError:
         pass
     return result

@@ -1022,3 +1022,83 @@ def test_native_batch_refuses_oversized_quality_chunk_before_pointer_access():
         engine.chunk_nll([1] * 513, [1])
     assert engine.batch.n_tokens == 17
     assert engine._batch_for(512).n_tokens == 512
+
+
+@pytest.mark.parametrize("changed_fixture", [False, True])
+def test_interrupted_gate_only_reuses_completed_stages_for_identical_fixtures(tmp_path, monkeypatch, changed_fixture):
+    import json
+    import subprocess
+    from collections import Counter
+    from types import SimpleNamespace
+
+    from ironmule import ggml_engine as ge
+    from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS
+
+    monkeypatch.setattr("ironmule.ggml_binary.identity", lambda: {"sha256": {"libllama": "f" * 64}})
+    _fake_gate_children(monkeypatch, [2.0] * CHUNKS)
+    child = subprocess.run
+    calls = Counter()
+    signature = "a" * 64
+    monkeypatch.setattr(ge, "fa1_version", lambda: 3)
+    monkeypatch.setattr(ge, "gpu_layers", lambda: 0)
+
+    def probe(command, **kwargs):
+        code = command[2]
+        if code == ge.GATE_IDS:
+            return SimpleNamespace(returncode=0, stdout=json.dumps({
+                "ids": [1] * (CHUNKS * CHUNK_TOKENS + 1), "bos": 1, "facts_sha256": signature}), stderr="")
+        if code == ge.TUNE_CHILD:
+            calls["tune"] += 1
+        if code == ge.GATE_CANDIDATE:
+            row = json.loads(kwargs["input"])
+            label = "reference" if row["reference"] else "shared" if row["shared"] else "candidate"
+            calls[label] += 1
+            if label == "shared" and calls[label] == 1:
+                raise KeyboardInterrupt
+        return child(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", probe)
+    cache = tmp_path / "cache"
+    model = str(tmp_path / "m.gguf")
+    with pytest.raises(KeyboardInterrupt):
+        ge.gate(model, model, cache=cache)
+    assert not list(cache.glob("*.json"))
+    records = list(cache.glob("stages-*/*.json"))
+    assert len(records) == 3
+    assert all('"ids"' not in path.read_text() and '"prompt"' not in path.read_text() for path in records)
+    if changed_fixture:
+        signature = "b" * 64
+    result = ge.gate(model, model, cache=cache)
+    assert result["passes"] and result["shared"]["passes"]
+    expected = 2 if changed_fixture else 1
+    assert calls == {"tune": expected, "reference": expected, "candidate": expected, "shared": 2}
+    assert result["checkpoint_stages"]["reused"] == (0 if changed_fixture else 3)
+
+
+def test_concurrent_gate_stages_recheck_after_lock(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from ironmule.ggml_gate_checkpoint import stage
+
+    started, proceed = Event(), Event()
+    executions = []
+
+    def run():
+        executions.append(1)
+        started.set()
+        assert proceed.wait(10)
+        return {"rate": 2}, ""
+
+    def call():
+        count = {"reused": 0, "measured": 0}
+        result = stage(tmp_path / "private", {"role": "tuning"}, run, count, lambda r: r == {"rate": 2})
+        return result, count
+
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(call)
+        assert started.wait(10)
+        second = pool.submit(call)
+        proceed.set()
+        a, b = first.result(), second.result()
+    assert executions == [1] and a[0] == b[0]
+    assert a[1]["measured"] == b[1]["reused"] == 1
