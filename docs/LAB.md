@@ -2466,3 +2466,24 @@ answers. Both competitor verdicts failed the acceptance criteria. The controller
 selected a local experiment targeting first-token latency at 32 clients, then
 deferred it because it could not reproduce the serving worker's native configuration.
 [Redacted per-cell measurements and verdicts](../evidence/comparison/qwen3-06b-l40s-20261118.json)
+
+### 2026-11-18: Qwen3-32B on NVIDIA L40S, identical GGUF
+
+The same physical L40S hosted each production HTTP server in turn. The models, token
+IDs, 2,048-token context, generation cap, request order within a cell and device
+placement were verified in each arm. Each concurrency was measured in three rotations.
+The default vLLM 0.11.0 GGUF backend was used. Each server produced 162 graded answers
+across the nine cells. Every answer was correct under this short-answer protocol.
+
+| Clients | IronMule output tok/s | llama.cpp output tok/s | vLLM GGUF output tok/s | p95 first visible token, IronMule / llama.cpp / vLLM |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 38.11 | 28.07 | 15.28 | 206 / 227 / 1,872 ms |
+| 8 | 112.32 | 67.96 | 25.30 | 1,016 / 1,107 / 8,168 ms |
+| 32 | 174.46 | 130.42 | 27.22 | 3,957 / 4,527 / 32,720 ms |
+
+Values are medians. In each of the nine individual cells against each reference,
+IronMule exceeded the 3% throughput margin, preserved request rate and quality and
+had no higher p95 time to first visible token. The controller found no verified
+concurrent deficit at these loads. The result applies to the bounded Q4_K_M GGUF
+protocol; AWQ serving uses a different artifact and kernel path.
+[Full report and per-question scores](../evidence/comparison/qwen3-32b-l40s-20261118.json)

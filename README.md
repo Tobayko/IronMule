@@ -143,7 +143,15 @@ With one competing process, time to first token was 23 s for llama-server at one
 
 ### Same-GGUF serving on NVIDIA L40S
 
-On a 48 GB L40S running Qwen3-0.6B Q4_K_M, IronMule served **929 output tokens/s**
+With Qwen3-32B Q4_K_M and **32 concurrent requests** on a 48 GB L40S, IronMule
+delivered **174.5 output tokens/s**, stock llama-server **130.4**, and vLLM 0.11.0
+serving the identical GGUF **27.2**. Their median per-round p95 first-token times
+were 3.96, 4.53 and 32.72 seconds. All three produced 162/162 correct short answers
+across the three loads and three repetitions. IronMule met the predeclared acceptance
+criteria against both reference servers in every measured pair.
+[32B protocol, all loads and scored answers](docs/LAB.md#2026-11-18-qwen3-32b-on-nvidia-l40s-identical-gguf)
+
+On the same L40S running Qwen3-0.6B Q4_K_M, IronMule served **929 output tokens/s**
 at eight concurrent clients. Stock llama-server delivered **717** and vLLM 0.11.0
 delivered **772**. At 32 clients vLLM led with **1,285**, followed by IronMule at
 **1,248** and llama-server at **1,124**. These are medians of three repetitions with
