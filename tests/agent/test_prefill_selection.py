@@ -119,3 +119,19 @@ def test_measurement_only_binding_reads_the_loaded_worker_objects(monkeypatch, t
     assert loaded == [1]
     assert "study_native_runtime_sha256" not in seen[-1]
     assert len(bridge._experiment_binding["study_native_runtime_sha256"]) == 64
+
+
+
+def test_unavailable_grouped_arm_keeps_incumbent_measurements_and_layout_reason():
+    report = fixture()
+    report["status"] = "partial"
+    report["errors"] = [{"deployment": "batch", "repeat": 0,
+                         "reason": "actual shared-pool placement differs from requested arm"}]
+    report["measurements"] = [row for row in report["measurements"] if row["deployment"] == "stock"]
+    report["deployments"] = [row for row in report["deployments"] if row["deployment"] == "stock"]
+    out = evaluate(report)
+    assert out["status"] == "insufficient_evidence" and not out["groups"]
+    assert out["reason"] == "no_verified_split_grouped_pairs"
+    assert out["native_arms"]["stock"] == {"timed_cells": 3, "verified_repeats": [0, 1, 2]}
+    assert out["native_arms"]["batch"] == {"timed_cells": 0, "verified_repeats": []}
+    assert out["arm_failures"][0]["reason"] == "requested_kv_layout_unavailable"

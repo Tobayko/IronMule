@@ -184,6 +184,19 @@ def evaluate(report):
             and all(type(w) is int and 1 <= w <= 64 for w in protocol["concurrency"]), "invalid_protocol")
     rows = index_unique(report["measurements"], ("deployment", "repeat", "concurrency"))
     deployments = index_unique(report["deployments"], ("deployment", "repeat"))
+    out["native_arms"] = {
+        name: {"timed_cells": sum(key[0] == name for key in rows),
+               "verified_repeats": sorted(rep for (arm, rep), row in deployments.items()
+                                          if arm == name and row.get("prompt_ids_verified") is True)}
+        for name in ARMS}
+    known_errors = {"actual shared-pool placement differs from requested arm": "requested_kv_layout_unavailable",
+                    "actual engine toggle differs from requested arm": "grouped_path_unavailable",
+                    "separate KV streams are unverified": "unverified_split_streams",
+                    "missing same-worker prefill identity": "unverified_worker",
+                    "execution configuration changed during the measured wave": "worker_changed"}
+    out["arm_failures"] = [{"deployment": row["deployment"], "repeat": row["repeat"],
+                            "reason": known_errors.get(row.get("reason"), "measurement_failure")}
+                           for row in report.get("errors", []) if row.get("deployment") in ARMS]
     groups = defaultdict(list)
     for width in protocol["concurrency"]:
         for rep in range(protocol["repeats"]):
@@ -210,6 +223,8 @@ def evaluate(report):
             group["decision"] = ("candidate_for_new_local_holdout" if group["workload"]["scope"] == "worker_verified"
                                  else "candidate_requires_bound_remeasurement")
         out["groups"].append(group)
+    if not groups:
+        out["reason"] = "no_verified_split_grouped_pairs"
     if any(len(g["folds"]) >= 3 for g in out["groups"]):
         out["status"] = "cross_validated_offline"
     return out
