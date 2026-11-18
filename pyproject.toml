@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ironmule"
 dynamic = ["version"]
-description = "Run and benchmark local LLM inference with MLX on Apple Silicon and NVIDIA CUDA, with correctness checks and reproducible evidence"
+description = "OpenAI-compatible local LLM inference server for GGUF and MLX with a learned hardware scheduler, continuous batching and measured execution plans"
 readme = "README.md"
 authors = [{ name = "Tobias Abenthum" }]
 requires-python = ">=3.10"
@@ -22,7 +22,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 keywords = ["mlx", "apple-mlx", "apple-silicon", "local-llm", "local-ai",
-            "llm-inference", "ai-inference", "inference-runtime", "kv-cache",
+            "llm-inference", "gguf", "llama.cpp", "openai-compatible", "continuous-batching", "inference-runtime", "kv-cache",
             "prefix-caching", "ttft", "batching", "on-device-ai", "benchmarking"]
 
 [project.optional-dependencies]

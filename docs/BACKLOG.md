@@ -226,11 +226,23 @@ before it spends GPU quota.
 Not worth the quota now: a new GPU Pilot training (PI4: the shipped weights are already at the best decisions left
 on such a GPU).
 
+### GPU kernel experience across startups
+
+The CUDA generator binds its tuning report to the GGUF contents, visible CUDA devices, driver and generator/toolchain.
+It retains numerical rejections as well as measured winners. A later startup reuses the library after checking its
+digest, or skips a previously rejected search for the same binding. Resource or launch failures remain eligible
+for a retry. A new file or device is measured again. Automatic generated-kernel tuning requires a worker with
+one visible CUDA device, since the timing loop measures only that device. The end-to-end step comparison still
+decides whether a built kernel is faster on the serving machine. Hardware performance of these cache changes has
+not been measured.
+
 ### Local Pilot thread weights (opt-in, 2026-11-18)
 
-The CPU Pilot has an optional residual head for plain decode. It learns a thread-count offset in idle replays of
-observed context ranges and withdraws it if its paired hardware check later fails. See the Pilot section in
-[AGENT.md](AGENT.md) and the Linux CPU smoke in [LAB.md](LAB.md). Open: exercise natural low-load traffic with a
+The CPU Pilot has an optional hardware model that learns from scratch on real thread experiments and persists
+gains, regressions and token mismatches. It prioritises experiments for one to four concurrent decodes at observed
+CPU contention and context lengths. Local thread offsets serve after paired qualification and are withdrawn on a
+failed recheck. See the Pilot section in
+[AGENT.md](AGENT.md) and the Linux CPU smoke in [LAB.md](LAB.md). Open: exercise changing traffic with a
 model-sized working set, record how often a candidate qualifies, and compare end-to-end throughput and first-token
 latency with the shipped Pilot across alternating sessions.
 

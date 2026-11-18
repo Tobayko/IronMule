@@ -2,7 +2,9 @@
 
 The project's main goal (BACKLOG, "The main goal"): an agent that decides on its own how the model's requests
 run on the hardware, keeps learning by reinforcement learning while it serves, decides in microseconds, and
-serves a decision only after it proved a gain on the machine it runs on. It never changes an answer.
+serves a decision only after it proved a gain on the machine it runs on. Learning updates the Pilot, the scheduler
+and their hardware cost estimates. Every inference run uses the supplied language-model weights. Execution paths
+that can change generated tokens must pass the applicable answer-quality checks.
 
 This page explains how the agent works and where its parts live. Protocols and every result are in
 [BACKLOG.md](BACKLOG.md) under AG1 and AG2, and how to train and measure it is in
@@ -219,9 +221,17 @@ is cheaper per attended token. `ironmule/ggml_agent.py` makes that choice while 
 5. *Switch and guard:* a configuration replaces the incumbent when the 2.5 % bootstrap bound of its dreamed
    tokens-per-second gain is above 3 % and its mean first token is at most 2 % later. The context is rebuilt on the
    loaded model in that idle spell (a request that arrives meanwhile waits for it, a few seconds at most). While the
-   switch is on trial the live steps keep correcting its model; when a re-dream no longer shows a gain the agent
-   switches back and does not try it again for 2,048 requests.
-`/health` shows it under `ggml_agent` (what serves, the world models, the last decisions and why);
+   switch is on trial the live steps keep correcting its model. A re-dream that loses its gain triggers reversion
+   and a cooldown of 512 requests for that candidate. An earlier guard compares actual worker throughput and mean
+   time from admission to first token in busy windows with at least eight completions. It matches windows by
+   request count, arrival spacing, prompt distribution, computed prompt tokens and output length. A trial below
+   85 % of its incumbent's throughput or above 125 % of its latency in comparable windows reverts while idle.
+   Recent measured successes and failures remain bound to the traffic shape, config and machine. After this
+   early reversion, the restored incumbent must see 64 new completions in consecutive matching windows before a
+   new trial. Arrivals in waves of fewer than eight accumulate toward a quiet-traffic trace, including single
+   requests. If the mix keeps changing, the hold expires after 512 new completions; the next dream then uses the
+   post-rollback traffic. An interrupted rollback resumes at the incumbent.
+`/health` shows it under `ggml.agent` (what serves, the world models, the last decisions and why);
 `IRONMULE_GGML_AGENT=0` turns it off (SEQ1's choice then serves alone). With `--agent on --gguf FILE` it is the agent;
 the group agent of AG1 does not attach to this engine, whose continuous batching it does not model.
 
@@ -247,10 +257,15 @@ steps with drafts measured slower than plain ones (tried again every 200 steps).
 `IRONMULE_GGML_DRAFT_MAX_RUNNING` requests run (default 2: on a 4-vCPU Xeon it gave 1.6x for one request, 1.36x for
 two and nothing from three on). `/health` shows it under `ggml.draft_model`.
 
-**GPUs (MG2).** A llama.cpp build with a GPU backend (`tools/build_ggml.py --cuda 75`) offloads every layer
-(`IRONMULE_GGML_GPU_LAYERS` sets fewer). `--gpus all` runs one engine per GPU, each seeing only its own (data parallel);
-without it, several visible GPUs share one model by layers (`IRONMULE_GGML_SPLIT=layer|row|none`). The width is then
-chosen within the GPU's memory. Not yet measured on a GPU: the Kaggle harness `lab/mg2/kaggle_gpu.py` is ready.
+**GGUF on GPUs.** With the CUDA or experimental ROCm build, IronMule uses the GPU devices registered by llama.cpp.
+`ironmule doctor --ggml cuda` and `ironmule doctor --ggml rocm` each execute a small graph on the requested backend.
+On NVIDIA, `--gpus all` starts one worker per selected card. Each worker qualifies its own settings and batch width
+with just its card visible. With several devices visible to a single worker, the default splits the model by layer.
+`IRONMULE_GGML_SPLIT` selects `layer`, `row` or `none`, and `IRONMULE_GGML_GPU_LAYERS` sets the offload count.
+Width selection uses the available device memory. Cached results depend on the visible devices, model, driver and
+loaded native libraries. For Radeon, build with `python tools/build_ggml.py --rocm` and use `ROCR_VISIBLE_DEVICES`
+to select a card. The CUDA path has published Tesla T4 results. The Radeon path still needs a real serving run.
+[GPU results](../README.md#single-gpu-inference-against-vllm)
 
 ## The Pilot: a trained decision network for every step (PI1, 2026-11-14)
 
@@ -259,19 +274,29 @@ is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,
 `ironmule/pilot_weights.npz` for an engine on the CPU and `ironmule/pilot_weights_gpu.npz` for one whose layers run on
 a GPU (PI3; open weights; the world they were trained in and the recipe are not published).
 
-On Linux CPU, `IRONMULE_PILOT_LEARN=1 ironmule serve --gguf MODEL.gguf --speculate off` enables an experimental
-local thread head. It observes single-request decode at 64–511 context tokens and less than half a core of foreign
-load. After 64 matching observations and three idle seconds it tests neighbouring thread counts on a free sequence,
-using generated filler prompts. A new local weight adds or subtracts one thread from the base Pilot decision for
-that context range. Qualification requires identical tokens, four paired timing gains above 3%, and a median gain
-larger than the observed A/A spread. Timings include both thread switches. The next demand interrupts a replay
-between calls. The server skips a probe when all sequences hold cached prefixes or its load changes.
+On Linux CPU, `ironmule serve --gguf MODEL.gguf --agent on` enables IronMule's local hardware model.
+`IRONMULE_PILOT_LEARN=0` disables it. Without `--agent on`, `IRONMULE_PILOT_LEARN=1` opts in.
+Speculation retains its usual settings. The model applies local thread decisions only when the final backend call
+contains one ordinary decode token from each participating request; prompt, draft-verification, padding and
+placeholder rows keep the base Pilot decision. It starts with zero weights and learns how a thread change affects measured decode time.
+Inputs include available cores, foreign load, context length, concurrent decode rows and measured row and KV costs.
+Weights shared by workload and action learn across machines that use the same local state store. Additional
+weights specialise the prediction for this hardware and this exact binding. Training runs during idle spells.
+The database `pilot/thread-model-v1.sqlite3` keeps measured time ratios, token match results, search and qualification
+decisions, and the model parameters. Both gains and regressions teach it; a token mismatch earns a negative reward.
+It stores timing metadata and hardware/model identifiers; user text and generated tokens stay out of its database.
 
-Further observations trigger requalification; a failed comparison removes the weight. Checkpoints in `pilot/`
-under the state root are scoped to model, base weights, hardware and engine settings. Each process requalifies a
-saved weight before serving it. Inspect `thread_learning` under the Pilot status for weights and the last measured
-ratios. These short replay results concern plain decode only; end-to-end gains under fresh traffic require a separate
-server benchmark. The shipped neural network and its four heads continue supplying the base decisions.
+For plain decode with one to four concurrent requests in the same 64-token context band (64–511 tokens), the model
+ranks thread counts to test. After 64 matching observations and three idle seconds it replays generated filler
+prompts on free sequences at the observed foreign load. A candidate must generate identical tokens across four
+paired comparisons, improve time by over 3% in each, and beat the A/A timing spread. Timings include both thread
+switches. A new request interrupts replay between backend calls. Missing slots, pending prefills, a different
+load band or heterogeneous context lengths keep the stock decision outside its qualification regime.
+
+A local per-regime thread offset can serve after qualification on this machine. Further observations trigger
+requalification and a failed comparison withdraws the offset. After a restart, saved offsets are proposals again.
+Inspect `thread_learning` under the Pilot status for model updates, installed offsets and the last timing ratios.
+These results concern decode time. End-to-end throughput and first-token latency need a separate serving comparison.
 
 *Scope (owner goal 2026-11-16, BACKLOG PI3).* The Pilot runs on the CPU; the model it steers is to run perfectly on
 the GPU. Since PI3 (2026-11-16) an engine on a GPU takes the GPU weights: trained from scratch in dream world v7, built
@@ -390,7 +415,8 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 - **CPU, llama.cpp's kernels (2026-11-13).** With FA1 under the ggml engine, IronMule served Qwen3-4B Q8_0 with a
   479-token system prompt at 1.19x / 1.75x / 1.65x the tokens per second of the better stock `llama-server` setting at
   1 / 8 / 16 requests on a 4-vCPU Xeon, first tokens sooner, answers as good (LAB.md, FA1). AG10 decides that engine's
-  configuration; its switching is shown in simulation (AG10 S), not yet under a changing real load.
+  configuration. The local CPU HTTP transition experiments in LAB.md measured both a switch and a rollback under
+  short chats and documents; results depend on the tested workload and machine.
 - **No gain from order and width on the group engines (AG1).** Through AG1 V4 (T4) and V5-CPU (Kaggle CPU, cut by the
   12 h limit) those actions (order by limit, width) had no headroom over the best fixed rule above the noise; the
   gains below came from the engine (stacking, kernels), which the agent chooses.
@@ -418,29 +444,3 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 - **KB3 (2026-11-07): the Gemma plan's attention, rewritten bit for bit.** FA2 version 3 computes the same values in
   the same order with a warp per query head and coalesced key loads; on a T4 its outputs were bit-identical, and one
   request alone made 0.928x the native path, against 0.884x before. AG5-G runs again on it (run 5).
-
-## Training local language-model adapters
-
-The opt-in `ironmule adapt` command trains an MLX chat model during a dedicated local session. Give it a registered
-base model ID. Training and serving share the product's model lease. To try up to three successive candidates with
-24 gradient updates each, run:
-
-```sh
-ironmule adapt train --model "$BASE_MODEL" --steps 24 --cycles 3
-ironmule adapt status --model "$BASE_MODEL"
-```
-
-Each cycle creates fresh arithmetic and record-extraction examples from a random seed, fits rank-four LoRA weights
-in the last transformer block, and fuses them into a separate local snapshot. The candidate answers fresh QG1
-questions alongside the current and original models. Qualification requires a gain in correct answers over both
-incumbent runs, retention of every answer either incumbent run or the original model got right, and a median
-answer latency within 5% of the incumbent and original model. Candidates passing those checks undergo the paired
-perplexity check on the existing reference text. The first rejection ends the session. Measurements use greedy
-generation on the local MLX reference path. Accuracy on this small suite describes only these tasks.
-
-On success the command registers a content-versioned snapshot under the printed `serve_model` alias. An ordinary
-`ironmule serve --model <alias> --engine reference` loads it. A further training cycle starts with the selected
-weights. `ironmule adapt rollback --model "$BASE_MODEL"` reselects its predecessor for the next server launch.
-The base keeps its original ID, and a running server keeps the revision it already loaded. Every accepted version
-uses disk space for a full fused model and the accompanying small adapter. Training examples contain synthetic
-inputs only. With a custom product state directory pass the same `--state-dir` to each command.

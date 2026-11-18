@@ -2241,7 +2241,7 @@ python lab/ag10/run_pair.py "$GGUF" run-16 --requests 48 --width 16 --lines 96 -
   --first fixed --gate-cache run-8/fixed-state/ggml-gate
 ```
 
-## 2026-11-18 Local MLX adapter qualification and T4 preparation
+## 2026-11-18 Historical MLX adapter trial and T4 preparation
 
 On Linux CPU, SmolLM2-135M-Instruct was expanded to dense float32 from the MLX 8-bit snapshot at revision
 `0f0d9b8218915bc34d401e1a340b8c049d300d5e`. With one OpenBLAS thread, four rank-four LoRA updates on
@@ -2250,9 +2250,61 @@ scored 12/18 on the fresh QG1 v3 challenge (seed 4314256273567495177): 4/6 arith
 6/6 facts. The candidate failed the required improvement, so no revision was promoted and the later perplexity
 test was skipped. Earlier strict-format grading gave 0/18 on a different challenge; inspection found correct
 answers expressed as complete sentences. The v3 grading rule was revised after that observation. Other CPU tests
-overlapped the v3 run, so its measured answer latencies are unsuitable for a speed claim.
+overlapped the v3 run, so its measured answer latencies are unsuitable for a speed claim. The owner subsequently
+confirmed that learning applies to hardware execution. The independent QG1 checks now assess execution choices
+with a fixed language-model checkpoint.
 
 The experimental T4 attention kernel, its probe and the patched upstream translation unit compiled locally
 for SM75 with CUDA 12.6. Numerical execution on a physical T4, the complete step comparison and the HTTP
 comparison remain open. The [KG5 run package](../lab/kg5/README.md) caps a combined job at ten minutes of
 workload time and records intermediate results on rejection or timeout.
+
+
+### 2026-11-18 — From-scratch hardware model, two concurrent decodes
+
+On the same Linux CPU and SmolLM2-135M-Instruct Q4_K_M, two simultaneous requests produced nine observations
+in the same 64-token context band. The load sensor read approximately three foreign cores. This probe used its
+unmodified readings. Two paired eight-step decode probes with two sequences each produced 16 matching tokens per
+pair. One CPU thread took 0.858 and 0.756 of two threads' times. These were search observations from a shared
+runner: they created eleven coefficients from zero in the local model database. No serving weight was qualified by
+these two comparisons. The restart, learning from losses, hardware transfer of suggestions, local qualification and
+rollback paths also have deterministic tests across multiple concurrency and foreign-load regimes.
+
+### 2026-11-18 — Earlier AG10 withdrawal and recovery after a failed live switch
+
+Two further pairs used the HTTP transition protocol above on the same 4-vCPU EPYC runner and SmolLM2-135M GGUF.
+Each arm began at w8, with fresh agent state and the same cached width measurements. Each wave had 16 requests.
+The new withdrawal compares worker busy periods with similar prompt and output lengths, request counts and
+computed prompt tokens. One window must contain at least eight completions; worker first-token time starts at
+admission. The final guard also bins the median inter-arrival spacing. A slower candidate withdraws if it misses
+85 % of incumbent throughput or exceeds 125 % of its mean first-token time. Up to the last three matched windows
+per configuration are compared by median; these observations can withdraw or block a candidate, not qualify one.
+
+| Arm order and change | Phase | Agent / fixed output tok/s | Agent / fixed p95 HTTP first-token time (s) |
+| --- | --- | ---: | ---: |
+| Agent first, early withdrawal only | short | 93.67 / 73.98 | 1.25 / 1.51 |
+| | documents | 3.77 / 4.56 | 40.14 / 30.84 |
+| | short again | 15.19 / 75.54 | 12.17 / 1.48 |
+| Fixed first, early withdrawal and fresh-traffic recovery | short | 79.64 / 89.23 | 1.42 / 1.32 |
+| | documents | 3.68 / 4.23 | 42.13 / 32.97 |
+| | short again | 50.77 / 78.68 | 2.17 / 1.54 |
+
+In both pairs, the agent switched from w8 to w64 after 65 requests and reverted after 81 (16 new completions,
+previously 64). In the first pair the w64 document window delivered 0.729x the w8 window's worker throughput
+and 1.421x its mean worker first-token time. The old dream still proposed w32 after 97 requests and w64 after
+129. Both trials reverted after a single returning-chat wave, with a high cost to those waves.
+
+The final guard holds the recovered incumbent until at least 64 fresh completions in consecutive windows match the
+current request mix. The next trial must qualify on those fresh arrivals. The second pair saw a 0.684x worker
+throughput ratio and 1.268x worker first-token ratio on the w64 document trial. The remaining document wave stayed
+at w8, then the mix changed, restarting the evidence count. All three returning-chat waves stayed at w8 (16, 32, 48
+matching completions). Each pair had 143/144 identical streamed responses, and 138/144 correct factual answers on
+both arms. The quicker recovery and absence of further switches were observed in the real server. The final
+adaptive arm was slower end to end than the fixed arm in all three phases; the test has one sample per arm.
+
+A synthetic replay with two seeds and 12 windows per phase gave agent/fixed throughput ratios of
+1.000 / 1.195 / 0.897 and 1.000 / 1.177 / 0.858 for short/document/short traffic. This simulator supplies
+step costs and arrivals but no request-level completion timestamps. It exercises the existing dream decisions;
+the real withdrawal was checked above. Deterministic tests also cover a permanent move to singleton requests
+(64 new completions unlock a fresh dream), a continually alternating mix (512 new completions expire the hold),
+and an idle tick without new arrivals.
