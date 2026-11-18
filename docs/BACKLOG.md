@@ -14,6 +14,14 @@ Qwen3-32B and SmolLM2 measurements are recorded in the [lab notebook](LAB.md#202
 The remaining end-to-end target is higher output throughput with first-token latency
 and answer quality preserved at each measured load against both reference servers.
 
+For Qwen3-32B, prioritize 8- and 32-request bursts. Profile IronMule's own time
+spent on admission, prompt processing and decode during a short–long–short traffic
+transition. Test the candidate with the largest measured local cost against the
+current configuration on new requests. The lab can then repeat the external
+deployment comparison on the same workload. The L40S native AWQ reference delivered
+225.1 output tok/s at 32 clients, while IronMule delivered 165.0.
+[Measured workloads and first-token latency](LAB.md#2026-11-18-qwen3-32b-gguf-and-native-awq-on-one-l40s)
+
 ## The main goal (maintainer decision, 2026-10-30)
 
 The owner made one entry the project's main goal: a working IronMule agent. It decides on its own how the
