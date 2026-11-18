@@ -2584,3 +2584,33 @@ observer recorded all 114, including the 96 standalone calls that processed 4,22
 prompt tokens. All 360 generated tokens and all stop reasons matched between revisions.
 The experiment verifies measurement coverage. Its timings apply to this CPU workload.
 [Paired measurements](../evidence/runtime/smollm2-prefill-observer-cpu.json) · [Reproduction script](../lab/portable_gpu/prefill_observer_probe.py)
+
+### 2026-11-18: Qwen3-32B prefill observations and controller decisions on an L40S
+
+Both engine revisions ran Qwen3-32B Q4_K_M on the same 48 GB NVIDIA L40S with all
+65 layers on CUDA. At 8 and 32 concurrent requests, an independent hook counted 114
+native calls across six waves. The previous observer recorded 18. The current observer
+recorded all 114, including 96 standalone calls that processed 4,223 prompt tokens.
+All 120 requests produced identical output tokens and stop reasons. An additional
+eight-request wave exercised gaps between GPU streams. Each of two affected calls
+had seven decode rows, including three placeholders that the old observer counted as
+prompt tokens. [GPU placement and call counts](../evidence/runtime/qwen3-32b-l40s-prefill-observer.json)
+
+On the same GPU, four fresh instances of the production width controller served two pairs
+of native replays in alternating revision order. Each instance learned from 48 warmup
+requests, then served 96 held-out copy tasks in short and document bursts. Both revisions
+used the same calibration of widths 8 and 32 measured on that GPU. The harness called
+the controller between waves and included that decision time in the receiving wave.
+Each wave allowed up to three output tokens. This measures a different workload from
+the 32-output-token HTTP server benchmark above.
+
+The additional observations increased the number of live samples per instance from
+108 to 240. In the final decision of each replay the controller estimated width 32 could
+deliver 3.17% and 4.18% higher throughput after the fix. The lower bounds of those
+estimates were 2.22% and 2.91%. Both fell below its 3% switching threshold, and every
+instance served at width 8 throughout. The previous revision delivered 33.760 output
+tokens/s over the held-out waves and the current revision 33.746. Each revision solved
+192/192 copy tasks, with identical output tokens and stops across the 12 paired waves.
+The controller fitted its cost parameters in memory during each replay. The measured
+controller probe is available at commit `2dce04c`.
+[Controller decisions and paired timings](../evidence/runtime/qwen3-32b-prefill-controller-l40s.json) · [Reproduction script](../lab/portable_gpu/controller_pair.py)
