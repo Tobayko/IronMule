@@ -20,11 +20,17 @@ from .state import _atomic_write
 
 def _fingerprint(args, workload):
     """Cheap change detection. The comparison itself hashes the actual artifacts."""
-    from .compare_servers import _device
+    from ironmule import compare_learning, ggml_engine
+    from . import compare_servers, compare_tokenizer
 
     executables = [args.ironmule or sys.executable, args.llama_server, args.vllm]
-    sources = [args.gguf, Path(compare.__file__), *(p for p in args.tokenizer.rglob("*")
-               if p.is_file() and not any(x.startswith(".") for x in p.relative_to(args.tokenizer).parts))]
+    modules = (compare, compare_servers, compare_tokenizer, compare_learning, ggml_engine)
+    sources = [args.gguf, *(Path(module.__file__) for module in modules)]
+    native_path = os.environ.get("LLAMA_CPP_LIB_PATH")
+    if native_path:
+        sources.extend(Path(native_path).glob("*.so*"))
+    sources.extend(p for p in args.tokenizer.rglob("*") if p.is_file()
+                   and not any(x.startswith(".") for x in p.relative_to(args.tokenizer).parts))
     for item in executables:
         if item:
             sources.append(Path(shutil.which(str(item)) or str(item)))
@@ -35,7 +41,11 @@ def _fingerprint(args, workload):
             stamps.append((str(source.resolve()), info.st_size, info.st_mtime_ns))
         except FileNotFoundError:
             stamps.append((str(source), None, None))
-    identity = (_device(os.environ.copy()), platform.machine(), stamps, workload)
+    # Quotas and affinity alter the available CPU even when the host name stays the same.
+    quota = Path("/sys/fs/cgroup/cpu.max")
+    identity = (compare_servers._device(os.environ.copy()), platform.machine(), stamps, workload,
+                quota.read_text().strip() if quota.is_file() else None,
+                sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None)
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
