@@ -1241,23 +1241,34 @@ class GgmlEngine:
                 room = self.seq_ctx - decode_rows  # one call's tokens
                 batched: list[tuple[int, Job]] = []
                 singles = fresh
+                delayed_groups = None
                 if self.prefill_batch and streams and len(fresh) > 1:
+                    def deliver_group(group):
+                        for sq, other, _ in group:
+                            active[sq] = other
+                        try:
+                            for (sq, other, _), pick in zip(group, self._group_prefill(group), strict=True):
+                                take(sq, other, pick)
+                        except BaseException:
+                            active.update((sq, other) for sq, other, _ in fresh if other.reason is None)
+                            raise
+
                     singles = []
+                    delayed_groups = {} if self.prefill_batch_long else None
                     for group in self._prefill_groups(fresh):
                         if len(group) == 1:
                             singles.extend(group)
-                            continue
-                        for seq, job, _ in group:
-                            active[seq] = job
-                        try:
-                            for (seq, job, _), pick in zip(group, self._group_prefill(group), strict=True):
-                                take(seq, job, pick)
-                        except BaseException:
-                            # Every fresh stream was reserved during admission. Let run's finally release
-                            # unprocessed groups and singles along with those in the failed native call.
-                            active.update((sq, other) for sq, other, _ in fresh if other.reason is None)
-                            raise
+                        elif delayed_groups is None:
+                            deliver_group(group)
+                        else:
+                            # Keep short and partially cached requests in the incumbent's arrival/admission order.
+                            # Dispatch the rectangle when the incumbent would have reached its first member.
+                            singles.append(group[0])
+                            delayed_groups[group[0][0]] = group
                 for seq, job, keep in singles:
+                    if delayed_groups and seq in delayed_groups:
+                        deliver_group(delayed_groups[seq])
+                        continue
                     # KG3: with one KV stream per sequence a prompt beside others' rows would split the call into passes
                     if len(job.ids) - keep <= room and not (streams and (rows or batched) and len(job.ids) - keep > 1):
                         rows += [(t, j, seq, j == len(job.ids) - 1) for j, t in enumerate(job.ids) if j >= keep]

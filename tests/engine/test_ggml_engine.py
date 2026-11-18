@@ -1286,3 +1286,19 @@ def test_admission_observer_has_only_numeric_completed_group_metadata():
     engine.run([Job([123], 1), Job([123], 2)])  # a mixed output limit has no single matched rule
     engine.run([Job([123], 2), Job([123], 2, cancelled=lambda: True)])
     assert not samples
+
+
+def test_receipted_long_group_cannot_jump_a_preceding_short_prompt():
+    from ironmule.ggml_engine import Job
+
+    def schedule(long_mode):
+        engine, calls, _ = _streams_engine()
+        engine.prefill_batch = engine.prefill_batch_long = long_mode
+        engine.prefill_long_shapes = {5: (2,)}
+        jobs = [Job([14] * 2, 1), Job([15] * 2, 1), Job([12] * 5, 1), Job([13] * 5, 1)]
+        engine.run(jobs)
+        return [[seq for _, pos, seq in call if pos == 0] for call in calls]
+
+    stock, grouped = schedule(False), schedule(True)
+    assert [2, 3] in grouped
+    assert [seq for call in stock for seq in call] == [seq for call in grouped for seq in call]
