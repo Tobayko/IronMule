@@ -14,7 +14,7 @@
 @@ -2012,6 +2016,34 @@
                src1->ne[1], ctx.stream()) == 0;
  }
- 
+
 +static std::atomic<uint64_t> ironmule_large_prefill_cublas_dispatches{0};
 +
 +// An opt-in, per-process shared counter lets the HTTP benchmark observe dispatch in its worker.
@@ -45,7 +45,7 @@
 +
  static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
      const bool split = ggml_backend_buft_is_cuda_split(src0->buffer->buft);
- 
+
 @@ -2085,6 +2117,14 @@
      } else if (!split && use_mul_mat_vec_q) {
          ggml_cuda_mul_mat_vec_q(ctx, src0, src1, nullptr, dst);
