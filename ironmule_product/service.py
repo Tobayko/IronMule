@@ -264,6 +264,9 @@ class ProductService:
                     result["ggml"]["experiment_binding"] = dict(comparison)
                 if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
                     result["ggml"]["agent"] = dict(agent)
+                kg4 = getattr(self.backend, "ggml_kg4_scope", None)
+                if kg4 is not None:
+                    result["ggml"]["kg4_scope"] = dict(kg4)
                 prefill = getattr(self.backend, "ggml_prefill_status", None)
                 if prefill is not None:
                     result["ggml"]["prefill_batch"] = dict(prefill)

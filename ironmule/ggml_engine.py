@@ -439,6 +439,7 @@ class GgmlEngine:
     prefill_long_pairs = prefill_long_quads = 0
     prefill_batch_calls = prefill_batch_prompts = prefill_batch_rows = 0
     gpu_layers = 0
+    kg4_scope = None
     pool: "SharedPool | None" = None
     pilot: Any = None
     pilot_refused: str | None = None
@@ -484,7 +485,15 @@ class GgmlEngine:
         self._warm_up()
         self.context_build_s = time.perf_counter() - context_started
         self.kg: dict[str, Any] = {}
-        if KG_LIB and self.gpu_layers:
+        if KG_LIB and os.environ.get("IRONMULE_KG4_SCOPE") == "low-width8":
+            from .kg4_scope import Kg4Scope
+
+            try:
+                self.kg4_scope, self.kg = Kg4Scope.calibrate(self, gguf, KG_LIB)
+            except BaseException:
+                self.close()
+                raise
+        elif KG_LIB and self.gpu_layers:
             self.kg = self.measure_kg(KG_LIB)
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
@@ -1046,6 +1055,9 @@ class GgmlEngine:
         learning = getattr(self.pilot, "learning", None)
         decision = {"cap": 1 << 30, "budget": 1 << 30, "draft": True}
         arrived = 0
+        scope = self.kg4_scope
+        if scope is not None:
+            scope.begin()
         try:
             while True:
                 if self.pilot is not None:  # PI1: threads, running cap, prompt budget and drafting for this step
@@ -1060,6 +1072,8 @@ class GgmlEngine:
                     served.extend(more)
                     pending.extend(more)
                     arrived += len(more)
+                if scope is not None:
+                    scope.update(len(active) + len(pending))
                 if self.pilot is not None and learning is None and decision["threads"] != self.threads:
                     self.set_threads(decision["threads"])
                 # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
@@ -1333,6 +1347,8 @@ class GgmlEngine:
                             self.pool.sync(seq, job.full_context(), job.limit - len(job.tokens),
                                            length=len(job.ids) + len(job.tokens) - 1)
         finally:
+            if scope is not None:
+                scope.end()
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
         if cohort is not None:
@@ -1382,6 +1398,7 @@ class GgmlEngine:
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
                 **({"kernels": self.kg} if getattr(self, "kg", None) else {}),
+                **({"kg4_scope": self.kg4_scope.status()} if self.kg4_scope is not None else {}),
                 **({"padding": {"to": {str(k): v for k, v in self.pad_to.items()}, "guesses": self.padded,
                                 "step_ms_by_tokens": {str(k): round(v * 1000, 2) for k, v in self.pad_prices.items()}}}
                    if self.pad_prices else {}),
@@ -1863,6 +1880,9 @@ def machine_key() -> str:
     from .ggml_binary import identity as native_identity
 
     binding = {**runtime_binding(ggml_devices()), "native": native_identity()}
+    if os.environ.get("IRONMULE_KG_LIB") and os.environ.get("IRONMULE_KG4_SCOPE") == "low-width8":
+        binding["kg4_scope"] = {"mode": "low-width8", "graphs": os.environ.get("GGML_CUDA_DISABLE_GRAPHS"),
+                                "source": file_sha256(str(Path(__file__).with_name("kg4_scope.py")))}
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1":
         binding["grouped_prefill"] = 1
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444":

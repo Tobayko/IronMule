@@ -99,6 +99,7 @@ class MLXWorkerClient:
         self.pilot_status: dict[str, Any] | None = None  # PI1: the Pilot, as its last request saw it
         self.draft_model_status: dict[str, Any] | None = None  # DM1: the draft model, as its last request saw it
         self.ggml_agent_status: dict[str, Any] | None = None  # AG10: the ggml engine's agent, as its last request saw it
+        self.ggml_kg4_scope: dict[str, Any] | None = None
         self.ggml_prefill_status: dict[str, Any] | None = None
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
@@ -899,6 +900,8 @@ class MLXWorkerClient:
                             self.draft_model_status = engine["draft_model"]  # DM1: shown under /health
                         if isinstance(engine, dict) and isinstance(engine.get("ggml_agent"), dict):
                             self.ggml_agent_status = engine["ggml_agent"]  # AG10: shown under /health
+                        if isinstance(engine, dict) and isinstance(engine.get("kg4_scope"), dict):
+                            self.ggml_kg4_scope = engine["kg4_scope"]
                         if isinstance(engine, dict) and isinstance(engine.get("prefill_batch"), dict):
                             self.ggml_prefill_status = engine["prefill_batch"]
                         if isinstance(engine, dict) and isinstance(engine.get("experiment_binding"), dict):

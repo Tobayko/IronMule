@@ -213,6 +213,7 @@ class GgmlBridge:
         return {"ggml_steps": summary["steps"], **({"speculation": summary["speculation"]}
                                                    if isinstance(summary["speculation"], dict) else {}),
                 **({"experiment_binding": self._experiment_binding} if getattr(self, "_experiment_binding", None) else {}),
+                **({"kg4_scope": summary["kg4_scope"]} if "kg4_scope" in summary else {}),
                 **({"prefill_batch": summary["prefill_batch"]} if "prefill_batch" in summary else {}),
                 **({"draft_model": summary["draft_model"]} if "draft_model" in summary else {}),
                 **({"pilot": summary["pilot"]} if "pilot" in summary else {}),
