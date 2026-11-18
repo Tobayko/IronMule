@@ -222,6 +222,21 @@ class ProductService:
                     diagnostic = sanitize(self.backend.ggml_gate["diagnostic"])
                     if diagnostic:
                         result["ggml"]["gate"]["diagnostic"] = diagnostic
+                streams = self.backend.ggml_gate.get("streams")
+                if isinstance(streams, dict):
+                    from ironmule.ggml_gate_diagnostics import sanitize
+
+                    check = {"passes": streams.get("passes") is True}
+                    grouped = streams.get("prefill_batch")
+                    if isinstance(grouped, dict):
+                        check["grouped_greedy_match"] = grouped.get("matches") is True
+                        count = grouped.get("calls")
+                        if type(count) is int and count >= 0:
+                            check["grouped_calls"] = count
+                    diagnostic = sanitize(streams.get("diagnostic"))
+                    if diagnostic:
+                        check["diagnostic"] = diagnostic
+                    result["ggml"]["stream_qualification"] = check
                 fallback = self.backend.ggml_gate.get("kernel_fallback")
                 if fallback:
                     result["ggml"]["kernel_fallback"] = fallback

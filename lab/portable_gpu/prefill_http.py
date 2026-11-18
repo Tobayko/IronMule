@@ -45,12 +45,19 @@ class Profile:
     """Read the product's numeric request samples outside the client measurement interval."""
     def __init__(self, arm):
         self.arm = arm
+        self.placement = {}
 
     def before(self, server, deadline):
         live = read(server, "/v1/ironmule/live", deadline)
         ggml = read(server, "/health", deadline)["ggml"]
         layout = ggml.get("experiment_binding") or {}
         stats = ggml.get("prefill_batch") or {}
+        self.placement = {
+            "shared": layout.get("shared"), "sequences": layout.get("seqs"), "context": layout.get("seq_ctx"),
+            "kv_unified": layout.get("settings", {}).get("kv_unified"), "grouping_enabled": stats.get("enabled"),
+            "planned_sequences": (ggml.get("sequences") or {}).get("sequences"),
+            "stream_qualification": ggml.get("stream_qualification"),
+        }
         if stats.get("enabled") is not (self.arm == "batch"):
             raise compare.Unverified("actual engine toggle differs from requested arm")
         if layout.get("shared") is not (self.arm == "shared"):
@@ -152,11 +159,14 @@ def run(args):
                 args.agent_dir = args.state_dir / name
                 report["current"] = {"deployment": name, "repeat": rep}
                 save("starting")
+                profile = Profile(name)
                 try:
                     production_compare.measure(args, "ironmule_gguf", rep, data, report, save, deadline,
-                                               profile=Profile(name), label=name)
+                                               profile=profile, label=name)
                 except (compare.Unverified, compare_servers.StartupError) as exc:
                     error = exc.report_fields() if isinstance(exc, compare_servers.StartupError) else {"reason": str(exc)[:180]}
+                    if profile.placement:
+                        error["placement"] = profile.placement
                     report["errors"].append({"deployment": name, "repeat": rep, **error})
                     failed.add(name)
                     save("arm_unavailable")
