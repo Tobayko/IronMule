@@ -109,6 +109,8 @@ def test_controlled_cli_rotates_arms_and_keeps_real_partial_evidence(tmp_path, m
     assert partial["error_code"] == "launch_failed" and len(partial["failures"]) == 3
     assert {r["engine"] for r in partial["runs"]} == {"ironmule", "vllm"}
     assert len(partial["runs"]) == 12
+    assert partial["verdict"]["by_opponent"]["llama_cpp"]["status"] == "incomplete"
+    assert partial["verdict"]["by_opponent"]["vllm"]["status"] == "does_not_qualify"
 
     with pytest.raises(compare.Unverified, match="expected"):
         compare.check_usage(["same prompt"], [{"prompt_tokens": 8}], {"same prompt": 7})

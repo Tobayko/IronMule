@@ -198,11 +198,27 @@ def evaluate(report):
                 checks.append({"opponent": engine, "repeat": rep, "concurrency": width, "throughput_ratio": ratio,
                                "ttft_p95_ratio": latency, "lost_answers": lost, "reasons": reasons_here})
                 reasons.update(reasons_here)
-    incomplete = reasons.intersection({"failed_arm", "missing_arm", "insufficient_repeats_or_loads", "served_prompt_lengths_differ",
-                                       "prompt_ids_unmatched", "stock_provenance_unverified", "unverified_device_placement",
-                                       "generated_lengths_or_stops_differ"})
-    status = "incomplete" if incomplete else ("does_not_qualify" if reasons else "qualifies")
-    return {"status": status, "engines": list(engines), "reasons": sorted(reasons), "comparisons": checks}
+    def classify(flags):
+        incomplete = {"failed_arm", "missing_arm", "insufficient_repeats_or_loads", "served_prompt_lengths_differ",
+                      "prompt_ids_unmatched", "stock_provenance_unverified", "unverified_device_placement",
+                      "generated_lengths_or_stops_differ"}
+        if flags & incomplete:
+            return "incomplete"
+        return "does_not_qualify" if flags else "qualifies"
+
+    by_opponent = {}
+    for engine in engines[1:]:
+        rows = [row for row in checks if row["opponent"] == engine]
+        flags = {flag for row in rows for flag in row["reasons"]}
+        if "insufficient_repeats_or_loads" in reasons:
+            flags.add("insufficient_repeats_or_loads")
+        if len(rows) != protocol["repeats"] * len(protocol["concurrency"]):
+            flags.add("missing_arm")
+        if any(f["engine"] in ("ironmule", engine) for f in report.get("failures", [])):
+            flags.add("failed_arm")
+        by_opponent[engine] = {"status": classify(flags), "paired_cells": len(rows), "reasons": sorted(flags)}
+    return {"status": classify(reasons), "engines": list(engines), "reasons": sorted(reasons),
+            "by_opponent": by_opponent, "comparisons": checks}
 
 
 def run(args, report, save, deadline):
