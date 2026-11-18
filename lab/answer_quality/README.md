@@ -71,3 +71,28 @@ IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_PILOT=0 IRONMULE_KG5=0 OPENBLAS_NUM_THREADS=
 python -m lab.answer_quality.structured --gguf /models/Qwen_Qwen3-0.6B-Q4_K_M.gguf \
   --output /tmp/qwen3-06b-structured.json
 ```
+
+### Result on the fresh structured-lookup tasks
+
+| Outcome | Reference | Structured application |
+|---|---:|---:|
+| Supported ledger fields answered correctly | 12/12 | 12/12 |
+| False abstentions on supported ledger fields | 0/12 | 0/12 |
+| Unsupported fields with a concrete unsupported code | 9/12 | 0/12 |
+| Unsupported fields with an abstention accepted by the frozen grader | 2/12 | 12/12 |
+| Two-step tool tasks completed with the correct dock | 0/12 | 12/12 |
+| Tool calls selected by the model | 12 | 12 |
+| Additional tool calls initiated by the application | 0 | 12 |
+| Model turns and generated tokens for tool tasks | 24 turns, 420 tokens | 24 turns, 420 tokens |
+
+One additional reference answer correctly explained an abstention outside the grading grammar. The reference therefore declined three of the 12 unsupported requests on inspection. In the application condition, the model itself answered all supported fields correctly in the required format. On the 12 unsupported fields it produced two punctuated abstentions and ten field or shipment status messages consistent with the lookup. The renderer converted all 12 to canonical `UNKNOWN`.
+
+Every first tool request was identical across the paired runs. In the reference the decoder returned the depot as its final answer. In the application the second lookup used the actual depot from the first. The decoder then returned the correct dock on all 12 tasks, without using the final renderer fallback. For example, for shipment `S-34981` the first tool returned `P-70857`; the application looked up that depot and received `D-38390`.
+
+The application solves typed, complete lookups with an explicit field schema and dependency graph. The result measures that composed workflow on one synthetic domain. The language model was also used to render the ledger answers, where a typed application can return the source field directly. No decoder weights were trained or changed.
+
+[Raw responses, executed calls and source returns](../../evidence/answer-quality/qwen3-06b-structured-lookup-20261118.json)
+
+```sh
+python -m lab.answer_quality.check_report evidence/answer-quality/qwen3-06b-structured-lookup-20261118.json
+```
