@@ -33,6 +33,9 @@ def reports():
                   "gpu": {"name": "NVIDIA L40S", "driver": "test", "cc": "89", "uuid_sha256": sha("device")},
                   "engine_sha256": sha("engine"), "harness_sha256": sha("harness"), "offloaded_layers": 65,
                   "cuda_model_mib": 18000, "plugin_sha256": study.PLUGIN if scoped else None,
+                  "scope_source_sha256": sha("scope implementation"),
+                  "nll_low": {str(b): [1.0] * b for b in (6, 7, 8)},
+                  "nll_low_hits": {str(b): hits(b) if scoped else hits() for b in (6, 7, 8)},
                   "nll": [1.0] * 16, "nll_b32": [1.0] * 16, "facts_low_hits": hits(8) if scoped else hits(),
                   "disable_hits": hits(), "masks_after": [0, 0],
                   "scope": {"mode": "low-width8", "parked": True, "low_runs": 2, "wide_runs": 2,
@@ -116,3 +119,15 @@ def test_quality_checks_both_real_widths_and_the_exact_wide_fallback():
     records = reports()
     records[1]["waves"][1]["output_ids_sha256"] = sha("unexpected wide output")
     rejected(records, "wide_output_changed")
+
+
+def test_low_width_nll_must_use_the_named_bucket_and_preserve_scores():
+    records = reports()
+    records[1]["nll_low"]["7"] = [1.1] * 7
+    assert not study.qualify(*records)["eligible"]
+    records = reports()
+    records[1]["nll_low_hits"]["7"] = hits(8)
+    assert not study.qualify(*records)["eligible"]
+    records = reports()
+    records[2]["scope_source_sha256"] = sha("changed scope")
+    assert not study.qualify(*records)["eligible"]
