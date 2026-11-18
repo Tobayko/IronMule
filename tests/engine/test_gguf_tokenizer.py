@@ -55,6 +55,7 @@ def test_the_template_renders_as_hugging_face_renders_it():
 
 def test_compiled_template_keeps_concurrent_request_variables_separate(monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
+
     from jinja2.sandbox import ImmutableSandboxedEnvironment
 
     template = "{{ messages[0].content }}{{ suffix }}"

@@ -21,6 +21,7 @@ from .state import _atomic_write
 def _fingerprint(args, workload):
     """Cheap change detection. The comparison itself hashes the actual artifacts."""
     from ironmule import compare_learning, ggml_engine
+
     from . import compare_servers, compare_tokenizer
 
     executables = [args.ironmule or sys.executable, args.llama_server, args.vllm]
