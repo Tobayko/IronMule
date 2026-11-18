@@ -32,24 +32,17 @@ A verdict of `qualifies` requires at least three repetitions and two loads. Agai
 
 For a quick compatibility check, `--concurrency 1 --requests 1 --repeats 1` still exercises all three servers and the factual workload. Its verdict stays `incomplete`. The benchmark never treats a missing competitor as a win.
 
-## How the agent uses a measured gap
+## External audit and autonomous serving
 
-After the servers stop, IronMule can use paired results at a supported concurrency to select one local prompt-admission experiment. It checks the bound GGUF engine, model, hardware and remaining budget, then compares a candidate with the incumbent on fresh held-out requests. A qualified local rule is scoped to the measured configuration in the benchmark agent state. Failed trials retain the incumbent. The report records the outcome under `learning`. A later full comparison is required to establish whether the change improves the public three-engine result.
-
-On CUDA, the holdout independently resolves the physical GPU from the current visibility mask and restores the measured worker's UUID before GGML initializes. A different binding defers the trial. The `binding_mismatch` list identifies differences such as the native implementation, machine or pilot. To retry a completed comparison on its original host with the same installed release, pass the product worker's state directory and a fresh output filename.
-
-```sh
-python -m ironmule_product.compare_holdout --report comparison.json --gguf model.gguf \
-  --state /path/to/agent-state --output holdout.json --budget-seconds 240
-```
+The lab uses all three production HTTP servers to evaluate IronMule. The external report is an audit artifact. The benchmark disables new admission-learning trials during timed traffic. It writes the competitors' measurements and its acceptance decision to the comparison report. The production controller learns from its own request metadata and verifies proposed schedules against its own incumbent. Normal serving requires only the IronMule runtime and the chosen model. The earlier RTX 4090 replay is archived as an experiment with a competitor-driven trigger. [Production controller](AGENT.md#learning-from-ironmules-own-serving-traffic)
 
 ## Unattended comparisons
 
 On a dedicated host, start the watch once and pass your regular comparison options after
 `--`. While it runs it checks for changed local files and hardware every minute. It runs
-the first comparison immediately, repeats on a change or after the interval, and verifies
-a newly qualified local rule with a fresh workload seed as soon as another cycle fits
-within the allowance. With an explicit seed, successive cycles increment it.
+the first comparison immediately and repeats after a change or when the interval expires,
+within the cumulative allowance. Each cycle uses a fresh seed. With an explicit seed,
+successive cycles increment it.
 
 ```bash
 ironmule compare-watch --total-seconds 7200 --interval-seconds 86400 -- \

@@ -412,30 +412,6 @@ def arguments(argv):
     return args
 
 
-def learn(args, report, save, deadline):
-    """Keep the comparison verdict if a subsequent local admission experiment cannot run."""
-    from ironmule.compare_learning import respond
-
-    arm = next((a["identity"] for a in report["arms"] if a["engine"] == "ironmule"
-                and a["identity"].get("autonomous") is True), None)
-    if not arm:
-        return
-    command = arm.get("argv", [])
-    state = args.agent_dir
-    if not state and "--state-dir" in command:
-        state = Path(command[command.index("--state-dir") + 1])
-    if state is None:
-        report["learning"] = {"status": "deferred", "reason": "no bound local IronMule state"}
-        return
-    save("learning")
-    provider = arm.get("provider") or ("cuda" if str(arm.get("device")).startswith("GPU-") else "cpu")
-    try:
-        report["learning"] = respond(report, gguf=args.gguf.resolve(), state=state, provider=provider,
-                                     deadline=deadline)
-    except (OSError, RuntimeError, ValueError) as exc:
-        report["learning"] = {"status": "error", "reason": str(exc)[:400]}
-
-
 def main(argv=None):
     args = arguments(argv)
     started = time.monotonic()
@@ -462,11 +438,9 @@ def main(argv=None):
         save("initializing")
         try:
             run(args, report, save, deadline)
-            learn(args, report, save, deadline)
         except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - persist the actual partial result and stage
             code = "identity_unverified" if isinstance(exc, Unverified) else {
-                "starting": "launch_failed", "initializing": "invalid_input", "preflight": "identity_unverified",
-                "learning": "learning_failed"}.get(report["stage"], "measurement_failed")
+                "starting": "launch_failed", "initializing": "invalid_input", "preflight": "identity_unverified"}.get(report["stage"], "measurement_failed")
             timed_out = isinstance(exc, TimeoutError) or time.monotonic() >= started + args.budget_seconds
             if isinstance(exc, KeyboardInterrupt):
                 code = "interrupted"

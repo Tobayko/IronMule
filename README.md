@@ -97,7 +97,8 @@ To compare on your own GPU, `ironmule compare` serves the same GGUF through Iron
 stock llama-server and vLLM. It checks the input tokens, sends short and document
 requests and measures output tokens/s, first-token latency and answer quality at each
 concurrency. `ironmule compare-watch` repeats comparisons on a dedicated host within
-a time allowance and retests a qualified scheduling change with fresh traffic.
+a time allowance. The production controller chooses its own trials from local workload
+measurements and tests each candidate against its own serving configuration.
 [Run the comparison](docs/COMPARE.md)
 
 During inference, open `/live` on your IronMule server to see active and queued requests,
@@ -158,7 +159,7 @@ delivered **772**. At 32 clients vLLM led with **1,285**, followed by IronMule a
 identical tokenized requests. IronMule missed the overall latency and quality criteria.
 [Full results and holdout scores](docs/LAB.md#2026-11-18-qwen3-06b-on-nvidia-l40s-against-llamacpp-and-vllm)
 
-A second three-server run on an RTX 4090 found the same load-dependent result for Qwen3-0.6B. IronMule led at eight clients with 907 output tokens/s. At 32 clients vLLM led with 1,189 to IronMule’s 1,176. IronMule also tested a scheduling change automatically on that GPU and retained the incumbent after four held-out trials. [RTX 4090 measurements and learning decision](docs/LAB.md#2026-11-18-qwen3-06b-on-geforce-rtx-4090)
+A second three-server run on an RTX 4090 found the same load-dependent result for Qwen3-0.6B. IronMule led at eight clients with 907 output tokens/s. At 32 clients vLLM led with 1,189 to IronMule’s 1,176. An earlier lab experiment used the measured first-token gap to trigger a scheduling trial. IronMule kept the incumbent after four held-out pairs. [RTX 4090 measurements and learning decision](docs/LAB.md#2026-11-18-qwen3-06b-on-geforce-rtx-4090)
 
 ### Single-GPU inference against vLLM
 

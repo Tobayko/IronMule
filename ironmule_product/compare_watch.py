@@ -58,7 +58,7 @@ def _watch(config, workload, args, folder):
     while state["charged_seconds"] < config.total_seconds:
         fingerprint = _fingerprint(args, workload)
         wait = state.get("next_at", 0) - time.time()
-        if fingerprint == state.get("fingerprint") and wait > 0 and not state.get("recheck"):
+        if fingerprint == state.get("fingerprint") and wait > 0:
             time.sleep(min(60, wait))
             continue
         allowance = min(args.budget_seconds, config.total_seconds - state["charged_seconds"])
@@ -66,7 +66,7 @@ def _watch(config, workload, args, folder):
         # Reserve the full run before starting. A killed watch cannot overspend by restarting.
         previous = state["charged_seconds"]
         state.update(cycles=cycle, charged_seconds=previous + allowance, fingerprint=fingerprint,
-                     recheck=False, next_at=time.time() + config.interval_seconds)
+                     next_at=time.time() + config.interval_seconds)
         _atomic_write(path, state)
         seed = (args.seed + cycle - 1) % (2**32) if config.fixed_seed else secrets.randbits(32)
         options = [*workload, "--seed", str(seed), "--budget-seconds", str(allowance),
@@ -86,7 +86,7 @@ def _watch(config, workload, args, folder):
             ours = report.get("run_id") != before and report.get("protocol", {}).get("seed") == seed
             if ours and report.get("status") in {"complete", "error", "timeout"}:
                 _atomic_write(folder / f"cycle-{cycle:06d}.json", report)
-                state.update(last_run=report["run_id"], recheck=report.get("learning", {}).get("status") == "qualified")
+                state["last_run"] = report["run_id"]
         _atomic_write(path, state)
         if code == 130:
             return code

@@ -277,28 +277,22 @@ loaded native libraries. For Radeon, build with `python tools/build_ggml.py --ro
 to select a card. The CUDA path has published Tesla T4 results. The Radeon path still needs a real serving run.
 [GPU results](../README.md#single-gpu-inference-against-vllm)
 
-### Local response to a measured competitor gap
+### Learning from IronMule's own serving traffic
 
-After measuring the local servers, `ironmule compare` can test a GGML admission change within its remaining
-wall-clock budget. The experiment starts from a concurrent workload where IronMule missed the 3% throughput
-margin or had a later p95 first token against a verified competitor. It compares the median paired ratios at each load and
-prioritizes the largest deficit. Each pair must match hardware placement, model, tokenizer, prompt IDs, and the
-output token counts and stop reasons. Shorter completions therefore earn no advantage.
+During normal GGUF serving with `--agent on`, IronMule can test how many prompt tokens
+to admit when a group of requests first arrives. It observes numeric workload shapes,
+output limits, throughput and first-token wait times from its own completed traffic.
+Repeated, comparable groups of concurrent requests provide the evidence to choose an
+experiment. It constructs fresh copy problems with matching prompt lengths. Each
+trial runs its current settings and one candidate in alternating order on the same
+model and hardware.
 
-The candidate limits how many prompt tokens enter the first step of a burst. For a latency deficit it tries
-the shortest waiting prompt's length. For a throughput deficit it tries the sum of the shorter half of the burst.
-The CPU or GPU worker tests both the current and candidate budget on four fresh copy workloads matching the
-reported concurrency, prompt lengths and output limit. Each arm starts from a freshly initialized engine. Arm
-order alternates. This measures native GGML scheduling after startup. The original HTTP report retains its own
-quality and latency measurements.
-
-A candidate must change the actual native step shapes, preserve every output token and stop, answer every
-holdout correctly, gain at least 3% throughput, and meet or improve both median and p95 first-token latency in
-every pair. Completed local trials, including losses, are stored under `STATE/competitor-response`. The next
-`serve --agent on` using that state loads qualifying budgets for the same hardware, GGUF and native settings.
-The worker applies a budget only with no running requests, matching prompt lengths in 16-token bins and the
-same output limit. An explicit `IRONMULE_GGML_PROMPT_BUDGET` takes precedence. Single-request gaps, external
-draft models and unknown engine configurations leave the budget at its existing value.
+A candidate must change the native execution, preserve the outputs, answer every
+holdout correctly, improve throughput by at least 3% in each of four pairs and meet the
+incumbent's median and p95 first-token latency in each pair. Successful changes are
+scoped to the measured configuration. Unsuccessful trials retain the current setting.
+The comparison tools are external lab commands. Benchmark reports and legacy
+competitor-triggered rules are outside the production controller's training inputs.
 
 ### GPU width experiments
 

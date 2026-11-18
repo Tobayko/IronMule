@@ -6,12 +6,12 @@ from ironmule_product import compare_watch as watch
 from ironmule_product.state import _atomic_write
 
 
-def test_watch_rechecks_promotions_archives_failures_and_caps_after_restart(tmp_path, monkeypatch):
+def test_watch_rechecks_device_changes_archives_failures_and_caps_after_restart(tmp_path, monkeypatch):
     output = tmp_path / "progress.json"
     argv = ["--total-seconds", "2", "--", "--gguf", "model", "--tokenizer", "tokenizer",
             "--llama-server", "stock", "--vllm", "vllm", "--output", str(output), "--seed", "7"]
     received = []
-    monkeypatch.setattr(watch, "_fingerprint", lambda *_: "gpu-a")
+    monkeypatch.setattr(watch, "_fingerprint", lambda *_: "gpu-a" if not received else "gpu-b")
 
     def run(options):
         args = watch.compare.arguments(options)

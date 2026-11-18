@@ -192,6 +192,8 @@ def _command(engine, args, port, env, gpu):
             ProductStore(state).setup('server')
         cmd = [str(args.ironmule)] if getattr(args, 'ironmule', None) else [sys.executable, '-m', 'ironmule_cli']
         env.pop('IRONMULE_COMPARE_LOCAL_KEY', None)
+        # External benchmark traffic is reserved for the audit and must never trigger a serving holdout.
+        env['IRONMULE_ADMISSION_LEARN'] = '0'
         env['IRONMULE_GGML_SEQ_CTX'] = context
         return [*cmd, 'serve', '--gguf', model, '--state-dir', str(state), '--agent', 'on', '--no-thinking',
                 '--api-key-env', 'IRONMULE_COMPARE_LOCAL_KEY', *address]

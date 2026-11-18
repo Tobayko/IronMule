@@ -174,3 +174,13 @@ def test_ctrl_c_persists_report_and_stops_watcher(tmp_path, monkeypatch):
     assert compare.main(["--engines", "ironmule,llama_cpp", "--gguf", "m.gguf", "--tokenizer", ".",
                          "--llama-server", "llama-server", "--output", str(out)]) == 130
     assert json.loads(out.read_text())["error_code"] == "interrupted"
+
+
+def test_external_audit_disables_new_admission_trials_in_its_own_server(tmp_path):
+    args = compare.arguments(["--gguf", str(tmp_path / "example.gguf"), "--tokenizer", str(tmp_path),
+                              "--engines", "ironmule,llama_cpp", "--llama-server", "stock",
+                              "--agent-dir", str(tmp_path / "audit-state")])
+    env = {"IRONMULE_ADMISSION_LEARN": "1"}
+    argv = compare_servers._command("ironmule", args, 49152, env, False)
+    assert argv[argv.index("--agent") + 1] == "on"
+    assert env["IRONMULE_ADMISSION_LEARN"] == "0"
