@@ -17,6 +17,13 @@ Under `--agent on` it may also choose an output-changing numeric plan or stacked
 that passes its own on-machine quality gate, and never silently (owner, 2026-11-03; BACKLOG AG4). Outside agent
 mode the caller's plan is preserved as below.
 
+**The trainable model is IronMule's hardware controller (owner, 2026-11-18).** Its training targets execution
+decisions. Preserve the served language model's weights. Remember both successful and unsuccessful trials with
+their device, runtime, model and workload, and distinguish contention, bursts, short chats and long documents.
+Experience from another machine may guide what to test first. Qualify a serving change on the machine that
+will run it. Keep the actual load-transition results, including reversions, in [docs/LAB.md](docs/LAB.md).
+Report backend detection, successful computation and measured serving performance separately for new devices.
+
 **IronMule decides on the CPU, the model it steers is to run perfectly on the GPU (owner decision, 2026-11-16;
 BACKLOG, "The main goal").** The agent and its per-step decision model, the Pilot (`ironmule/pilot.py`), run on the
 CPU and stay small enough to decide in milliseconds there. What they optimise, the served LLM, is to be tuned to the

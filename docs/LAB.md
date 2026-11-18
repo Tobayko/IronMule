@@ -2186,3 +2186,133 @@ whose reading came out 1.07 / 0.96; 4 beside a half-busy one read as 0.18 / 0.29
 against 9.4 for one request at the same 4 threads, within the runs' spread), and the same choice in both passes.
 Beside two busy processes (16-token answers, one block) seed 21 chose 2 threads: 5.04 / 26.0 tok/s for 1 / 8 requests
 (the defaults: 0.19 / 1.46 in the run of the weights before).
+
+### 2026-11-18 — Local Pilot thread-weight replay on Linux CPU
+
+One functional run used SmolLM2-135M-Instruct Q4_K_M, three sequences of 512 tokens and plain greedy decode on a
+shared Linux runner. The real low-load criterion excluded this runner (2.55 foreign cores at observation). For
+this smoke only, its load sensor was held at zero to exercise the probes. Starting from an 80-token filler
+context, 1, 2 and 3 threads each returned the same eight generated tokens. A separate 12-token request also
+matched before and after replay. The search comparison retained its baseline and installed no weight. Default-on
+use, live throughput and first-token latency still need representative A/B measurements under natural traffic.
+This was a functional check. The pass and rollback paths also have deterministic unit fixtures.
+
+### 2026-11-18 — AG10: a real HTTP server through two changes in prompt length
+
+Linux runner (AMD EPYC 9V74, cgroup quota 4 CPUs), SmolLM2-135M-Instruct Q4_K_M, model SHA-256
+`2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d`, patched CPU llama.cpp 4227c9b.
+Both servers used the same default numeric settings and an initial width of 8. Pilot, shared KV and speculation
+were off in both to isolate AG10. One warmup, then 48 requests each for short chats, document prompts, short chats
+again (mean prompt tokens 50, 1,085, 52). The output limit was 16. Synthetic record numbers varied; the eight
+capital questions repeated. Each 4.5 s gap between waves allowed the real AG10 idle loop to run. The throughput
+below counts reported output tokens per active wave second; p95 is time from HTTP request to first content.
+
+| Concurrent | Phase | Agent / fixed tok/s | Agent / fixed p95 first token (s) |
+| ---: | --- | ---: | ---: |
+| 8 | short | 85.56 / 59.75 | 0.67 / 1.22 |
+| 8 | documents | 4.72 / 3.33 | 15.75 / 21.62 |
+| 8 | short again | 88.27 / 57.01 | 0.61 / 1.11 |
+| 16 | short | 97.53 / 80.50 | 1.17 / 1.45 |
+| 16 | documents | 4.20 / 4.80 | 40.47 / 28.72 |
+| 16 | short again | 45.85 / 84.68 | 3.21 / 1.33 |
+
+At 8, the agent kept w8 in all 13 decisions. Another CPU job overlapped the fixed arm; the ratios do not measure
+a benefit from learning. At 16, fixed ran first, then agent with the same width calibration. The quality gate
+revision changed between these two startups and both chose the same default options. The run had one sample
+per arm. The agent served w8 through the first document wave, switched to w64 after request 65, and served two
+document waves and the first two returning short waves there. Its trial requires 64 further completions
+(`2 * WINDOW`) before it can judge a reversal. It reverted after request 129, and served the last short wave at
+w8. With 16-way traffic, warm-up included, that is the earliest possible evaluation of this trial. While the
+dream predicted a gain, the measured document and returning phases had lower throughput and higher p95 latency.
+A candidate for a future experiment is an earlier live regression check at a load change. The run does not isolate
+the cost of width alone; the normal agent and fixed serving paths also differ in admission capacity.
+
+At 16, all 144 paired streamed texts matched by SHA-256 (143/144 at 8). Neither arm returned bare city names.
+Checking the timed output hashes against the correct full-sentence answers verified 138/144 in every arm.
+Four separate replay samples confirmed the format, e.g. "The capital of France is Paris." At 16, all six
+remaining document answers were replayed and matched their recorded hashes. They described Austria without
+naming Vienna before reaching the token limit. These repeated questions do not establish general model quality.
+
+To repeat after exporting the bindings and library path printed by `tools/build_ggml.py`, use fresh result directories:
+
+```sh
+python lab/ag10/run_pair.py "$GGUF" run-8 --requests 48 --width 8 --lines 96 --idle 4.5
+python lab/ag10/run_pair.py "$GGUF" run-16 --requests 48 --width 16 --lines 96 --idle 4.5 \
+  --first fixed --gate-cache run-8/fixed-state/ggml-gate
+```
+
+## 2026-11-18 Historical MLX adapter trial and T4 preparation
+
+On Linux CPU, SmolLM2-135M-Instruct was expanded to dense float32 from the MLX 8-bit snapshot at revision
+`0f0d9b8218915bc34d401e1a340b8c049d300d5e`. With one OpenBLAS thread, four rank-four LoRA updates on
+synthetic examples and fusion took 3.81 seconds. Frozen challenger, incumbent and repeated incumbent each
+scored 12/18 on the fresh QG1 v3 challenge (seed 4314256273567495177): 4/6 arithmetic, 2/6 extraction and
+6/6 facts. The candidate failed the required improvement, so no revision was promoted and the later perplexity
+test was skipped. Earlier strict-format grading gave 0/18 on a different challenge; inspection found correct
+answers expressed as complete sentences. The v3 grading rule was revised after that observation. Other CPU tests
+overlapped the v3 run, so its measured answer latencies are unsuitable for a speed claim. The owner subsequently
+confirmed that learning applies to hardware execution. The independent QG1 checks now assess execution choices
+with a fixed language-model checkpoint.
+
+The experimental T4 attention kernel, its probe and the patched upstream translation unit compiled locally
+for SM75 with CUDA 12.6. Numerical execution on a physical T4, the complete step comparison and the HTTP
+comparison remain open. The [KG5 run package](../lab/kg5/README.md) caps a combined job at ten minutes of
+workload time and records intermediate results on rejection or timeout.
+
+
+### 2026-11-18 — From-scratch hardware model, two concurrent decodes
+
+On the same Linux CPU and SmolLM2-135M-Instruct Q4_K_M, two simultaneous requests produced nine observations
+in the same 64-token context band. The load sensor read approximately three foreign cores. This probe used its
+unmodified readings. Two paired eight-step decode probes with two sequences each produced 16 matching tokens per
+pair. One CPU thread took 0.858 and 0.756 of two threads' times. These were search observations from a shared
+runner: they created eleven coefficients from zero in the local model database. No serving weight was qualified by
+these two comparisons. The restart, learning from losses, hardware transfer of suggestions, local qualification and
+rollback paths also have deterministic tests across multiple concurrency and foreign-load regimes.
+
+### 2026-11-18 — Earlier AG10 withdrawal and recovery after a failed live switch
+
+Two further pairs used the HTTP transition protocol above on the same 4-vCPU EPYC runner and SmolLM2-135M GGUF.
+Each arm began at w8, with fresh agent state and the same cached width measurements. Each wave had 16 requests.
+The new withdrawal compares worker busy periods with similar prompt and output lengths, request counts and
+computed prompt tokens. One window must contain at least eight completions; worker first-token time starts at
+admission. The final guard also bins the median inter-arrival spacing. A slower candidate withdraws if it misses
+85 % of incumbent throughput or exceeds 125 % of its mean first-token time. Up to the last three matched windows
+per configuration are compared by median; these observations can withdraw or block a candidate, not qualify one.
+
+| Arm order and change | Phase | Agent / fixed output tok/s | Agent / fixed p95 HTTP first-token time (s) |
+| --- | --- | ---: | ---: |
+| Agent first, early withdrawal only | short | 93.67 / 73.98 | 1.25 / 1.51 |
+| | documents | 3.77 / 4.56 | 40.14 / 30.84 |
+| | short again | 15.19 / 75.54 | 12.17 / 1.48 |
+| Fixed first, early withdrawal and fresh-traffic recovery | short | 79.64 / 89.23 | 1.42 / 1.32 |
+| | documents | 3.68 / 4.23 | 42.13 / 32.97 |
+| | short again | 50.77 / 78.68 | 2.17 / 1.54 |
+
+In both pairs, the agent switched from w8 to w64 after 65 requests and reverted after 81 (16 new completions,
+previously 64). In the first pair the w64 document window delivered 0.729x the w8 window's worker throughput
+and 1.421x its mean worker first-token time. The old dream still proposed w32 after 97 requests and w64 after
+129. Both trials reverted after a single returning-chat wave, with a high cost to those waves.
+
+The final guard holds the recovered incumbent until at least 64 fresh completions in consecutive windows match the
+current request mix. The next trial must qualify on those fresh arrivals. The second pair saw a 0.684x worker
+throughput ratio and 1.268x worker first-token ratio on the w64 document trial. The remaining document wave stayed
+at w8, then the mix changed, restarting the evidence count. All three returning-chat waves stayed at w8 (16, 32, 48
+matching completions). Each pair had 143/144 identical streamed responses, and 138/144 correct factual answers on
+both arms. The quicker recovery and absence of further switches were observed in the real server. The final
+adaptive arm was slower end to end than the fixed arm in all three phases; the test has one sample per arm.
+
+A synthetic replay with two seeds and 12 windows per phase gave agent/fixed throughput ratios of
+1.000 / 1.195 / 0.897 and 1.000 / 1.177 / 0.858 for short/document/short traffic. This simulator supplies
+step costs and arrivals but no request-level completion timestamps. It exercises the existing dream decisions;
+the real withdrawal was checked above. Deterministic tests also cover a permanent move to singleton requests
+(64 new completions unlock a fresh dream), a continually alternating mix (512 new completions expire the hold),
+and an idle tick without new arrivals.
+
+### 2026-11-18 — Short repeated prompts on the preferred GGUF stream
+
+During a subsequent CPU test with SmolLM2-135M-Instruct Q4_K_M, a repeated 16-token prompt reused zero tokens
+from its preferred KV stream. The 64-token threshold for moving a request to a different stream was also being
+applied to the stream the scheduler had already chosen. After limiting that threshold to stream changes, the
+same request reused 15 prompt tokens and produced the same output as the fresh request. The HTTP timings above
+precede this change. Its end-to-end speed impact has not been measured.
