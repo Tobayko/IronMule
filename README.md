@@ -93,6 +93,20 @@ Tested model families include Qwen 3, Gemma 3, Llama 3 and Mistral. Backend, mod
 
 ## How much faster?
 
+To compare on your own GPU, `ironmule compare` serves the same GGUF through IronMule,
+stock llama-server and vLLM. It checks the input tokens, sends short and document
+requests and measures output tokens/s, first-token latency and answer quality at each
+concurrency. `ironmule compare-watch` repeats comparisons on a dedicated host within
+a time allowance and retests a qualified scheduling change with fresh traffic.
+[Run the comparison](docs/COMPARE.md)
+
+During inference, open `/live` on your IronMule server to see active and queued requests,
+recent first-token times and controller decisions. The **Benchmarks** tab shows the
+current engine, load and measured results. To watch a separate comparison file, run
+`python -m ironmule_product.live_view --progress ./comparison.json --port 8787`
+and open `http://127.0.0.1:8787/live#benchmarks`.
+
+
 ### CPU serving against llama.cpp and Ollama
 
 The following results use the same 4-vCPU Intel Xeon, Qwen3-4B Q8_0 GGUF and questions through each server's HTTP API. The runs took place on November 13–14, 2026, once per engine. Aggregate throughput counts generated tokens across all clients. Time to first token measures the wait before a user starts seeing an answer.

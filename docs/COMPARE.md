@@ -35,3 +35,25 @@ For a quick compatibility check, `--concurrency 1 --requests 1 --repeats 1` stil
 ## How the agent uses a measured gap
 
 After the servers stop, IronMule can use paired results at a supported concurrency to select one local prompt-admission experiment. It checks the bound GGUF engine, model, hardware and remaining budget, then compares a candidate with the incumbent on fresh held-out requests. A qualified local rule is scoped to the measured configuration in the benchmark agent state. Failed trials retain the incumbent. The report records the outcome under `learning`. A later full comparison is required to establish whether the change improves the public three-engine result.
+
+## Unattended comparisons
+
+On a dedicated host, start the watch once and pass your regular comparison options after
+`--`. While it runs it checks for changed local files and hardware every minute. It runs
+the first comparison immediately, repeats on a change or after the interval, and verifies
+a newly qualified local rule with a fresh workload seed as soon as another cycle fits
+within the allowance. With an explicit seed, successive cycles increment it.
+
+```bash
+ironmule compare-watch --total-seconds 7200 --interval-seconds 86400 -- \
+  --gguf /models/Qwen3-0.6B-Q4_K_M.gguf --tokenizer /models/tokenizers/qwen3-06b \
+  --llama-server /opt/stock/bin/llama-server --vllm /opt/vllm/bin/vllm \
+  --budget-seconds 1800 --output ./comparison.json
+```
+
+The watch shares agent state across cycles. It stores the time used and each completed
+or partial report in `comparison.json.watch/`. Restart with the same output path to
+resume. An interrupted process reserves at most one complete cycle against the limit.
+Idle time between checks is free of inference work. A cloud provider can still bill for
+an allocated machine during that interval. For rented GPUs, run the one-shot comparison
+inside the job and release the instance when it finishes.

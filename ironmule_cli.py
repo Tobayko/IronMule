@@ -350,6 +350,7 @@ _COMMAND_GROUPS = (
     ("Measure and tune", (
         ("benchmark", "Run the existing reproducible local benchmark"),
         ("compare", "Compare autonomous IronMule, llama-server and vLLM on the same GGUF"),
+        ("compare-watch", "Repeat local comparisons under a cumulative time budget"),
         ("tune", "Tune or inspect the existing local profile (--show)"),
         ("learn", "Bounded hardware session: learned test planner, confirmation, replay"),
         ("dream", "Learn the serving policy (group width, joining, gather wait) from logged traffic"),
@@ -769,6 +770,9 @@ def _dispatch(argv: list[str] | None) -> int:
         return doctor(rest)
     if command == "plans":
         return _run_plans(rest)
+    if command == "compare-watch":
+        from ironmule_product.compare_watch import main as watch_main
+        return watch_main(rest)
     if command == "compare":
         from ironmule_product.compare import main as comparison_main
         return comparison_main(rest)
