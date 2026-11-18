@@ -1,5 +1,6 @@
 """Bind the adaptive GGML server to real providers and memory in its worker."""
 import json
+import os
 
 import pytest
 
@@ -183,3 +184,51 @@ def test_pinning_refuses_zero_gpu_layers_and_all_layers_normalizes(monkeypatch):
     monkeypatch.setattr(engine, "GPU_LAYERS", "-3")
     with pytest.raises(ValueError, match="nonnegative"):
         engine.gpu_layers()
+
+
+def test_failed_generated_kernel_requalifies_real_stock_mode(monkeypatch, tmp_path, capsys):
+    from ironmule import ggml_engine, ggml_gate_diagnostics
+    from ironmule_product import cli
+
+    monkeypatch.setenv('IRONMULE_KG_LIB', '/local/candidate.so')
+    monkeypatch.delenv('IRONMULE_KG5', raising=False)
+    calls = []
+
+    def gate(snapshot, gguf, *, cache):
+        assert (snapshot, gguf, cache) == ('model.gguf', 'model.gguf', tmp_path)
+        candidate = os.environ.get('IRONMULE_KG_LIB')
+        calls.append(candidate)
+        if candidate:
+            return {'passes': False, 'diagnostic': {'schema': ggml_gate_diagnostics.SCHEMA,
+                    'stage': 'candidate', 'code': 'cuda_kernel_error'}}
+        return {'passes': True, 'ratio': 1.0, 'settings': {'flash_attn': False}}
+
+    monkeypatch.setattr(ggml_engine, 'gate', gate)
+    checked = cli._qualify_ggml_kernels('model.gguf', 'model.gguf', tmp_path)
+    assert calls == ['/local/candidate.so', None]
+    assert checked['kernel_fallback']['serving'] == 'stock'
+    assert checked['settings'] == {'flash_attn': False}
+    assert [row['passes'] for row in checked['kernel_fallback']['attempts']] == [False, True]
+    assert 'cuda_kernel_error' in capsys.readouterr().out
+
+
+def test_stock_or_independent_gate_failure_never_admits_or_retries(monkeypatch, tmp_path):
+    from ironmule import ggml_engine, ggml_gate_diagnostics
+    from ironmule_product import cli
+    from ironmule_product.errors import InvalidRequest
+
+    calls = []
+    def failed(snapshot, gguf, *, cache):
+        calls.append(os.environ.get('IRONMULE_KG_LIB'))
+        return {'passes': False, 'diagnostic': {'schema': ggml_gate_diagnostics.SCHEMA,
+                'stage': 'reference', 'code': 'out_of_memory'}}
+
+    monkeypatch.setattr(ggml_engine, 'gate', failed)
+    monkeypatch.setenv('IRONMULE_KG_LIB','/local/candidate.so')
+    with pytest.raises(InvalidRequest, match='reference: out_of_memory'):
+        cli._qualify_ggml_kernels('model.gguf', 'model.gguf', tmp_path)
+    assert calls == ['/local/candidate.so']
+    monkeypatch.delenv('IRONMULE_KG_LIB')
+    with pytest.raises(InvalidRequest, match='reference: out_of_memory'):
+        cli._qualify_ggml_kernels('model.gguf', 'model.gguf', tmp_path)
+    assert calls == ['/local/candidate.so', None]

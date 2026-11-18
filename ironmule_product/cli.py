@@ -272,15 +272,48 @@ def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
                 os.environ[key] = value
 
 
+def _qualify_ggml_kernels(snapshot, gguf, cache):
+    """Keep only a qualified kernel selection, including after the generated kernel fails."""
+    from ironmule.ggml_engine import gate
+    from ironmule.ggml_gate_diagnostics import sanitize
+
+    def qualify(mode):
+        result = gate(snapshot, gguf, cache=cache)
+        summary = {"kernel_mode": mode, "passes": result.get("passes") is True,
+                   "diagnostic": sanitize(result.get("diagnostic"))}
+        print(json.dumps({"ggml_gate": {**summary, "ratio": result.get("ratio"),
+                                       "interval": result.get("interval")}}), flush=True)
+        return result, summary
+
+    probe = os.environ.get("IRONMULE_KG5") == "1"
+    mode = "generated" if probe or os.environ.get("IRONMULE_KG_LIB") else "stock"
+    result, first = qualify(mode)
+    diagnostic = first["diagnostic"] or {}
+    # Tokenization, model mutation and the unmodified reference precede any candidate kernel. A
+    # separate explicitly requested KG5 experiment must continue to require its dispatch witness.
+    if (not first["passes"] and mode == "generated" and not probe
+            and diagnostic.get("stage") not in {"tokenize", "reference", "model_changed"}):
+        os.environ.pop("IRONMULE_KG_LIB", None)
+        result, stock = qualify("stock")
+        result = {**result, "kernel_fallback": {"attempts": [first, stock], "serving": "stock" if stock["passes"] else None}}
+    if result.get("passes") is not True:
+        diagnostic = sanitize(result.get("diagnostic")) or {}
+        raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
+                             f"({diagnostic.get('stage', 'gate')}: {diagnostic.get('code', 'unclassified')})")
+    return result
+
+
 def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
     """Qualify the GGUF on the devices actually visible in this process."""
+    from ironmule.ggml_engine import available
+
     from .backend import DENSE_STARTUP_TIMEOUT
-    from ironmule.ggml_engine import available, gate as ggml_gate
 
     reason = available()
     if reason is not None:
         raise InvalidRequest(f"--engine ggml: {reason}")
-    from ironmule.ggml_engine import cuda_kernel_device, gpu_layers as ggml_gpu_layers
+    from ironmule.ggml_engine import cuda_kernel_device
+    from ironmule.ggml_engine import gpu_layers as ggml_gpu_layers
 
     layers = ggml_gpu_layers()
     if pinned and layers == 0:
@@ -305,12 +338,7 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
         except Exception as exc:  # noqa: BLE001 - llama.cpp's own kernels serve without them
             print(json.dumps({"ggml_kernels": None, "reason": f"{type(exc).__name__}: {exc}"[:300]}),
                   flush=True)
-    checked = ggml_gate(spec.snapshot_path, args.gguf, cache=Path(store.root) / "ggml-gate")
-    print(json.dumps({"ggml_gate": {k: checked.get(k) for k in ("ratio", "interval", "passes", "reason")}}),
-          flush=True)
-    if checked.get("passes") is not True:
-        raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
-                             f"({checked.get('reason') or checked.get('interval')})")
+    checked = _qualify_ggml_kernels(spec.snapshot_path, args.gguf, Path(store.root) / "ggml-gate")
     pooled = checked
     checked = _ggml_streams(checked, bool(ggml_gpu_layers()))
     if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine

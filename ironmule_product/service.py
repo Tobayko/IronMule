@@ -216,6 +216,9 @@ class ProductService:
             if getattr(self.backend, "ggml_gate", None) is not None:  # GG1: the gate the engine passed at its start
                 result["ggml"] = {"gate": {k: self.backend.ggml_gate.get(k) for k in ("ratio", "interval", "passes")},
                                   "answers": "may differ from the MLX plans, within the gate"}
+                fallback = self.backend.ggml_gate.get("kernel_fallback")
+                if fallback:
+                    result["ggml"]["kernel_fallback"] = fallback
                 width = self.backend.ggml_gate.get("sequences")
                 if isinstance(width, dict):  # SEQ1: the width the engine chose on this machine, and why
                     result["ggml"]["sequences"] = {k: width.get(k) for k in ("sequences", "fitting", "rates", "reason")}
