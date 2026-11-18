@@ -93,3 +93,31 @@ def test_confounded_artifacts_never_enter_equal_gguf_check(tmp_path):
               'gguf_sha256':'a'*64, 'weight_format':'awq', 'awq_manifest_sha256':'c'*64, 'loaded_quantization':'awq'}
     with pytest.raises(compare.Unverified, match='AWQ'):
         production.check_server('vllm_awq', server, args, 'GPU-1')
+
+
+def test_failed_prefill_stream_preserves_other_rounds_and_response_privacy(tmp_path, monkeypatch):
+    from lab.portable_gpu import prefill_http as trial
+
+    gguf = tmp_path / 'qwen.gguf'
+    gguf.write_bytes(b'x')
+    args = SimpleNamespace(gguf=gguf, gguf_sha256='checked', output=tmp_path/'result.json',
+                           state_dir=tmp_path/'state', arms=['stock', 'shared'], repeats=2,
+                           concurrency=[1, 8], seed=9, context=2048, requests=8, max_tokens=32, budget_seconds=100)
+    files = {**trial.compare_tokenizer._QWEN_FILES, 'config.json': trial.compare_tokenizer.TOKENIZERS['qwen3-32b'][2]}
+    monkeypatch.setattr(trial.compare_servers, 'prepare_artifacts', lambda _: {'tokenizer_files': files})
+    monkeypatch.setitem(trial.fetch.MODELS, 'qwen3-32b', ('repo', 'rev', 'file', 1, 'checked'))
+    monkeypatch.setattr(trial.compare, 'workloads', lambda *_: {})
+    for key in ('IRONMULE_GGML_STREAMS', 'IRONMULE_GGML_PREFILL_BATCH'):
+        monkeypatch.setenv(key, '0')
+    visits = []
+
+    def measure(_, __, rep, data, report, save, deadline, *, profile, label):
+        visits.append((label, rep))
+        if (label, rep) == ('shared', 0):
+            raise RuntimeError('private response content')
+    monkeypatch.setattr(trial.production_compare, 'measure', measure)
+    assert trial.run(args) == 1
+    result = json.loads(args.output.read_text())
+    assert result['status'] == 'partial' and len(result['errors']) == 1
+    assert visits == [('stock', 0), ('shared', 0), ('shared', 1), ('stock', 1)]
+    assert 'private response content' not in args.output.read_text()
