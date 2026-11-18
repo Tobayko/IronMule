@@ -16,7 +16,7 @@ def load():
 
 def test_patch_sets_are_complete_and_well_formed():
     tool = load()
-    assert set(tool.PATCH_SETS) == {"fa1", "row1", "gr1", "kg1"}
+    assert set(tool.PATCH_SETS) == {"fa1", "row1", "gr1", "kg1", "kg5"}
     for name, (diffs, headers) in tool.PATCH_SETS.items():
         for target, diff in diffs:
             text = (tool.PATCHES / name / diff).read_text()

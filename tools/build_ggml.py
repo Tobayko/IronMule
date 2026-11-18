@@ -15,6 +15,9 @@ variables the engine reads. Nothing is installed system-wide.
   kg1   CUDA builds only: a hook that hands a matmul to a kernel library generated and tuned for this GPU
         (IRONMULE_KG_LIB, `ironmule/kernel_gen.py`) when it has a kernel for it; llama.cpp's own kernels otherwise.
 
+  kg5   Linux CUDA builds: experimental grouped-query decode attention on Turing, opt-in for a measured shape.
+        Other shapes, types and devices use the library's own attention.
+
     python tools/build_ggml.py                 # CPU build in ~/.cache/ironmule/ggml
     python tools/build_ggml.py --cuda 75,86    # with CUDA for these compute capabilities (T4 = 75)
     python tools/build_ggml.py --no-patches    # stock llama.cpp, for a fair comparison
@@ -40,6 +43,8 @@ PATCH_SETS = {
     "fa1": ([("ggml/src/ggml-cpu/ops.cpp", "ops.cpp.diff")], [("fa1_kern.h", "ggml/src/ggml-cpu/fa1_kern.h")]),
     "row1": ([("ggml/src/ggml-cpu/amx/mmq.cpp", "mmq.cpp.diff"), ("ggml/src/ggml-cpu/amx/amx.cpp", "amx.cpp.diff")],
              [("row1_kern.h", "ggml/src/ggml-cpu/amx/row1_kern.h")]),
+    "kg5": ([("ggml/src/ggml-cuda/fattn.cu", "fattn.cu.diff")],
+            [(h, f"ggml/src/ggml-cuda/{h}") for h in ("kg5_dispatch.cuh", "kg5_kernel.cuh")]),
     "gr1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),
     "kg1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1, on the file gr1 left
 }
@@ -119,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     dest = args.dest / ("stock" if args.no_patches else "ironmule") / ("cuda" if args.cuda else "cpu")
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1", "kg5"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

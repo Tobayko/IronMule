@@ -1,0 +1,8 @@
+9a10,12
+> #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && !defined(_WIN32)
+> #include "kg5_dispatch.cuh"
+> #endif
+279a283,285
+> #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && !defined(_WIN32)
+>     if (kg5_try(ctx, dst, cc)) return;
+> #endif
