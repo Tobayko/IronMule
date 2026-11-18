@@ -204,6 +204,15 @@ class MLXWorkerClient:
         return None if payload is None else payload.get("device")
 
     @property
+    def admission_learning_status(self):
+        root = (self.ggml_gate or {}).get("admission_state_root")
+        process = self._process
+        if root and process is not None and process.poll() is None:
+            from .admission_learning import live_status
+            return live_status(root, process.pid)
+        return None
+
+    @property
     def ready_payload(self) -> dict[str, Any] | None:
         """A copy of the worker's validated ready event; it holds no request data."""
         payload = self._ready_payload

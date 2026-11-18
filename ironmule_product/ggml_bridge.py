@@ -47,6 +47,7 @@ class GgmlBridge:
             self._engine.close()
             raise
         self._tokenizer = tokenizer
+        self._gguf = gguf
         self._gguf_sha256 = file_sha256(gguf)
         self._gate = dict(gate) if gate else None
         self._speculate = speculate
@@ -56,11 +57,16 @@ class GgmlBridge:
         self._stop = threading.Event()
         self._demand_lock = threading.Lock()
         self._demand = 0
+        self._arrival_epoch = 0
+        self._admission = None
         self._start_agent()
         self._bind_pilot_learning()
-        self._bind_compare_learning()
-        if self._agent is not None or getattr(getattr(self._engine, "pilot", None), "learning", None) is not None:
-            threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True).start()
+        self._bind_admission_learning()
+        self._idle_thread = None
+        if (self._agent is not None or getattr(getattr(self._engine, "pilot", None), "learning", None) is not None
+                or self._admission is not None and self._admission.enabled):
+            self._idle_thread = threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True)
+            self._idle_thread.start()
 
     def _start_agent(self) -> None:
         """AG10: the agent learns, dreams and switches the engine's configuration among those the cli measured and the
@@ -87,14 +93,24 @@ class GgmlBridge:
             self._switch(self._agent.current)
         self._engine.observer = self._agent.observe_step
 
-    def _bind_compare_learning(self):
-        root = (self._gate or {}).get("compare_state_root")
+    def _bind_admission_learning(self):
+        root = (self._gate or {}).get("admission_state_root")
         if root:
-            from ironmule.compare_learning import engine_binding, read_rules
+            from pathlib import Path
+            from ironmule.compare_learning import engine_binding
+            from .admission_learning import AdmissionLearning
 
-            self._experiment_binding = engine_binding(self._engine, self._gguf_sha256)
-            self._engine.competitor_budgets = read_rules(root, self._experiment_binding)
-            self._engine.competitor_budget_hits = 0
+            # A configuration change invalidates the old rule, including when the new binding
+            # cannot be inspected. Optional learning never takes the serving engine offline.
+            self._engine.admission_budgets = {}
+            self._engine.admission_observer = None
+            self._experiment_binding = self._admission = None
+            try:
+                self._experiment_binding = engine_binding(self._engine, self._gguf_sha256)
+                self._admission = AdmissionLearning(Path(root), self._gguf, self._engine, self._experiment_binding,
+                                                   enabled=os.environ.get("IRONMULE_ADMISSION_LEARN", "1") != "0")
+            except (OSError, ValueError, RuntimeError):
+                return
 
     def _bind_pilot_learning(self) -> None:
         engine = self._engine
@@ -117,7 +133,7 @@ class GgmlBridge:
             started = time.perf_counter()
             self._engine.reconfigure(int(config["seqs"]), config.get("settings") or {})
             self._bind_pilot_learning()
-            self._bind_compare_learning()
+            self._bind_admission_learning()
             elapsed = time.perf_counter() - started
         self._agent.switched(name, seconds=elapsed if self._engine.gpu_layers else None)
 
@@ -129,12 +145,28 @@ class GgmlBridge:
             learning = getattr(getattr(self._engine, "pilot", None), "learning", None)
             if learning is not None and self._run_lock.acquire(blocking=False):
                 try:
+                    prior_weights = dict(learning.weights)
                     learning.idle(self._interrupted)
                 except Exception as exc:  # an unavailable probe cannot supply serving weights
                     learning.weights.clear()
                     learning.last = {"result": "replay failed", "error": type(exc).__name__}
                 finally:
-                    self._run_lock.release()
+                    try:
+                        if learning.weights != prior_weights:
+                            self._bind_admission_learning()
+                    finally:
+                        self._run_lock.release()
+            admission = self._admission
+            if admission is not None and admission.enabled:
+                epoch = self._arrival_epoch
+                try:
+                    admission.idle(lambda: self._interrupted() or epoch != self._arrival_epoch)
+                except Exception as exc:  # idle tuning must not stop production serving
+                    admission.status = "deferred"
+                    admission.last = {"reason": "local trial unavailable", "error": type(exc).__name__}
+                    admission._publish()
+                if self._interrupted() or time.monotonic() - self._last_run < 3.0:
+                    continue
             if self._agent is None or self._agent.requests == dreamt_at:
                 continue
             dreamt_at = self._agent.requests
@@ -209,10 +241,12 @@ class GgmlBridge:
                 arrived[id(fresh[-1])] = time.monotonic()
             return fresh
 
-        demand = getattr(getattr(self._engine, "pilot", None), "learning", None) is not None
+        demand = (getattr(getattr(self._engine, "pilot", None), "learning", None) is not None
+                  or getattr(getattr(self, "_admission", None), "enabled", False))
         if demand:
             with self._demand_lock:
                 self._demand += 1
+                self._arrival_epoch += 1
         try:
             with self._run_lock:
                 try:
@@ -241,5 +275,11 @@ class GgmlBridge:
 
     def close(self) -> None:
         self._stop.set()
+        idle_thread = getattr(self, "_idle_thread", None)
+        if idle_thread is not None and idle_thread.is_alive():
+            idle_thread.join()
         with self._run_lock:
             self._engine.close()
+        admission = getattr(self, "_admission", None)
+        if admission is not None:
+            admission.path.unlink(missing_ok=True)

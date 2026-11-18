@@ -1147,3 +1147,17 @@ def test_concurrent_gate_stages_recheck_after_lock(tmp_path):
         a, b = first.result(), second.result()
     assert executions == [1] and a[0] == b[0]
     assert a[1]["measured"] == b[1]["reused"] == 1
+
+
+def test_admission_observer_has_only_numeric_completed_group_metadata():
+    from ironmule.ggml_engine import Job
+
+    engine, _, _ = _stub_engine()
+    samples = []
+    engine.admission_observer = lambda *fields: samples.append(fields)
+    engine.run([Job([12131, 27131, 1231], 2), Job([24131], 2)])
+    started, lengths, limit, rate, ttft = samples.pop()
+    assert type(started) is int and lengths == (3, 1) and limit == 2 and min(rate, ttft) > 0
+    engine.run([Job([123], 1), Job([123], 2)])  # a mixed output limit has no single matched rule
+    engine.run([Job([123], 2), Job([123], 2, cancelled=lambda: True)])
+    assert not samples

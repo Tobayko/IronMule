@@ -413,7 +413,7 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
     if os.environ.get("IRONMULE_PILOT_LEARN", "1" if args.agent == "on" else "0") == "1":
         checked = {**checked, "pilot_state_root": str(store.root)}
     if args.agent == "on":
-        checked = {**checked, "compare_state_root": str(store.root)}
+        checked = {**checked, "admission_state_root": str(store.root)}
     # PI1: the worker loads the GGUF, measures this machine's step costs for the Pilot and, with a draft
     # model, its draft calls before it is ready; on a 4-vCPU Xeon that took about 105 s of the default 120
     return {"ggml_kernel_library": os.environ.get("IRONMULE_KG_LIB", ""),

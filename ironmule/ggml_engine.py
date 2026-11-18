@@ -901,6 +901,8 @@ class GgmlEngine:
 
         served: list[Job] = list(jobs)
         pending = list(jobs)
+        admission_observer = getattr(self, "admission_observer", None)
+        cohort = None
         active: dict[int, Job] = {}
 
         def finish(seq: int, job: Job, reason: str, keep: bool = True) -> None:
@@ -978,15 +980,19 @@ class GgmlEngine:
                     # PB1: one KV stream per request on a GPU: the Pilot's prompt budget cost 2-9 % on a T4 and gained
                     # nothing there, so the step takes what the Pilot-off engine takes
                     budget = self.seq_ctx
-                if not active and len(pending) > 1 and getattr(self, "competitor_budgets", None):
+                if (admission_observer is not None and cohort is None and not active and 2 <= len(pending) <= 64
+                        and all(j.limit == pending[0].limit for j in pending)):
+                    # The same actual admission boundary the runtime rule can influence.
+                    cohort = (time.monotonic_ns(), tuple(pending))
+                if not active and len(pending) > 1 and getattr(self, "admission_budgets", None):
                     from .compare_learning import shape
 
                     first_limit = pending[0].limit
                     if all(j.limit == first_limit for j in pending):
-                        local = self.competitor_budgets.get(shape([len(j.ids) for j in pending], first_limit))
+                        local = self.admission_budgets.get(shape([len(j.ids) for j in pending], first_limit))
                         if local is not None and local < budget and sum(len(j.ids) for j in pending) > local:
                             budget = local
-                            self.competitor_budget_hits += 1
+                            self.admission_budget_hits += 1
                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
@@ -1217,6 +1223,14 @@ class GgmlEngine:
         finally:
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
+        if cohort is not None:
+            started, group = cohort
+            if all(j.reason in ("eos", "length") and started < j.first_ns <= j.finished_ns for j in group):
+                seconds = (max(j.finished_ns for j in group) - started) / 1e9
+                firsts = sorted((j.first_ns - started) / 1e6 for j in group)
+                admission_observer(started, tuple(len(j.ids) for j in group), group[0].limit,
+                                   sum(len(j.tokens) for j in group) / seconds,
+                                   firsts[(95 * len(group) + 99) // 100 - 1])
         return served
 
     # --- the quality gate ---------------------------------------------------------------------------------------------

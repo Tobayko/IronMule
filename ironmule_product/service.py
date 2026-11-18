@@ -242,6 +242,9 @@ class ProductService:
                     result["ggml"]["draft_model"] = dict(drafting)
                 agent = getattr(self.backend, "ggml_agent_status", None)
                 comparison = getattr(self.backend, "ggml_experiment_binding", None)
+                admission = getattr(self.backend, "admission_learning_status", None)
+                if admission:
+                    result["ggml"]["admission_learning"] = admission
                 if comparison:
                     result["ggml"]["experiment_binding"] = dict(comparison)
                 if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
