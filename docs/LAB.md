@@ -2728,3 +2728,27 @@ deployment selected a shared KV pool during startup and produced zero verified
 grouped measurements. The shared-pool trial ended with a runtime error before
 it completed prompt verification. Neither arm qualified for selection.
 [Server timings and attempted configurations](../evidence/comparison/qwen3-32b-l40s-prefill-http.json) · [Verified IronMule cells](../evidence/runtime/qwen3-32b-l40s-prefill-selection.json) · [Archived matched requests and vLLM results](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
+
+### Qwen3-32B CUDA kernels on a second L40S
+
+With all 65 layers on the GPU, three matched native-engine rounds at each width
+compared the stock kernel, the selected KG4 tensor-core layout and a cuBLAS
+path for large Q4_K/Q6_K prefill matrices. Each arm used the same pinned Q4_K_M
+weights. CUDA graphs were disabled so per-wave counters could confirm dispatch.
+The engine processed alternating short and document prompts with 32 output tokens.
+The native timings exclude HTTP transport and production scheduling.
+
+| Native path | 8 clients, median output tok/s | 32 clients, median output tok/s | Correct factual answers |
+|---|---:|---:|---:|
+| Stock | 94.04 | 168.28 | 18/18 |
+| KG4 | 106.54 | 165.60 | 18/18 |
+| Large-prompt cuBLAS | 76.80 | 121.46 | 18/18 |
+
+KG4 increased throughput by 13.38% at eight clients and reduced it by 1.59% at 32
+(medians of paired ratios). The predeclared rule for one global configuration
+required a gain at one width and no loss at the other. Both candidates therefore
+ended at the native screening stage. In a separate probe using the original CUDA
+wheel, two stock runs agreed. Grouped processing changed one of eight short
+continuations and three of the 32 mixed requests. All four cold 444-token prompts
+matched in an isolated run and shared a single 1,776-row native call.
+[Native timings, dispatch counts and quality results](../evidence/runtime/qwen3-32b-l40s-kernel-screen.json)
