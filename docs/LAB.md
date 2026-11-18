@@ -2669,3 +2669,21 @@ last member improved the early-burst trials, but doing so for newly arriving req
 still lost throughput in both late-arrival trials on fresh workers. These observations
 led to the final backlog restriction. The measurements cover this CPU configuration.
 [All trials, source identities and group counts](../evidence/runtime/gguf-tail-refill-cpu.json) · [HTTP workload](../lab/ag10/http_refill.py) · [Worker workload](../lab/ag10/worker_refill.py)
+
+### Controller training, forecasts and a completed width trial
+
+Two REINFORCE runs each used 32,000 simulated training episodes. Both policies were
+evaluated on 384 held-out episodes. Increasing the scheduling head from 14 to 30
+weights reduced the learned policy's simulated spike cost by 6.01% and increased its
+mean time to first token from 8.32 to 11.15 seconds. The larger head remains experimental.
+[Dispatch policy](../evidence/runtime/rl4-h9-holdout.json) · [Width policy](../evidence/runtime/rl6-h9-width-holdout.json)
+
+On 576 held-out SmolLM2-135M CPU requests, conditioning the controller's dream on
+previous workload shapes reduced mean absolute log2 prediction error from 1.009692
+to 0.976098. In a follow-on live test the controller selected eight slots, served 64
+requests and reverted to four after 94 native step observations. Including the cost
+of switching, those two trial blocks ran at 32.21 output tokens/s. Fixed widths four
+and eight served them at 93.11 and 68.05. All arms answered all 64 copy requests
+correctly. On the subsequent 384 requests the controller retained width four. Each
+arm answered 383 correctly.
+[Workload, checkpoints and raw results](../training/README.md#serving-the-proposed-width-and-testing-its-rollback)

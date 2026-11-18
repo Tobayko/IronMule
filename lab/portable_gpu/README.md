@@ -139,3 +139,14 @@ that report separately from the same-GGUF reports. It shows the IronMule GGUF
 Q4_K_M and vLLM AWQ deployment measurements and the matched pairs verified by
 the runner. Pair ratios divide IronMule's measurement by vLLM's. Each pair also
 shows the holdout scores and whether output lengths and stop reasons match.
+
+The experimental [large prefill CUDA patch](large_prefill_cublas.patch) applies to the
+IronMule KG1/GR1 build of llama.cpp at `4227c9b` on Linux. It routes dense Q4_K and
+Q6_K matrix products with at least 128 prompt rows to the native cuBLAS path when
+the existing dispatcher would have used quantized matrix multiplication. Rebuild
+the same CUDA target and replace only `libggml-cuda.so` in a separate test runtime.
+A process can read `ironmule_large_prefill_dispatch_count()`. With
+`IRONMULE_CUBLAS_COUNTER_DIR` set to a fresh writable directory, each process also
+publishes its count in `worker-<pid>.bin` as a host-order uint64. The counter includes
+CUDA graph construction. Compare both runtimes on the same GPU with the same graph
+settings and verify numerical quality against the original library before timing.
