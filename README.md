@@ -98,7 +98,11 @@ stock llama-server and vLLM. It checks the input tokens, sends short and documen
 requests and measures output tokens/s, first-token latency and answer quality at each
 concurrency. `ironmule compare-watch` repeats comparisons on a dedicated host within
 a time allowance. The production controller chooses its own trials from local workload
-measurements and tests each candidate against its own serving configuration.
+measurements and tests each candidate against its own serving configuration. A CPU run
+with SmolLM2 served 40 requests and selected an admission budget autonomously in an
+isolated serving environment with the model and IronMule dependencies. Both settings solved 16/16 copy
+tasks. One full output differed, so the worker kept its original setting.
+[Self-directed trial](docs/LAB.md#2026-11-18-own-traffic-admission-learning-on-an-amd-epyc-cpu)
 [Run the comparison](docs/COMPARE.md)
 
 During inference, open `/live` on your IronMule server to see active and queued requests,
@@ -162,6 +166,14 @@ identical tokenized requests. IronMule missed the overall latency and quality cr
 A second three-server run on an RTX 4090 found the same load-dependent result for Qwen3-0.6B. IronMule led at eight clients with 907 output tokens/s. At 32 clients vLLM led with 1,189 to IronMule’s 1,176. An earlier lab experiment used the measured first-token gap to trigger a scheduling trial. IronMule kept the incumbent after four held-out pairs. [RTX 4090 measurements and learning decision](docs/LAB.md#2026-11-18-qwen3-06b-on-geforce-rtx-4090)
 
 ### Single-GPU inference against vLLM
+
+A separate matched deployment test on a 48 GB L40S used Qwen3-32B Q4_K_M in IronMule
+and the official Qwen3-32B-AWQ checkpoint in vLLM 0.11.0, which selected AWQMarlin.
+With one client, median output throughput was **37.9 vs 32.9 tok/s**. At eight clients
+it was **107.4 vs 143.2**, and at 32 clients **165.0 vs 225.1**. Both servers solved
+162/162 short holdouts. vLLM's median p95 time to first visible token was lower at
+each load. All nine paired rounds matched on input tokens, output lengths and stop
+reasons. [Full deployment comparison](docs/LAB.md#2026-11-18-qwen3-32b-gguf-and-native-awq-on-one-l40s)
 
 On one Tesla T4, the IronMule KG4 engine and vLLM served Qwen3-4B. The table reports aggregate output tokens per second. IronMule used Q4_K_M GGUF, and vLLM used the AWQ model. The values come from separate benchmark sessions on this GPU type. A matched run through both current HTTP servers would be needed for a new end-to-end comparison.
 

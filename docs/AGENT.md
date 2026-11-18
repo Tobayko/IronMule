@@ -291,6 +291,11 @@ A candidate must change the native execution, preserve the outputs, answer every
 holdout correctly, improve throughput by at least 3% in each of four pairs and meet the
 incumbent's median and p95 first-token latency in each pair. Successful changes are
 scoped to the measured configuration. Unsuccessful trials retain the current setting.
+A new arrival interrupts the idle trial. Each trial has a 60-second limit and a
+five-minute cooldown. A separate worker must fit in available host and accelerator
+memory. The live Inference tab displays observed groups, pending trials, decisions and
+qualified rules from the serving worker. `IRONMULE_ADMISSION_LEARN=0` disables the
+new observations and idle trials. Existing verified local rules can still serve.
 The comparison tools are external lab commands. Benchmark reports and legacy
 competitor-triggered rules are outside the production controller's training inputs.
 

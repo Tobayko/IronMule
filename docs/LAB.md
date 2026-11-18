@@ -2513,3 +2513,40 @@ correct on both sides of this scheduling holdout. The candidate improved p95 fir
 time by 11.7%, 8.7%, 15.7% and 2.5%. Its throughput gains were 6.7%, 6.8%, 9.5% and
 0.7%. The last pair missed the required 3% gain. IronMule recorded the trial and
 retained its previous setting. [Autonomous holdout](../evidence/comparison/qwen3-06b-rtx4090-holdout-20261118.json)
+
+### 2026-11-18: Qwen3-32B GGUF and native AWQ on one L40S
+
+This second test measured two independently deployable quantizations on one physical
+48 GB GPU. IronMule used Qwen3-32B Q4_K_M GGUF. vLLM 0.11.0 used the official
+Qwen3-32B-AWQ checkpoint and resolved AWQMarlin with float16. Both received identical
+rendered token IDs and followed the same performance and short-answer protocol.
+All nine verified pairs matched on output lengths and stop reasons. Each server solved
+162/162 graded short answers.
+
+| Clients | IronMule GGUF output tok/s | vLLM AWQ output tok/s | IronMule p95 first visible token | vLLM p95 first visible token |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 37.91 | 32.92 | 221 ms | 203 ms |
+| 8 | 107.36 | 143.24 | 1,056 ms | 905 ms |
+| 32 | 165.02 | 225.11 | 4,258 ms | 3,462 ms |
+
+Values are medians of three alternating repetitions. IronMule led in tokens/s at a single
+client. The native vLLM deployment led in tokens/s at 8 and 32 clients and had a lower
+median p95 time to first visible token at all three loads. The ratios describe complete
+deployment configurations, including differences in weight representation and kernels.
+This report is external evaluation data. [Per-round measurements and paired comparisons](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
+
+### 2026-11-18: own-traffic admission learning on an AMD EPYC CPU
+
+The production IronMule server at `268911b` served SmolLM2-135M Q4_K_M with
+`--agent on` on two CPU cores. The isolated product Python had no vLLM installation.
+Neither comparison server was available on its executable search path. Ten waves of
+four real HTTP requests produced 40/40 responses and 320 output tokens. From five
+recurring native workload observations the idle worker selected a prompt admission
+budget of 84 tokens. The driving client supplied requests and watched the service.
+
+Across four alternating, held-out pairs the candidate delivered 4.7%, 11.5%, 7.6%
+and 12.8% higher throughput with lower p95 first-token times in each pair. Both
+settings returned 16/16 correct copy answers. The third pair differed on its full
+output tokens or stop reasons, so IronMule retained the incumbent and recorded the
+attempt. The whole run took 61.7 seconds with the existing native qualification
+cache. [Product provenance, request counts, incumbent and candidate](../evidence/self-admission/smollm2-135m-cpu-20261118.json)
