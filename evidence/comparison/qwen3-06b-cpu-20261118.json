@@ -844,7 +844,14 @@
   "device": "cpu:<host>:x86_64",
   "elapsed_seconds": 311.728,
   "export": {
+    "interpretation": "The live checkout changed after repeat 0. Use individual paired results. A pooled three-repeat result for one IronMule implementation requires the frozen-source confirmation.",
     "original_report_sha256": "032121e23a8f18e16e86e60baa3463a32c4ecfbfb14c864c7ae4f758193b078b",
+    "product_implementation_by_repeat": {
+      "0": "f69bed3f0623585ec75f338cd603594a1450dd6b92ef468017f1e9d2962d513b",
+      "1": "1c5f52a072bd126583afcd39143048495d6b7672331ea7f401b398df5b71c94d",
+      "2": "1c5f52a072bd126583afcd39143048495d6b7672331ea7f401b398df5b71c94d"
+    },
+    "product_sources_constant": false,
     "redactions": "Local paths, host identifiers and ephemeral loopback ports. All per-round timings, case outcomes, artifact digests and the comparison verdict retained.",
     "run_environment": {
       "affinity_cores": [
