@@ -51,6 +51,39 @@ shared prefixes worsened from 1.333 to 1.419. All 576 held-out first words passe
 ran at width four, providing 1,401 measured processing steps. The agent rebuilt to width eight after the last
 block. Measuring the serving effect of that switch requires subsequent traffic. [Per-block evidence and fitted weights](../evidence/runtime/smollm2-135m-cpu-dream-replay.json)
 
+### Serving the proposed width and testing its rollback
+
+The continuation read the exact 864-request checkpoint on the same CPU, verified the model, libraries, engine,
+controller and calibration outputs, and restored four slots through the normal restart guard for an unfinished
+trial. After 32 fresh requests with shared prefixes, the controller chose eight slots again. Three independent
+contexts received identical token IDs in groups of eight. Each block rotated the order of the adaptive arm,
+fixed four slots and fixed eight slots. Workload labels served only to score the results.
+
+| Period | Requests per arm | Adaptive tok/s · p95 TTFT | Fixed 4 tok/s · p95 TTFT | Fixed 8 tok/s · p95 TTFT |
+| :-- | --: | --: | --: | --: |
+| Two blocks actually served at eight slots | 64 | 32.21 · 1,323 ms | 93.11 · 229 ms | 68.05 · 306 ms |
+| Four subsequent phases, adaptive arm back at four slots | 384 | 22.72 · 1,900 ms | 21.93 · 2,028 ms | 21.92 · 1,920 ms |
+
+Rates divide total generated tokens by active wave time. The fresh adaptive context lost its cached prefixes on
+rebuild. Its two width switches added another 1.697 seconds outside active requests. All arms matched the complete
+outputs on both eight-slot trial blocks. After 94 measured updates at eight slots, the corrected latency model
+withdrew the trial. The next 384 requests rotated through short, document, cached follow-up, then short prompts.
+All arms copied the correct first word on 383 of 384. The adaptive and fixed-four outputs matched on every block.
+Fixed eight differed on one of twelve blocks, with the correct first words. The adaptive arm served those 384
+requests at the same width as fixed four. Its measured difference from fixed four does not establish a scheduling
+gain. The report includes request-level time to first token and output digests. [Continuation evidence](../evidence/runtime/smollm2-135m-cpu-dream-continuation.json)
+
+On the matching machine and runtime, replay the saved study state into a **new** directory. The archived state
+belongs to this experiment and includes only numeric traffic, fitted weights, decisions and hardware binding.
+
+```sh
+IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_GGML_THREADS=2 IRONMULE_GGML_PREFIX_REUSE=1 IRONMULE_PILOT=0 \
+  python training/ag10_replay_followup.py --gguf /path/to/SmolLM2-135M-Instruct-Q4_K_M.gguf \
+  --prior-report evidence/runtime/smollm2-135m-cpu-dream-replay.json \
+  --prior-state evidence/runtime/ag10-dream-checkpoint --state-dir ./new-ag10-continuation \
+  --output ./ag10-continuation.json
+```
+
 ## The workflow
 
 Every step below follows [AGENTS.md](../AGENTS.md), "Performance and evidence". A result counts only when it was
