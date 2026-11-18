@@ -9,6 +9,11 @@ identifier in the code or the documents still resolves. The full text of every r
 git history before that date. Lab notes are in [LAB.md](LAB.md), the validity domain in [LIMITS.md](LIMITS.md),
 the phases to a product in [ROADMAP.md](ROADMAP.md).
 
+Warm GGUF chat-template compilation was removed from the request path. The paired
+Qwen3-32B and SmolLM2 measurements are recorded in the [lab notebook](LAB.md#2026-11-18-gguf-chat-template-rendering-on-the-cpu).
+The remaining end-to-end target is higher output throughput with first-token latency
+and answer quality preserved at each measured load against both reference servers.
+
 ## The main goal (maintainer decision, 2026-10-30)
 
 The owner made one entry the project's main goal: a working IronMule agent. It decides on its own how the

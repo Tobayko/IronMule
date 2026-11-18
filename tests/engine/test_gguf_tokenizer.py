@@ -53,6 +53,25 @@ def test_the_template_renders_as_hugging_face_renders_it():
         render(template, [{"role": "bad", "content": ""}], add_generation_prompt=False, bos_token="")
 
 
+def test_compiled_template_keeps_concurrent_request_variables_separate(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from jinja2.sandbox import ImmutableSandboxedEnvironment
+
+    template = "{{ messages[0].content }}{{ suffix }}"
+    assert render(template, [{"content": "warm"}], suffix="!") == "warm!"
+
+    def unexpected_compilation(*_args):
+        pytest.fail("a warm template was compiled again")
+
+    monkeypatch.setattr(ImmutableSandboxedEnvironment, "from_string", unexpected_compilation)
+
+    def request(index):
+        return render(template, [{"content": str(index)}], suffix=f"-{index}")
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert list(pool.map(request, range(16))) == [f"{i}-{i}" for i in range(16)]
+
+
 def test_a_gguf_answers_to_its_file_name_and_names_itself(tmp_path: Path):
     gguf = tmp_path / "Qwen3-4B-Q8_0.gguf"
     gguf.write_bytes(b"GGUF")

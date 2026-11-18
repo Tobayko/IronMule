@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import hashlib
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -133,8 +134,9 @@ class GgufTokenizer:
         return self.encode(text, add_special_tokens=False) if tokenize else text
 
 
-def render(template: str, messages: Sequence[dict[str, Any]], **variables: Any) -> str:
-    """A chat template rendered as Hugging Face's `apply_chat_template` renders it."""
+@lru_cache(maxsize=8)
+def _compile_template(template: str):
+    """Compile the model's template once. Each render creates its own request context."""
     from jinja2.exceptions import TemplateError
     from jinja2.sandbox import ImmutableSandboxedEnvironment
 
@@ -146,7 +148,12 @@ def render(template: str, messages: Sequence[dict[str, Any]], **variables: Any) 
 
     env = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True)
     env.globals.update(raise_exception=raise_exception, strftime_now=strftime_now)
-    return env.from_string(template).render(messages=list(messages), **variables)
+    return env.from_string(template)
+
+
+def render(template: str, messages: Sequence[dict[str, Any]], **variables: Any) -> str:
+    """A chat template rendered as Hugging Face's `apply_chat_template` renders it."""
+    return _compile_template(template).render(messages=list(messages), **variables)
 
 
 def gguf_model_id(gguf: str) -> str:

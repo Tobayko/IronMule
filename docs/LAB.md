@@ -2392,3 +2392,14 @@ error was 0.068 for throughput and 0.099 for first-token latency. Predicting equ
 costs gave 0.224 and 0.326, respectively. Blind transfer selected the wider setting on
 three additional holdout cases whose outputs failed the quality gate. Local remeasurement
 remains part of the serving path.
+
+### 2026-11-18: GGUF chat template rendering on the CPU
+
+The HTTP chat path compiled its Jinja template on each request. Reusing a compiled template
+for the same model keeps request messages, template variables and output separate. Seven
+paired batches each rendered 24 distinct requests per arm, alternating which version went
+first. Each request produced the same rendered string in both versions. Median warm time
+per render fell from 11.400 to 0.024 ms for the Qwen3-32B template and from 1.568 to
+0.010 ms for SmolLM2-135M on the Linux cloud worker. These times cover prompt rendering
+alone. End-to-end throughput and time to first visible token are measured through the
+HTTP servers in the [comparison workflow](COMPARE.md).
