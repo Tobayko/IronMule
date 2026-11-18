@@ -150,3 +150,34 @@ A process can read `ironmule_large_prefill_dispatch_count()`. With
 publishes its count in `worker-<pid>.bin` as a host-order uint64. The counter includes
 CUDA graph construction. Compare both runtimes on the same GPU with the same graph
 settings and verify numerical quality against the original library before timing.
+
+Add `--mixed-trace-seconds 45` to the Qwen3-32B production comparison to run
+one additional trace after each deployment's final standard timings. It uses
+the already verified IronMule GGUF and unchanged vLLM AWQ deployments, the same
+GPU, and a per-arm deadline inside the original total budget. Other comparison
+commands keep their existing workload. The optional trace adds no server starts.
+
+Two long document extractions start first. As soon as a long stream emits
+non-whitespace content, eight short lookups and four two-turn workflows enter.
+Each workflow requests a record, then reads a synthetic tool result. Both
+deployments receive the same canonical history after their own first answer
+finishes. The tool result travels in a user-role text envelope supported by both
+APIs. A complete workflow must produce the requested lookup command and the
+correct final route. The document tasks must return every selected value in
+order. The scores require the complete requested answer, ignoring only case
+and whitespace. The report retains visible text, token counts and stop reasons.
+
+A pair requires identical rendered token IDs and matching request IDs and
+lengths. It reports per-class p95 time to first visible text, end-to-end latency,
+and output tokens/s over the time between the first request and last response
+of that class. The classes overlap. The overall rate uses the entire trace.
+The report records how many short requests began while a document job was
+still running. A run without overlap yields no pair ratios.
+
+For a local functional smoke, start a standalone GGUF service with
+`--no-thinking`. Use a new output path.
+
+```bash
+python -m lab.portable_gpu.mixed_traffic --url http://127.0.0.1:8080 \
+  --gguf /models/model.gguf --budget-seconds 60 --output /tmp/ironmule-mixed.json
+```

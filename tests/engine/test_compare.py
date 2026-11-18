@@ -21,6 +21,8 @@ def test_stream_measures_visible_token_and_requires_done_and_completion_usage():
             self.send_response(200)
             self.end_headers()
             for chunk in ({"choices": [{"delta": {"role": "assistant"}}]},
+                          {"choices": [{"delta": {"content": " "}}]},
+                          {"choices": [{"delta": {"reasoning_content": "thinking"}}]},
                           {"choices": [{"delta": {"content": "Rome"}}]},
                           {"choices": [{"delta": {}, "finish_reason": "stop"}]},
                           {"choices": [], "usage": {"prompt_tokens": 6, "completion_tokens": 1}}):
@@ -33,8 +35,13 @@ def test_stream_measures_visible_token_and_requires_done_and_completion_usage():
     thread.start()
     try:
         endpoint = {"base_url": f"http://127.0.0.1:{http.server_port}", "model_id": "sample"}
-        out = compare.stream("vllm", endpoint, "city", 10, monotonic() + 1)
-        assert out["text"] == "Rome" and out["tokens"] == 1 and out["ttft_ms"] > 0
+        visible = []
+        history = [{"role": "user", "content": "city"}, {"role": "assistant", "content": "LOOKUP"},
+                   {"role": "user", "content": "Tool result: Rome"}]
+        out = compare.stream("vllm", endpoint, history, 10, monotonic() + 1,
+                             on_first_visible=lambda: visible.append(True))
+        assert out["text"] == " Rome" and out["tokens"] == 1 and out["visible_ttft_ms"] >= out["ttft_ms"] > 0
+        assert visible == [True] and requests[-1]["messages"] == history
         assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": False}
         with pytest.raises(RuntimeError, match="without"):
             compare.stream("ironmule", endpoint, "cut", 10, monotonic() + 1)

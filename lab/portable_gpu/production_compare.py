@@ -31,6 +31,8 @@ def arguments(argv):
     for flag, default in [('seed', secrets.randbits(32)), ('context', 2048), ('requests', 8), ('repeats', 3),
                           ('max-tokens', 32), ('startup-timeout', 1200), ('budget-seconds', 2700)]:
         parser.add_argument('--' + flag, type=int, default=default)
+    parser.add_argument('--mixed-trace-seconds', type=int, default=0,
+                        help='optional per-deployment budget for a paired held-out trace, after final standard timings')
     parser.add_argument('--gpu-memory-utilization', type=float, default=.88)
     args = parser.parse_args(argv)
     try:
@@ -41,7 +43,7 @@ def arguments(argv):
             or any(not 1 <= w <= 64 for w in args.concurrency) or not 1 <= args.repeats <= 9
             or not 1 <= args.requests <= 128 or not 1 <= args.max_tokens <= 2048 or args.context <= args.max_tokens
             or args.budget_seconds < 1 or args.startup_timeout < 1 or not 0 < args.gpu_memory_utilization <= 1
-            or not 0 <= args.seed < 2**32):
+            or not 0 <= args.mixed_trace_seconds <= 120 or not 0 <= args.seed < 2**32):
         parser.error('invalid workload or budget bounds')
     return args
 
@@ -142,6 +144,16 @@ def measure(args, name, rep, data, report, save, deadline, *, profile=None, labe
             raise compare.Unverified('served prompt lengths disagree with verified token IDs')
         for row, start, end in cells:
             row['prompt_ids_sha256'] = checked['prompt_ids_sha256'][start:end]
+        seconds = getattr(args, 'mixed_trace_seconds', 0)
+        if seconds and rep == args.repeats - 1 and label is None and profile is None:
+            from lab.portable_gpu import mixed_traffic
+
+            save('heldout_mixed')
+            try:
+                arm['heldout_mixed'] = mixed_traffic.measure(engine, server, args.seed ^ 0xE02D9B17,
+                    min(deadline, time.monotonic() + seconds), gguf=args.gguf)
+            except Exception as exc:  # optional trace failure preserves the standard paired measurements
+                arm['heldout_mixed_error'] = type(exc).__name__
     # An adapter can still reject modified weights during process cleanup. Qualify this evidence afterwards.
     arm.update(prompt_ids_verified=True, prompt_token_digest=checked['digest'])
     save('verified')
@@ -186,6 +198,20 @@ def run(args, report, save, deadline):
     report['pairs'] = summarize(report)
     if len(report['pairs']) != args.repeats * len(args.concurrency):
         raise compare.Unverified('some deployment pairs have mismatched requests, prompt IDs or quality cases')
+    if args.mixed_trace_seconds:
+        from lab.portable_gpu import mixed_traffic
+
+        final = {arm['deployment']: arm for arm in report['deployments'] if arm['prompt_ids_verified']
+                 and arm['repeat'] == args.repeats - 1}
+        traces = [final[name].get('heldout_mixed') for name in DEPLOYMENTS]
+        if all(traces):
+            try:
+                report['heldout_mixed_pair'] = mixed_traffic.pair(*traces)
+            except compare.Unverified as exc:
+                report['heldout_mixed_pair'] = {'status': 'incomplete', 'reason': str(exc)}
+        else:
+            report['heldout_mixed_pair'] = {'status': 'incomplete', 'missing': [
+                name for name, trace in zip(DEPLOYMENTS, traces) if not trace]}
 
 
 def main(argv=None):
@@ -205,6 +231,9 @@ def main(argv=None):
                            'budget_seconds': args.budget_seconds, 'ratio_order': list(DEPLOYMENTS),
                            'claim_scope': 'deployment configurations with different weight files'},
               'current': {}, 'deployments': [], 'measurements': [], 'pairs': [], 'device': None}
+
+    if args.mixed_trace_seconds:
+        report['protocol']['heldout_mixed_budget_per_arm_seconds'] = args.mixed_trace_seconds
 
     def save(stage):
         report.update(stage=stage, updated_at=compare.utc_now(), elapsed_seconds=round(time.monotonic()-started, 3))

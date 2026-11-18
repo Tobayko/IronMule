@@ -63,6 +63,22 @@ def test_cross_format_deployments_share_requests_and_keep_separate_identities(tm
     awq_identity = result['deployments'][1]['identity']
     assert 'gguf_sha256' not in awq_identity and awq_identity['loaded_quantization'] == 'awq_marlin'
     assert production.main(argv) == 1  # no overwriting of evidence
+    from lab.portable_gpu import mixed_traffic
+
+    heldout = []
+    def mixed(engine, server, seed, deadline, *, gguf):
+        heldout.append((engine, seed, gguf))
+        return {'seed': seed, 'fixture': engine}
+    monkeypatch.setattr(mixed_traffic, 'measure', mixed)
+    monkeypatch.setattr(mixed_traffic, 'pair', lambda left, right: {'status': 'measured'} if
+                        (left['fixture'], right['fixture']) == ('ironmule', 'vllm') else None)
+    opted = argv.copy()
+    opted[opted.index(str(out))] = str(tmp_path/'mixed.json')
+    assert production.main(opted + ['--mixed-trace-seconds', '20']) == 0
+    extra = json.loads((tmp_path/'mixed.json').read_text())
+    assert [engine for engine, _, _ in heldout] == ['ironmule', 'vllm']
+    assert heldout[0][1:] == heldout[1][1:]
+    assert extra['heldout_mixed_pair']['status'] == 'measured' and len(extra['pairs']) == 6
     altered.add(('vllm',0))
     argv[argv.index(str(out))] = str(tmp_path/'changed.json')
     assert production.main(argv) == 1

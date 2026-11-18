@@ -75,12 +75,13 @@ def remaining(deadline):
     return value
 
 
-def stream(engine, server, prompt, limit, deadline, *, request_id=None):
+def stream(engine, server, prompt, limit, deadline, *, request_id=None, on_first_visible=None):
     """Require successful OpenAI SSE termination and server-generated token counts in each arm."""
     parsed = urllib.parse.urlsplit(server["base_url"])
     if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
         raise ValueError("comparison launch must provide a local HTTP endpoint")
-    body = {"model": server["model_id"], "messages": conversation(prompt), "stream": True,
+    messages = conversation(prompt) if isinstance(prompt, str) else prompt
+    body = {"model": server["model_id"], "messages": messages, "stream": True,
             "max_tokens": limit, "temperature": 0, "top_p": 1}
     if engine != "ironmule":  # IronMule always includes usage in the final streaming event.
         body["stream_options"] = {"include_usage": True}
@@ -88,7 +89,7 @@ def stream(engine, server, prompt, limit, deadline, *, request_id=None):
         body["chat_template_kwargs"] = {"enable_thinking": False}
     started = time.perf_counter()
     conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=min(remaining(deadline), 120))
-    first = usage = finish = None
+    first = first_visible = usage = finish = None
     pieces = []
     try:
         conn.connect()
@@ -121,6 +122,10 @@ def stream(engine, server, prompt, limit, deadline, *, request_id=None):
                     if text:
                         if first is None:
                             first = time.perf_counter() - started
+                        if first_visible is None and text.strip():
+                            first_visible = time.perf_counter() - started
+                            if on_first_visible is not None:
+                                on_first_visible()
                         pieces.append(text)
                     finish = choice.get("finish_reason") or finish
         if finish not in ("stop", "length") or first is None or not usage:
@@ -128,7 +133,8 @@ def stream(engine, server, prompt, limit, deadline, *, request_id=None):
         n, p = usage.get("completion_tokens"), usage.get("prompt_tokens")
         if type(n) is not int or not 0 < n <= limit or type(p) is not int or p <= 0:
             raise RuntimeError(f"{engine} returned invalid token counts")
-        return {"text": "".join(pieces), "tokens": n, "prompt_tokens": p, "ttft_ms": 1000 * first, "finish_reason": finish}
+        return {"text": "".join(pieces), "tokens": n, "prompt_tokens": p, "ttft_ms": 1000 * first,
+                "visible_ttft_ms": None if first_visible is None else 1000 * first_visible, "finish_reason": finish}
     finally:
         conn.close()
 

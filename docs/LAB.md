@@ -2687,3 +2687,23 @@ and eight served them at 93.11 and 68.05. All arms answered all 64 copy requests
 correctly. On the subsequent 384 requests the controller retained width four. Each
 arm answered 383 correctly.
 [Workload, checkpoints and raw results](../training/README.md#serving-the-proposed-width-and-testing-its-rollback)
+
+### 2026-11-18: held-out tool-result conversations beside document jobs
+
+The paired Qwen3-32B deployment runner can now replay a small mixed trace after
+its standard timings. The trace starts two document extractions, then interleaves
+eight short lookups and four two-turn agent conversations when the first visible
+document output arrives. A second turn follows its actual first response and
+replays a canonical tool-call history with a user-role text envelope containing
+the tool result. Each deployment uses the same inputs regardless of what its
+first reply said. The harness grades the first command, the final returned
+value and the completed two-turn workflow. It also checks every document's
+ordered extraction and every short lookup.
+
+On a local 135M SmolLM2 GGUF with two CPU threads, the functional probe verified
+native prompt lengths and streamed all 18 responses in 7.25 s. All eight short
+lookups began while a document was running. None of the 18 responses met the
+strict output contract. One first turn produced the requested command followed
+by extra prose, and its second turn repeated the command rather than the route.
+The local run establishes client behavior and carries no GPU comparison.
+[Synthetic responses, stops, class timings and prompt digest](../evidence/runtime/heldout-mixed-smollm2-cpu.json) · [Paired and local invocation](../lab/portable_gpu/README.md)
