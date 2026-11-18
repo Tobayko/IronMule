@@ -48,3 +48,15 @@ def test_vllm_cuda_and_rocm_placements_remain_distinguishable():
     assert not compare_servers._placement('vllm','GPU-123',{},'device_config=rocm')[0]
     assert not compare_servers._placement('vllm','rocm:machine:0',{},'device_config=cuda')[0]
     assert compare_servers._placement('vllm','rocm:machine:0',{},'device_config=cuda. Detected platform rocm')[0]
+
+
+def test_startup_diagnostics_only_return_known_codes(tmp_path):
+    path = tmp_path / 'engine.log'
+    path.write_text('private-token-and-user-prompt\n{"gguf_model":"private id"}\n'
+                    'ModuleNotFoundError: No module named \'mlx.core\'\n')
+    assert compare_servers._startup_detail(path) == ('gguf_identified', 'missing_mlx')
+    path.write_text('Initializing a V1 LLM engine. Free memory is less than desired GPU memory utilization\n'
+                    'Engine core initialization failed. private-token')
+    assert compare_servers._startup_detail(path) == ('vllm_engine', 'insufficient_free_gpu_memory')
+    path.write_text('secret other data received from arbitrary log')
+    assert compare_servers._startup_detail(path) == ('startup', 'unclassified')

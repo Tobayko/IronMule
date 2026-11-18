@@ -172,7 +172,8 @@ def _command(engine, args, port, env, gpu):
         return [str(args.vllm), 'serve', model, '--served-model-name', 'compare', '--tokenizer', tokenizer,
                 '--hf-config-path', tokenizer, '--quantization', 'gguf', '--generation-config', 'vllm',
                 '--max-model-len', context, '--max-num-seqs', str(width), '--tensor-parallel-size', '1',
-                '--gpu-memory-utilization', str(getattr(args, 'gpu_memory_utilization', 0.88)), *address]
+                '--gpu-memory-utilization', str(getattr(args, 'gpu_memory_utilization', 0.88)),
+                *(['--enforce-eager'] if getattr(args, 'vllm_enforce_eager', False) else []), *address]
     raise ValueError(f'unknown serving engine {engine!r}')
 
 
@@ -206,6 +207,57 @@ def refresh_identity(engine, server, deadline):
         server['serving_device'] = health.get('device')
 
 
+class StartupError(RuntimeError):
+    """A public failure code and stage from the serving process' bounded, private log."""
+
+    def __init__(self, message, stage, code):
+        self.code = code
+        self.stage = stage
+        super().__init__(f'{message} (stage={stage} reason={code})')
+
+
+def _startup_detail(logpath):
+    """Convert a bounded private log tail to fixed public status codes without returning log contents."""
+    try:
+        with logpath.open('rb') as stream:
+            stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, stream.tell() - 128 * 1024))
+            log = stream.read().decode('utf-8', errors='replace')
+    except OSError:
+        return 'unknown', 'log_unavailable'
+    stages = (
+        ('worker', r'"agent":\s*\{'), ('width_selection', r'"ggml_sequences":'),
+        ('quality_gate', r'"ggml_gate":'), ('gguf_identified', r'"gguf_model":'),
+        ('vllm_engine', r'Initializing a V\d+ LLM engine|EngineCore'),
+        ('model_loading', r'Loading model weights|Starting to load model|loading model tensors'),
+    )
+    stage = next((key for key, pattern in stages if re.search(pattern, log)), 'startup')
+    causes = (
+        ('missing_mlx', r"No module named ['\"]mlx(?:\.|['\"])"),
+        ('missing_gguf', r"No module named ['\"]gguf(?:\.|['\"])"),
+        ('missing_accelerator_dependency', r"No module named ['\"](?:vllm|triton|torch|flashinfer|xformers)(?:\.|['\"])"),
+        ('missing_python_dependency', r'ModuleNotFoundError|No module named'),
+        ('cuda_library_unavailable', r'lib(?:cuda|cublas|cudart|nvrtc)[^\s:]*: cannot open shared object'),
+        ('cuda_driver_incompatible', r'driver version is insufficient|driver.*too old|CUDA_ERROR_UNSUPPORTED_PTX_VERSION'),
+        ('insufficient_free_gpu_memory', r'less than (?:the )?desired GPU memory utilization'),
+        ('gpu_out_of_memory', r'CUDA out of memory|OutOfMemoryError|cudaMalloc failed|out of memory on device'),
+        ('incompatible_gpu_architecture', r'no kernel image is available|invalid device function|compute capability.*not supported'),
+        ('unsupported_gguf', r'unsupported (?:model architecture|quantization)|model type .*not supported|cannot map tensor'),
+        ('invalid_model_config', r'Unrecognized model|Unrecognized configuration|Invalid repository ID|Repository id must'),
+        ('missing_weight_files', r'(?:GGUF|weight|model).*(?:file not found|no such file)|FileNotFoundError'),
+        ('cuda_graph_or_compiler', r'TritonCompilationError|TorchInductorError|BackendCompilerFailed|\binductor[^\n]*(?:failed|error)|CUDA error[^\n]*captur|CUDAGraph[^\n]*(?:failed|error)'),
+        ('collective_initialization', r'NCCL error|NCCL.*failed|ncclSystemError'),
+        ('shared_memory_unavailable', r'No space left on device|Bus error|shared memory.*(?:failed|insufficient)'),
+        ('cli_argument_rejected', r'unrecognized arguments|No such option|invalid choice'),
+        ('permission_denied', r'PermissionError|Permission denied'),
+        ('quality_gate_refused', r'GGUF did not pass|"passes":\s*false|no quality-qualified'),
+        ('worker_unavailable', r'backend worker|backend(?: is)?[_ ]unavailable|worker failed to start'),
+        ('engine_initialization', r'engine core initialization failed|EngineCore failed to start|engine process failed'),
+    )
+    reason = next((key for key, pattern in causes if re.search(pattern, log, re.IGNORECASE)), 'unclassified')
+    return stage, reason
+
+
 @contextlib.contextmanager
 def open_server(engine, args, repeat, deadline):
     artifacts = prepare_artifacts(args)
@@ -229,7 +281,7 @@ def open_server(engine, args, repeat, deadline):
             while time.monotonic() < until:
                 code = process.poll()
                 if code is not None:
-                    raise RuntimeError(f'{engine} exited with status {code} during startup (log {logpath})')
+                    raise StartupError(f'{engine} exited with status {code} during startup', *_startup_detail(logpath))
                 try:
                     timeout = max(0.05, min(2, until - time.monotonic()))
                     models = _json(base, '/v1/models', timeout).get('data', [])
@@ -240,7 +292,8 @@ def open_server(engine, args, repeat, deadline):
                     pass
                 time.sleep(min(0.2, max(0, until-time.monotonic())))
             else:
-                raise TimeoutError(f'{engine} startup expired after {time.monotonic()-started:.1f}s (log {logpath})')
+                stage, code = _startup_detail(logpath)
+                raise TimeoutError(f'{engine} startup expired (stage={stage} reason={code})')
             model_id = health.get('loaded_model') if engine == 'ironmule' else 'compare'
             if model_id not in [m.get('id') for m in models]:
                 raise RuntimeError(f'{engine} did not advertise its requested model')
