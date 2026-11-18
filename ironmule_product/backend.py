@@ -100,6 +100,7 @@ class MLXWorkerClient:
         self.draft_model_status: dict[str, Any] | None = None  # DM1: the draft model, as its last request saw it
         self.ggml_agent_status: dict[str, Any] | None = None  # AG10: the ggml engine's agent, as its last request saw it
         self.ggml_kg4_scope: dict[str, Any] | None = None
+        self.ggml_kg4_placement: dict[str, Any] | None = None
         self.ggml_prefill_status: dict[str, Any] | None = None
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
@@ -279,15 +280,32 @@ class MLXWorkerClient:
             return False
         return True
 
-    def _drain_stderr(self, stream: Any) -> None:
+    def _drain_stderr(self, stream: Any, placement_worker: Any = None) -> None:
+        # The initial model loader reports physical layer placement on fd 2. In the lab, bind
+        # that line to the actual serving process. Keep partial lines bounded across pipe reads.
+        tail = b""
+        read = getattr(stream, "read1", stream.read) if placement_worker is not None else stream.read
         try:
             while True:
-                chunk = stream.read(8192)
+                chunk = read(8192)
                 if not chunk:
                     return
                 with self._stderr_lock:  # keep the newest bytes: a final error is what explains an exit
                     self._stderr_buffer.extend(chunk)
                     del self._stderr_buffer[:-MAX_STDERR_BYTES]
+                    if (placement_worker is not None and placement_worker is self._process
+                            and self._ready_payload is None and self.ggml_kg4_placement is None):
+                        data = tail + chunk
+                        found = re.search(rb"(?m)^load_tensors: offloaded ([0-9]{1,4})/([0-9]{1,4}) layers to GPU\r?\n", data)
+                        if found:
+                            offloaded, total = map(int, found.groups())
+                            if 0 <= offloaded <= total and total > 0:
+                                self.ggml_kg4_placement = {"worker_pid": placement_worker.pid,
+                                                           "offloaded_layers": [offloaded, total]}
+                        # Preserve the line-start boundary when a long partial line is truncated.
+                        tail = data[data.rfind(b"\n") + 1:]
+                        if len(tail) > 128:
+                            tail = b" " + tail[-128:]
         except (OSError, ValueError):
             return
 
@@ -545,7 +563,10 @@ class MLXWorkerClient:
                 raise BackendUnavailable("backend worker could not start") from exc
             assert self._process.stderr is not None
             self._stdout_buffer.clear()
-            self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(self._process.stderr,), daemon=True)
+            placement_worker = (self._process if self.engine_configuration == "ggml"
+                                and environment.get("IRONMULE_KG4_PLACEMENT") == "1" else None)
+            self._stderr_thread = threading.Thread(target=self._drain_stderr,
+                                                  args=(self._process.stderr, placement_worker), daemon=True)
             self._stderr_thread.start()
             startup_deadline = (
                 None
@@ -638,6 +659,8 @@ class MLXWorkerClient:
         self._usable = False
         process, self._process = self._process, None
         self._ready_payload = None
+        with self._stderr_lock:
+            self.ggml_kg4_placement = None
         self._stdout_buffer.clear()
         if process is None:
             return

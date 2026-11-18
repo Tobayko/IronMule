@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import statistics
 import threading
+import weakref
 
 
 MODE = "low-width8"
@@ -23,19 +24,26 @@ def _mask(buckets):
 
 
 class Kg4Scope:
-    def __init__(self, lib, buckets):
+    def __init__(self, lib, buckets, engine):
         self.lib = lib
+        self._engine = weakref.ref(engine)
+        self._measured_geometry = self._geometry(engine)
+        self.geometry_matches = True
         self.buckets = tuple(buckets)
         self.mask = _mask(self.buckets)
         self.low_runs = self.wide_runs = self.switches = 0
         self.enabled = self.low = self.wide = False
+
+    @staticmethod
+    def _geometry(engine):
+        return engine.seqs, engine.seq_ctx, tuple(sorted(engine.settings.items())), engine.gpu_layers
 
     @classmethod
     def calibrate(cls, engine, model, path):
         from .ggml_engine import file_sha256, ggml_devices
 
         devices = ggml_devices(engine.L)
-        if (os.environ.get("GGML_CUDA_DISABLE_GRAPHS") != "1" or engine.gpu_layers <= 0
+        if (os.environ.get("GGML_CUDA_DISABLE_GRAPHS") != "1" or engine.gpu_layers < 65
                 or len(devices) != 1 or devices[0]["provider"] != "cuda" or devices[0]["description"] != "NVIDIA L40S"
                 or file_sha256(model) != MODEL_SHA256 or file_sha256(path) != PLUGIN_SHA256):
             raise ValueError("scoped KG4 needs the measured model, L40S, plugin and disabled CUDA graphs")
@@ -61,7 +69,7 @@ class Kg4Scope:
                 lib.ironmule_kg_set_mask(0)
         medians = {mode: {b: statistics.median(v) for b, v in groups.items()} for mode, groups in prices.items()}
         use = [b for b in BUCKETS if medians["kg4"][b] <= .97 * medians["stock"][b]]
-        scope = cls(lib, use)
+        scope = cls(lib, use, engine)
         info = {"lib": Path(path).name, "tokens_served": use, "q6k_tokens_served": [],
                 "step_ms_off": {str(b): 1000 * v for b, v in medians["stock"].items()},
                 "step_ms_on": {str(b): 1000 * v for b, v in medians["kg4"].items()}}
@@ -70,6 +78,8 @@ class Kg4Scope:
     def begin(self):
         _mask_lock.acquire()
         self.low = self.wide = False
+        engine = self._engine()
+        self.geometry_matches = engine is not None and self._geometry(engine) == self._measured_geometry
 
     def _set(self, enabled):
         if self.enabled != enabled:
@@ -81,7 +91,7 @@ class Kg4Scope:
         if demand > 8 and not self.wide:
             self.wide = True
             self.wide_runs += 1
-        eligible = not self.wide and 6 <= demand <= 8
+        eligible = self.geometry_matches and not self.wide and 6 <= demand <= 8
         if eligible and not self.low:
             self.low = True
             self.low_runs += 1
@@ -95,4 +105,5 @@ class Kg4Scope:
 
     def status(self):
         return {"mode": MODE, "q4_buckets": list(self.buckets), "low_runs": self.low_runs,
-                "wide_runs": self.wide_runs, "switches": self.switches, "parked": not self.enabled}
+                "wide_runs": self.wide_runs, "switches": self.switches, "parked": not self.enabled,
+                "geometry_matches": self.geometry_matches}

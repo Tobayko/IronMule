@@ -267,6 +267,9 @@ class ProductService:
                 kg4 = getattr(self.backend, "ggml_kg4_scope", None)
                 if kg4 is not None:
                     result["ggml"]["kg4_scope"] = dict(kg4)
+                placement = getattr(self.backend, "ggml_kg4_placement", None)
+                if placement is not None:
+                    result["ggml"]["kg4_placement"] = dict(placement)
                 prefill = getattr(self.backend, "ggml_prefill_status", None)
                 if prefill is not None:
                     result["ggml"]["prefill_batch"] = dict(prefill)
