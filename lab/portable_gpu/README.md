@@ -27,6 +27,18 @@ The pinned public GGUFs all use Q4_K_M. Run the smallest smoke first. Download s
 | `phi35-mini` | Microsoft Phi-3.5-mini-instruct | 2.39 GB |
 | `qwen3-4b` | Qwen3-4B | 2.50 GB |
 | `mistral-7b` | Mistral-7B-Instruct-v0.3 | 4.37 GB |
+| `qwen3-32b` | Qwen3-32B | 19.76 GB |
+| `qwen25-32b` | Qwen2.5-32B-Instruct | 19.85 GB |
+
+For a 32B run, fetch once to the local model volume and reuse the path for smoke and comparison on the same pod.
+Allow at least 30 GB of free model-volume space for one pinned file, or 50 GB to retain both.
+The downloader verifies SHA-256 while streaming to a temporary file and atomically renames the verified download.
+
+Both 32B GGUFs have 64 layers, eight KV heads per layer and 128 dimensions per head. Their default FP16 keys
+and values require 256 KiB per cached token per sequence. At `--long-prompt 1024`, the width comparison keeps
+1- and 4-slot contexts of 1280 tokens per slot, totaling 1.56 GiB of KV in addition to roughly 18.4–18.5 GiB
+of model weights. Allow further VRAM for compute buffers and the backend. A single 48 GB or larger GPU is a
+conservative starting point. Check the smoke report for full layer offload before interpreting timings.
 
 ## Stock server comparison
 

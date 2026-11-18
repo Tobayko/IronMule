@@ -2,7 +2,6 @@
 import argparse
 import hashlib
 import os
-import shutil
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -30,6 +29,12 @@ MODELS = {
     "mistral-7b": ("bartowski/Mistral-7B-Instruct-v0.3-GGUF", "61fd4167fff3ab01ee1cfe0da183fa27a944db48",
                    "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf", 4372812000,
                    "1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6"),
+    "qwen3-32b": ("Qwen/Qwen3-32B-GGUF", "938a7432affaec9157f883a87164e2646ae17555",
+                  "Qwen3-32B-Q4_K_M.gguf", 19762149024,
+                  "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689"),
+    "qwen25-32b": ("bartowski/Qwen2.5-32B-Instruct-GGUF", "2116cbb385b8ce3a4d28cf3bf1cd2039a55821a6",
+                   "Qwen2.5-32B-Instruct-Q4_K_M.gguf", 19851336576,
+                   "2e5f6daea180dbc59f65a40641e94d3973b5dbaa32b3c0acf54647fa874e519e"),
 }
 
 
@@ -52,11 +57,14 @@ def fetch(name, dest):
     url = f"https://huggingface.co/{repo}/resolve/{revision}/{filename}"
     with tempfile.NamedTemporaryFile(dir=dest, prefix=".gguf-", delete=False) as partial:
         try:
+            downloaded = hashlib.sha256()
             with urllib.request.urlopen(url, timeout=30) as stream:
-                shutil.copyfileobj(stream, partial, length=1 << 20)
+                for block in iter(lambda: stream.read(1 << 20), b""):
+                    partial.write(block)
+                    downloaded.update(block)
             partial.close()
             temp = Path(partial.name)
-            if temp.stat().st_size != size or digest(temp) != sha:
+            if temp.stat().st_size != size or downloaded.hexdigest() != sha:
                 raise ValueError(f"download differs from pinned SHA-256 for {name}")
             os.replace(temp, path)
         finally:
