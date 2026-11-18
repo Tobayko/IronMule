@@ -2550,3 +2550,14 @@ settings returned 16/16 correct copy answers. The third pair differed on its ful
 output tokens or stop reasons, so IronMule retained the incumbent and recorded the
 attempt. The whole run took 61.7 seconds with the existing native qualification
 cache. [Product provenance, request counts, incumbent and candidate](../evidence/self-admission/smollm2-135m-cpu-20261118.json)
+
+### 2026-11-18: own-traffic admission learning on a GeForce RTX 4090
+
+The unmodified production server at `268911b` served Qwen3-0.6B Q4_K_M on an
+independently verified physical RTX 4090. The isolated interpreter and executable
+search path excluded vLLM and llama-server. Ten bursts of four HTTP requests
+produced 40 responses and 320 output tokens. The 64-sequence, 2,048-token context
+profile recorded nine own workload observations. The worker deferred the experiment.
+No candidate/incumbent pairs or new rules were recorded. This run captured GPU
+placement and the decision. The exact reason was absent from this first export.
+[RTX 4090, 2,048-token profile](../evidence/self-admission/qwen3-06b-rtx4090-deferred-20261118.json)
