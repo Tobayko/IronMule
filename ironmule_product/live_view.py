@@ -15,6 +15,9 @@ STATUSES = {"preparing", "running", "complete", "error", "timeout"}
 STAGES = {"initializing", "preflight", "starting", "warmup", "benchmark", "quality", "learning", "evaluating", "finished"}
 ERRORS = {"launch_failed", "identity_unverified", "measurement_failed", "learning_failed", "budget_exhausted",
           "invalid_input"}
+DEPLOYMENT_SCHEMA = "ironmule.deployment-comparison.v1"
+DEPLOYMENTS = {"ironmule_gguf", "vllm_awq"}
+DEPLOYMENT_STAGES = STAGES | {"hashing", "verifying_prompts", "verified"}
 VERDICTS = {"pending", "incomplete", "does_not_qualify", "qualifies"}
 ENGINES = {"ironmule", "vllm", "llama_cpp"}
 REASONS = {"insufficient_repeats_or_loads", "missing_arm", "throughput_margin", "first_token_regressed",
@@ -23,6 +26,9 @@ REASONS = {"insufficient_repeats_or_loads", "missing_arm", "throughput_margin", 
            "stock_provenance_unverified", "generated_lengths_or_stops_differ", *ERRORS}
 LEARNING = {"deferred", "qualified", "retained_incumbent", "error"}
 PROVIDER_EVENTS = {
+    "fetch_awq": "Downloading Qwen3-32B AWQ", "fetch_gguf": "Downloading Qwen3-32B GGUF",
+    "tokenizer": "Preparing the shared tokenizer", "production_compare": "Comparing GGUF and AWQ deployments",
+    "error": "Remote workload failed", "cleanup_verified": "Confirmed instance shutdown",
     "local_preflight": "Checking local prerequisites", "preflight": "Checking runtime",
     "create_requested": "Requested a GPU", "pod_booting": "Starting GPU instance",
     "container_boot": "Starting container", "awaiting_bundle": "Waiting for benchmark files",
@@ -82,17 +88,49 @@ def progress_path(service=None, explicit=None):
     return Path(root) / "benchmark-progress.json"
 
 
-def benchmark(path):
+def _deployment_pairs(pairs):
+    """Descriptive ratios are emitted only for pairs verified by the deployment runner."""
+    if not isinstance(pairs, list):
+        raise TypeError("invalid paired workloads")
+    result = []
+    for item in pairs[-80:]:
+        if not isinstance(item, dict):
+            raise TypeError("invalid pair")
+        row = {k: number(item.get(k)) for k in ("repeat", "concurrency", "tokens_per_second_ratio",
+                                                "requests_per_second_ratio", "ttft_p95_ratio")}
+        quality = item.get("quality_correct") or {}
+        total = item.get("quality_total")
+        counts = [quality.get(k) for k in ("ironmule_gguf", "vllm_awq")] if isinstance(quality, dict) else []
+        if (len(counts) != 2 or type(total) is not int or total <= 0 or
+                any(type(x) is not int or not 0 <= x <= total for x in counts)):
+            continue
+        match = item.get("output_tokens_and_stops_match")
+        row.update(gguf_correct=counts[0], awq_correct=counts[1], quality_total=total,
+                   equal_work=match if type(match) is bool else None)
+        result.append(row)
+    return result
+
+
+def benchmark(path, expected_schema=None):
     try:
         with path.open("rb") as f:
             raw = f.read((4 << 20) + 1)
         if len(raw) > 4 << 20:
             raise ValueError("oversized")
         data = json.loads(raw)
-        if not isinstance(data, dict) or data.get("schema") != "ironmule.compare.v1" or data.get("status") not in STATUSES:
+        if not isinstance(data, dict):
+            raise TypeError("invalid report")
+        schema = data.get("schema")
+        if schema not in ("ironmule.compare.v1", DEPLOYMENT_SCHEMA) or (expected_schema and expected_schema != schema):
             raise ValueError("invalid schema")
+        deployment = schema == DEPLOYMENT_SCHEMA
+        engine_key, engines = ("deployment", DEPLOYMENTS) if deployment else ("engine", ENGINES)
+        stages = DEPLOYMENT_STAGES if deployment else STAGES
+        status = data.get("status")
+        if status not in ({"preparing", "running", "measured", "incomplete"} if deployment else STATUSES):
+            raise ValueError("invalid status")
         current = data.get("current") or {}
-        runs = data.get("runs", [])
+        runs = data.get("measurements" if deployment else "runs", [])
         if not isinstance(current, dict) or not isinstance(runs, list):
             raise TypeError("invalid rows")
         rows = []
@@ -101,8 +139,8 @@ def benchmark(path):
                 raise TypeError("invalid row")
             quality = item.get("quality")
             row = {k: number(item.get(k)) for k in ("repeat", "concurrency", "requests", "completion_tokens",
-                                                     "tokens_per_second", "ttft_median_ms", "ttft_p95_ms")}
-            row.update(engine=item.get("engine") if item.get("engine") in ENGINES else None, quality=None)
+                                                     "tokens_per_second", "requests_per_second", "ttft_median_ms", "ttft_p95_ms")}
+            row.update(engine=item.get(engine_key) if item.get(engine_key) in engines else None, quality=None)
             if isinstance(quality, dict):
                 passed, total = (quality.get(k) for k in ("passed", "total"))
                 if type(passed) is int and type(total) is int and 0 <= passed <= total and total > 0:
@@ -120,18 +158,23 @@ def benchmark(path):
         failure = failures[-1] if isinstance(failures, list) and failures and isinstance(failures[-1], dict) else {}
         learning = data.get("learning") or {}
         device = label(data.get("device"))
-        for arm in reversed(data.get("arms") or []):
+        for arm in reversed(data.get("deployments" if deployment else "arms") or []):
             identity = arm.get("identity") if isinstance(arm, dict) else None
             if isinstance(identity, dict) and identity.get("device") == device and label(identity.get("device_name")):
                 device = label(identity["device_name"])
                 break
-        return {"status": data["status"], "stage": data.get("stage") if data.get("stage") in STAGES else None,
-                "model": label(data.get("model")), "device": device,
+        common = {"status": status, "stage": data.get("stage") if data.get("stage") in stages else None,
+                "model": "Qwen3-32B" if deployment else label(data.get("model")), "device": device,
                 "updated_at": timestamp(data.get("updated_at")),
-                "engine": current.get("engine") if current.get("engine") in ENGINES else None,
+                "engine": current.get(engine_key) if current.get(engine_key) in engines else None,
                 "repeat": number(current.get("repeat")), "concurrency": number(current.get("concurrency")),
-                "runs": rows, "run_count": len(runs), "provider": provider,
-                "verdict": verdict.get("status") if isinstance(verdict, dict) and verdict.get("status") in VERDICTS else None,
+                "runs": rows, "run_count": len(runs), "provider": provider}
+        if deployment:
+            failure = data.get("failure") or {}
+            failed_stage = failure.get("stage") if isinstance(failure, dict) else None
+            return {**common, "kind": "deployment", "pairs": _deployment_pairs(data.get("pairs", [])),
+                    "failed_stage": failed_stage if failed_stage in DEPLOYMENT_STAGES else None}
+        return {**common, "verdict": verdict.get("status") if isinstance(verdict, dict) and verdict.get("status") in VERDICTS else None,
                 "reasons": [r for r in reasons if isinstance(r, str) and r in REASONS] if isinstance(reasons, list) else [],
                 "failed_engine": failure.get("engine") if failure.get("engine") in ENGINES else None,
                 "failed_stage": failure.get("stage") if failure.get("stage") in STAGES else None,
@@ -189,7 +232,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Watch benchmark progress on a local read-only dashboard.")
     parser.add_argument("--state-dir", type=Path)
-    parser.add_argument("--progress", type=Path, help="explicit path to an ironmule.compare.v1 progress file")
+    parser.add_argument("--progress", type=Path, help="path to a same-GGUF or deployment-comparison progress file")
     parser.add_argument("--port", type=int, default=8787)
     args = parser.parse_args()
     path = (args.progress or os.environ.get("IRONMULE_BENCH_PROGRESS")

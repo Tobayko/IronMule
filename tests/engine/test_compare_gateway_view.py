@@ -89,3 +89,44 @@ def test_standalone_bootstrap_has_only_two_unauthenticated_capability_routes(tmp
         finally:
             child.terminate()
             child.wait(timeout=5)
+
+
+def test_separate_deployment_report_preserves_scope_ratios_and_privacy(tmp_path):
+    from ironmule_product.live_view import benchmark
+
+    write_run(tmp_path)
+    # Both report types coexist. Only the requested fixed source may reach this view.
+    (tmp_path / "status.json").write_text('{"state":"running","stage":"production_compare"}')
+    data = public_snapshot(tmp_path, "deployment")["benchmark"]
+    assert data["kind"] == "deployment" and data["status"] == "preparing" and data["runs"] == []
+    report = {"schema": "ironmule.deployment-comparison.v1", "status": "running", "stage": "quality",
+              "device": "GPU-private", "current": {"deployment": "vllm_awq", "repeat": 0, "concurrency": 8},
+              "deployments": [{"deployment": "vllm_awq", "identity": {"device": "GPU-private",
+                               "device_name": "NVIDIA L40S", "authorization": "private"}}],
+              "measurements": [{"deployment": "vllm_awq", "repeat": 0, "concurrency": 8, "tokens_per_second": 66,
+                                "quality": {"passed": 8, "total": 9, "answers": {"private": True}},
+                                "request_id_prefix": "private"}], "pairs": [],
+              "artifacts": {"gguf": {"path": "/private/weights.gguf"}}}
+    path = tmp_path / "deployment-32b.json"
+    path.write_text(json.dumps(report))
+    for projected in (benchmark(path), public_snapshot(tmp_path, "deployment")["benchmark"]):
+        assert projected["model"] == "Qwen3-32B" and projected["engine"] == "vllm_awq"
+        assert projected["device"] == "NVIDIA L40S" and projected["kind"] == "deployment"
+        assert "verdict" not in projected and "private" not in json.dumps(projected)
+        assert projected["pairs"] == [] and projected["runs"][0]["tokens_per_second"] == 66
+
+    pair = {"repeat": 0, "concurrency": 8, "tokens_per_second_ratio": 1.5, "requests_per_second_ratio": 1.3,
+            "ttft_p95_ratio": .9, "output_tokens_and_stops_match": False,
+            "quality_total": 9, "quality_correct": {"ironmule_gguf": 7, "vllm_awq": 8}, "lost_answers": ["private"]}
+    report.update(status="measured", stage="finished", pairs=[pair])
+    path.write_text(json.dumps(report))
+    data = public_snapshot(tmp_path, "deployment")["benchmark"]
+    assert data["status"] == "measured" and "verdict" not in data
+    assert data["pairs"] == [{"repeat": 0, "concurrency": 8, "tokens_per_second_ratio": 1.5,
+                              "requests_per_second_ratio": 1.3, "ttft_p95_ratio": .9, "equal_work": False,
+                              "gguf_correct": 7, "awq_correct": 8, "quality_total": 9}]
+    report.update(status="incomplete", failure={"stage": "verifying_prompts", "reason": "private"})
+    path.write_text(json.dumps(report))
+    assert benchmark(path)["failed_stage"] == "verifying_prompts" and "private" not in json.dumps(benchmark(path))
+    wrong = public_snapshot(tmp_path)["benchmark"]
+    assert wrong.get("kind") != "deployment" and all(r["engine"] != "vllm_awq" for r in wrong["runs"])

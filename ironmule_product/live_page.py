@@ -113,6 +113,9 @@ main{padding:16px 13px 32px}
 <section class="hero" aria-labelledby="rateLabel"><div><div id="rateLabel" class="kicker">Last completion throughput</div><div class="big"><strong id="rate">—</strong><span>tok/s</span></div><small class="herotext" id="scope"></small></div><div class="chart"><canvas id="plot" aria-hidden="true"></canvas><small id="plotLabel"></small></div></section>
 <div class="cards" id="cards"></div>
 <section class="panel"><div class="panelhead"><h2 id="tableTitle">Request history</h2><span id="rowCount" class="caption"></span></div><div class="table-shelf"><table class="rows" id="table"></table></div><p id="empty" class="empty"></p></section>
+<section class="panel" id="paired" hidden><div class="panelhead"><h2>Paired deployment results</h2></div>
+<p>Ratios use IronMule GGUF divided by vLLM AWQ. Higher throughput and lower first-token latency are faster.</p>
+<div class="table-shelf"><table class="rows" id="pairedTable"></table></div><p class="empty" id="pairedEmpty"></p></section>
 <section class="panel"><div class="panelhead"><h2 id="detailTitle">Runtime</h2><span id="detailBadge" class="caption"></span></div><dl class="details" id="details"></dl></section>
 <p class="sr" role="status" id="announce"></p></main></div>
 <script>
@@ -121,7 +124,7 @@ const sharedWatch = document.documentElement.dataset.watch === "shared";
 const $ = (id) => document.getElementById(id),
   present = (n) => typeof n === "number" && Number.isFinite(n);
 const fmt = (n, d = 1) => (present(n) ? n.toLocaleString(undefined, { maximumFractionDigits: d }) : "—");
-const engineName = (e) => ({ ironmule: "IronMule", llama_cpp: "llama.cpp", vllm: "vLLM" })[e] || "—";
+const engineName = (e) => ({ ironmule: "IronMule", llama_cpp: "llama.cpp", vllm: "vLLM", ironmule_gguf: "IronMule GGUF", vllm_awq: "vLLM AWQ" })[e] || "—";
 const at = (t) => (present(t) ? new Date(t * 1000).toLocaleTimeString() : "—");
 const txt = (id, v) => {
   $(id).textContent = v;
@@ -153,12 +156,12 @@ function notice(value) {
   txt("message", value);
   $("message").hidden = !value;
 }
-function table(head, rows, empty) {
-  const t = $("table");
+function table(head, rows, empty, tableId = "table", emptyId = "empty") {
+  const t = $(tableId);
   t.replaceChildren();
   t.hidden = !rows.length;
-  $("empty").hidden = !!rows.length;
-  txt("empty", empty);
+  $(emptyId).hidden = !!rows.length;
+  txt(emptyId, empty);
   if (!rows.length) return;
   const h = t.createTHead().insertRow();
   head.forEach((v) => {
@@ -236,6 +239,8 @@ function chart(values) {
   g.fill();
 }
 const stateNames = {
+  incomplete: "Incomplete",
+  measured: "Measured",
   preparing: "Preparing",
   idle: "Idle",
   running: "Running",
@@ -261,6 +266,8 @@ function status(state, stale = false) {
       : {
           running: "good",
           complete: "good",
+          incomplete: "warn",
+          measured: "good",
           error: "bad",
           timeout: "bad",
           unavailable: "warn",
@@ -283,6 +290,8 @@ function draw() {
   $("benchTab").setAttribute("aria-current", isBench ? "page" : "false");
   $("chat").hidden = r.status === "detached";
   $("provider").hidden = true;
+  const deployment = isBench && b.kind === "deployment";
+  $("paired").hidden = !deployment;
   if (!isBench) {
     status(r.status);
     txt("title", "Inference");
@@ -356,8 +365,8 @@ function draw() {
     const preparing = !rows.length && b.status === "running" && (provider.phase || provider.event)
       && (!b.stage || b.stage === "preflight" || b.stage === "initializing");
     status(preparing ? "preparing" : b.status, stale);
-    txt("title", "Engine comparison");
-    txt("context", [b.model, b.device].filter(Boolean).join("  /  ") || "No benchmark model reported");
+    txt("title", deployment ? "Deployment comparison" : "Engine comparison");
+    txt("context", [b.model, deployment ? "IronMule GGUF Q4_K_M vs vLLM AWQ" : null, b.device].filter(Boolean).join("  /  ") || "No benchmark model reported");
     txt("rateLabel", "Latest measured throughput");
     txt("rate", fmt(last.tokens_per_second));
     txt(
@@ -399,6 +408,16 @@ function draw() {
           ? "The benchmark progress report could not be read."
           : "Workloads appear as each engine finishes measuring them."
     );
+    if (deployment) {
+      const ratio = value => present(value) ? fmt(value, 3) + "×" : "—";
+      table(["Repeat", "Concurrency", "tok/s ratio", "req/s ratio", "TTFT p95 ratio", "Holdout · GGUF / AWQ", "Equal output work"],
+        (b.pairs || []).map(pair => [
+          present(pair.repeat) ? fmt(pair.repeat + 1, 0) : "—", fmt(pair.concurrency, 0),
+          ratio(pair.tokens_per_second_ratio), ratio(pair.requests_per_second_ratio), ratio(pair.ttft_p95_ratio),
+          pair.gguf_correct + "/" + pair.quality_total + " · " + pair.awq_correct + "/" + pair.quality_total,
+          pair.equal_work === true ? "Yes" : pair.equal_work === false ? "No" : "—"
+        ]), "Paired ratios appear after both deployments complete matching requests and quality checks.", "pairedTable", "pairedEmpty");
+    }
     txt("detailTitle", "Run status");
     txt(
       "detailBadge",
@@ -408,12 +427,13 @@ function draw() {
       ["Stage", b.stage || provider.phase || provider.event],
       ["Current engine", engineName(b.engine)],
       ["Concurrency", fmt(b.concurrency, 0)],
-      ["Verdict", (b.verdict || "").replaceAll("_", " ") || null],
+      ...(deployment ? [["Comparison", "Different weight formats"]] : [["Verdict", (b.verdict || "").replaceAll("_", " ") || null]]),
       ["Error", (b.error_code || "").replaceAll("_", " ") || null],
       ["Repeat", present(b.repeat) ? fmt(b.repeat + 1, 0) : "—"],
       ...(b.failed_engine ? [["Last failing engine", [engineName(b.failed_engine), b.failed_stage].filter(Boolean).join(" · ")]] : []),
       ...(b.learning ? [["Local learning", b.learning.replaceAll("_", " ")]] : []),
-      ["Verdict details", (b.reasons || []).map((reason) => reason.replaceAll("_", " ")).join(" · ") || null]
+      ...(deployment ? (b.failed_stage ? [["Failed stage", b.failed_stage.replaceAll("_", " ")]] : [])
+        : [["Verdict details", (b.reasons || []).map((reason) => reason.replaceAll("_", " ")).join(" · ") || null]])
     ]);
   }
 }

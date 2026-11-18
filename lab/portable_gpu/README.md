@@ -130,3 +130,12 @@ python -m lab.portable_gpu.production_compare \
 The fetches are public and pinned. The GGUF is 19,762,149,024 bytes at commit `938a7432affaec9157f883a87164e2646ae17555`. The AWQ snapshot is 19,341,507,104 bytes across twelve files at `0499c3ac83fdef8810b907a23894ba91e95eddd8`. The runner verifies each weight shard and the tokenizer before timing. Allow space for both formats, server logs and compiler caches. The benchmark budget covers local verification, startups and traffic. Apply a separate outer wall-clock limit if provisioning and downloading count towards a rental budget. [GGUF release](https://huggingface.co/Qwen/Qwen3-32B-GGUF/tree/938a7432affaec9157f883a87164e2646ae17555) · [AWQ release](https://huggingface.co/Qwen/Qwen3-32B-AWQ/tree/0499c3ac83fdef8810b907a23894ba91e95eddd8)
 
 Each repeat alternates server order on the same GPU UUID. Both arms receive matching client request IDs, identical post-template input token IDs, the same greedy sampling settings and 18 short-answer holdouts at each concurrency. Use `--seed` to replay the workload. Each verified pair reports output tokens/s, requests/s, p95 time to first token and per-answer quality changes. `by_concurrency` gives medians of paired ratios in IronMule/vLLM order. When the output token counts or stop reasons differ, `output_tokens_and_stops_match` is false. Inspect requests/s and answer quality alongside token throughput in those cells. A failed identity check or server startup preserves completed rows and stops the run. The output path must be new.
+
+For the Qwen3-32B production comparison, set `WATCH_KIND=deployment` before
+starting the gateway. Direct the deployment runner's output to
+`/results/deployment-32b.json` and include this exact path in the gateway's
+authenticated result allowlist for the private collector. The public page reads
+that report separately from the same-GGUF reports. It shows the IronMule GGUF
+Q4_K_M and vLLM AWQ deployment measurements and the matched pairs verified by
+the runner. Pair ratios divide IronMule's measurement by vLLM's. Each pair also
+shows the holdout scores and whether output lengths and stop reasons match.
