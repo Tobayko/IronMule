@@ -259,6 +259,20 @@ is a two-layer MLP (20 inputs, 2 x 128 tanh units, four softmax heads, about 22,
 `ironmule/pilot_weights.npz` for an engine on the CPU and `ironmule/pilot_weights_gpu.npz` for one whose layers run on
 a GPU (PI3; open weights; the world they were trained in and the recipe are not published).
 
+On Linux CPU, `IRONMULE_PILOT_LEARN=1 ironmule serve --gguf MODEL.gguf --speculate off` enables an experimental
+local thread head. It observes single-request decode at 64–511 context tokens and less than half a core of foreign
+load. After 64 matching observations and three idle seconds it tests neighbouring thread counts on a free sequence,
+using generated filler prompts. A new local weight adds or subtracts one thread from the base Pilot decision for
+that context range. Qualification requires identical tokens, four paired timing gains above 3%, and a median gain
+larger than the observed A/A spread. Timings include both thread switches. The next demand interrupts a replay
+between calls. The server skips a probe when all sequences hold cached prefixes or its load changes.
+
+Further observations trigger requalification; a failed comparison removes the weight. Checkpoints in `pilot/`
+under the state root are scoped to model, base weights, hardware and engine settings. Each process requalifies a
+saved weight before serving it. Inspect `thread_learning` under the Pilot status for weights and the last measured
+ratios. These short replay results concern plain decode only; end-to-end gains under fresh traffic require a separate
+server benchmark. The shipped neural network and its four heads continue supplying the base decisions.
+
 *Scope (owner goal 2026-11-16, BACKLOG PI3).* The Pilot runs on the CPU; the model it steers is to run perfectly on
 the GPU. Since PI3 (2026-11-16) an engine on a GPU takes the GPU weights: trained from scratch in dream world v7, built
 from a T4's measured costs (LAB.md, PI3 probe), they keep the running cap at its maximum and a prompt budget of 128
@@ -404,3 +418,29 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 - **KB3 (2026-11-07): the Gemma plan's attention, rewritten bit for bit.** FA2 version 3 computes the same values in
   the same order with a warp per query head and coalesced key loads; on a T4 its outputs were bit-identical, and one
   request alone made 0.928x the native path, against 0.884x before. AG5-G runs again on it (run 5).
+
+## Training local language-model adapters
+
+The opt-in `ironmule adapt` command trains an MLX chat model during a dedicated local session. Give it a registered
+base model ID. Training and serving share the product's model lease. To try up to three successive candidates with
+24 gradient updates each, run:
+
+```sh
+ironmule adapt train --model "$BASE_MODEL" --steps 24 --cycles 3
+ironmule adapt status --model "$BASE_MODEL"
+```
+
+Each cycle creates fresh arithmetic and record-extraction examples from a random seed, fits rank-four LoRA weights
+in the last transformer block, and fuses them into a separate local snapshot. The candidate answers fresh QG1
+questions alongside the current and original models. Qualification requires a gain in correct answers over both
+incumbent runs, retention of every answer either incumbent run or the original model got right, and a median
+answer latency within 5% of the incumbent and original model. Candidates passing those checks undergo the paired
+perplexity check on the existing reference text. The first rejection ends the session. Measurements use greedy
+generation on the local MLX reference path. Accuracy on this small suite describes only these tasks.
+
+On success the command registers a content-versioned snapshot under the printed `serve_model` alias. An ordinary
+`ironmule serve --model <alias> --engine reference` loads it. A further training cycle starts with the selected
+weights. `ironmule adapt rollback --model "$BASE_MODEL"` reselects its predecessor for the next server launch.
+The base keeps its original ID, and a running server keeps the revision it already loaded. Every accepted version
+uses disk space for a full fused model and the accompanying small adapter. Training examples contain synthetic
+inputs only. With a custom product state directory pass the same `--state-dir` to each command.

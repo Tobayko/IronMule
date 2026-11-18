@@ -2186,3 +2186,73 @@ whose reading came out 1.07 / 0.96; 4 beside a half-busy one read as 0.18 / 0.29
 against 9.4 for one request at the same 4 threads, within the runs' spread), and the same choice in both passes.
 Beside two busy processes (16-token answers, one block) seed 21 chose 2 threads: 5.04 / 26.0 tok/s for 1 / 8 requests
 (the defaults: 0.19 / 1.46 in the run of the weights before).
+
+### 2026-11-18 — Local Pilot thread-weight replay on Linux CPU
+
+One functional run used SmolLM2-135M-Instruct Q4_K_M, three sequences of 512 tokens and plain greedy decode on a
+shared Linux runner. The real low-load criterion excluded this runner (2.55 foreign cores at observation). For
+this smoke only, its load sensor was held at zero to exercise the probes. Starting from an 80-token filler
+context, 1, 2 and 3 threads each returned the same eight generated tokens. A separate 12-token request also
+matched before and after replay. The search comparison retained its baseline and installed no weight. Default-on
+use, live throughput and first-token latency still need representative A/B measurements under natural traffic.
+This was a functional check. The pass and rollback paths also have deterministic unit fixtures.
+
+### 2026-11-18 — AG10: a real HTTP server through two changes in prompt length
+
+Linux runner (AMD EPYC 9V74, cgroup quota 4 CPUs), SmolLM2-135M-Instruct Q4_K_M, model SHA-256
+`2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d`, patched CPU llama.cpp 4227c9b.
+Both servers used the same default numeric settings and an initial width of 8. Pilot, shared KV and speculation
+were off in both to isolate AG10. One warmup, then 48 requests each for short chats, document prompts, short chats
+again (mean prompt tokens 50, 1,085, 52). The output limit was 16. Synthetic record numbers varied; the eight
+capital questions repeated. Each 4.5 s gap between waves allowed the real AG10 idle loop to run. The throughput
+below counts reported output tokens per active wave second; p95 is time from HTTP request to first content.
+
+| Concurrent | Phase | Agent / fixed tok/s | Agent / fixed p95 first token (s) |
+| ---: | --- | ---: | ---: |
+| 8 | short | 85.56 / 59.75 | 0.67 / 1.22 |
+| 8 | documents | 4.72 / 3.33 | 15.75 / 21.62 |
+| 8 | short again | 88.27 / 57.01 | 0.61 / 1.11 |
+| 16 | short | 97.53 / 80.50 | 1.17 / 1.45 |
+| 16 | documents | 4.20 / 4.80 | 40.47 / 28.72 |
+| 16 | short again | 45.85 / 84.68 | 3.21 / 1.33 |
+
+At 8, the agent kept w8 in all 13 decisions. Another CPU job overlapped the fixed arm; the ratios do not measure
+a benefit from learning. At 16, fixed ran first, then agent with the same width calibration. The quality gate
+revision changed between these two startups and both chose the same default options. The run had one sample
+per arm. The agent served w8 through the first document wave, switched to w64 after request 65, and served two
+document waves and the first two returning short waves there. Its trial requires 64 further completions
+(`2 * WINDOW`) before it can judge a reversal. It reverted after request 129, and served the last short wave at
+w8. With 16-way traffic, warm-up included, that is the earliest possible evaluation of this trial. While the
+dream predicted a gain, the measured document and returning phases had lower throughput and higher p95 latency.
+A candidate for a future experiment is an earlier live regression check at a load change. The run does not isolate
+the cost of width alone; the normal agent and fixed serving paths also differ in admission capacity.
+
+At 16, all 144 paired streamed texts matched by SHA-256 (143/144 at 8). Neither arm returned bare city names.
+Checking the timed output hashes against the correct full-sentence answers verified 138/144 in every arm.
+Four separate replay samples confirmed the format, e.g. "The capital of France is Paris." At 16, all six
+remaining document answers were replayed and matched their recorded hashes. They described Austria without
+naming Vienna before reaching the token limit. These repeated questions do not establish general model quality.
+
+To repeat after exporting the bindings and library path printed by `tools/build_ggml.py`, use fresh result directories:
+
+```sh
+python lab/ag10/run_pair.py "$GGUF" run-8 --requests 48 --width 8 --lines 96 --idle 4.5
+python lab/ag10/run_pair.py "$GGUF" run-16 --requests 48 --width 16 --lines 96 --idle 4.5 \
+  --first fixed --gate-cache run-8/fixed-state/ggml-gate
+```
+
+## 2026-11-18 Local MLX adapter qualification and T4 preparation
+
+On Linux CPU, SmolLM2-135M-Instruct was expanded to dense float32 from the MLX 8-bit snapshot at revision
+`0f0d9b8218915bc34d401e1a340b8c049d300d5e`. With one OpenBLAS thread, four rank-four LoRA updates on
+synthetic examples and fusion took 3.81 seconds. Frozen challenger, incumbent and repeated incumbent each
+scored 12/18 on the fresh QG1 v3 challenge (seed 4314256273567495177): 4/6 arithmetic, 2/6 extraction and
+6/6 facts. The candidate failed the required improvement, so no revision was promoted and the later perplexity
+test was skipped. Earlier strict-format grading gave 0/18 on a different challenge; inspection found correct
+answers expressed as complete sentences. The v3 grading rule was revised after that observation. Other CPU tests
+overlapped the v3 run, so its measured answer latencies are unsuitable for a speed claim.
+
+The experimental T4 attention kernel, its probe and the patched upstream translation unit compiled locally
+for SM75 with CUDA 12.6. Numerical execution on a physical T4, the complete step comparison and the HTTP
+comparison remain open. The [KG5 run package](../lab/kg5/README.md) caps a combined job at ten minutes of
+workload time and records intermediate results on rejection or timeout.
