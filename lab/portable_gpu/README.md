@@ -22,6 +22,7 @@ The pinned public GGUFs all use Q4_K_M. Run the smallest smoke first. Download s
 | --- | --- | ---: |
 | `smol` | SmolLM2-135M-Instruct | 105 MB |
 | `qwen-small` | Qwen2.5-0.5B-Instruct | 398 MB |
+| `qwen3-06b` | Qwen3-0.6B | 484 MB |
 | `tinyllama` | TinyLlama-1.1B-Chat-v1.0 | 669 MB |
 | `granite-2b` | IBM Granite 3.3 2B Instruct | 1.55 GB |
 | `phi35-mini` | Microsoft Phi-3.5-mini-instruct | 2.39 GB |
@@ -39,6 +40,12 @@ and values require 256 KiB per cached token per sequence. At `--long-prompt 1024
 1- and 4-slot contexts of 1280 tokens per slot, totaling 1.56 GiB of KV in addition to roughly 18.4–18.5 GiB
 of model weights. Allow further VRAM for compute buffers and the backend. A single 48 GB or larger GPU is a
 conservative starting point. Check the smoke report for full layer offload before interpreting timings.
+
+For a Qwen3 HTTP comparison with vLLM, download the matching Hugging Face tokenizer with
+`python -m ironmule_product.compare_tokenizer qwen3-32b --dir /models/tokenizers` or use `qwen3-06b` for the
+smaller model. Pass the printed subdirectory as the tokenizer path. Each snapshot pins the upstream revision
+and the SHA-256 of the configuration, vocabulary, merges, tokenizer and chat template configuration. Each
+tokenizer download transfers about 15.9 MB.
 
 ## Stock server comparison
 
