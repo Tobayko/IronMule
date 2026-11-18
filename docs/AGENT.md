@@ -267,6 +267,23 @@ loaded native libraries. For Radeon, build with `python tools/build_ggml.py --ro
 to select a card. The CUDA path has published Tesla T4 results. The Radeon path still needs a real serving run.
 [GPU results](../README.md#single-gpu-inference-against-vllm)
 
+### GPU width experiments
+
+The portable GPU comparison produces a JSON report for a single model and device. Import it with
+`ironmule learn --import-gpu-report REPORT.json --state-dir STATE`. The command requires completed GPU
+comparisons with confirmed layer offload. It keeps measured time ratios and quality outcomes in a compact local
+record under `STATE/gpu-width-experience`. It fits a ridge regression with two outputs (relative throughput and
+first-token latency) using the calibration split and reports the mean absolute log-ratio error on independent
+holdout measurements next to a prediction of equal cost. Widths with mismatched outputs receive no speed credit.
+
+`ironmule serve --gguf MODEL.gguf --agent on --state-dir STATE` recomputes the fit from distinct trials for this
+GGUF and backend, preferring matching machines and device models. Of the workload shapes actually measured, it
+chooses one where the model predicts higher throughput with a first token at least as early. A previously unseen
+width must fit the local memory budget. The server remeasures the chosen shape on this machine, compares locally
+generated tokens with the incumbent width, and gives eligible configurations' local step costs to AG10 for replay.
+Imported rates do not supply those costs or change the startup width. Gated GPU stream configurations retain their
+existing policy. Explicit `IRONMULE_GGML_SEQS` bypasses startup width search.
+
 ## The Pilot: a trained decision network for every step (PI1, 2026-11-14)
 
 AG10 chooses a configuration while idle; the Pilot (`ironmule/pilot.py`) decides on every step of the ggml engine. It

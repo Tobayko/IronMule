@@ -257,6 +257,17 @@ During the returning short phase it delivered 45.85 against 84.68 tokens/s for f
 See [the lab notes](LAB.md) for the scope and controls. The next question is whether an earlier live regression
 check can shorten a bad trial while retaining profitable switches on fresh traffic.
 
+**Learning a GPU width probe from other runs.** Compare one and four sequence slots on
+the same GGUF and device at 32 and 256 prompt tokens under one and four simultaneous
+requests. Fit the log throughput and first-token latency ratios on repeated calibration
+requests and score both on separate copy targets. Preserve every completed comparison,
+including token mismatches and incorrect copies. A suggestion can choose an additional
+workload to measure during local startup. Retain an extra width for the serving agent
+only after on-device measurement and output comparison with its incumbent. If the
+predictions fail to improve on an equal-cost baseline on fresh traffic, or the extra
+startup work buys no serving improvement, revisit the transfer features before
+expanding the search.
+
 ### FA1 — IronMule's flash-attention kernel for llama.cpp on AVX-512 (2026-11-13, fast mode; shipped as a patch)
 
 `native/ggml_patches/fa1`, built by `tools/build_ggml.py`. 2.69x a decode step at 16 x 1,024 tokens against

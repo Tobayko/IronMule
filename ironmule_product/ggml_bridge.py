@@ -75,6 +75,8 @@ class GgmlBridge:
             return
         binding = {"gguf": self._gguf_sha256, "machine": machine_key(), "engine": ENGINE_VERSION,
                    "gpu_layers": self._engine.gpu_layers}
+        if "experience_sha256" in plan:
+            binding["width_experience"] = plan["experience_sha256"]
         self._agent = GgmlAgent(plan.get("root"), binding, configs, incumbent)
         serving = configs[self._agent.current]  # resumed: what this binding learned last time
         wanted = {k: bool(v) for k, v in (serving.get("settings") or {}).items() if v}

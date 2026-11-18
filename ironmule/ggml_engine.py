@@ -1419,7 +1419,7 @@ def decide_width(rates: dict[int, float]) -> int:
 
 
 def measure_widths(gguf: str, settings: dict[str, bool], seq_ctx: int, widths: Sequence[int], steps: int = 16,
-                   repeats: int = 3, long_ctx: int = 0) -> dict[str, Any]:
+                   repeats: int = 3, long_ctx: int = 0, experience: dict | None = None) -> dict[str, Any]:
     """Tokens per second of every width at full load on this machine: per width one context on the same loaded model,
     each sequence a 64-token prompt, then `steps` decode steps of every sequence, median of `repeats`."""
     first = GgmlEngine(gguf, seqs=min(widths), seq_ctx=seq_ctx, speculate=False, **settings)
@@ -1468,6 +1468,38 @@ def measure_widths(gguf: str, settings: dict[str, bool], seq_ctx: int, widths: S
                         engine._decode([(longer[k % long_ctx], long_ctx + k, seq, True) for seq in range(width)])
                     out.setdefault("step_long_s", {})[str(width)] = (time.perf_counter() - started) / steps
                     out["long_ctx"], out["short_ctx"] = long_ctx, len(prompt)
+                if experience:
+                    # Before adding a new width to AG10, compare its real greedy outputs to the
+                    # local incumbent's at this workload. Different arrival limits can change matmul paths.
+                    engine._clear()
+                    length = experience["prompt_tokens"]
+                    jobs = []
+                    for index in range(experience["concurrency"]):
+                        ids = engine.tokenize(f"Check {index}. List the next numbers after {index + 2}. ")
+                        jobs.append(Job((ids * ((length + len(ids) - 1) // len(ids)))[:length], 6))
+                    engine.run(jobs)
+                    outputs = [(job.reason, job.tokens) for job in jobs]
+                    if all(reason in ("length", "eos") and tokens for reason, tokens in outputs):
+                        out.setdefault("output_digests", {})[str(width)] = hashlib.sha256(
+                            json.dumps(outputs).encode()).hexdigest()
+                if experience and width in experience["widths"]:
+                    # Imported predictions decide which additional point to measure. Only the local
+                    # decode time enters the agent. Benchmark throughput is never a per-step cost.
+                    length = experience["prompt_tokens"]
+                    rows_now = min(experience["concurrency"], width)
+                    context = (prompt * ((length + len(prompt) - 1) // len(prompt)))[:length]
+                    prices = []
+                    for _ in range(repeats):
+                        engine._clear()
+                        for seq in range(rows_now):
+                            engine._decode([(t, j, seq, j == length - 1) for j, t in enumerate(context)])
+                        began = time.perf_counter()
+                        for k in range(steps):
+                            engine._decode([(prompt[k % len(prompt)], length + k, s, True) for s in range(rows_now)])
+                        prices.append((time.perf_counter() - began) / steps)
+                    out.setdefault("workload_steps", {})[str(width)] = {
+                        "rows": rows_now, "kv": rows_now * (length + (steps - 1) // 2),
+                        "seconds": statistics.median(prices)}
             finally:
                 engine.close_context()
     finally:
@@ -1481,7 +1513,7 @@ import json, sys
 from ironmule.ggml_engine import measure_widths
 data = json.loads(sys.stdin.read())
 print(json.dumps(measure_widths(sys.argv[1], data["settings"], data["seq_ctx"], data["widths"],
-                                long_ctx=data.get("long_ctx", 0))))
+                                long_ctx=data.get("long_ctx", 0), experience=data.get("experience"))))
 """
 
 CELL_CHILD = r"""
@@ -1496,7 +1528,7 @@ engine.close()
 
 def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_ctx: int | None = None,
                      cache: Path | None = None, root: Path | None = None, device: str | None = None,
-                     extra_bytes: int = 0) -> dict[str, Any]:
+                     extra_bytes: int = 0, experience_root: Path | None = None) -> dict[str, Any]:
     """SEQ1: how many sequences the engine serves, chosen on this machine. It sees the memory the KV cache may take at
     the request length it promises (`seq_ctx`), measures the widths that fit (`measure_widths`), and keeps doubling
     while a doubling buys `WIDTH_GAIN` (`decide_width`). Remembered per GGUF, settings, request length, engine and
@@ -1516,11 +1548,18 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     # Under generated matmuls even the default attention setting can change answers. AG10 may then
     # vary width only within the settings actually chosen by the gate.
     default_alternative = not os.environ.get("IRONMULE_KG_LIB")
-    key = hashlib.sha256(json.dumps([file_sha256(gguf), settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS,
-                                     default_alternative,
-                                     int(extra_bytes) >> 28,
-                                     WIDTH_GAIN, machine_key(), device, round(total / 2**30)], sort_keys=True).encode()
-                         ).hexdigest()[:24]
+    model_digest = file_sha256(gguf)
+    machine = machine_key()
+    experience = None
+    if experience_root is not None and on_gpu:
+        from .gpu_experience import suggest
+
+        experience = suggest(experience_root, model_digest, ggml_devices(), machine, seq_ctx)
+    key_parts = [model_digest, settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS, default_alternative,
+                 int(extra_bytes) >> 28, WIDTH_GAIN, machine, device, round(total / 2**30)]
+    if experience:
+        key_parts.append(experience)
+    key = hashlib.sha256(json.dumps(key_parts, sort_keys=True).encode()).hexdigest()[:24]
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"width-{key}.json"
     model_bytes = os.path.getsize(gguf) + int(extra_bytes)
@@ -1557,15 +1596,45 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         return {**record, "sequences": SEQS, "reason": "the KV size could not be read; 8 sequences as before"}
     widths = fitting_widths(cell["cell_bytes"], seq_ctx, model_bytes, available, total)
     record.update(cell_bytes=cell["cell_bytes"], fitting=widths)
-    if len(widths) == 1:
+    trial_widths = widths
+    if experience:
+        # Every width is bounded by the local KV budget. The default single-width
+        # emergency fallback has no headroom for exploratory allocations.
+        budget = available - model_bytes - max(int(1.5 * 2**30), total // 10)
+        fitting = [w for w in experience["widths"] if w <= max(widths) and w * seq_ctx * cell["cell_bytes"] <= budget]
+        if len(fitting) == 2:
+            trial_widths = sorted(set(widths) | set(fitting))
+        else:
+            experience = None
+    if len(trial_widths) == 1:
         record.update(sequences=widths[0], reason="only this width fits the memory")
     else:
-        measured = child(WIDTH_CHILD, {"settings": settings, "seq_ctx": seq_ctx, "widths": widths,
-                                       "long_ctx": AGENT_LONG_CTX})
+        payload = {"settings": settings, "seq_ctx": seq_ctx, "widths": trial_widths, "long_ctx": AGENT_LONG_CTX}
+        if experience:
+            payload["experience"] = experience
+        measured = child(WIDTH_CHILD, payload)
+        if measured is None and experience:
+            # An optional workload probe must not prevent the usual width qualification.
+            experience = None
+            payload = {"settings": settings, "seq_ctx": seq_ctx, "widths": widths, "long_ctx": AGENT_LONG_CTX}
+            measured = child(WIDTH_CHILD, payload)
         if measured is None:
             return {**record, "sequences": SEQS, "reason": "the width measurement failed; 8 sequences as before"}
-        rates = {int(w): r for w, r in measured["rates"].items()}
-        record.update(sequences=decide_width(rates), rates=measured["rates"], step_s=measured["step_s"],
+        rates = {int(w): r for w, r in measured["rates"].items() if int(w) in widths}
+        incumbent = decide_width(rates)
+        if experience:
+            digests = measured.get("output_digests", {})
+            reference = digests.get(str(incumbent))
+            checked = {int(w) for w, digest in digests.items() if reference and digest == reference}
+            # Existing settings/widths keep their own gate and baseline; only matched new
+            # widths may join the agent's choices. Unmatched anchors never train its model.
+            for w in set(trial_widths) - checked:
+                measured.get("workload_steps", {}).pop(str(w), None)
+                if w not in widths:
+                    measured["step_s"].pop(str(w), None)
+                    measured["rates"].pop(str(w), None)
+            record["experience_probe"] = {**experience, "locally_matched_widths": sorted(checked)}
+        record.update(sequences=incumbent, rates=measured["rates"], step_s=measured["step_s"],
                       step_one_s=measured.get("step_one_s", {}), settings=settings,
                       reason="the widest width whose doubling still bought the gain rule")
         # AG10: the agent's alternatives -- the same widths under llama.cpp's default setting, which passes the gate

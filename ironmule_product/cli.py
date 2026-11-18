@@ -252,7 +252,10 @@ def _ggml_agent_plan(width: dict[str, Any], root: Any, flash_only: bool = False)
                       if c["seqs"] == int(width["sequences"]) and c["settings"] == served), None)
     if len(configs) < 2 or incumbent is None:
         return None
-    return {"configs": configs, "incumbent": incumbent, "root": str(root)}
+    plan = {"configs": configs, "incumbent": incumbent, "root": str(root)}
+    if width.get("experience_probe"):
+        plan["experience_sha256"] = width["experience_probe"]["experience_sha256"]
+    return plan
 
 
 def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
@@ -316,7 +319,8 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
         # DM1: the draft model's weights (packed once more by the AMX kernels) and its few sequences
         draft_bytes = (int(1.5 * os.path.getsize(args.draft_gguf)) + 2**30) if args.draft_gguf else 0
         width = choose_sequences(args.gguf, checked.get("settings"), cache=Path(store.root) / "ggml-gate",
-                                 extra_bytes=draft_bytes)
+                                 extra_bytes=draft_bytes, **({"experience_root": Path(store.root)}
+                                     if layers and args.agent == "on" else {}))
         os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
         checked = {**checked, "sequences": width}
         if checked.get("streams_serving") and int(width["sequences"]) < STREAMS_MIN:

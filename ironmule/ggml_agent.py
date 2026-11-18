@@ -552,6 +552,8 @@ def anchors_of(config: dict[str, Any]) -> list[tuple[int, int, int, float]]:
     """(rows, prompt tokens, attended KV tokens, seconds) the startup measurement observed for a configuration."""
     width, short, long = int(config["seqs"]), int(config.get("short_ctx", 64)), int(config.get("long_ctx", 0))
     points = [(1, 0, short, float(config["step_one"])), (width, 0, width * short, float(config["step_full"]))]
+    if (point := config.get("workload_step")) is not None:
+        points.append((point["rows"], 0, point["kv"], point["seconds"]))
     if config.get("prefill_per_1k"):  # a prompt of 1,000 tokens alone: without it a configuration that never served
         # would dream its prefill free (seen live on 2026-11-13: it switched to the narrower width for that)
         points.append((0, 1000, 0, float(config["prefill_per_1k"])))
@@ -582,6 +584,8 @@ def configs_from_measurement(measured: Iterable[dict[str, Any]], seq_ctx: int) -
                          "step_one": float(one), "kv_per_1k": kv, "prefill_per_1k": float(prefill),
                          "short_ctx": int(row.get("short_ctx", 64)), "long_ctx": int(row.get("long_ctx", 0)),
                          "step_long": None if long is None else float(long)}
+            if point := row.get("workload_steps", {}).get(width):
+                out[name]["workload_step"] = point
     return out
 
 
