@@ -152,6 +152,8 @@ def evaluate(report):
     arms = {(a["engine"], a["repeat"]): a for a in report.get("arms", [])}
     engines = protocol["engines"]
     checks, reasons = [], set()
+    if report.get("failures"):
+        reasons.add("failed_arm")
     if protocol["repeats"] < 3 or len(protocol["concurrency"]) < 2:
         reasons.add("insufficient_repeats_or_loads")
     for rep in range(protocol["repeats"]):
@@ -196,7 +198,7 @@ def evaluate(report):
                 checks.append({"opponent": engine, "repeat": rep, "concurrency": width, "throughput_ratio": ratio,
                                "ttft_p95_ratio": latency, "lost_answers": lost, "reasons": reasons_here})
                 reasons.update(reasons_here)
-    incomplete = reasons.intersection({"missing_arm", "insufficient_repeats_or_loads", "served_prompt_lengths_differ",
+    incomplete = reasons.intersection({"failed_arm", "missing_arm", "insufficient_repeats_or_loads", "served_prompt_lengths_differ",
                                        "prompt_ids_unmatched", "stock_provenance_unverified", "unverified_device_placement",
                                        "generated_lengths_or_stops_differ"})
     status = "incomplete" if incomplete else ("does_not_qualify" if reasons else "qualifies")
