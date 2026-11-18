@@ -249,6 +249,9 @@ class ProductService:
                     result["ggml"]["experiment_binding"] = dict(comparison)
                 if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
                     result["ggml"]["agent"] = dict(agent)
+                prefill = getattr(self.backend, "ggml_prefill_status", None)
+                if prefill is not None:
+                    result["ggml"]["prefill_batch"] = dict(prefill)
             if getattr(self.backend, "speculate", False) is True:  # SP2: asked for; what serves and what it learned
                 engine = (getattr(self.backend, "ready_payload", None) or {}).get("engine") or {}
                 dense = engine.get("dense_plan") or engine.get("ggml") or {}  # GG1: the ggml engine says it there
@@ -773,16 +776,22 @@ class ProductService:
                 self._learning_fault()
         elapsed = (session.end_ns - session.submitted_ns) / 1e9
         first_seconds = (session.first_ns - session.submitted_ns) / 1e9 if session.first_ns is not None else None
+        dispatch = session.dispatched_ns
+        queue_seconds = (dispatch - session.submitted_ns) / 1e9 if dispatch is not None else None
         self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
                   error=session.error, tokens=session.tokens,
-                  queue_s=None if session.dispatched_ns is None else (session.dispatched_ns - session.submitted_ns) / 1e9,
-                  first_s=first_seconds, total_s=elapsed)
+                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed)
         with self._lock:
             if session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
                 self._live_samples.append({
                     "at": time.time(), "completion_tokens": session.tokens,
                     "tokens_per_second": session.tokens / elapsed,
                     "ttft_ms": first_seconds * 1000 if first_seconds is not None else None,
+                    "prompt_tokens": session.prompt_tokens,
+                    "queue_ms": queue_seconds * 1000 if queue_seconds is not None else None,
+                    "dispatch_to_first_ms": (session.first_ns - dispatch) / 1e6
+                    if dispatch is not None and session.first_ns is not None else None,
+                    "first_to_end_ms": (session.end_ns - session.first_ns) / 1e6 if session.first_ns is not None else None,
                 })
             self._sessions.pop(session.request.request_id, None)
             self._active.discard(session.request.request_id)

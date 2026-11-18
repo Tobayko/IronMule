@@ -198,6 +198,7 @@ class GgmlBridge:
         return {"ggml_steps": summary["steps"], **({"speculation": summary["speculation"]}
                                                    if isinstance(summary["speculation"], dict) else {}),
                 **({"experiment_binding": self._experiment_binding} if getattr(self, "_experiment_binding", None) else {}),
+                **({"prefill_batch": summary["prefill_batch"]} if "prefill_batch" in summary else {}),
                 **({"draft_model": summary["draft_model"]} if "draft_model" in summary else {}),
                 **({"pilot": summary["pilot"]} if "pilot" in summary else {}),
                 **({"ggml_agent": self._agent.status()} if self._agent is not None else {})}

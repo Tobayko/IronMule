@@ -240,7 +240,8 @@ def runtime(service):
     shards = getattr(service, "shards", [service])
     history = sorted((s for shard in shards if hasattr(shard, "live_samples") for s in shard.live_samples()),
                      key=lambda sample: sample["at"])[-32:]
-    samples = [{k: number(s.get(k)) for k in ("at", "completion_tokens", "tokens_per_second", "ttft_ms")}
+    samples = [{k: number(s.get(k)) for k in ("at", "completion_tokens", "tokens_per_second", "ttft_ms",
+                                              "prompt_tokens", "queue_ms", "dispatch_to_first_ms", "first_to_end_ms")}
                for s in history]
     group_agent = health.get("agent") or {}
     schedule = health.get("schedule") or {}

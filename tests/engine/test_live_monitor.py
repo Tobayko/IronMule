@@ -102,12 +102,16 @@ def test_scheduler_retirement_records_only_successful_delivery():
     for outcome, count in [("ok", 3)] * 33 + [("cancelled", 2), ("failed", 1), ("ok", 0)]:
         item = _Session(SimpleNamespace(request_id="private"), None)
         item.submitted_ns, item.first_ns, item.end_ns = 0, 250_000_000, 2_000_000_000
+        item.dispatched_ns, item.prompt_tokens = 100_000_000, 36
         item.outcome, item.tokens = outcome, count
         service._pending.put(item)
         service._retire(service._pending.get_nowait())
     samples = service.live_samples()
     assert len(samples) == 32 and service._pending.unfinished_tasks == 0
-    assert all(set(s) == {"at", "completion_tokens", "tokens_per_second", "ttft_ms"} for s in samples)
+    assert all(set(s) == {"at", "completion_tokens", "tokens_per_second", "ttft_ms", "prompt_tokens",
+                          "queue_ms", "dispatch_to_first_ms", "first_to_end_ms"} for s in samples)
+    assert all((s["prompt_tokens"], s["queue_ms"], s["dispatch_to_first_ms"], s["first_to_end_ms"]) ==
+               (36, 100, 150, 1750) for s in samples)
     assert all(s["tokens_per_second"] == 1.5 and s["ttft_ms"] == 250 and s["completion_tokens"] == 3 for s in samples)
     samples[-1]["ttft_ms"] = 0
     assert service.live_samples()[-1]["ttft_ms"] == 250
