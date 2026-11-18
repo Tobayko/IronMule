@@ -2707,3 +2707,24 @@ strict output contract. One first turn produced the requested command followed
 by extra prose, and its second turn repeated the command rather than the route.
 The local run establishes client behavior and carries no GPU comparison.
 [Synthetic responses, stops, class timings and prompt digest](../evidence/runtime/heldout-mixed-smollm2-cpu.json) · [Paired and local invocation](../lab/portable_gpu/README.md)
+
+### Qwen3-32B HTTP latency under load on the L40S
+
+One new round served the same tokenized performance and factual requests as the
+earlier native vLLM AWQ deployment test. All verified IronMule cells used Q4_K_M
+and 32 separate KV streams. The vLLM values below come from the corresponding
+seed and round on an earlier L40S allocation. Each timed response generated 32
+tokens. Each load level also passed all 18 factual checks.
+
+| Concurrent clients | IronMule output tok/s | Earlier vLLM AWQ tok/s | IronMule / vLLM p95 first visible text (ms) | IronMule p95 queue / dispatch to first token (ms) |
+|---:|---:|---:|---:|---:|
+| 1 | 37.74 | 32.91 | 240 / 203 | 1 / 235 |
+| 8 | 113.52 | 143.29 | 1,148 / 905 | 10 / 1,128 |
+| 32 | 161.13 | 224.34 | 4,406 / 3,506 | 41 / 4,320 |
+
+The queue and worker percentiles describe separate distributions. At 32 clients,
+the worker's dispatch-to-first interval dominates the delay. The grouped-prompt
+deployment selected a shared KV pool during startup and produced zero verified
+grouped measurements. The shared-pool trial ended with a runtime error before
+it completed prompt verification. Neither arm qualified for selection.
+[Verified IronMule cells](../evidence/runtime/qwen3-32b-l40s-prefill-selection.json) · [Archived matched requests and vLLM results](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
