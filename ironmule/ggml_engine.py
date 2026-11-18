@@ -883,7 +883,13 @@ class GgmlEngine:
         for start in range(start, len(ids), self.seq_ctx):
             chunk = ids[start:start + self.seq_ctx]
             last = start + len(chunk) == len(ids)
-            picks = self._decode([(t, start + j, seq, last and j == len(chunk) - 1) for j, t in enumerate(chunk)])
+            rows = [(t, start + j, seq, last and j == len(chunk) - 1) for j, t in enumerate(chunk)]
+            observer = self.observer
+            if observer is not None:
+                started = time.perf_counter()
+            picks = self._decode(rows)
+            if observer is not None:
+                observer(0, len(chunk), start, time.perf_counter() - started)
             first = picks[-1] if picks else first
         return first
 
@@ -1142,6 +1148,7 @@ class GgmlEngine:
                     else:  # too long to share this call: its own prefill first
                         active[seq] = job
                         take(seq, job, self._prefill(job.ids, seq, keep))
+                prompt_rows = len(rows) - decode_rows
                 fillers: list[tuple[int, int]] = []
                 if streams and order and not batched and max(order) - min(order) + 1 > len(order):
                     # KG3: llama.cpp splits a call over KV streams into a pass per run of consecutive sequence ids; a
@@ -1185,7 +1192,8 @@ class GgmlEngine:
                 if self.policy is not None and decode_rows and not batched:  # a prompt in the call is not a step's price
                     self.policy.observe_step(decode_rows, seconds, any(ks))
                 if self.observer is not None and rows:  # AG10: the agent's world model learns every step's price
-                    self.observer(decode_rows, len(rows) - decode_rows,
+                    # Gap fillers execute in the decode batch and carry no request prompt.
+                    self.observer(len(rows) - prompt_rows, prompt_rows,
                                   sum(len(j.ids) + len(j.tokens) for j in active.values()), seconds)
                 self.steps += 1
                 at = produced = 0

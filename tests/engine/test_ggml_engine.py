@@ -820,6 +820,38 @@ def _streams_engine():
     return engine, fed, removed
 
 
+def test_step_observer_accounts_for_separate_prefills_and_decode_gap_fillers():
+    from ironmule.ggml_engine import Job
+
+    engine, calls, _ = _streams_engine()
+    steps = []
+    engine.observer = lambda *step: steps.append(step)
+    # Prompt IDs are >= 10. Generated tokens are 7 and gap fillers use BOS (1).
+    jobs = [Job([11, 12], 6), Job([13, 14], 2), Job([15, 16], 6)]
+    engine.run(jobs)
+
+    assert len(steps) == len(calls)
+    assert any(all(t >= 10 for t, _, _ in call) for call in calls)
+    assert any(any(t == 1 for t, _, _ in call) for call in calls)
+    for (decode, prompt, _, seconds), call in zip(steps, calls, strict=True):
+        assert prompt == sum(t >= 10 for t, _, _ in call)
+        assert decode == len(call) - prompt
+        assert seconds >= 0
+
+
+def test_separate_prefill_observes_only_new_tokens_and_the_prior_context(monkeypatch):
+    from ironmule import ggml_engine
+
+    engine, _, _ = _stub_engine()
+    engine.seq_ctx = 4
+    steps = []
+    engine.observer = lambda *step: steps.append(step)
+    ticks = iter((1.0, 1.5, 2.0, 2.25))
+    monkeypatch.setattr(ggml_engine.time, "perf_counter", ticks.__next__)
+    assert engine._prefill(list(range(10)), seq=0, start=3) == 7
+    assert steps == [(0, 4, 3, .5), (0, 3, 7, .25)]
+
+
 def test_kg3_a_free_id_between_running_streams_gets_placeholder_rows_that_are_removed_again():
     from ironmule.ggml_engine import Job
 
