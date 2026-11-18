@@ -101,7 +101,8 @@ def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
 
     class Backend:
         device, ready, engine_configuration, execution_variant = "cpu", True, "ggml", "current_engine"
-        ggml_gate = {"ratio": 1.003, "interval": [1.001, 1.0048], "passes": True, "seconds": 70}
+        ggml_gate = {"ratio": 1.003, "interval": [1.001, 1.0048], "passes": True, "seconds": 70,
+                     "kernel_generation": {"status": "skipped", "reason": "cuda_backend_has_no_kg1_hook"}}
         speculate, speculation_status = True, {"policy_version": 3, "drafted": 4}
         ready_payload = {"engine": {"ggml": {"speculation": "context"}}}
 
@@ -116,6 +117,7 @@ def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
     finally:
         service.close()
     assert health["execution"] == "numeric@ggml" and health["ggml"]["gate"]["passes"] is True
+    assert health["ggml"]["kernel_generation"] == Backend.ggml_gate["kernel_generation"]
     assert health["speculation"]["serving"] == "context" and health["speculation"]["learned"]["policy_version"] == 3
 
 

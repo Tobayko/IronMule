@@ -219,6 +219,9 @@ class ProductService:
                 fallback = self.backend.ggml_gate.get("kernel_fallback")
                 if fallback:
                     result["ggml"]["kernel_fallback"] = fallback
+                generation = self.backend.ggml_gate.get("kernel_generation")
+                if generation:
+                    result["ggml"]["kernel_generation"] = generation
                 width = self.backend.ggml_gate.get("sequences")
                 if isinstance(width, dict):  # SEQ1: the width the engine chose on this machine, and why
                     result["ggml"]["sequences"] = {k: width.get(k) for k in ("sequences", "fitting", "rates", "reason")}

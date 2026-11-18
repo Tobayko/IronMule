@@ -212,6 +212,48 @@ def test_failed_generated_kernel_requalifies_real_stock_mode(monkeypatch, tmp_pa
     assert 'cuda_kernel_error' in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(("hook", "configured", "enabled", "expected"), [
+    (False, "", "1", ""), (False, "/explicit.so", "1", ""),
+    (True, "", "1", "/generated.so"), (None, "", "1", "/generated.so"),
+    (True, "/explicit.so", "1", "/explicit.so"), (None, "", "0", ""),
+])
+def test_qualifies_only_kernels_the_cuda_backend_can_consume(monkeypatch, tmp_path, hook, configured, enabled, expected):
+    from types import SimpleNamespace
+
+    from ironmule import ggml_binary, kernel_gen
+    from ironmule_product import cli
+
+    monkeypatch.setattr(engine, "available", lambda: None)
+    monkeypatch.setattr(engine, "gpu_layers", lambda: 999)
+    monkeypatch.setattr(engine, "cuda_kernel_device", lambda: True)
+    monkeypatch.setattr(ggml_binary, "cuda_kg1_hook", lambda: hook if enabled == "1" else pytest.fail("disabled"))
+    generated, qualified = [], []
+
+    def generate(*args, **kwargs):
+        generated.append(True)
+        return "/generated.so"
+
+    def qualify(*args):
+        qualified.append(os.environ.get("IRONMULE_KG_LIB") or "")
+        return {"passes": True}
+
+    monkeypatch.setattr(kernel_gen, "ensure", generate)
+    monkeypatch.setattr(cli, "_qualify_ggml_kernels", qualify)
+    monkeypatch.setenv("IRONMULE_GGML_SEQS", "1")
+    monkeypatch.setenv("IRONMULE_KG", enabled)
+    monkeypatch.setenv("IRONMULE_KG_LIB", configured)
+    args = SimpleNamespace(gguf=tmp_path / "model.gguf", draft_gguf=None, speculate="off", agent="on", model=None)
+    spec = SimpleNamespace(snapshot_path=args.gguf, revision="pinned")
+    options = cli._local_ggml_options(args, spec, SimpleNamespace(root=tmp_path))
+    assert qualified == [expected] and options["ggml_kernel_library"] == expected
+    assert bool(generated) == (expected == "/generated.so")
+    assert os.environ["IRONMULE_KG_LIB"] == configured
+    if hook is False:
+        assert options["ggml_gate"]["kernel_generation"]["reason"] == "cuda_backend_has_no_kg1_hook"
+    elif enabled == "0":
+        assert options["ggml_gate"]["kernel_generation"]["reason"] == "IRONMULE_KG=0"
+
+
 def test_stock_or_independent_gate_failure_never_admits_or_retries(monkeypatch, tmp_path):
     from ironmule import ggml_engine, ggml_gate_diagnostics
     from ironmule_product import cli

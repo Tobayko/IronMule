@@ -55,3 +55,34 @@ def test_hash_the_mapped_backend_and_reject_a_replaced_loader_path(tmp_path):
     os.replace(replacement, library)
     with pytest.raises(OSError, match="replaced"):
         binary.loaded_objects(handle)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux") or not shutil.which("cc"), reason="requires ELF and cc")
+@pytest.mark.parametrize("patched", [False, True])
+def test_kg1_abi_in_a_stripped_registered_cuda_backend(tmp_path, patched):
+    source = tmp_path / "backend.c"
+    source.write_text("""
+        #include <stddef.h>
+        #include <stdlib.h>
+        #include <dlfcn.h>
+        static int reg;
+        void llama_backend_init(void) {}
+        void ggml_init(void) {}
+        size_t ggml_backend_reg_count(void) {return 1;}
+        void *ggml_backend_reg_get(size_t i) {return &reg;}
+        const char *ggml_backend_reg_name(void *p) {return "CUDA";}
+        #ifdef PATCHED
+        void *load_kernel(void) {
+            return dlsym(dlopen(getenv("IRONMULE_KG_LIB"), RTLD_NOW), "ironmule_kg_mul_mat");
+        }
+        #endif
+    """)
+    library = tmp_path / "cuda.so"
+    flags = ["-DPATCHED"] if patched else []
+    subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-s", *flags, str(source), "-o", str(library), "-ldl"], check=True)
+    handle = ctypes.CDLL(str(library))
+    assert binary.cuda_kg1_hook(handle) is patched
+    other = tmp_path / "other.so"
+    other.write_bytes(library.read_bytes())
+    os.replace(other, library)
+    assert binary.cuda_kg1_hook(handle) is None

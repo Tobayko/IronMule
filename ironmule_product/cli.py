@@ -318,12 +318,27 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
     layers = ggml_gpu_layers()
     if pinned and layers == 0:
         raise InvalidRequest("--gpus needs GPU offload; IRONMULE_GGML_GPU_LAYERS=0 selects the CPU")
-    if pinned and not cuda_kernel_device():
+    cuda = bool(layers and cuda_kernel_device())
+    if pinned and not cuda:
         raise InvalidRequest("--gpus needs one visible GGML CUDA device per worker; select ROCm GPUs with ROCR_VISIBLE_DEVICES")
-    if os.environ.get("IRONMULE_KG_LIB") and layers and not cuda_kernel_device():
+    if os.environ.get("IRONMULE_KG_LIB") and layers and not cuda:
         raise InvalidRequest("a generated CUDA kernel library needs exactly one GGML CUDA device")
-    if (layers and cuda_kernel_device() and not os.environ.get("IRONMULE_KG_LIB")
-            and os.environ.get("IRONMULE_KG", "1") != "0"):
+    generation = None
+    requested = bool(os.environ.get("IRONMULE_KG_LIB")) or os.environ.get("IRONMULE_KG", "1") != "0"
+    if cuda and requested:
+        from ironmule.ggml_binary import cuda_kg1_hook
+
+        hook = cuda_kg1_hook()
+        if hook is False:
+            # The mapped CUDA backend cannot consume this plugin. Qualify its real kernels directly,
+            # including when the parent environment supplied a plugin for a different CUDA build.
+            os.environ.pop("IRONMULE_KG_LIB", None)
+            generation = {"status": "skipped", "reason": "cuda_backend_has_no_kg1_hook"}
+    elif cuda:
+        generation = {"status": "disabled", "reason": "IRONMULE_KG=0"}
+    if generation is not None:
+        print(json.dumps({"ggml_kernel_generation": generation}), flush=True)
+    elif cuda and not os.environ.get("IRONMULE_KG_LIB"):
         # KG1 (ST2, 2026-11-15): kernels generated and tuned for this GPU and model, once, then cached;
         # the gate below runs with them, and the engine keeps them per token count where its step is
         # faster. On a T4 one request 1.27x the engine without them (docs/LAB.md, KG2). IRONMULE_KG=0: off
@@ -339,6 +354,8 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
             print(json.dumps({"ggml_kernels": None, "reason": f"{type(exc).__name__}: {exc}"[:300]}),
                   flush=True)
     checked = _qualify_ggml_kernels(spec.snapshot_path, args.gguf, Path(store.root) / "ggml-gate")
+    if generation is not None:
+        checked = {**checked, "kernel_generation": generation}
     pooled = checked
     checked = _ggml_streams(checked, bool(ggml_gpu_layers()))
     if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine

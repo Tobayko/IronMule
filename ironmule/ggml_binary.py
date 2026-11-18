@@ -62,13 +62,14 @@ def _mappings():
     return result
 
 
-def loaded_objects(lib):
+def _mapped_images(lib, *, only=None):
     from ironmule_devices import _function
 
     dladdr = _function(C.CDLL(None), "dladdr", C.c_int, C.c_void_p, C.POINTER(_Object))
     maps = _mappings()
-    result = {}
     for tag, pointer in _objects(lib):
+        if only is not None and tag != only:
+            continue
         obj = _Object()
         if not dladdr(pointer, C.byref(obj)) or not obj.path:
             raise OSError(f"unresolved native image for {tag}")
@@ -76,8 +77,48 @@ def loaded_objects(lib):
         st = path.stat()
         if maps is not None and maps.get(obj.base) != (st.st_dev, st.st_ino):
             raise OSError(f"native image for {tag} replaced after loading")
-        result[tag] = _digest(str(path), _stat_id(st))
-    return result
+        yield tag, str(path), _stat_id(st)
+
+
+def loaded_objects(lib):
+    return {tag: _digest(path, stat_id) for tag, path, stat_id in _mapped_images(lib)}
+
+
+@lru_cache(maxsize=16)
+def _kg1_literals(path, stat_id):
+    # Both NUL-terminated strings are part of the historical KG1 getenv/dlsym ABI, even in stripped
+    # builds. Scan the mapped CUDA image, which can be a plugin or a monolithic build of llama.cpp.
+    required = {b"IRONMULE_KG_LIB\0", b"ironmule_kg_mul_mat\0"}
+    overlap = max(map(len, required)) - 1
+    tail = b""
+    with open(path, "rb") as handle:
+        if _stat_id(os.fstat(handle.fileno())) != stat_id:
+            raise OSError("CUDA backend changed before KG1 inspection")
+        while required and (block := handle.read(2**20)):
+            data = tail + block
+            required = {literal for literal in required if literal not in data}
+            tail = data[-overlap:]
+        if _stat_id(os.fstat(handle.fileno())) != stat_id:
+            raise OSError("CUDA backend changed during KG1 inspection")
+    return not required
+
+
+def cuda_kg1_hook(lib=None) -> bool | None:
+    """Detect the KG1 plugin ABI on the loaded GGML CUDA image. An unresolved image is inconclusive."""
+    from ironmule_devices import bindings
+
+    try:
+        if lib is None:
+            binding = bindings()
+            binding.llama_backend_init()
+            lib = binding.llama_cpp._lib
+        images = list(_mapped_images(lib, only="backend/CUDA"))
+        if len(images) == 1:
+            _, path, stat_id = images[0]
+            return _kg1_literals(path, stat_id)
+    except (ImportError, OSError, RuntimeError, ValueError, TypeError, AttributeError):
+        pass
+    return None
 
 
 # Missing bindings cannot serve in-process. Give simulations/stubs a process-local scope.
