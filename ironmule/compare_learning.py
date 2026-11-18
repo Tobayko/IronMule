@@ -63,7 +63,7 @@ def select(report):
     runs = {(r["engine"], r["repeat"], r["concurrency"]): r for r in report.get("runs", [])}
     gaps = {}
     for (name, repeat, width), rival in runs.items():
-        if name not in ("llama_cpp", "vllm") or not 2 <= width <= 16:
+        if name not in ("llama_cpp", "vllm") or not 2 <= width <= 64:
             continue
         ours = runs.get(("ironmule", repeat, width))
         if not ours or not ours.get("quality") or not rival.get("quality"):
@@ -191,13 +191,15 @@ def trial(payload):
 
 def rejections(pairs):
     reasons = set()
-    if len(pairs) != 4:
+    if len(pairs) != 4 or [tuple(p.get("order", ())) for p in pairs] != [
+            ("incumbent", "candidate"), ("candidate", "incumbent")] * 2:
         reasons.add("incomplete_holdout")
     for p in pairs:
         a, b = p["incumbent"], p["candidate"]
         if not (a["budget_applied"] or b["budget_applied"]) or a["execution_shape"] == b["execution_shape"]:
             reasons.add("unchanged_execution")
-        if a["output_digest"] != b["output_digest"] or min(a["correct"], b["correct"]) != a["requests"]:
+        if (a["requests"] != b["requests"] or a["output_digest"] != b["output_digest"]
+                or min(a["correct"], b["correct"]) != a["requests"]):
             reasons.add("quality")
         if b["tokens_per_second"] < 1.03 * a["tokens_per_second"]:
             reasons.add("throughput_margin")

@@ -62,7 +62,8 @@ def test_saves_trials_but_only_an_exact_local_win_serves(tmp_path, monkeypatch, 
         if outcome == "unchanged_execution":
             b["execution_shape"] = a["execution_shape"]
         assert trial["candidate"] == 64 and trial["incumbent"] == 0
-        return SimpleNamespace(returncode=0, stdout=json.dumps([{"candidate": b, "incumbent": a}] * 4))
+        orders = [["incumbent", "candidate"], ["candidate", "incumbent"]] * 2
+        return SimpleNamespace(returncode=0, stdout=json.dumps([{"candidate": b, "incumbent": a, "order": o} for o in orders]))
     monkeypatch.setattr(learn.subprocess, "run", child)
     args = dict(gguf=Path("fixture.gguf"), state=tmp_path, provider="cpu", deadline=time.monotonic() + 10)
     result = learn.respond(report, **args)
@@ -79,3 +80,15 @@ def test_timeout_keeps_a_plan_without_qualifying(tmp_path):
     out = learn.respond(comparison(), gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic()-1)
     assert out["status"] == "deferred" and "budget exhausted" in out["reason"]
     assert not list(tmp_path.rglob("qualified.json"))
+
+
+def test_next_report_uses_different_candidate_after_a_loss(tmp_path):
+    r = comparison()
+    b = learn.select(r)["binding"]
+    directory = learn.rule_directory(tmp_path, b)
+    directory.mkdir(parents=True)
+    key = learn.shape([32, 32, 64, 64], 6)
+    previous = {"workload_key": key, "incumbent_budget": 0, "candidate_budget": 64, "status": "retained_incumbent"}
+    (directory / "previous.json").write_text(json.dumps(previous))
+    result = learn.respond(r, gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic() - 1)
+    assert result["candidate_budget"] == 32
