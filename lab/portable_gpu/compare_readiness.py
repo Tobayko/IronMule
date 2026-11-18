@@ -22,6 +22,8 @@ def run(args, save):
         try:
             compare.remaining(deadline)
             with compare_servers.open_server(engine, args, 0, deadline) as server:
+                if server.get("cuda_visible_devices") is not None:
+                    row.update(device=server["device"], cuda_visible_devices=server["cuda_visible_devices"])
                 if server.get("qualification"):
                     row["qualification"] = server["qualification"]
                 row["stage"] = "chat"

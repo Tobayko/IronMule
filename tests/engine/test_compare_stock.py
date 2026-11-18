@@ -94,3 +94,55 @@ def test_vllm_traceback_keeps_known_components_and_line_numbers(tmp_path):
         {'component': 'vllm/config', 'source': 'vllm/config/model.py', 'line': 448},
         {'component': 'transformers', 'line': 91}]}
     assert 'private' not in str(fields) and 'exit_code' not in fields
+
+
+@pytest.fixture
+def cuda_inventory(monkeypatch):
+    # NVML follows the inventory order. CUDA may use a different order, and masks can reorder it again.
+    import subprocess
+
+    gpu_a = 'GPU-00000000-0000-0000-0000-00000000000a'
+    gpu_b = 'GPU-00000000-0000-0000-0000-00000000000b'
+    inventory = [gpu_a, gpu_b]
+    monkeypatch.setattr(compare_servers.shutil, 'which', lambda *a, **kw: '/bin/nvidia-smi')
+
+    def probe(command, *, env, **kwargs):
+        if command[0] == 'nvidia-smi':
+            assert command[1] == '--query-gpu=index,uuid,name'
+            return subprocess.CompletedProcess(command, 0, '\n'.join(f'{i}, {uid}, A100' for i, uid in enumerate(inventory)))
+        assert command[1:3] == ['-I', '-c'] and '_visible_cuda_devices' in command[3]
+        order = inventory if env.get('CUDA_DEVICE_ORDER') == 'PCI_BUS_ID' else inventory[::-1]
+        mask = env.get('CUDA_VISIBLE_DEVICES')
+        visible = order if mask is None else [order[int(index)] if index.isdigit() else index for index in mask.split(',')]
+        return subprocess.CompletedProcess(command, 0, json.dumps([uid[4:].replace('-', '') for uid in visible]))
+
+    monkeypatch.setattr(compare_servers.subprocess, 'run', probe)
+    return inventory
+
+
+@pytest.mark.parametrize('selector', ['uuid', '1,0'])
+def test_vllm_011_numeric_device_and_nvml_lookup_match_cuda(cuda_inventory, selector):
+    _, gpu_b = cuda_inventory
+    env = {'CUDA_VISIBLE_DEVICES': gpu_b if selector == 'uuid' else selector,
+           'NVIDIA_VISIBLE_DEVICES': gpu_b, 'CUDA_DEVICE_ORDER': 'PCI_BUS_ID'}
+    for engine in ('ironmule', 'llama_cpp', 'vllm'):
+        child = env.copy()
+        assert compare_servers._device(child, engine) == (gpu_b, 'A100')
+        assert child['CUDA_DEVICE_ORDER'] == env['CUDA_DEVICE_ORDER']
+        assert child['NVIDIA_VISIBLE_DEVICES'] == env['NVIDIA_VISIBLE_DEVICES']
+        if engine == 'vllm':
+            # v0.11.0 platforms/interface.py:182-184, used in cuda.py nvmlDeviceGetHandleByIndex(...).
+            assert int(child['CUDA_VISIBLE_DEVICES'].split(',')[0]) == 1
+            assert cuda_inventory[int(child['CUDA_VISIBLE_DEVICES'])] == gpu_b
+        else:
+            assert child['CUDA_VISIBLE_DEVICES'] == gpu_b
+
+
+def test_numeric_selector_refuses_when_nvml_and_cuda_ordinals_differ(cuda_inventory):
+    _, gpu_b = cuda_inventory
+    env = {'CUDA_VISIBLE_DEVICES': gpu_b, 'CUDA_DEVICE_ORDER': 'FASTEST_FIRST'}
+    with pytest.raises(ValueError, match='different devices'):
+        compare_servers._device(env, 'vllm')
+    assert env == {'CUDA_VISIBLE_DEVICES': gpu_b, 'CUDA_DEVICE_ORDER': 'FASTEST_FIRST'}
+    with pytest.raises(ValueError, match='ambiguous'):
+        compare_servers._device({'CUDA_VISIBLE_DEVICES': 'GPU-00000000'}, 'vllm')

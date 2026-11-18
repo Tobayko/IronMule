@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from uuid import UUID
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -80,19 +81,44 @@ def _placement(engine, device, health, log):
     return False, 'unidentified runtime'
 
 
-def _device(env):
+def _cuda_uuids(env):
+    # libcuda takes its visibility and order from the environment at initialization. A new
+    # interpreter tests the exact child mask even if the compare process already initialized CUDA.
+    code = ("import json,sys; sys.path.insert(0, sys.argv[1]); "
+            "from ironmule.kernel_gen import _visible_cuda_devices; "
+            "print(json.dumps([d['uuid'] for d in _visible_cuda_devices()]))")
+    probe = subprocess.run([sys.executable, '-I', '-c', code, str(Path(__file__).resolve().parents[1])],
+                           env=env, capture_output=True, text=True, timeout=10, check=True)
+    return ['GPU-' + str(UUID(hex=value)) for value in json.loads(probe.stdout)]
+
+
+def _device(env, engine):
     visible = env.get('CUDA_VISIBLE_DEVICES')
-    if visible not in ('', '-1') and shutil.which('nvidia-smi'):
-        probe = subprocess.run(['nvidia-smi', '--query-gpu=index,uuid,name', '--format=csv,noheader'],
+    if visible not in ('', '-1') and shutil.which('nvidia-smi', path=env.get('PATH')):
+        probe = subprocess.run(['nvidia-smi', '--query-gpu=index,uuid,name', '--format=csv,noheader'], env=env,
                                capture_output=True, text=True, timeout=8, check=False)
-        rows = [line.split(', ', 2) for line in probe.stdout.splitlines()]
-        if probe.returncode == 0 and rows and len(rows[0]) == 3:
-            target = visible.split(',')[0] if visible else rows[0][1]
-            for idx, uuid, name in rows:
-                if target in (idx, uuid) or (target.startswith('GPU-') and uuid.startswith(target)):
-                    env['CUDA_VISIBLE_DEVICES'] = uuid
-                    return uuid, name
-            raise ValueError(f'cannot identify visible NVIDIA GPU {target}')
+        rows = [line.split(', ', 2) for line in probe.stdout.splitlines() if line.strip()]
+        if probe.returncode == 0 and rows and probe.stdout.strip() != 'No devices were found':
+            if any(len(row) != 3 or not row[0].isascii() or not row[0].isdecimal() for row in rows):
+                raise ValueError('unrecognized NVIDIA device inventory')
+            first_selector = (visible or '').split(',')[0].strip()
+            if first_selector.startswith('GPU-') and sum(uid.startswith(first_selector) for _, uid, _ in rows) != 1:
+                raise ValueError('NVIDIA UUID selector is missing or ambiguous in this container')
+            devices = _cuda_uuids(env)
+            matching = [row for row in rows if devices and row[1].lower() == devices[0].lower()]
+            if len(matching) != 1:
+                raise ValueError('first visible CUDA device has no unique full GPU UUID in the NVIDIA inventory')
+            ordinal, uid, name = matching[0]
+            if engine == 'vllm':
+                # v0.11.0 casts this selector to int and passes it directly to NVML. The
+                # CUDA driver must independently map that same integer to the requested card.
+                candidate = {**env, 'CUDA_VISIBLE_DEVICES': ordinal}
+                if sum(index == ordinal for index, _, _ in rows) != 1 or _cuda_uuids(candidate) != [devices[0]]:
+                    raise ValueError('vLLM numeric selector identifies different devices in CUDA and NVML')
+                env['CUDA_VISIBLE_DEVICES'] = ordinal
+            else:
+                env['CUDA_VISIBLE_DEVICES'] = uid
+            return uid, name
     # Other native backends may be active on ROCm, Metal or accelerator-only systems.
     from ironmule_devices import ggml_devices
     devices = ggml_devices()
@@ -100,6 +126,8 @@ def _device(env):
         if len(devices) > 1:
             raise ValueError('compare needs one visible accelerator per server')
         row = devices[0]
+        if row['provider'] == 'cuda' and engine == 'vllm':
+            raise ValueError('vLLM needs a verified CUDA and NVML ordinal for the selected NVIDIA device')
         return f"{row['provider']}:{platform.node()}:{row['name']}", row['description']
     return f'cpu:{platform.node()}:{platform.machine()}', platform.processor() or platform.machine()
 
@@ -162,10 +190,6 @@ def _command(engine, args, port, env, gpu):
                 '--jinja', '--chat-template-kwargs', '{"enable_thinking":false}', *address]
     if engine == 'vllm':
         # The HF sidecar supplies the architecture config as well as the tokenizer. Weights come only from the GGUF.
-        if env.get('IRONMULE_COMPARE_WRAPPED') == '1':
-            # In the Runpod bundle vLLM keeps its image's original Torch/CUDA and Python packages.
-            env['PYTHONPATH'] = env.get('IRONMULE_COMPARE_ORIGINAL_PYTHONPATH', '')
-            env['LD_LIBRARY_PATH'] = env.get('IRONMULE_COMPARE_ORIGINAL_LD_LIBRARY_PATH', '')
         env.pop('VLLM_API_KEY', None)
         env['HF_HUB_OFFLINE'] = '1'
         env['TRANSFORMERS_OFFLINE'] = '1'
@@ -321,6 +345,7 @@ def _classify_log(log, *, gate_passed=False):
         ('missing_python_dependency', r'ModuleNotFoundError|No module named'),
         ('native_symbol_unavailable', r'undefined symbol:|version [`\']GLIBC(?:XX)?_[^\n]+not found'),
         ('incompatible_python_api', r'cannot import name|unexpected keyword argument|operator [^\n]+ does not exist'),
+        ('non_numeric_cuda_selector', r"invalid literal for int\(\) with base 10: ['\"](?:GPU|MIG)-"),
         ('device_detection_failed', r'Failed to infer device type|No CUDA GPUs are available|Found no NVIDIA driver'),
         ('cuda_library_unavailable', r'lib(?:cuda|cublas|cudart|nvrtc)[^\s:]*: cannot open shared object'),
         ('cuda_driver_incompatible', r'driver version is insufficient|driver.*too old|CUDA_ERROR_UNSUPPORTED_PTX_VERSION'),
@@ -349,7 +374,14 @@ def open_server(engine, args, repeat, deadline):
     artifacts = prepare_artifacts(args)
     workdir = _paths(args)
     env = os.environ.copy()
-    device, name = _device(env)
+    if engine == 'vllm' and env.get('IRONMULE_COMPARE_WRAPPED') == '1':
+        # Probe and launch vLLM under the same image-native library and Python environment.
+        env['PYTHONPATH'] = env.get('IRONMULE_COMPARE_ORIGINAL_PYTHONPATH', '')
+        env['LD_LIBRARY_PATH'] = env.get('IRONMULE_COMPARE_ORIGINAL_LD_LIBRARY_PATH', '')
+    try:
+        device, name = _device(env, engine)
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        raise StartupError('unable to verify the selected device', 'device_selection', 'device_selection_unverified') from exc
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -410,6 +442,8 @@ def open_server(engine, args, repeat, deadline):
                     'prefix_caching': 'engine default',
                     'startup_seconds': time.monotonic() - started, 'log_file': str(logpath),
                     'launcher_executable': shutil.which(cmd[0], path=env.get('PATH')) or cmd[0]}
+            if device.startswith('GPU-'):
+                info['cuda_visible_devices'] = env['CUDA_VISIBLE_DEVICES']
             if engine == 'ironmule':
                 qualification = _gate_attempts(log)
                 if qualification:
