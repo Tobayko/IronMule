@@ -2614,3 +2614,21 @@ tokens/s over the held-out waves and the current revision 33.746. Each revision 
 The controller fitted its cost parameters in memory during each replay. The measured
 controller probe is available at commit `2dce04c`.
 [Controller decisions and paired timings](../evidence/runtime/qwen3-32b-prefill-controller-l40s.json) · [Reproduction script](../lab/portable_gpu/controller_pair.py)
+
+### 2026-11-18: repeating the GPU tests with Qwen3-0.6B on an A40
+
+An NVIDIA A40 ran Qwen3-0.6B Q4_K_M with all 29 layers on CUDA. The same six waves
+again produced 114 native calls. The old observer saw 18 and the revised observer saw
+114. All 360 output tokens and stop reasons matched across the revisions. Both calls
+that bridged gaps between GPU streams counted all seven rows as decode work after the
+fix. [A40 placement and native call counts](../evidence/runtime/qwen3-06b-a40-prefill-observer.json)
+
+Each controller instance accumulated 240 live samples after the fix, up from 108. All
+four instances retained width 8. Before and after the fix, each revision solved all
+192 held-out copy tasks. Output tokens and stops matched in all 12 paired waves.
+Pooled throughput decreased from 195.56 to 192.49 output tokens/s (1.57%) on this
+workload. In the first paired repetition it went from 195.03 to 192.27 and in the
+second from 196.10 to 192.71. For the document bursts the median per-wave p95
+first-token time increased from 492.0 to 498.5 ms. These measurements cover two
+repetitions of a short-output workload. The model and the GPU both differ from the
+L40S experiment. [A40 controller decisions and paired timings](../evidence/runtime/qwen3-06b-prefill-controller-a40.json)
