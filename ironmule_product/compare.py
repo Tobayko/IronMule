@@ -133,9 +133,16 @@ def stream(engine, server, prompt, limit, deadline):
 
 def batch(engine, server, prompts, width, limit, deadline):
     started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=width) as pool:
+    pool = ThreadPoolExecutor(max_workers=width)
+    try:
         futures = [pool.submit(stream, engine, server, prompt, limit, deadline) for prompt in prompts]
         rows = [future.result(timeout=remaining(deadline)) for future in futures]
+    except BaseException:
+        # Return to the server context immediately. Its cleanup closes in-flight
+        # requests and releases the GPU; queued requests must never launch afterwards.
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown()
     return rows, time.perf_counter() - started
 
 
