@@ -1,192 +1,169 @@
-"""Verified rival gaps can direct a native holdout. Only measured local wins change a bound budget."""
+"""Own request cohorts direct isolated native admission trials. Only a locally qualified action serves."""
+from dataclasses import replace
 import json
-import time
 from pathlib import Path
-from types import SimpleNamespace
+import subprocess
+import sys
+import threading
+import time
 
 import pytest
 
 from ironmule import compare_learning as learn
 
 
-def comparison():
-    b = {"gguf_sha256": "1" * 64, "machine": "fixture", "host_sha256": "2" * 64, "seq_ctx": 512, "prompt_budget": 0,
-         "implementation": learn.implementation()}
-    report = {"schema": "ironmule.compare.v1", "device": "cpu:host", "protocol": {"max_tokens": 6},
-              "arms": [], "runs": []}
-    for engine, rate, ttft in (("ironmule", 10, 40), ("vllm", 15, 37), ("llama_cpp", 9, 43)):
-        identity = {"gguf_sha256": b["gguf_sha256"], "tokenizer_sha256": "3" * 64, "device": report["device"],
-                    "ggml": b, "autonomous": engine == "ironmule", "placement_verified": True, "version": "test",
-                    "baseline_stock": engine == "llama_cpp"}
-        report["arms"].append({"engine": engine, "repeat": 0, "identity": identity,
-                               "tokenization": {"verified": True, "digest": "a" * 64}})
-        report["runs"].append({"engine": engine, "repeat": 0, "concurrency": 4, "quality": {"passed": 4},
-                               "performance_prompt_tokens": [32, 32, 64, 64], "generation": [[6, "length"]] * 4,
-                               "tokens_per_second": rate, "ttft_p95_ms": ttft})
-    return report
+def binding():
+    return {"gguf_sha256": "1" * 64, "machine": "fixture", "host_sha256": "2" * 64,
+            "seq_ctx": 512, "prompt_budget": 0, "implementation": learn.implementation(), "provider": "cpu"}
 
 
-def test_only_verified_paired_competitor_gaps_select_work():
-    r = comparison()
-    choice = learn.select(r)
-    assert choice["opponent"] == "vllm" and choice["focus"] == "throughput"
-    r["arms"][1]["tokenization"]["digest"] = "f" * 64
-    assert learn.select(r) is None
-    r["arms"][1]["tokenization"]["digest"] = "a" * 64
-    r["runs"][1]["performance_prompt_tokens"] = [63] * 4
-    assert learn.select(r) is None
-    r = comparison()
-    r["arms"][1]["identity"]["placement_verified"] = False
-    assert learn.select(r) is None
-    r = comparison()
-    r["runs"][1]["generation"] = [[2, "stop"]] * 4
-    assert learn.select(r) is None
-    r["runs"][2]["tokens_per_second"] = 30
-    r["arms"][2]["identity"]["baseline_stock"] = False
-    assert learn.select(r) is None
+def own(first=1, lengths=(32, 32, 64, 64), limit=6, ttft=40):
+    return [learn.Observation(index, lengths, limit, 12.0, ttft) for index in (first, first + 1)]
 
 
-@pytest.mark.parametrize("outcome", ["win", "quality_loss", "throughput_loss", "tail_loss", "unchanged_execution"])
-def test_saves_trials_but_only_an_exact_local_win_serves(tmp_path, monkeypatch, outcome):
-    report = comparison()
-    def child(cmd, *, input, **kw):
-        trial = json.loads(input)
-        a = {"output_digest": "same", "execution_shape": "original", "correct": 4, "requests": 4,
-             "tokens_per_second": 10, "median_ttft_ms": 10, "p95_ttft_ms": 12, "budget_applied": 0}
-        b = {**a, "tokens_per_second": 11, "execution_shape": "changed", "budget_applied": 1}
-        if outcome == "quality_loss":
-            b["output_digest"] = "different"
-        if outcome == "throughput_loss":
-            b["tokens_per_second"] = 9
-        if outcome == "tail_loss":
+def measured(payload, deadline, interrupted):
+    incumbent = {"output_digest": "a" * 64, "execution_shape": "b" * 64, "correct": 4, "requests": 4,
+                 "tokens_per_second": 10, "median_ttft_ms": 10, "p95_ttft_ms": 12,
+                 "budget_applied": int(bool(payload["incumbent"]))}
+    candidate = {**incumbent, "tokens_per_second": 11, "execution_shape": "c" * 64,
+                 "budget_applied": int(bool(payload["candidate"]))}
+    orders = [["incumbent", "candidate"], ["candidate", "incumbent"]] * 2
+    return [{"order": order, "incumbent": dict(incumbent), "candidate": dict(candidate)} for order in orders]
+
+
+def args(tmp_path):
+    return dict(binding=binding(), gguf=Path("fixture.gguf"), state=tmp_path, deadline=time.monotonic() + 30)
+
+
+def test_requires_recurring_own_native_load_and_ignores_external_inputs():
+    b = binding()
+    assert learn.select(own()[:1], binding=b) is None
+    assert learn.select(own()[:1] * 3, binding=b) is None
+    assert learn.select(own(lengths=(33, 35)), binding=b) is None
+    assert learn.select(own(lengths=(32, 64)), binding=b)["samples"] == 2
+    assert learn.select(own(lengths=(64,) * 4), binding=b)["samples"] == 2
+    assert learn.select({"schema": "ironmule.compare.v1", "runs": [], "arms": []}, binding=b) is None
+    assert learn.select([*own(), {"competitor": "untrusted"}], binding=b) == learn.select(own(), binding=b)
+    assert learn.select([replace(row, ttft_p95_ms=float("nan")) for row in own()], binding=b) is None
+    assert learn.select(own(lengths=(510,) * 4), binding=b) is None
+    assert learn.select(own(), binding=b) == learn.select(list(reversed(own())), binding=b)
+    rows = [*own(), *own(7, lengths=(48,) * 4, ttft=160)]
+    assert learn.select(rows, binding=b)["prompt_lengths"] == [48] * 4
+
+
+@pytest.mark.parametrize("outcome", ["win", "quality", "throughput_margin", "first_token_regression",
+                                     "unchanged_execution", "invalid_measurement"])
+def test_only_qualified_own_holdout_becomes_native_rule(tmp_path, monkeypatch, outcome):
+    def child(payload, *limits):
+        assert payload["candidate"] == 32 and payload["incumbent"] == 0
+        pairs = measured(payload, *limits)
+        b = pairs[-1]["candidate"]
+        if outcome == "quality":
+            b["output_digest"] = "f" * 64
+        if outcome == "throughput_margin":
+            b["tokens_per_second"] = 10.29
+        if outcome == "first_token_regression":
             b["p95_ttft_ms"] = 13
         if outcome == "unchanged_execution":
-            b["execution_shape"] = a["execution_shape"]
-        assert trial["candidate"] == 64 and trial["incumbent"] == 0
-        orders = [["incumbent", "candidate"], ["candidate", "incumbent"]] * 2
-        return SimpleNamespace(returncode=0, stdout=json.dumps([{"candidate": b, "incumbent": a, "order": o} for o in orders]))
-    monkeypatch.setattr(learn.subprocess, "run", child)
-    args = dict(gguf=Path("fixture.gguf"), state=tmp_path, provider="cpu", deadline=time.monotonic() + 10)
-    result = learn.respond(report, **args)
-    binding = result["selection"]["binding"]
-    assert len(result["holdout"]) == 4
-    rules = learn.read_rules(tmp_path, binding)
-    assert rules == ({result["workload_key"]: 64} if outcome == "win" else {})
+            b["execution_shape"] = pairs[-1]["incumbent"]["execution_shape"]
+        if outcome == "invalid_measurement":
+            b["tokens_per_second"] = float("nan")
+        return 0, json.dumps(pairs)
+
+    monkeypatch.setattr(learn, "_run_child", child)
+    kw = args(tmp_path)
+    result = learn.respond(own(), **kw)
+    rules = learn.read_rules(tmp_path, kw["binding"])
+    assert rules == ({result["workload_key"]: 32} if outcome == "win" else {})
+    if outcome == "invalid_measurement":
+        assert result["status"] == "deferred" and result["reason"] == outcome
+        return
     assert result["status"] == ("qualified" if outcome == "win" else "retained_incumbent")
-    assert learn.read_rules(tmp_path, {**binding, "machine": "other"}) == {}
-    assert learn.respond(report, **args) == result  # the same evidence is never counted twice
+    assert result["reasons"] == ([] if outcome == "win" else [outcome])
+    assert len(result["holdout"]) == 4
+    monkeypatch.setattr(learn, "_run_child", lambda *v: pytest.fail("counted the identical measurements twice"))
+    assert learn.respond(own(), **kw) == result
+    assert learn.read_rules(tmp_path, {**kw["binding"], "machine": "another"}) == {}
 
 
-def test_timeout_keeps_a_plan_without_qualifying(tmp_path):
-    out = learn.respond(comparison(), gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic()-1)
-    assert out["status"] == "deferred" and "budget exhausted" in out["reason"]
-    assert not list(tmp_path.rglob("qualified.json"))
-
-
-def test_current_gap_selected_even_when_old_engine_lost_by_more(tmp_path):
-    from copy import deepcopy
-
-    report = comparison()
-    new = deepcopy(report["arms"] + report["runs"])
-    for row in new:
-        row["repeat"] = 1
-    report["arms"].extend(new[:3])
-    report["runs"].extend(new[3:])
-    report["arms"][0]["identity"]["ggml"]["implementation"] = "old"
-    report["runs"][0]["tokens_per_second"] = 3
-    assert learn.select(report)["binding"]["implementation"] == "old"
-    out = learn.respond(report, gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic() - 1)
-    assert out["selection"]["binding"]["implementation"] == learn.implementation()
-    assert out["selection"]["throughput_ratio"] == 10/15
-
-
-def test_next_report_uses_different_candidate_after_a_loss(tmp_path):
-    r = comparison()
-    b = learn.select(r)["binding"]
-    directory = learn.rule_directory(tmp_path, b)
-    directory.mkdir(parents=True)
+def test_competitor_qualification_history_cannot_seed_or_suppress_local_trials(tmp_path, monkeypatch):
+    kw = args(tmp_path)
+    b = kw["binding"]
     key = learn.shape([32, 32, 64, 64], 6)
-    previous = {"workload_key": key, "incumbent_budget": 0, "candidate_budget": 64, "status": "retained_incumbent"}
-    (directory / "previous.json").write_text(json.dumps(previous))
-    result = learn.respond(r, gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic() - 1)
-    assert result["candidate_budget"] == 32
+    legacy = tmp_path / "competitor-response" / learn.digest(b)
+    legacy.mkdir(parents=True)
+    (legacy / "qualified.json").write_text(json.dumps({"binding": b, "budgets": {key: 32}}))
+    stray = learn.rule_directory(tmp_path, b)
+    (tmp_path / "self-admission").mkdir(mode=0o700)
+    stray.mkdir(mode=0o700)
+    (stray / "qualified.json").write_text((legacy / "qualified.json").read_text())
+    (stray / "rival-loss.json").write_text(json.dumps({"schema": "ironmule.competitor-response.v1",
+        "candidate_budget": 32, "incumbent_budget": 0, "workload_key": key}))
+    assert learn.read_rules(tmp_path, b) == {}
+
+    def child(payload, *limits):
+        pairs = measured(payload, *limits)
+        pairs[0]["candidate"]["tokens_per_second"] = 1
+        return 0, json.dumps(pairs)
+
+    monkeypatch.setattr(learn, "_run_child", child)
+    first = learn.respond(own(), **kw)
+    assert first["candidate_budget"] == 32 and first["incumbent_budget"] == 0
+    second = learn.respond(own(first=4), **kw)
+    assert second["candidate_budget"] == 64 and second["incumbent_budget"] == 0
+    assert learn.respond(own(first=7), **kw)["reason"] == "candidate budgets already measured for this workload"
+    assert learn.read_rules(tmp_path, b) == {}
 
 
-def test_shared_pool_probe_recreates_derived_prefix_setting(monkeypatch):
-    from ironmule import ggml_engine
-
-    def open_instrumented(model, *, threads, seqs, seq_ctx, speculate, shared, cap, max_rows, kv_unified):
-        assert shared and kv_unified and cap == 8
-        raise RuntimeError("reached native constructor")
-
-    monkeypatch.setattr(ggml_engine, "file_sha256", lambda path: "model")
-    monkeypatch.setattr(ggml_engine, "GgmlEngine", open_instrumented)
-    for key in ("IRONMULE_GGML_SEQS", "IRONMULE_GGML_SEQ_CTX", "IRONMULE_KG_LIB"):
-        monkeypatch.setenv(key, "")
-    binding = {"gguf_sha256": "model", "threads": 2, "seqs": 4, "seq_ctx": 512, "speculate": True, "shared": True,
-               "cap": 8, "max_rows": 16, "settings": {"shared_prefix": True, "kv_unified": True}}
-    with pytest.raises(RuntimeError, match="reached native constructor"):
-        learn.trial({"binding": binding, "gguf": "test.gguf", "provider": "cpu", "device": "cpu:fixture"})
+def test_qualified_action_is_the_next_independent_incumbent(tmp_path, monkeypatch):
+    seen = []
+    def child(payload, *limits):
+        seen.append((payload["incumbent"], payload["candidate"]))
+        return 0, json.dumps(measured(payload, *limits))
+    monkeypatch.setattr(learn, "_run_child", child)
+    kw = args(tmp_path)
+    learn.respond(own(), **kw)
+    result = learn.respond(own(first=4), **kw)
+    assert seen == [(0, 32), (32, 64)]
+    assert learn.read_rules(tmp_path, kw["binding"])[result["workload_key"]] == 64
 
 
-def test_cuda_holdout_reconstructs_physical_mask_before_native_initialization(monkeypatch):
-    from ironmule_product import compare_holdout as launcher, compare_servers
-
-    uid = "GPU-e66e3a63-7a14-4ff0-5f1c-3d6ee532c695"
-    binding = {"seq_ctx": 2048, "seqs": 64, "kg_sha256": None}
-    arm = {"device": uid, "cuda_visible_devices": uid, "provider": "cuda", "placement_verified": True, "ggml": binding}
-    report = {"device": uid, "arms": [{"engine": "ironmule", "identity": arm}]}
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
-    monkeypatch.setenv("IRONMULE_KG_LIB", "other.so")
-    selected = launcher.verified_device(report, binding, "cuda")
-    def physical_device(env, engine):
-        assert engine == "ironmule" and env["CUDA_VISIBLE_DEVICES"] == "0,1"
-        env["CUDA_VISIBLE_DEVICES"] = uid
-        return uid, "NVIDIA L40S"
-    monkeypatch.setattr(compare_servers, "_device", physical_device)
-    env = launcher.worker_environment(selected, binding, "cuda")
-    assert env["CUDA_VISIBLE_DEVICES"] == uid and env["IRONMULE_KG_LIB"] == ""
-    assert (env["IRONMULE_GGML_SEQS"], env["IRONMULE_GGML_SEQ_CTX"]) == ("64", "2048")
-    monkeypatch.setattr(compare_servers, "_device", lambda env, engine: ("GPU-other", "L40S"))
-    with pytest.raises(ValueError, match="device differs"):
-        launcher.worker_environment(selected, binding, "cuda")
-    arm["cuda_visible_devices"] = "0"
-    with pytest.raises(ValueError, match="verified CUDA selector"):
-        launcher.verified_device(report, binding, "cuda")
+def test_own_holdout_reaps_child_on_foreground_traffic_and_does_not_publish(tmp_path, monkeypatch):
+    real = subprocess.Popen
+    interrupted = threading.Event()
+    children = []
+    def child(command, **kwargs):
+        proc = real([sys.executable, "-c", "import time; time.sleep(60)"], **kwargs)
+        children.append(proc)
+        return proc
+    monkeypatch.setattr(learn.subprocess, "Popen", child)
+    timer = threading.Timer(0.2, interrupted.set)
+    timer.start()
+    try:
+        result = learn.respond(own(), interrupted=interrupted.is_set, **args(tmp_path))
+    finally:
+        timer.cancel()
+    assert children and children[0].poll() is not None
+    assert result["status"] == "deferred" and result["reason"] == "foreground work resumed"
+    assert not list(tmp_path.rglob("workload-*.json"))
 
 
-def test_binding_difference_lists_only_known_field_names_and_never_promotes(monkeypatch, tmp_path):
-    actual = {"machine": "current", "pilot": "present", "settings": {}}
-    old = {"machine": "other", "pilot": None, "settings": {}, "/private/path": "extra"}
-    difference = learn.BindingMismatch(actual, old)
-    assert difference.fields == ["machine", "pilot", "unexpected_field"]
-    monkeypatch.setattr(learn.subprocess, "run", lambda *a, **kw: SimpleNamespace(
-        returncode=3, stdout=json.dumps({"binding_mismatch": difference.fields})))
-    result = learn.respond(comparison(), gguf="model", state=tmp_path, provider="cpu", deadline=time.monotonic() + 10)
-    assert result["status"] == "deferred" and result["binding_mismatch"] == difference.fields
-    assert "/private/path" not in json.dumps(result) and not list(tmp_path.rglob("qualified.json"))
+def test_deadline_and_changed_binding_do_not_publish(tmp_path, monkeypatch):
+    kw = args(tmp_path)
+    kw["deadline"] = time.monotonic() - 1
+    assert learn.respond(own(), **kw)["reason"] == "local trial budget exhausted"
+    kw["deadline"] = time.monotonic() + 1
+    monkeypatch.setattr(learn, "_run_child", lambda *a: (3, '{"binding_mismatch":["machine","settings"]}'))
+    assert learn.respond(own(), **kw)["binding_mismatch"] == ["machine", "settings"]
+    assert not list(tmp_path.rglob("workload-*.json"))
 
 
-def test_retry_uses_separate_output_and_refuses_different_model_or_service_state(monkeypatch, tmp_path):
-    from ironmule_product.compare_holdout import replay
+def test_replay_uses_same_cpu_pilot_decision_with_isolated_weights_and_visits():
+    from types import SimpleNamespace
+    from ironmule.pilot_learning import ThreadPolicy
 
-    report = comparison()
-    report["status"] = "complete"
-    model, state = tmp_path / "m.gguf", tmp_path / "worker"
-    arm = report["arms"][0]["identity"]
-    arm.update(provider="cpu", argv=["serve", "--state-dir", str(state), "--gguf", str(model)])
-    source, output = tmp_path / "raw.json", tmp_path / "holdout.json"
-    original = json.dumps(report)
-    source.write_text(original)
-    base = ["--report", str(source), "--gguf", str(model), "--output", str(output), "--state"]
-    with pytest.raises(SystemExit):
-        replay([*base, str(tmp_path / "other-state")])
-    assert not output.exists()
-    monkeypatch.setattr(learn, "respond", lambda *args, **kw: {"status": "retained_incumbent"})
-    for key in ("IRONMULE_GGML_SEQ_CTX", "IRONMULE_KG_LIB"):
-        monkeypatch.setenv(key, "")
-    replay([*base, str(state)])
-    assert json.loads(output.read_text())["status"] == "retained_incumbent"
-    assert source.read_text() == original
-    with pytest.raises(SystemExit):
-        replay([*base, str(state)])
+    original = {"2:4:2:0": -1}
+    policy = ThreadPolicy(SimpleNamespace(cores=4), original)
+    assert policy.choose(128, 0, 4, 2) == 3
+    assert original == policy.weights and policy.weights is not original
+    assert policy.choose(10, 0, 4, 2) == 4

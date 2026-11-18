@@ -31,13 +31,32 @@ REPETITIONS = 4
 MAX_ROWS = 4
 
 
-class ThreadLearning:
+class ThreadPolicy:
+    """Apply the qualified per-regime thread offsets; an admission holdout replays a frozen copy."""
+
     bin_size = BIN
     max_rows = MAX_ROWS
 
+    def __init__(self, pilot, weights):
+        self.pilot = pilot
+        self.weights = dict(weights)
+        self.visits: Counter[str] = Counter()
+
+    def choose(self, context: float, foreign: float, base: int, rows: int = 1) -> int:
+        if not (BIN <= context < MAX_CONTEXT and math.isfinite(foreign)):
+            return base
+        if not 1 <= rows <= MAX_ROWS:
+            return base
+        load = min(self.pilot.cores, int(max(0.0, foreign) + 0.5))
+        key = f"{int(context) // BIN}:{base}:{rows}:{load}"
+        self.visits[key] += 1
+        return base + self.weights.get(key, 0)
+
+class ThreadLearning(ThreadPolicy):
+
     def __init__(self, engine, root: Path, gguf_digest: str, base_digest: str):
         self.engine = engine
-        self.pilot = engine.pilot
+        super().__init__(engine.pilot, {})
         machine = machine_key()
         binding = [VERSION, ENGINE_VERSION, gguf_digest, base_digest, machine, self.pilot.cores,
                    engine.settings, engine.seqs, engine.seq_ctx, engine.shared, engine.cap]
@@ -52,7 +71,6 @@ class ThreadLearning:
         self.policy = HardwarePolicy(self.path.parent / f"thread-model-v{SCHEMA}.sqlite3", self.binding,
                                      hardware, self.pilot.cores, costs, profile)
         self.replay_rows, self.replay_load = 1, 0
-        self.weights: dict[str, int] = {}
         self.proposals = {}
         legacy = [1, *binding[1:]]
         legacy_key = hashlib.sha256(json.dumps(legacy, sort_keys=True).encode()).hexdigest()
@@ -65,19 +83,8 @@ class ThreadLearning:
                         self.proposals[key if source == self.path else key + ":1:0"] = offset
         except (OSError, ValueError, AttributeError):
             pass
-        self.visits: Counter[str] = Counter()
         self.generation = 0
         self.last = None
-
-    def choose(self, context: float, foreign: float, base: int, rows: int = 1) -> int:
-        if not (BIN <= context < MAX_CONTEXT and math.isfinite(foreign)):
-            return base
-        if not 1 <= rows <= MAX_ROWS:
-            return base
-        load = min(self.pilot.cores, int(max(0.0, foreign) + 0.5))
-        key = f"{int(context) // BIN}:{base}:{rows}:{load}"
-        self.visits[key] += 1
-        return base + self.weights.get(key, 0)
 
     def status(self):
         return {"version": VERSION, "binding": self.binding, "generation": self.generation,

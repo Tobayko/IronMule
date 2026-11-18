@@ -1,7 +1,8 @@
-"""Use a measured rival gap to select and locally test one GGML admission budget."""
+"""Learn GGML prompt admission from repeated native request cohorts and local holdouts."""
 from __future__ import annotations
 
 import ctypes
+from dataclasses import asdict, dataclass
 import fcntl
 import hashlib
 import json
@@ -10,12 +11,13 @@ import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import statistics
 import subprocess
 import sys
 import time
 
-SCHEMA = "ironmule.competitor-response.v1"
+SCHEMA = "ironmule.self-admission.v1"
 WORDS = "gold blue green pink red brown silver orange yellow white black purple violet cyan".split()
 
 
@@ -24,7 +26,7 @@ def digest(value):
 
 
 def implementation():
-    names = ("compare_learning.py", "ggml_engine.py", "pilot.py", "speculation.py")
+    names = ("compare_learning.py", "ggml_engine.py", "pilot.py", "pilot_learning.py", "speculation.py")
     return digest([hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in names])
 
 
@@ -40,9 +42,19 @@ def engine_binding(engine, model):
         if value:
             host = digest(value)
             break
-    return {"machine": ge.machine_key(), "host_sha256": host,
+    provider, cuda_uuid = "cpu", None
+    if engine.gpu_layers:
+        devices = ge.ggml_devices(engine.L)
+        provider = devices[0]["provider"] if len(devices) == 1 else None
+        if provider == "cuda":
+            from .kernel_gen import _visible_cuda_devices
+            visible = _visible_cuda_devices()
+            cuda_uuid = visible[0]["uuid"] if len(visible) == 1 else None
+    threads_head = getattr(engine.pilot, "learning", None)
+    return {"thread_weights": dict(threads_head.weights) if threads_head is not None else None,
+            "machine": ge.machine_key(), "host_sha256": host,
             "cpu_affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
-            "gguf_sha256": model, "engine_version": ge.ENGINE_VERSION,
+            "gguf_sha256": model, "engine_version": ge.ENGINE_VERSION, "provider": provider, "cuda_uuid": cuda_uuid,
             "gpu_layers": engine.gpu_layers, "seqs": engine.seqs, "seq_ctx": engine.seq_ctx, "threads": engine.threads,
             "shared": engine.shared, "cap": engine.cap, "speculate": engine.speculate, "max_rows": engine.max_rows,
             "settings": engine.settings, "prefix_reuse": engine.prefix_reuse, "prompt_budget": ge.PROMPT_BUDGET,
@@ -57,86 +69,110 @@ def shape(lengths, limit):
     return ",".join(str(n // 16) for n in sorted(lengths)) + "/" + str(limit)
 
 
+@dataclass(frozen=True)
+class Observation:
+    """One completed, simultaneously admitted cohort. Contains no tokens, text or external measurements."""
+
+    sample_id: int
+    prompt_lengths: tuple[int, ...]
+    max_tokens: int
+    tokens_per_second: float
+    ttft_p95_ms: float
+
+
 def rule_directory(state, binding):
-    return Path(state) / "competitor-response" / digest(binding)
+    return Path(state) / "self-admission" / digest(binding)
+
+
+def _ledger_path(directory, key):
+    return directory / ("workload-" + digest([SCHEMA, key]) + ".json")
+
+
+def _valid_record(record, binding, key):
+    return (isinstance(record, dict) and record.get("schema") == SCHEMA and record.get("binding") == binding
+            and record.get("workload_key") == key and isinstance(record.get("trials"), dict))
+
+
+def _measured(result, source, key):
+    return (isinstance(result, dict) and result.get("schema") == SCHEMA and result.get("source_sha256") == source
+            and result.get("workload_key") == key and isinstance(result.get("selection"), dict)
+            and result["selection"].get("source_sha256") == source and isinstance(result.get("holdout"), list)
+            and result.get("status") in ("retained_incumbent", "qualified"))
+
+
+def _active_budget(record):
+    source = record.get("active_source")
+    decision = record["trials"].get(source)
+    if (_measured(decision, source, record["workload_key"]) and decision["status"] == "qualified"
+            and not rejections(decision["holdout"]) and type(decision.get("candidate_budget")) is int):
+        return decision["candidate_budget"]
+    return 0
 
 
 def read_rules(state, binding):
-    if not binding.get("host_sha256"):
-        return {}
-    try:
-        record = json.loads((rule_directory(state, binding) / "qualified.json").read_text())
-        if record["binding"] == binding:
-            return {k: v for k, v in record["budgets"].items() if type(v) is int and 0 < v <= binding["seq_ctx"]}
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
-        pass
-    return {}
+    rules = {}
+    if not binding.get("host_sha256") or binding.get("implementation") != implementation():
+        return rules
+    directory = rule_directory(state, binding)
+    for path in directory.glob("workload-*.json"):
+        try:
+            record = json.loads(path.read_text())
+            key = record["workload_key"]
+            if not isinstance(key, str) or path != _ledger_path(directory, key) or not _valid_record(record, binding, key):
+                continue
+            budget = _active_budget(record)
+            if 0 < budget < binding["seq_ctx"]:
+                rules[key] = budget
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            continue
+    return rules
 
 
-def select(report, *, required_implementation=None):
-    """Require independently verified prompt IDs and concrete, same-device, same-model measurements."""
-    if report.get("schema") != "ironmule.compare.v1":
+def _positive_number(value):
+    return type(value) in (float, int) and 0 < value < math.inf
+
+
+def select(observations, *, binding):
+    """Rank recurring admission queues by their observed aggregate first-token delay."""
+    if not isinstance(observations, (tuple, list)) or not isinstance(binding, dict):
         return None
-    arms = {(a["engine"], a["repeat"]): a for a in report.get("arms", [])}
-    runs = {(r["engine"], r["repeat"], r["concurrency"]): r for r in report.get("runs", [])}
-    gaps = {}
-    for (name, repeat, width), rival in runs.items():
-        if name not in ("llama_cpp", "vllm") or not 2 <= width <= 64:
+    groups, seen = {}, set()
+    for row in observations:
+        if (type(row) is not Observation or type(row.sample_id) is not int or row.sample_id < 0
+                or row.sample_id in seen):
             continue
-        ours = runs.get(("ironmule", repeat, width))
-        if not ours or not ours.get("quality") or not rival.get("quality"):
+        lengths, limit = row.prompt_lengths, row.max_tokens
+        if (type(lengths) is not tuple or not 2 <= len(lengths) <= 64 or type(limit) is not int or limit < 1
+                or any(type(n) is not int or not 0 < n <= binding["seq_ctx"] - limit for n in lengths)
+                or not _positive_number(row.tokens_per_second) or not _positive_number(row.ttft_p95_ms)):
             continue
-        a, b = arms.get(("ironmule", repeat), {}), arms.get((name, repeat), {})
-        aid, bid = a.get("identity", {}), b.get("identity", {})
-        if required_implementation is not None and (aid.get("ggml") or {}).get("implementation") != required_implementation:
+        if len(lengths) < 4 and 2 * max(lengths) < 3 * min(lengths):
             continue
-        ta, tb = a.get("tokenization", {}), b.get("tokenization", {})
-        model = aid.get("gguf_sha256")
-        if (not re.fullmatch("[0-9a-f]{64}", str(model))
-                or not re.fullmatch("[0-9a-f]{64}", str(ta.get("digest")))
-                or not re.fullmatch("[0-9a-f]{64}", str(aid.get("tokenizer_sha256")))
-                or not (ta.get("verified") is True and tb.get("verified") is True and ta["digest"] == tb.get("digest"))
-                or not all(aid.get(k) and aid[k] == bid.get(k) for k in ("gguf_sha256", "tokenizer_sha256", "device"))
-                or aid.get("autonomous") is not True or aid.get("placement_verified") is not True
-                or bid.get("placement_verified") is not True or not (aid.get("version") and bid.get("version"))
-                or name == "llama_cpp" and bid.get("baseline_stock") is not True
-                or aid["device"] != report.get("device")):
-            continue
-        lengths = ours.get("performance_prompt_tokens")
-        if not isinstance(lengths, list) or len(lengths) < width or lengths != rival.get("performance_prompt_tokens"):
-            continue
-        rates = [ours["tokens_per_second"], rival["tokens_per_second"], ours["ttft_p95_ms"], rival["ttft_p95_ms"]]
-        if not all(type(v) in (float, int) and 0 < v < math.inf for v in rates):
-            continue
-        if not all(type(n) is int and n > 0 for n in lengths):
-            continue
-        outputs = ours.get("generation")
-        if (not isinstance(outputs, list) or len(outputs) != len(lengths) or outputs != rival.get("generation")
-                or not all(isinstance(v, list) and len(v) == 2 and type(v[0]) is int and v[0] > 0
-                           and v[1] in ("stop", "length") for v in outputs)):
-            continue
-        key = (name, width, model, digest(aid.get("ggml")))
-        gaps.setdefault(key, []).append((rates[0] / rates[1], rates[2] / rates[3], lengths[:width], aid.get("ggml")))
-    ranked = []
-    for (name, width, model, _), observations in gaps.items():
-        rate = statistics.median(v[0] for v in observations)
-        latency = statistics.median(v[1] for v in observations)
-        gap = max(1.03 / rate, latency)
-        if gap <= 1:
-            continue
-        ranked.append((gap, {"opponent": name, "concurrency": width, "model": model, "throughput_ratio": rate,
-                             "p95_ttft_ratio": latency, "paired_repeats": len(observations),
-                             "focus": "ttft" if latency > 1.03 / rate else "throughput",
-                             "prompt_lengths": observations[0][2], "binding": observations[0][3]}))
-    return max(ranked, key=lambda row: row[0])[1] if ranked else None
+        seen.add(row.sample_id)
+        groups.setdefault(shape(lengths, limit), []).append(row)
+    recurring = [rows for rows in groups.values() if len(rows) >= 2]
+    if not recurring:
+        return None
+
+    def queue_cost(rows):
+        return (len(rows[0].prompt_lengths) * statistics.median(r.ttft_p95_ms for r in rows),
+                len(rows), shape(rows[0].prompt_lengths, rows[0].max_tokens))
+
+    rows = sorted(max(recurring, key=queue_cost), key=lambda r: r.sample_id)
+    last = rows[-1]
+    return {"focus": "admission", "samples": len(rows), "concurrency": len(last.prompt_lengths),
+            "prompt_lengths": sorted(last.prompt_lengths), "max_tokens": last.max_tokens,
+            "tokens_per_second": statistics.median(r.tokens_per_second for r in rows),
+            "ttft_p95_ms": statistics.median(r.ttft_p95_ms for r in rows),
+            "source_sha256": digest([asdict(r) for r in rows])}
 
 
 def _sample(engine, tasks, limit, budget, key):
     from .ggml_engine import Job
 
     engine._clear()
-    engine.competitor_budgets = {key: budget} if budget else {}
-    engine.competitor_budget_hits = 0
+    engine.admission_budgets = {key: budget} if budget else {}
+    engine.admission_budget_hits = 0
     steps = []
     engine.observer = lambda rows, prompt, kv, seconds: steps.append((rows, prompt))
     jobs = [Job(ids, limit) for ids, _ in tasks]
@@ -162,7 +198,7 @@ def _sample(engine, tasks, limit, budget, key):
         correct.append(bool(first and first.group() == word))
     return {"tokens_per_second": sum(len(j.tokens) for j in jobs) / elapsed, "median_ttft_ms": statistics.median(ttft),
             "p95_ttft_ms": ttft[math.ceil(.95 * len(ttft)) - 1], "output_digest": digest(outputs),
-            "correct": sum(correct), "requests": len(jobs), "budget_applied": engine.competitor_budget_hits,
+            "correct": sum(correct), "requests": len(jobs), "budget_applied": engine.admission_budget_hits,
             "execution_shape": digest(steps)}
 
 
@@ -177,18 +213,20 @@ class BindingMismatch(ValueError):
 
 def trial(payload):
     import random
-    from ironmule_product.compare_holdout import worker_environment
 
     b, gguf = payload["binding"], payload["gguf"]
-    # Apply the original worker mask before any GGML/CUDA import or model allocation. The
-    # parent bounds driver discovery, allocation and all four holdout pairs with one deadline.
-    os.environ.update(worker_environment(payload["device"], b, payload["provider"]))
+    # The fresh child inherits the calling IronMule worker's visibility and loaded-kernel
+    # environment. Verify the native device and the entire engine binding on this host.
+    os.environ["IRONMULE_GGML_SEQS"] = str(b["seqs"])
+    os.environ["IRONMULE_GGML_SEQ_CTX"] = str(b["seq_ctx"])
+    if not b["kg_sha256"]:
+        os.environ["IRONMULE_KG_LIB"] = ""
     affinity = b.get("cpu_affinity")
     if affinity and hasattr(os, "sched_setaffinity"):
         if not set(affinity).issubset(os.sched_getaffinity(0)):
             raise ValueError("the serving worker's CPUs are unavailable")
         os.sched_setaffinity(0, affinity)
-    from .ggml_engine import GgmlEngine, SETTING_KEYS, _kernel_digest, file_sha256, ggml_devices
+    from .ggml_engine import GgmlEngine, SETTING_KEYS, _kernel_digest, file_sha256
 
     if file_sha256(gguf) != b["gguf_sha256"]:
         raise ValueError("GGUF changed")
@@ -196,35 +234,41 @@ def trial(payload):
         raise BindingMismatch({"kg_sha256": None}, {"kg_sha256": b["kg_sha256"]})
     opened = {k: b[k] for k in ("threads", "seqs", "seq_ctx", "speculate", "shared", "cap", "max_rows")}
     settings = {k: b["settings"][k] for k in SETTING_KEYS if k in b["settings"]}
-    engine = GgmlEngine(gguf, **opened, **settings)
+    def open_engine():
+        engine = GgmlEngine(gguf, **opened, **settings)
+        if engine.pilot is not None and b.get("thread_weights") is not None:
+            from .pilot_learning import ThreadPolicy
+            engine.pilot.learning = ThreadPolicy(engine.pilot, b["thread_weights"])
+        return engine
+
+    engine = open_engine()
     try:
-        provider = payload["provider"]
         actual = engine_binding(engine, b["gguf_sha256"])
         if actual != b:
             raise BindingMismatch(actual, b)
-        if provider == "cpu" and engine.gpu_layers or (provider != "cpu" and
-                (not engine.gpu_layers or [d["provider"] for d in ggml_devices(engine.L)] != [provider])):
-            raise ValueError("local native backend differs from comparison")
         rng = random.Random(payload["seed"])
         lengths, limit = payload["lengths"], payload["limit"]
         prefix = engine.tokenize(" Notes for the copy task. " * max(lengths))
-        suffixes = {word: engine.tokenize(f"\nColor: red\nCopy: red\nColor: blue\nCopy: blue\nColor: {word}\nCopy:")
-                    for word in WORDS}
+        suffixes = {}
+        for template in ("\nColor: red\nCopy: red\nColor: blue\nCopy: blue\nColor: {}\nCopy:", "\nRepeat {}:"):
+            suffixes = {word: engine.tokenize(template.format(word)) for word in WORDS}
+            if max(map(len, suffixes.values())) <= min(lengths):
+                break
+        else:
+            raise ValueError("prompt too short for an independent copy task")
         repeats = []
         for rep in range(4):
             tasks = []
             for length in lengths:
                 word = rng.choice(WORDS)
                 suffix = suffixes[word]
-                if length < len(suffix):
-                    raise ValueError("prompt too short for an independent copy task")
                 tasks.append((prefix[:length - len(suffix)] + suffix, word))
             order = ("incumbent", "candidate") if rep % 2 == 0 else ("candidate", "incumbent")
             pair = {}
             for arm in order:
                 # Each arm starts with freshly initialized speculation, prefix and Pilot state.
                 if engine is None:
-                    engine = GgmlEngine(gguf, **opened, **settings)
+                    engine = open_engine()
                 pair[arm] = _sample(engine, tasks, limit, payload[arm], payload["key"])
                 engine.close()
                 engine = None
@@ -236,12 +280,22 @@ def trial(payload):
 
 
 def rejections(pairs):
+    expected = [["incumbent", "candidate"], ["candidate", "incumbent"]] * 2
+    if not isinstance(pairs, list) or [p.get("order") if isinstance(p, dict) else None for p in pairs] != expected:
+        return ["incomplete_holdout"]
     reasons = set()
-    if len(pairs) != 4 or [tuple(p.get("order", ())) for p in pairs] != [
-            ("incumbent", "candidate"), ("candidate", "incumbent")] * 2:
-        reasons.add("incomplete_holdout")
-    for p in pairs:
-        a, b = p["incumbent"], p["candidate"]
+    for pair in pairs:
+        a, b = pair.get("incumbent"), pair.get("candidate")
+        for arm in (a, b):
+            if (not isinstance(arm, dict) or not all(_positive_number(arm.get(k)) for k in
+                    ("tokens_per_second", "median_ttft_ms", "p95_ttft_ms"))
+                    or arm["p95_ttft_ms"] < arm["median_ttft_ms"]
+                    or type(arm.get("requests")) is not int or not 2 <= arm["requests"] <= 64
+                    or type(arm.get("correct")) is not int or not 0 <= arm["correct"] <= arm["requests"]
+                    or type(arm.get("budget_applied")) is not int or arm["budget_applied"] < 0
+                    or not all(isinstance(arm.get(k), str) and re.fullmatch("[a-f0-9]{64}", arm[k])
+                               for k in ("output_digest", "execution_shape"))):
+                return ["invalid_measurement"]
         if not (a["budget_applied"] or b["budget_applied"]) or a["execution_shape"] == b["execution_shape"]:
             reasons.add("unchanged_execution")
         if (a["requests"] != b["requests"] or a["output_digest"] != b["output_digest"]
@@ -254,24 +308,51 @@ def rejections(pairs):
     return sorted(reasons)
 
 
-def respond(report, *, gguf, state, provider, deadline):
-    """Bounded child owns the native context. Only a complete local holdout can change the scoped rule."""
-    from ironmule_product.state import _atomic_write, _ensure_directory
-    from ironmule_product.compare_holdout import verified_device
+def _run_child(payload, deadline, interrupted):
+    command = [sys.executable, *(["-I"] if sys.flags.isolated else []), "-m", "ironmule.compare_learning"]
+    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                          text=True, start_new_session=True) as process:
+        data = json.dumps(payload)
+        try:
+            while True:
+                if interrupted is not None and interrupted():
+                    raise InterruptedError
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError
+                try:
+                    output, _ = process.communicate(data, timeout=min(remaining, 0.1))
+                    return process.returncode, output
+                except subprocess.TimeoutExpired:
+                    data = None
+        finally:
+            if process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate()
 
-    choice = select(report, required_implementation=implementation())
-    result = {"schema": SCHEMA, "status": "deferred", "selection": choice}
-    if not choice:
-        return {**result, "reason": "no verified concurrent rival gap for this IronMule implementation"}
-    b = choice["binding"]
-    if (not b or not b.get("host_sha256") or b.get("gguf_sha256") != choice["model"] or b.get("has_drafter")
-            or b.get("prompt_budget") != 0 or provider not in ("cpu", "cuda", "rocm")):
+
+def respond(observations, *, binding, gguf, state, deadline, interrupted=None):
+    """Choose from own request cohorts. Atomically publish only after four matched local trials."""
+    from ironmule_product.state import _atomic_write, _ensure_directory
+
+    result = {"schema": SCHEMA, "status": "deferred", "selection": None}
+    if (not isinstance(binding, dict) or not binding.get("host_sha256")
+            or binding.get("implementation") != implementation() or binding.get("has_drafter")
+            or binding.get("prompt_budget") != 0 or type(binding.get("seq_ctx")) is not int
+            or not re.fullmatch("[0-9a-f]{64}", str(binding.get("gguf_sha256")))
+            or binding.get("provider") not in ("cpu", "cuda", "rocm")
+            or binding["provider"] == "cuda" and not re.fullmatch("[a-f0-9]{32}", str(binding.get("cuda_uuid")))):
         return {**result, "reason": "missing or unsupported native serving configuration"}
-    lengths, limit = choice["prompt_lengths"], report["protocol"]["max_tokens"]
-    if type(limit) is not int or limit < 1 or max(lengths) + limit > b["seq_ctx"]:
-        return {**result, "reason": "workload outside supported context"}
-    key = shape(lengths, limit)
-    directory = rule_directory(state, b)
+    choice = select(observations, binding=binding)
+    result["selection"] = choice
+    if not choice:
+        return {**result, "reason": "no recurring concurrent admission workload"}
+    lengths, limit = choice["prompt_lengths"], choice["max_tokens"]
+    key, source = shape(lengths, limit), choice["source_sha256"]
+    directory = rule_directory(state, binding)
     for path in (Path(state), directory.parent, directory):
         _ensure_directory(path)
     with (directory / "trial.lock").open("a") as lock:
@@ -279,65 +360,68 @@ def respond(report, *, gguf, state, provider, deadline):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return {**result, "reason": "another local trial is running"}
-        budgets = read_rules(state, b)
-        baseline = budgets.get(key, 0)
-        source = digest({k: report.get(k) for k in ("schema", "device", "artifacts", "protocol", "runs")})
-        history = directory / (digest([source, key]) + ".json")
-        if history.exists():
-            return json.loads(history.read_text())
-        # Try an untested budget before repeating a losing experiment in the same workload.
-        n = len(lengths)
-        options = [sum(sorted(lengths)[:max(1, n // 2)]), min(lengths)]
-        if choice["focus"] == "ttft":
-            options.reverse()
+        path = _ledger_path(directory, key)
+        try:
+            record = json.loads(path.read_text())
+            if not _valid_record(record, binding, key):
+                return {**result, "reason": "invalid local admission history"}
+        except FileNotFoundError:
+            record = {"schema": SCHEMA, "binding": binding, "workload_key": key, "trials": {}}
+        except (OSError, ValueError):
+            return {**result, "reason": "unreadable local admission history"}
+        trials = record["trials"]
+        if _measured(trials.get(source), source, key):
+            return trials[source]
+        baseline = _active_budget(record)
+        tested = {old["candidate_budget"] for trial_source, old in trials.items()
+                  if _measured(old, trial_source, key) and old.get("incumbent_budget") == baseline
+                  and type(old.get("candidate_budget")) is int}
+        options = [min(lengths), sum(lengths[:max(1, len(lengths) // 2)])]
         if baseline:
             options.append(0)
-        counts = {v: 0 for v in options if v != baseline and v < b["seq_ctx"]}
-        for path in directory.glob("*.json"):
-            old = json.loads(path.read_text())
-            option = old.get("candidate_budget")
-            if old.get("workload_key") == key and old.get("incumbent_budget") == baseline and option in counts:
-                counts[option] += 1
-        candidate = min(counts, key=counts.get, default=None)
+        candidate = next((v for v in options if v != baseline and v < binding["seq_ctx"] and v not in tested), None)
         if candidate is None:
-            return {**result, "reason": "no distinct bounded prompt budget"}
-        result.update(source_sha256=source, workload_key=key, incumbent_budget=baseline, candidate_budget=candidate)
+            return {**result, "reason": "candidate budgets already measured for this workload"}
+        seed = secrets.randbits(64)
+        result.update(source_sha256=source, workload_key=key, incumbent_budget=baseline, candidate_budget=candidate,
+                      holdout_seed=seed)
+        if interrupted is not None and interrupted():
+            return {**result, "reason": "foreground work resumed"}
+        if time.monotonic() >= deadline:
+            return {**result, "reason": "local trial budget exhausted"}
+        payload = {"binding": binding, "gguf": str(gguf), "lengths": lengths, "limit": limit,
+                   "incumbent": baseline, "candidate": candidate, "key": key, "seed": seed}
         try:
-            device = verified_device(report, b, provider)
-        except ValueError as exc:
-            return {**result, "reason": str(exc)}
-        payload = {"binding": b, "gguf": str(gguf), "lengths": lengths, "limit": limit, "provider": provider, "device": device,
-                   "incumbent": baseline, "candidate": candidate, "key": key, "seed": secrets.randbits(64)}
-        result["holdout_seed"] = payload["seed"]
-        try:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return {**result, "reason": "comparison budget exhausted"}
-            child = subprocess.run([sys.executable, "-m", "ironmule.compare_learning"], input=json.dumps(payload),
-                                   text=True, capture_output=True, timeout=remaining)
-            if child.returncode == 3 and child.stdout:
-                fields = json.loads(child.stdout).get("binding_mismatch")
+            code, output = _run_child(payload, deadline, interrupted)
+            if interrupted is not None and interrupted():
+                raise InterruptedError
+            if code == 3:
+                fields = json.loads(output).get("binding_mismatch")
                 if isinstance(fields, list) and len(fields) <= 40 and all(
-                    isinstance(k, str) and re.fullmatch("[a-z0-9_]{1,32}", k) for k in fields):
+                        isinstance(k, str) and re.fullmatch("[a-z0-9_]{1,32}", k) for k in fields):
                     return {**result, "reason": "current native engine differs from measured incumbent",
                             "binding_mismatch": fields}
-            if child.returncode:
-                return {**result, "reason": "local trial unavailable", "detail": child.stderr.splitlines()[-1][:300]
-                        if child.stderr else str(child.returncode)}
-            pairs = json.loads(child.stdout)
-        except subprocess.TimeoutExpired:
-            return {**result, "reason": "comparison budget exhausted"}
+            if code:
+                return {**result, "reason": "local trial unavailable", "exit_code": code}
+            pairs = json.loads(output)
+        except InterruptedError:
+            return {**result, "reason": "foreground work resumed"}
+        except TimeoutError:
+            return {**result, "reason": "local trial budget exhausted"}
+        except (OSError, ValueError):
+            return {**result, "reason": "local trial unavailable"}
         reasons = rejections(pairs)
-        passed = not reasons
-        result.update(status="qualified" if passed else "retained_incumbent", reasons=reasons, holdout=pairs)
-        # Keep the measured evidence before exposing a winner to any worker restarting concurrently.
-        _atomic_write(history, result)
-        if passed:
-            if candidate:
-                budgets[key] = candidate
-            else:
-                budgets.pop(key, None)
-            _atomic_write(directory / "qualified.json", {"binding": b, "budgets": budgets})
+        if not reasons and any(p["incumbent"]["requests"] != len(lengths) for p in pairs):
+            reasons = ["invalid_measurement"]
+        if "invalid_measurement" in reasons or "incomplete_holdout" in reasons:
+            return {**result, "reason": reasons[0]}
+        result.update(status="retained_incumbent" if reasons else "qualified", reasons=reasons, holdout=pairs)
+        if interrupted is not None and interrupted():
+            return {**result, "status": "deferred", "reason": "foreground work resumed"}
+        trials[source] = result
+        if not reasons:
+            record["active_source"] = source
+        _atomic_write(path, record)
         return result
 
 
