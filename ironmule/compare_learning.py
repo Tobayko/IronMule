@@ -175,12 +175,13 @@ def trial(payload):
         if not set(affinity).issubset(os.sched_getaffinity(0)):
             raise ValueError("the serving worker's CPUs are unavailable")
         os.sched_setaffinity(0, affinity)
-    from .ggml_engine import GgmlEngine, file_sha256, ggml_devices
+    from .ggml_engine import GgmlEngine, SETTING_KEYS, file_sha256, ggml_devices
 
     if file_sha256(gguf) != b["gguf_sha256"]:
         raise ValueError("GGUF changed")
     opened = {k: b[k] for k in ("threads", "seqs", "seq_ctx", "speculate", "shared", "cap", "max_rows")}
-    engine = GgmlEngine(gguf, **opened, **b["settings"])
+    settings = {k: b["settings"][k] for k in SETTING_KEYS if k in b["settings"]}
+    engine = GgmlEngine(gguf, **opened, **settings)
     try:
         provider = payload["provider"]
         if engine_binding(engine, b["gguf_sha256"]) != b:
@@ -207,7 +208,7 @@ def trial(payload):
             for arm in order:
                 # Each arm starts with freshly initialized speculation, prefix and Pilot state.
                 if engine is None:
-                    engine = GgmlEngine(gguf, **opened, **b["settings"])
+                    engine = GgmlEngine(gguf, **opened, **settings)
                 pair[arm] = _sample(engine, tasks, limit, payload[arm], payload["key"])
                 engine.close()
                 engine = None

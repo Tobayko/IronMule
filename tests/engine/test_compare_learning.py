@@ -110,3 +110,18 @@ def test_next_report_uses_different_candidate_after_a_loss(tmp_path):
     (directory / "previous.json").write_text(json.dumps(previous))
     result = learn.respond(r, gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic() - 1)
     assert result["candidate_budget"] == 32
+
+
+def test_shared_pool_probe_recreates_derived_prefix_setting(monkeypatch):
+    from ironmule import ggml_engine
+
+    def open_instrumented(model, *, threads, seqs, seq_ctx, speculate, shared, cap, max_rows, kv_unified):
+        assert shared and kv_unified and cap == 8
+        raise RuntimeError("reached native constructor")
+
+    monkeypatch.setattr(ggml_engine, "file_sha256", lambda path: "model")
+    monkeypatch.setattr(ggml_engine, "GgmlEngine", open_instrumented)
+    binding = {"gguf_sha256": "model", "threads": 2, "seqs": 4, "seq_ctx": 512, "speculate": True, "shared": True,
+               "cap": 8, "max_rows": 16, "settings": {"shared_prefix": True, "kv_unified": True}}
+    with pytest.raises(RuntimeError, match="reached native constructor"):
+        learn.trial({"binding": binding, "gguf": "test.gguf"})
