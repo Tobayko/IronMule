@@ -213,7 +213,8 @@ def _fake_gate_children(monkeypatch, option_nll, *, factual_regression=False):
         if code == ggml_engine.TUNE_CHILD:
             out = {"order": [fast, ggml_engine.DEFAULT_SETTINGS], "measured": []}
         elif code == ggml_engine.GATE_IDS:
-            out = {"ids": [1, 2, 3], "bos": 1}
+            from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS
+            out = {"ids": [1] * (CHUNKS * CHUNK_TOKENS + 1), "bos": 1, "facts_sha256": "a" * 64}
         else:
             settings = _json.loads(input)["settings"]
             from ironmule.factual_gate import _protocol
@@ -290,6 +291,45 @@ def test_qg1_cannot_choose_uncertified_generated_weights_at_default_settings(mon
     assert not result["passes"]
     assert result["tried"][-1]["settings"] == ggml_engine.DEFAULT_SETTINGS
     assert not result["tried"][-1]["factual"]["passes"]
+    diagnostic = result["diagnostic"]
+    assert (diagnostic["stage"], diagnostic["code"]) == ("acceptance", "quality_rejected")
+    assert len(diagnostic["candidates"]) == 2
+    for candidate in diagnostic["candidates"]:
+        assert candidate["nll_upper"] == 1.0 and candidate["bound"] == ggml_engine.OPTION_BOUND
+        assert candidate["factual"]["arithmetic"] == {
+            "total": 6, "reference_correct": 6, "repeat_correct": 6, "candidate_correct": 5}
+
+
+@pytest.mark.parametrize("stage,returncode,body,expected", [
+    ("tokenize", 1, "FileNotFoundError: fixture missing", "missing_fixture"),
+    ("tuning", 0, "", "invalid_result"),
+    ("reference", -9, "", "child_signal"),
+    ("candidate", 1, "RuntimeError: CUDA error: out of memory", "out_of_memory"),
+])
+def test_gate_reports_the_actual_failed_child_without_its_text(monkeypatch, tmp_path, stage, returncode, body, expected):
+    import json
+    import subprocess
+    from types import SimpleNamespace
+    from ironmule import ggml_engine as ge
+
+    _fake_gate_children(monkeypatch, [2.0] * 16)
+    run = subprocess.run
+
+    def fail_at(command, **kwargs):
+        code = command[2]
+        role = ("tokenize" if code == ge.GATE_IDS else "tuning" if code == ge.TUNE_CHILD
+                else "reference" if json.loads(kwargs["input"])["reference"] else "candidate")
+        if role == stage:
+            return SimpleNamespace(returncode=returncode, stdout="/secret/run/private",
+                                   stderr=body + " /secret/run/private")
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fail_at)
+    result = ge.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    assert not result["passes"]
+    diagnostic = result["diagnostic"]
+    assert (diagnostic["stage"], diagnostic["code"], diagnostic["exit_code"]) == (stage, expected, returncode)
+    assert "/secret/" not in json.dumps(result)
 
 
 def _stub_engine(seqs: int = 4, seq_rm_ok: bool = True):

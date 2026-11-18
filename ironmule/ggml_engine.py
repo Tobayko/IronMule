@@ -1908,9 +1908,10 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     text, error = child(GATE_IDS, snapshot)
     if text is None:
         return failure(error)
-    if (not isinstance(text.get("ids"), list) or not all(type(v) is int for v in text["ids"])
+    if (not isinstance(text.get("ids"), list) or not all(type(v) is int and v >= 0 for v in text["ids"])
             or len(text["ids"]) < 4 * CHUNK_TOKENS + 1 or "bos" not in text
-            or text["bos"] is not None and type(text["bos"]) is not int):
+            or text["bos"] is not None and type(text["bos"]) is not int
+            or not isinstance(text.get("facts_sha256"), str) or len(text["facts_sha256"]) != 64):
         return failure(diag.make("tokenize", "invalid_result", status=0))
     folder = checkpoint.directory(cache, key=key, snapshot=snapshot, gguf=gguf, text=text,
                                   flags=[shape, experimental, SEQS, SEQ_CTX, THREADS, MAX_ROWS]) if cacheable else None
@@ -1995,12 +1996,21 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         return failure(diag.make("acceptance", "quality_rejected",
                                  candidates=[diag.candidate(t, OPTION_BOUND, experimental) for t in tried]),
                        ran=True, tried=tried)
+
+    def probe(settings, role):
+        row = check(settings, shared=role == "shared")
+        if row["passes"]:
+            return row
+        diagnostic = row.get("diagnostic") or diag.make("acceptance", "quality_rejected")
+        return {**row, "diagnostic": diag.sanitize({**diagnostic, "candidates": [
+            diag.candidate(row, OPTION_BOUND, experimental, role)]})}
+
     shared = None
     if fa1_version() >= 3 or gpu_layers() > 0:
-        shared = check({**chosen["settings"], "flash_attn": True, "kv_unified": True}, shared=True)
+        shared = probe({**chosen["settings"], "flash_attn": True, "kv_unified": True}, "shared")
     streams = None
     if gpu_layers() > 0:
-        streams = check({**chosen["settings"], "flash_attn": True, "kv_unified": False})
+        streams = probe({**chosen["settings"], "flash_attn": True, "kv_unified": False}, "streams")
     if model_identity() != original:
         return failure(diag.make("model_changed", "model_changed"))
     result = {"ran": True, "shared": shared, "streams": streams,
