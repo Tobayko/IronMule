@@ -7,6 +7,41 @@ here is a measured result unless it says so, and nothing here changes current be
 **What "done" means.** A stranger installs IronMule with one command, repeats the README's numbers on their own
 machine with one command, and uses it from the client they already have.
 
+## GPU serving and controller training campaign
+
+The first target is Qwen3-32B serving on one L40S with mixed short and document
+requests. At 8 and 32 clients, the measured vLLM AWQ reference delivered 143.24 and
+225.11 output tokens/s. The working target for a clear lead is 10% above the paired
+reference at both loads, with p95 time to first visible token and factual accuracy
+preserved. Check the single-client trade-off separately. The 10% target is a campaign
+objective. Each deployment keeps its own published weight format.
+[Reference runs](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
+
+1. **Locate the time in the real server.** Match rendered prompts, output length,
+   stops, hardware and warmed state. Compare queue time, dispatch to first token,
+   request completion and client-visible latency at each load. Run the same short
+   and long inputs through separate and grouped prompt processing and the qualified
+   shared KV pool. Preserve raw paired rounds, activated settings and rejected paths.
+2. **Give the controller a choice it can measure locally.** On recurring load, fit
+   the step costs from its own completions and replay comparable traffic from memory.
+   Test each proposed change on fresh traffic and retain the incumbent when the
+   candidate loses throughput, quality or first-token latency. Include short chats,
+   repeated multi-turn prefixes, extended document work, and a return to short chats.
+   Compare completed work, tail latency, starvation, switch cost and time to recover
+   across load changes. Keep external server measurements in the evaluation harness.
+3. **Confirm an operating point before claiming a lead.** Repeat the winning default
+   through the normal HTTP service against native vLLM AWQ on the same GPU in alternating
+   order. Report all widths, quality regressions and the environment. Then repeat on
+   another GPU. A win for one model, workload and device applies to that combination.
+4. **Train and evaluate the two kinds of decisions separately.** Train IronMule's
+   own RL controller on training episodes, then evaluate frozen weights on unseen
+   episodes and the real server. For language accuracy, track supported answers,
+   invented facts, false refusals and successful multi-step tool calls on fresh
+   held-out tasks. Training a new generative IronMule model requires its own
+   tokenizer, licensed corpus, checkpoints and evaluation split. After meeting the
+   serving target, scale a from-scratch run only when a smaller checkpoint improves
+   the held-out factual and tool-task results under the available compute budget.
+
 ## Read this first: the review looked at an older main
 
 The review, the audit and the micro-benchmarks below were made on a checkout of `main` at `2e72c17` (2026-11-15).
