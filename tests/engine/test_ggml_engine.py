@@ -839,6 +839,94 @@ def test_step_observer_accounts_for_separate_prefills_and_decode_gap_fillers():
         assert seconds >= 0
 
 
+def test_grouped_prefill_maps_each_argmax_to_its_own_stream_and_preserves_prefix_offsets():
+    from ironmule.ggml_engine import Job
+
+    engine, calls, _ = _streams_engine()
+    engine.prefill_batch = True
+    engine.n_vocab = 20
+    logits = engine.np.zeros((4, 20), dtype=engine.np.float32)
+    for seq in range(4):
+        logits[seq, 10 + seq] = 1
+    engine.L.llama_get_logits_ith = lambda ctx, i: engine.np.ctypeslib.as_ctypes(logits[calls[-1][i][2]])
+    prompts = [[n] * 70 + [3, 4] for n in (14, 16, 15)]
+    jobs = engine.run([Job(p, 1) for p in prompts])
+    assert [j.tokens for j in jobs] == [[10], [11], [12]]
+    calls.clear()
+    observed = []
+    engine.observer = lambda *step: observed.append(step)
+    # Prefix tokens are already on each stream. All three new suffixes fit one native call.
+    second = engine.run([Job(p[:-2] + [6, 8], 1) for p in prompts])
+    assert [j.tokens for j in second] == [[10], [11], [12]]
+    assert len(calls) == 1 and observed[0][:3] == (0, 6, 210)
+    assert [(pos, seq) for _, pos, seq in calls[0]] == [(p, s) for s in range(3) for p in (70, 71)]
+    assert engine.prefill_batch_calls == 2 and engine.prefill_batch_prompts == 6
+    assert engine.prefill_batch_rows == 3 * 72 + 6
+    assert engine.free_slots() == 4
+
+
+def test_grouped_prefill_uses_contiguous_equal_suffixes_and_respects_native_row_limit():
+    from ironmule.ggml_engine import Job
+
+    engine, _, _ = _streams_engine()
+    engine.seq_ctx = 10
+    shape = [(0, 4, 1), (1, 3, 0), (3, 3, 0), (4, 3, 0), (5, 3, 0), (6, 3, 0), (7, 1, 0)]
+    jobs = [(seq, Job([12] * length, 1), keep) for seq, length, keep in shape]
+    assert [[seq for seq, _, _ in g] for g in engine._prefill_groups(jobs)] == [[0, 1], [3, 4, 5], [6], [7]]
+
+
+def test_failed_grouped_prefill_releases_reserved_streams_for_the_next_request(monkeypatch):
+    from ironmule.ggml_engine import Job
+
+    engine, _, _ = _streams_engine()
+    engine.prefill_batch = True
+    with monkeypatch.context() as failing:
+        failing.setattr(engine.L, "llama_decode", lambda ctx, batch: -1)
+        with pytest.raises(RuntimeError, match="llama_decode failed"):
+            engine.run([Job([12] * length, 1) for length in (2, 2, 3, 3)])
+    assert engine.free_slots() == 4 and not engine._kept
+    assert engine.run([Job([15, 16], 1)])[0].tokens == [7]
+
+
+@pytest.mark.parametrize(("matches", "calls", "accepted"), [(True, 2, True), (False, 2, False), (True, 0, False)])
+def test_grouped_prefill_gate_exercises_candidate_and_separates_the_stock_reference(
+        monkeypatch, tmp_path, matches, calls, accepted):
+    import json
+    import subprocess
+    from types import SimpleNamespace
+    from ironmule import ggml_engine as ge
+    from ironmule.numeric_choice import CHUNKS
+
+    _fake_gate_children(monkeypatch, [2.0] * CHUNKS)
+    probe = subprocess.run
+    monkeypatch.setattr(ge, "machine_key", lambda: "fixture")
+    monkeypatch.setattr(ge, "gpu_layers", lambda: 999)
+    monkeypatch.setattr(ge, "fa1_version", lambda: 0)
+    model = str(tmp_path / "model.gguf")
+    stock_key = ge.gate_key(model, model)
+    monkeypatch.setenv("IRONMULE_GGML_PREFILL_BATCH", "1")
+    assert ge.gate_key(model, model) != stock_key
+    hits = []
+
+    def capture(command, **kwargs):
+        done = probe(command, **kwargs)
+        if command[2] == ge.GATE_CANDIDATE:
+            payload = json.loads(kwargs["input"])
+            if payload["reference"]:
+                assert kwargs["env"]["IRONMULE_GGML_PREFILL_BATCH"] == "0"
+                assert not payload["check_prefill_batch"]
+            elif payload["check_prefill_batch"]:
+                assert kwargs["env"]["IRONMULE_GGML_PREFILL_BATCH"] == "1"
+                hits.append(payload["settings"])
+                row = {**json.loads(done.stdout), "prefill_batch": {"matches": matches, "calls": calls}}
+                return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+        return done
+
+    monkeypatch.setattr(subprocess, "run", capture)
+    assert ge.gate(model, model, cache=tmp_path / "state")["passes"] is accepted
+    assert hits
+
+
 def test_separate_prefill_observes_only_new_tokens_and_the_prior_context(monkeypatch):
     from ironmule import ggml_engine
 
