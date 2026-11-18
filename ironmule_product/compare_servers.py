@@ -168,6 +168,19 @@ def _concurrency(args):
     return max(int(n) for n in values)
 
 
+def vllm_command(args, port, env, model, *, model_options=()):
+    """Launch the image-native vLLM server with an explicitly selected local weight format."""
+    env.pop('VLLM_API_KEY', None)
+    env['HF_HUB_OFFLINE'] = '1'
+    env['TRANSFORMERS_OFFLINE'] = '1'
+    return [str(args.vllm), 'serve', str(model), '--served-model-name', 'compare',
+            '--tokenizer', str(Path(args.tokenizer).resolve()), *model_options, '--generation-config', 'vllm',
+            '--max-model-len', str(args.context), '--max-num-seqs', str(_concurrency(args)), '--tensor-parallel-size', '1',
+            '--gpu-memory-utilization', str(getattr(args, 'gpu_memory_utilization', 0.88)),
+            *(['--enforce-eager'] if getattr(args, 'vllm_enforce_eager', False) else []),
+            '--host', '127.0.0.1', '--port', str(port)]
+
+
 def _command(engine, args, port, env, gpu):
     model, tokenizer = str(Path(args.gguf).resolve()), str(Path(args.tokenizer).resolve())
     address = ['--host', '127.0.0.1', '--port', str(port)]
@@ -190,14 +203,7 @@ def _command(engine, args, port, env, gpu):
                 '--jinja', '--chat-template-kwargs', '{"enable_thinking":false}', *address]
     if engine == 'vllm':
         # The HF sidecar supplies the architecture config as well as the tokenizer. Weights come only from the GGUF.
-        env.pop('VLLM_API_KEY', None)
-        env['HF_HUB_OFFLINE'] = '1'
-        env['TRANSFORMERS_OFFLINE'] = '1'
-        return [str(args.vllm), 'serve', model, '--served-model-name', 'compare', '--tokenizer', tokenizer,
-                '--hf-config-path', tokenizer, '--quantization', 'gguf', '--generation-config', 'vllm',
-                '--max-model-len', context, '--max-num-seqs', str(width), '--tensor-parallel-size', '1',
-                '--gpu-memory-utilization', str(getattr(args, 'gpu_memory_utilization', 0.88)),
-                *(['--enforce-eager'] if getattr(args, 'vllm_enforce_eager', False) else []), *address]
+        return vllm_command(args, port, env, model, model_options=['--hf-config-path', tokenizer, '--quantization', 'gguf'])
     raise ValueError(f'unknown serving engine {engine!r}')
 
 
@@ -369,9 +375,14 @@ def _classify_log(log, *, gate_passed=False):
     return stage, reason
 
 
-@contextlib.contextmanager
 def open_server(engine, args, repeat, deadline):
-    artifacts = prepare_artifacts(args)
+    return open_prepared_server(engine, args, repeat, deadline, prepare=prepare_artifacts, command=_command)
+
+
+@contextlib.contextmanager
+def open_prepared_server(engine, args, repeat, deadline, *, prepare, command):
+    """Own the lifetime, device binding and health checks of a server launched from verified local artifacts."""
+    artifacts = prepare(args)
     workdir = _paths(args)
     env = os.environ.copy()
     if engine == 'vllm' and env.get('IRONMULE_COMPARE_WRAPPED') == '1':
@@ -386,7 +397,7 @@ def open_server(engine, args, repeat, deadline):
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     base = f'http://127.0.0.1:{port}'
-    cmd = _command(engine, args, port, env, not device.startswith('cpu:'))
+    cmd = command(engine, args, port, env, not device.startswith('cpu:'))
     logpath = workdir / f'{engine}-r{repeat}-{port}.log'
     started = time.monotonic()
     until = min(deadline, started + args.startup_timeout)
@@ -444,11 +455,13 @@ def open_server(engine, args, repeat, deadline):
                     'launcher_executable': shutil.which(cmd[0], path=env.get('PATH')) or cmd[0]}
             if device.startswith('GPU-'):
                 info['cuda_visible_devices'] = env['CUDA_VISIBLE_DEVICES']
+            if engine == 'vllm':
+                info['model_root'] = next(m.get('root') for m in models if m.get('id') == model_id)
             if engine == 'ironmule':
                 qualification = _gate_attempts(log)
                 if qualification:
                     info['qualification'] = qualification
             yield info
-            prepare_artifacts(args)
+            prepare(args)
         finally:
             _stop(process)
