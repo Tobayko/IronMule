@@ -7,7 +7,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from . import evaluate
+from . import evaluate, structured
 
 
 def verify(report: dict) -> None:
@@ -16,7 +16,11 @@ def verify(report: dict) -> None:
     fixtures = evaluate.cases(report["seed"], report["split"], report["groups"])
     if hashlib.sha256(json.dumps(fixtures, sort_keys=True).encode()).hexdigest() != report["cases_sha256"]:
         raise ValueError("fixture digest differs")
-    if set(report["conditions"]) != {"reference", "evidence_first"}:
+    study = report.get("study")
+    if study not in (None, structured.STUDY):
+        raise ValueError("unsupported study")
+    conditions = {"reference", "structured"} if study else {"reference", "evidence_first"}
+    if set(report["conditions"]) != conditions:
         raise ValueError("missing paired condition")
     for label, record in report["conditions"].items():
         _verify_condition(fixtures, label, record)
@@ -39,7 +43,8 @@ def _verify_condition(fixtures, label, record):
             turns.append(evaluate.Turn(row["response"], row["finish"], row["tokens"]))
         return turns
 
-    if evaluate.evaluate(replay, fixtures, label) != record:
+    scores = structured.assess(replay, fixtures) if label == "structured" else evaluate.evaluate(replay, fixtures, label)
+    if scores != record:
         raise ValueError(f"recorded grades or tool returns differ in {label}")
 
 

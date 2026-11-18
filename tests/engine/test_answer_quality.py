@@ -113,3 +113,63 @@ def test_offline_verification_recomputes_instead_of_trusting_grades():
     report["conditions"]["reference"]["supported"]["correct"] = 1
     with pytest.raises(ValueError, match="recorded grades"):
         check_report.verify(report)
+
+
+def test_structured_application_cannot_read_labels_and_follows_the_returned_depot():
+    from lab.answer_quality import structured
+
+    def invented(conversations, tools):
+        budget = []
+        for messages in conversations:
+            answer = ('{"name":"shipment_depot","arguments":{"shipment":"S-98765"}}'
+                      if tools and len(messages) == 2 else "D-11111")
+            budget.append(Turn(answer, "eos", 1))
+        return budget
+    case = "Ledger:\nS-98765 | seal=Z-10000\nS-88888 | dock=D-11111\n\nWhat is the dock code for shipment S-98765?"
+    record, = structured.ledger(invented, [case])
+    assert record["observation"]["status"] == "missing_field"
+    assert record["delivered"] == "UNKNOWN" and record["source_renderer_used"]
+    seen = []
+    def dispatch(call):
+        seen.append(call)
+        return {"depot": "P-94321"} if call["name"] == "shipment_depot" else {"dock": "D-42424"}
+    row, = structured.dock_workflow(invented, ["S-98765"], [dispatch])
+    assert seen[1] == {"name": "depot_dock", "arguments": {"depot": "P-94321"}}
+    assert row["delivered"] == "D-42424" and row["source_renderer_used"]
+    assert row["turns"][-1]["response"] == "D-11111"
+    assert [r["actor"] for r in row["calls"]] == ["model", "application"]
+    seen.clear()
+    no_match, = structured.dock_workflow(invented, ["S-44444"], [dispatch])
+    assert len(seen) == 1 and no_match["delivered"] == "UNKNOWN"
+
+
+def test_changed_oracle_cannot_change_structured_answers():
+    from copy import deepcopy
+
+    from lab.answer_quality import structured
+
+    fixtures = cases(1, "development", 1)
+    changed = deepcopy(fixtures)
+    changed[0]["cases"][0]["expected"] = "D-99999"
+    reference = lambda conv, tools: [Turn("UNKNOWN", "eos", 1) for _ in conv]
+    before, after = (structured.assess(reference, rows)["ledger_cases"][0] for rows in (fixtures, changed))
+    assert before["observation"] == after["observation"] and before["delivered"] == after["delivered"]
+    assert before["grade"] == "correct" and after["grade"] != "correct"
+
+
+def test_structured_offline_verification_reexecutes_tools():
+    import hashlib
+
+    from lab.answer_quality import check_report, structured
+    from lab.answer_quality.evaluate import PROTOCOL
+
+    dataset = cases(17, "development", 1)
+    def no_data(chats, tools):
+        return [Turn("UNKNOWN", "eos", 1) for _ in chats]
+    report = {"protocol": PROTOCOL, "study": structured.STUDY, "seed": 17, "split": "development", "groups": 1,
+              "cases_sha256": hashlib.sha256(json.dumps(dataset, sort_keys=True).encode()).hexdigest(),
+              "conditions": {"reference": evaluate(no_data, dataset), "structured": structured.assess(no_data, dataset)}}
+    check_report.verify(report)
+    report["conditions"]["structured"]["ledger_cases"][0]["observation"]["value"] = "D-55555"
+    with pytest.raises(ValueError, match="recorded grades"):
+        check_report.verify(report)

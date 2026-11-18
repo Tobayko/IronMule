@@ -57,3 +57,17 @@ To reproduce the frozen scorecards from the saved responses without a model, run
 ```sh
 python -m lab.answer_quality.check_report evidence/answer-quality/qwen3-06b-grounding-tools-20261118.json
 ```
+
+## Structured application workflow
+
+A third workflow tests a narrower application with an explicit shipment-lookup contract. It pairs the unchanged reference prompt and decoder with a freshly generated set of shipments (seed 20261120). Both conditions use the same questions, records, limits and model.
+
+For a ledger request, the application parses the supplied question and checks the exact shipment and field in the visible input. It reports duplicate or missing data explicitly. For a dock task, the model chooses the first tool and supplies the shipment. When a successful lookup for the requested shipment returns a depot, the application passes that actual depot to the second function. The model sees the authentic returns. The final renderer preserves a model response matching the canonical source value, otherwise it delivers the returned value or `UNKNOWN` when a value could not be obtained. This renderer cannot reconstruct a missing field. A failed or off-target first tool call cannot receive credit for the full workflow.
+
+The execution functions receive public prompts, query identifiers and callable tools. The grading function reads the separately derived labels after execution. Reports identify the author of each tool call, each return value, the model response, and the answer actually delivered. Model-level and application-level results can therefore be checked separately.
+
+```sh
+IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_PILOT=0 IRONMULE_KG5=0 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+python -m lab.answer_quality.structured --gguf /models/Qwen_Qwen3-0.6B-Q4_K_M.gguf \
+  --output /tmp/qwen3-06b-structured.json
+```

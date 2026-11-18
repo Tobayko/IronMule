@@ -243,7 +243,7 @@ def evaluate(generate, fixtures, condition="reference"):
             "ledger_cases": grounded, "tool_traces": trajectories}
 
 
-def run(args):
+def run(args, *, conditions=None):
     from ironmule import ggml_binary
     from ironmule.ggml_engine import GgmlEngine, Job, file_sha256
     from ironmule.gguf_tokenizer import GgufTokenizer
@@ -269,8 +269,10 @@ def run(args):
         return out
     try:
         dataset = cases(args.seed, args.split, args.count)
-        conditions = ("reference", "evidence_first")
-        results = {condition: evaluate(generate, dataset, condition) for condition in conditions}
+        if conditions is None:
+            results = {name: evaluate(generate, dataset, name) for name in ("reference", "evidence_first")}
+        else:
+            results = {name: measure(generate, dataset) for name, measure in conditions.items()}
         return {"protocol": PROTOCOL, "seed": args.seed, "split": args.split, "groups": args.count,
                 "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 "cases_sha256": hashlib.sha256(json.dumps(dataset, sort_keys=True).encode()).hexdigest(),
