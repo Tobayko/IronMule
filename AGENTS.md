@@ -20,9 +20,15 @@ mode the caller's plan is preserved as below.
 **The trainable model is IronMule's hardware controller (owner, 2026-11-18).** Its training targets execution
 decisions. Preserve the served language model's weights. Remember both successful and unsuccessful trials with
 their device, runtime, model and workload, and distinguish contention, bursts, short chats and long documents.
-Experience from another machine may guide what to test first. Qualify a serving change on the machine that
+IronMule's own experience on another machine may guide what to test first. Qualify a serving change on the machine that
 will run it. Keep the actual load-transition results, including reversions, in [docs/LAB.md](docs/LAB.md).
 Report backend detection, successful computation and measured serving performance separately for new devices.
+
+Maintainers may use external llama.cpp and vLLM comparisons to find bottlenecks and directly improve
+IronMule's code, including the scheduling options its controller can try. The controller chooses each
+autonomous trial from IronMule's own observations and adopts a setting only after testing it against its
+current setting on the target hardware. Attribute maintainer changes and controller decisions to whoever
+made them. When repeated trials yield no new evidence, record the result and pursue the next bottleneck.
 
 **IronMule decides on the CPU, the model it steers is to run perfectly on the GPU (owner decision, 2026-11-16;
 BACKLOG, "The main goal").** The agent and its per-step decision model, the Pilot (`ironmule/pilot.py`), run on the
