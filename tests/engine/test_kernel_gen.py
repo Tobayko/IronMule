@@ -94,3 +94,42 @@ def test_kg4_q6k_is_kept_only_where_it_beats_the_step_without_it(monkeypatch):
     out = engine.measure_kg("lib.so", repeats=3)
     assert out["tokens_served"] == [8, 32] and out["q6k_tokens_served"] == [8]
     assert Lib.mask6 == 1 << 7 and Lib.mask == (1 << 7) | sum(1 << (u - 1) for u in range(25, 33))
+
+
+def test_kernel_memory_binds_device_and_model_and_retries_transient_failures(tmp_path, monkeypatch):
+    model = tmp_path / "test.gguf"
+    model.write_bytes(b"first weights")
+    fp = {"devices": [{"uuid": "device-a", "name": "T4", "cc": "75"}],
+          "driver": ["580"], "nvcc": "cuda12", "cc": "75", "kg": kg.KG_VERSION}
+    monkeypatch.setattr(kg, "fingerprint", lambda: fp)
+    monkeypatch.setattr(kg, "nvcc_path", lambda: "nvcc")
+    monkeypatch.setattr(kg, "q4k_tensors", lambda *a, **k: {(128, 256): {}})
+    attempts = []
+    outcomes = iter(["failed_launch", "rejected", "passed", "passed", "passed"])
+
+    def measure(*args, **kwargs):
+        result = next(outcomes)
+        attempts.append(result)
+        return {"fingerprint": fp, "entries": [{"B": 1}] if result == "passed" else [],
+                "measured": [{"code": int(result == "failed_launch"), "rel_err": 0.2}], "error_bound": .006}
+
+    def build(table, path):
+        path.write_bytes(b"compiled library")
+        return path
+
+    monkeypatch.setattr(kg, "tune", measure)
+    monkeypatch.setattr(kg, "build", build)
+    cache = tmp_path / "kernels"
+    assert kg.ensure(str(model), cache) is None
+    assert kg.ensure(str(model), cache) is None
+    assert kg.ensure(str(model), cache) is None
+    assert attempts == ["failed_launch", "rejected"]
+    model.write_bytes(b"other weights, same shape")
+    first = kg.ensure(str(model), cache)
+    assert kg.ensure(str(model), cache) == first and len(attempts) == 3
+    first.write_bytes(b"partial library")
+    assert kg.ensure(str(model), cache).read_bytes() == b"compiled library"
+    fp["devices"][0]["uuid"] = "device-b"
+    assert kg.ensure(str(model), cache) != first and len(attempts) == 5
+    fp["devices"].append({"uuid": "device-c", "name": "T4", "cc": "75"})
+    assert kg.ensure(str(model), cache) is None and len(attempts) == 5
