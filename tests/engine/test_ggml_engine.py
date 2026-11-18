@@ -806,6 +806,8 @@ def test_kg3_a_new_request_takes_the_lowest_free_stream():
     engine.settings = {"kv_unified": False}
     engine._free, engine._kept = [3, 1, 2], {3: [9, 9, 9]}
     assert engine._take_sequence([5, 6, 7]) == (1, 0)
+    engine._kept = {1: [5, 6, 8], 3: [5, 6, 7, 9]}
+    assert engine._take_sequence([5, 6, 7, 10]) == (1, 2)
     engine._kept = {3: list(range(80))}
     assert engine._take_sequence(list(range(70)) + [5]) == (3, 70)  # a long kept prefix still wins
 

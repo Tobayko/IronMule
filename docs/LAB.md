@@ -2308,3 +2308,11 @@ step costs and arrivals but no request-level completion timestamps. It exercises
 the real withdrawal was checked above. Deterministic tests also cover a permanent move to singleton requests
 (64 new completions unlock a fresh dream), a continually alternating mix (512 new completions expire the hold),
 and an idle tick without new arrivals.
+
+### 2026-11-18 — Short repeated prompts on the preferred GGUF stream
+
+During a subsequent CPU test with SmolLM2-135M-Instruct Q4_K_M, a repeated 16-token prompt reused zero tokens
+from its preferred KV stream. The 64-token threshold for moving a request to a different stream was also being
+applied to the stream the scheduler had already chosen. After limiting that threshold to stream changes, the
+same request reused 15 prompt tokens and produced the same output as the fresh request. The HTTP timings above
+precede this change. Its end-to-end speed impact has not been measured.

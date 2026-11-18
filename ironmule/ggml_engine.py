@@ -818,9 +818,11 @@ class GgmlEngine:
             # ids, so a new request takes the lowest free id unless a kept prefix of 64 tokens or more is elsewhere
             best = min(self._free)
             if self.prefix_reuse and self._kept:
+                lowest = best
                 for seq in self._free:
                     n = self._common(self._kept.get(seq) or [], ids)
-                    if n >= max(64, keep + 1):
+                    # Reuse even a short match when the preferred stream already holds it.
+                    if (seq == lowest and n >= keep) or (n >= 64 and n > keep):
                         best, keep = seq, n
             return best, min(keep, len(ids) - 1)
         if self.prefix_reuse and self._kept:
