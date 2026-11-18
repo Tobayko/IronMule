@@ -16,10 +16,11 @@ from typing import Any, Iterator
 from .errors import (BackendUnavailable, EngineLimitExceeded, InvalidRequest, StateError,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .serving_policy import ServingLog, ServingPolicy, load_policy
+from .types import MAX_OUTPUT_TOKENS, GenerationRequest, ModelSpec
 
 STABILITY_LOG = "stability-log.jsonl"  # STAB1: admission, groups, ends, worker exits; bounded like the serving log
 MAX_RESTARTS, RESTART_WINDOW_S = 3, 600.0  # STAB1: a fourth worker loss within ten minutes stops recovery
-MAX_GROUP_MEMBERS = 32  # requests one group may serve over its life, its joiners included (the batch protocol's 32)
+MAX_GROUP_MEMBERS = 32  # initial requests per batch command
 RESTART_BACKOFF_S = (0.0, 5.0, 20.0)  # before the 1st, 2nd and 3rd attempt: device memory may free late
 # What a replacement must report as the first worker did; `engine` holds the tuned profile the learner is bound to.
 _IDENTITY_KEYS = ("model_id", "revision", "device", "execution_variant", "sources_sha256", "engine")
@@ -28,7 +29,6 @@ _IDENTITY_KEYS = ("model_id", "revision", "device", "execution_variant", "source
 def _identity_of(backend: Any) -> dict[str, Any]:
     payload = getattr(backend, "ready_payload", None) or {}
     return {key: payload.get(key) for key in _IDENTITY_KEYS}
-from .types import GenerationRequest, ModelSpec
 
 
 def _set_replay_phase(state: dict, phase: str) -> bool:
@@ -1375,6 +1375,13 @@ class ProductService:
         # engine counts members over the group's life, as measured (SERVE8, RL6, LD1-V).
         reuses = getattr(self.backend, "reuses_slots", False) is True
 
+        capacity = self._batch_capacity()
+        # GGUF can refill freed sequences while a long answer continues. Bound retained request
+        # records to one extra wave and retained token frames to the original 32-request maximum.
+        refill = reuses and getattr(self.backend, "engine_configuration", None) == "ggml"
+        lifetime = MAX_GROUP_MEMBERS + (capacity if refill else 0)
+        token_budget = MAX_GROUP_MEMBERS * MAX_OUTPUT_TOKENS - sum(item.request.max_tokens for item in live)
+
         def consume(item: _Session) -> None:
             queues.setdefault(item.request.request_id, queue.Queue())
             consumer = threading.Thread(target=self._deliver, name="ironmule-batch-stream", daemon=True,
@@ -1385,14 +1392,15 @@ class ProductService:
         def joins() -> list[tuple[GenerationRequest, threading.Event]]:
             """SERVE8: requests waiting now join the running group while fewer than its capacity
             stream at once; the backend's metadata gate decides as for a new group."""
+            nonlocal token_budget
             taken = []
             # RSI4: a learned policy may queue newcomers instead. SERVE8 killed joining for grouped batch-1, where
             # every joiner slows every step; the dense plan's freed slot costs a newcomer about 3 ms a step (KB1-2)
             # and filling it is the point, so a slot-reusing backend always takes newcomers.
             if not self.policy.join and not reuses:
                 return taken
-            while ((len(members) - len(finished) if reuses else len(members)) < self._batch_capacity()
-                   and len(members) < MAX_GROUP_MEMBERS):  # members over the group's life, as before STAB1
+            while ((len(members) - len(finished) if reuses else len(members)) < capacity
+                   and len(members) < lifetime):
                 with self._lock:
                     item = self._carry.popleft() if self._carry else None
                 if item is None:
@@ -1400,12 +1408,14 @@ class ProductService:
                         item = self._pending.get_nowait()
                     except queue.Empty:
                         break
-                if item.cancelled.is_set() or not self.backend.can_batch_requests([live[0].request, item.request]):
+                if (item.cancelled.is_set() or item.request.max_tokens > token_budget
+                        or not self.backend.can_batch_requests([live[0].request, item.request])):
                     with self._lock:
                         self._carry.appendleft(item)  # keeps its place; the scheduler serves it next
                     break
                 item.dispatched_ns = time.monotonic_ns()
-                item.joined, item.width = True, len(members) + 1
+                token_budget -= item.request.max_tokens
+                item.joined, item.width = True, len(members) + 1 - (len(finished) if reuses else 0)
                 item.group = live[0].group
                 self.note("join", id=item.request.request_id, group=item.group)
                 with self._lock:

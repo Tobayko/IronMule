@@ -431,3 +431,44 @@ def test_the_queue_bound_counts_the_work_a_shortest_first_order_moved_aside():
     with pytest.raises(Overloaded):
         ask("four")
     assert len(running) == 1 and service._queued()[0] == 2 == service.settings["max_pending"]
+
+
+def test_gguf_refills_one_bounded_wave_while_an_earlier_request_is_still_running():
+    from dataclasses import replace
+
+    from ironmule_product.types import MAX_OUTPUT_TOKENS
+
+    class Straggler(_Transport):
+        streams_batches = reuses_slots = True
+        batch_capacity = 4
+
+        def complete_batch(self, requests, *, cancels, timeout, on_event, joins):
+            def done(rid):
+                on_event(rid, {"type": "done", "request_id": rid, "finish_reason": "length",
+                               "prompt_tokens": 1, "completion_tokens": 1})
+
+            anchor = requests[0].request_id
+            members = [request.request_id for request in requests]
+            active = members[1:]
+            while active:
+                assert len(active) <= self.batch_capacity - 1
+                for rid in active:
+                    done(rid)
+                active = [request.request_id for request, _ in joins()]
+                members.extend(active)
+            done(anchor)
+            self.members = members
+            return [{"request_id": rid, "events": [], "metadata": {}} for rid in members]
+
+    for engine, limit, expected in (("ggml", 4, 36), ("ggml", MAX_OUTPUT_TOKENS, 32), ("dense_stacked", 4, 32)):
+        backend = Straggler()
+        backend.engine_configuration = engine
+        service = _service(backend)
+        sessions = [_Session(replace(_request(str(i)), max_tokens=limit), None) for i in range(40)]
+        for item in sessions[4:]:
+            service._pending.put(item)
+        service._perform_batch(sessions[:4])
+        assert backend.members == [str(i) for i in range(expected)]
+        assert service._completed == expected and service._failed == 0
+        assert all(1 < item.width <= backend.batch_capacity for item in sessions[4:expected])
+        assert service._next_session().request.request_id == str(expected)
