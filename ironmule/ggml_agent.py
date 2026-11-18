@@ -184,14 +184,44 @@ def simulate(cost: StepCost, width: int, arrivals: Sequence[tuple], seq_ctx: int
             "ttft": sum(ttft) / len(ttft) if ttft else 0.0}
 
 
+def workload_profile(rows: Sequence[tuple]) -> tuple[float, float, float, float]:
+    """Mean prompt work, uncached prompt work, answer length and within-block arrival spacing."""
+    return (statistics.fmean(row[1] for row in rows),
+            statistics.fmean(row[3] if len(row) > 3 else row[1] for row in rows),
+            statistics.fmean(row[2] for row in rows),
+            statistics.fmean(row[0] for row in rows[1:]) if len(rows) > 1 else 0.0)
+
+
+def matching_windows(memory: Sequence[tuple], size: int) -> list[int]:
+    """Find independently recorded, disjoint blocks similar to the latest stable load."""
+    if size < MIN_LIVE_WINDOW or len(memory) < 4 * size:
+        return []
+    recent = len(memory) - size
+    target = workload_profile(memory[recent:])
+    starts = range(recent, -1, -size)
+    matched = []
+    for start in starts:
+        other = workload_profile(memory[start:start + size])
+        # A twofold change in any work dimension is a different regime. Smooth sub-ms arrivals.
+        if all(max(a + floor, b + floor) <= 2 * min(a + floor, b + floor)
+               for a, b, floor in zip(target, other, (1, 1, 1, 0.001))):
+            matched.append(start)
+    if len(matched) < 4 or matched[1] != recent - size or len(matched) == len(starts):
+        return []
+    return matched
+
+
 def windows(memory: Sequence[tuple[float, int, int]], rng: random.Random, count: int = WINDOWS,
-            size: int = WINDOW) -> list[list[tuple[float, int, int]]]:
+            size: int = WINDOW, *, matched: Sequence[int] = ()) -> list[list[tuple[float, int, int]]]:
     """Windows of `size` consecutive recorded arrivals, gaps scaled by one factor in 0.5-1.5 per window; three in four
     start among the last `RECENT` arrivals, so a change in the traffic shows in the dream soon after it happens."""
     out = []
     last = max(1, len(memory) - size + 1)
     for _ in range(count):
-        start = rng.randrange(max(0, last - RECENT), last) if rng.random() < 0.75 else rng.randrange(0, last)
+        if rng.random() < 0.75:
+            start = rng.choice(matched) if matched else rng.randrange(max(0, last - RECENT), last)
+        else:
+            start = rng.randrange(0, last)
         factor, t, window = rng.uniform(0.5, 1.5), 0.0, []
         for row in memory[start:start + size]:
             gap, prompt, answer = row[:3]
@@ -209,7 +239,8 @@ def dream(configs: dict[str, dict[str, Any]], costs: dict[str, StepCost], incumb
     """Every configuration on the same windows; per candidate the mean relative tokens-per-second gain over the
     incumbent with a bootstrap 2.5 % bound, and its mean first-token ratio. Optional local rebuild times
     charge entry at the first arrival and reserve a return after the sampled window."""
-    sampled = windows(memory, rng, size=window_size)
+    matched = matching_windows(memory, window_size)
+    sampled = windows(memory, rng, size=window_size, matched=matched)
     runs = {}
     for name, config in configs.items():
         enter, leave = (switch_costs or {}).get(name, (None, None))
@@ -222,7 +253,8 @@ def dream(configs: dict[str, dict[str, Any]], costs: dict[str, StepCost], incumb
                 row["tok_s"] = row["tokens"] / (row["seconds"] + leave)
         runs[name] = rows
     base = runs[incumbent]
-    out: dict[str, Any] = {"windows": len(sampled), "window_requests": window_size, "candidates": {}}
+    out: dict[str, Any] = {"windows": len(sampled), "window_requests": window_size,
+                           "matched_history_windows": len(matched), "candidates": {}}
     if switch_costs is not None:
         out["switch_costs_s"] = {name: {"enter": enter, "return": leave}
                                  for name, (enter, leave) in switch_costs.items()}

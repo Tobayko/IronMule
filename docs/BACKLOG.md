@@ -276,6 +276,16 @@ During the returning short phase it delivered 45.85 against 84.68 tokens/s for f
 See [the lab notes](LAB.md) for the scope and controls. The next question is whether an earlier live regression
 check can shorten a bad trial while retaining profitable switches on fresh traffic.
 
+**Workload-conditioned dream windows, CPU protocol, 2026-11-18.** Use SmolLM2-135M Q4_K_M on two CPU threads,
+with certified stock arithmetic, widths 4 and 8, and 32 arrivals per decision. Rotate short questions, distinct long
+documents and repeated-prefix follow-ups, three blocks of 32 requests per phase. The first rotation is calibration.
+Score the next two full rotations on fresh copy targets, making each forecast before its requests run. Compare the
+existing recent-history sampler with a sampler using matching past blocks. Both see only IronMule's token counts,
+prefix reuse and arrival gaps. Measure the mean absolute log-ratio error of the forecasts for prompt tokens, computed
+prompt tokens, generated tokens and arrival spacing. Retain conditioning only if it improves overall forecast error
+and never changes the set of quality-qualified configurations. Record held-out first-word scores, actual switches and
+world-model updates separately. A forecast result does not establish serving speed. Budget 20 local CPU minutes.
+
 **Learning a GPU width probe from other runs.** Compare one and four sequence slots on
 the same GGUF and device at 32 and 256 prompt tokens under one and four simultaneous
 requests. Fit the log throughput and first-token latency ratios on repeated calibration

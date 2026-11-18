@@ -383,3 +383,35 @@ def test_product_gpu_uses_the_standard_window_with_measured_rebuild_costs(tmp_pa
     assert restored.switch_seconds == {"one": {"four": .25}}
     challenger = GgmlAgent(tmp_path, agent.binding, configs, "one", price_switches=True)
     assert challenger.path != agent.path and challenger.requests == 0
+
+
+def test_prior_blocks_match_computed_work_and_require_a_repeated_current_mix():
+    from ironmule.ggml_agent import matching_windows
+
+    size = 8
+    document = [(0.2, 256, 12, 256)] * size
+    followup = [(0.2, 256, 12, 8)] * size
+    # Equal prompt lengths and arrivals, but most of the follow-up prefix is in the KV cache.
+    history = followup * 3 + document + followup
+    assert matching_windows(history, size) == []
+    assert matching_windows(history + followup, size) == [5 * size, 4 * size, 2 * size, size, 0]
+    assert matching_windows(followup * 8, size) == []  # stationary traffic uses the original sampler
+    assert matching_windows(document + followup * 2, size) == []  # too few distinct recorded blocks
+    assert matching_windows(history + document * 2, size) == []  # two new document blocks alone are insufficient
+
+
+def test_dream_sampler_keeps_broad_replay_and_observes_legacy_checkpoint_rows():
+    from ironmule.ggml_agent import matching_windows, windows, workload_profile
+
+    size = 8
+    quiet = [(1.0, 12, 1)] * size
+    busy = [(0.002, 180, 32)] * size
+    history = quiet * 4 + busy * 5 + quiet * 2
+    matched = matching_windows(history, size)
+    assert matched
+    assert workload_profile(quiet) == (12, 12, 1, 1.0)
+    sampled = windows(history, random.Random(31), count=160, size=size, matched=matched)
+    recent = windows(history, random.Random(31), count=160, size=size)
+    quiet_fraction = lambda rows: sum(all(job[1] == 12 for job in window) for window in rows) / len(rows)
+    assert quiet_fraction(recent) < quiet_fraction(sampled) < 1
+    assert len(sampled) == 160 and all(len(window) == size for window in sampled)
