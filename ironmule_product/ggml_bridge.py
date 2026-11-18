@@ -51,6 +51,9 @@ class GgmlBridge:
         self._gguf_sha256 = file_sha256(gguf)
         self._gate = dict(gate) if gate else None
         self._speculate = speculate
+        if getattr(self._engine, "prefill_batch_long", False):
+            from ironmule.long_prefill_study import enable_worker
+            enable_worker(self._engine, tokenizer, self._gguf_sha256, self._gate)
         self._run_lock = threading.Lock()  # one run or one reconfiguration at a time
         self._last_run = time.monotonic()
         self._agent = None

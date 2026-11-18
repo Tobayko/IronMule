@@ -162,11 +162,14 @@ def check(engine, tokenizer):
     if not (enabled and getattr(engine, "prefill_batch_long", False)):
         return {"protocol": PROTOCOL, "matches": False, "calls": 0, "shapes": {}, "reasons": ["long_mode_inactive"]}
     results = {}
+    previous_shapes = getattr(engine, "prefill_long_shapes", None)
+    engine.prefill_long_shapes = {LENGTH: WIDTHS}  # scoped only to this cold target-shape holdout
     try:
         for width in WIDTHS:
             results[f"{width}x{LENGTH}"] = _shape(engine, tokenizer, width)
     finally:
         engine.prefill_batch = enabled
+        engine.prefill_long_shapes = previous_shapes
         engine._clear()
     return {"protocol": PROTOCOL, "matches": all(s["matches"] for s in results.values()),
             "calls": sum(s["calls"] for s in results.values()), "shapes": results}

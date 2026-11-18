@@ -434,6 +434,9 @@ class SharedPool:
 class GgmlEngine:
     observer: Callable[[int, int, int, float], None] | None = None  # AG10: (rows, prompt, kv, seconds) of each step
     prefill_batch = False
+    prefill_batch_long = False
+    prefill_long_shapes: dict[int, tuple[int, ...]] | None = None
+    prefill_long_pairs = prefill_long_quads = 0
     prefill_batch_calls = prefill_batch_prompts = prefill_batch_rows = 0
     gpu_layers = 0
     pool: "SharedPool | None" = None
@@ -455,6 +458,9 @@ class GgmlEngine:
         self._owns_model = model is None  # SEQ1: a width measurement opens several contexts on one loaded model
         self.gpu_layers = gpu_layers(L)  # the same for a context opened on an already loaded model (SEQ1)
         self.prefill_batch = self.gpu_layers > 0 and os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1"
+        # The long-only mode is dormant until this worker verifies its own measured receipt and holdout.
+        self.prefill_batch_long = (bool(self.gpu_layers) and os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444"
+                                  and cuda_kernel_device(L))
         if self.gpu_layers and KG_LIB and not cuda_kernel_device(L):
             raise ValueError("a generated CUDA kernel library needs exactly one GGML CUDA device")
         if model is None:
@@ -715,6 +721,8 @@ class GgmlEngine:
     def reconfigure(self, seqs: int, settings: dict[str, bool]) -> None:
         """AG10: serve with another width or KV cache on the same loaded model; only between runs (the caller holds the
         run lock). The old context and its KV go; the new one is warmed up as at the start."""
+        if self.prefill_batch_long:
+            self.prefill_batch = False  # the previous receipt and holdout apply only to their original context
         self.close_context()
         self._open(seqs, self.seq_ctx, **{k: bool(v) for k, v in settings.items() if k in SETTING_KEYS})
         self._warm_up()
@@ -903,11 +911,22 @@ class GgmlEngine:
             seq, job, keep = fresh[start]
             length = len(job.ids) - keep
             end = start + 1
+            widths = (self.prefill_long_shapes or {}).get(length, ()) if self.prefill_batch_long else ()
+            if self.prefill_batch_long:
+                # The machine's receipt names the cold rectangles its holdout and measured workload exercised.
+                if keep or not widths:
+                    yield fresh[start:end]
+                    start = end
+                    continue
             while length > 1 and end < len(fresh) and (end - start + 1) * length <= self.seq_ctx:
                 next_seq, other, kept = fresh[end]
+                if self.prefill_batch_long and (kept or end - start >= max(widths)):
+                    break
                 if next_seq != seq + end - start or len(other.ids) - kept != length:
                     break
                 end += 1
+            if self.prefill_batch_long:
+                end = start + max((width for width in widths if width <= end - start), default=1)
             yield fresh[start:end]
             start = end
 
@@ -920,6 +939,11 @@ class GgmlEngine:
         picks = self._decode(rows)
         if observer is not None:
             observer(0, len(rows), sum(keep for _, _, keep in group), time.perf_counter() - started)
+        if self.prefill_batch_long:
+            if len(group) == 2:
+                self.prefill_long_pairs += 1
+            else:
+                self.prefill_long_quads += 1
         self.prefill_batch_calls += 1
         self.prefill_batch_prompts += len(group)
         self.prefill_batch_rows += len(rows)
@@ -1345,6 +1369,9 @@ class GgmlEngine:
                 "threads": self.threads, "sequences": self.seqs,
                 "sequence_tokens": self.seq_ctx, "steps": self.steps,
                 "prefill_batch": {"enabled": self.prefill_batch, "calls": self.prefill_batch_calls,
+                                  "mode": ("long-444" if self.prefill_batch_long else "all") if self.prefill_batch else "off",
+                                  **({"long_shape_hits": {"2": self.prefill_long_pairs, "4": self.prefill_long_quads}}
+                                     if self.prefill_batch_long else {}),
                                   "prompts": self.prefill_batch_prompts, "rows": self.prefill_batch_rows},
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
@@ -1833,6 +1860,8 @@ def machine_key() -> str:
     binding = {**runtime_binding(ggml_devices()), "native": native_identity()}
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1":
         binding["grouped_prefill"] = 1
+    if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444":
+        binding["grouped_prefill"] = "cold-pairs-quads-444-v1"
     digest = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
     return f"{platform.machine()}|{os.cpu_count()}|{model}|{digest}"
 
@@ -1885,7 +1914,14 @@ if require_dispatch:
 facts = ggml_scores(engine, tokenizer, kg5=data["kg5_shape"])
 dispatched = launches() - before if require_dispatch else None
 repeat = ggml_scores(engine, tokenizer, kg5=data["kg5_shape"]) if data["reference"] else None
-grouped = engine.check_prefill_batch(ids) if data.get("check_prefill_batch") else None
+grouped = None
+if data.get("check_prefill_batch"):
+    if engine.prefill_batch_long:
+        from ironmule.long_prefill_gate import check as check_long
+        engine.prefill_batch = True
+        grouped = check_long(engine, tokenizer)
+    else:
+        grouped = engine.check_prefill_batch(ids)
 engine.close()
 print(json.dumps({"nll": rows, "facts": facts, "repeat": repeat, "kg5_launches": dispatched, "prefill_batch": grouped}))
 """
@@ -1950,6 +1986,9 @@ def gate_key(snapshot: str, gguf: str) -> str:
                                      _kernel_digest()]
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1":
         shape_key.append("grouped-split-kv-prefill-v1")
+    if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444":
+        shape_key.append(["long-prefill.v1", file_sha256(str(Path(__file__).with_name("long_prefill_gate.py"))),
+                          file_sha256(str(Path(__file__).with_name("long_prefill_study.py")))])
     return hashlib.sha256(json.dumps(shape_key, sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -1980,7 +2019,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     stored = cache / f"{key}.json"
     # A fresh worker in the opposite benchmark order may reuse its own content-matched gate.
     experimental = os.environ.get("IRONMULE_KG5") == "1"
-    prefill_batch = os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1" and gpu_layers() > 0
+    prefill_batch = os.environ.get("IRONMULE_GGML_PREFILL_BATCH") in ("1", "long-444") and gpu_layers() > 0
     shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
     cacheable = _kernel_digest() is not None and (not experimental or bool(_kg5_files()))
     if cacheable and stored.exists():
