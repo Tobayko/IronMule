@@ -60,3 +60,16 @@ have selected a wider width despite a failed quality check, or would have lost t
 on matched output. Keeping one slot on a failed quality case supplies no evidence of baseline correctness. Folds
 with no eligible source data are listed separately. These offline predictions leave the server's local
 remeasurement and qualification requirements in force.
+
+## GGUF controller decisions during load changes
+
+Run the previous and cost-aware idle decision rules against fresh requests on one GPU. Both
+arms start from the same measured calibration. The probe calls the normal agent decision
+between waves and charges its elapsed time and any context rebuild to the arriving requests.
+The regular server waits for an idle interval. Inspect wave-level quality, exact output,
+selected widths, switch timings and complete-run wall time before comparing policies.
+
+```sh
+python lab/portable_gpu/switch_probe.py --gguf /models/Qwen3-4B-Q4_K_M.gguf \
+  --provider cuda --long-prompt 1024 --repeats 2 --budget-s 240 --output switches.json
+```
