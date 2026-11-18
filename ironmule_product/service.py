@@ -229,6 +229,9 @@ class ProductService:
                 if isinstance(drafting, dict):  # DM1: the draft model's calibration, costs and what it brought
                     result["ggml"]["draft_model"] = dict(drafting)
                 agent = getattr(self.backend, "ggml_agent_status", None)
+                comparison = getattr(self.backend, "ggml_experiment_binding", None)
+                if comparison:
+                    result["ggml"]["experiment_binding"] = dict(comparison)
                 if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
                     result["ggml"]["agent"] = dict(agent)
             if getattr(self.backend, "speculate", False) is True:  # SP2: asked for; what serves and what it learned

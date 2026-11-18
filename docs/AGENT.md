@@ -271,6 +271,29 @@ loaded native libraries. For Radeon, build with `python tools/build_ggml.py --ro
 to select a card. The CUDA path has published Tesla T4 results. The Radeon path still needs a real serving run.
 [GPU results](../README.md#single-gpu-inference-against-vllm)
 
+### Local response to a measured competitor gap
+
+After measuring the local servers, `ironmule compare` can test a GGML admission change within its remaining
+wall-clock budget. The experiment starts from a concurrent workload where IronMule missed the 3% throughput
+margin or had a later p95 first token against a verified competitor. It compares the median paired ratios at each load and
+prioritizes the largest deficit. Each pair must match hardware placement, model, tokenizer, prompt IDs, and the
+output token counts and stop reasons. Shorter completions therefore earn no advantage.
+
+The candidate limits how many prompt tokens enter the first step of a burst. For a latency deficit it tries
+the shortest waiting prompt's length. For a throughput deficit it tries the sum of the shorter half of the burst.
+The CPU or GPU worker tests both the current and candidate budget on four fresh copy workloads matching the
+reported concurrency, prompt lengths and output limit. Each arm starts from a freshly initialized engine. Arm
+order alternates. This measures native GGML scheduling after startup. The original HTTP report retains its own
+quality and latency measurements.
+
+A candidate must change the actual native step shapes, preserve every output token and stop, answer every
+holdout correctly, gain at least 3% throughput, and meet or improve both median and p95 first-token latency in
+every pair. Completed local trials, including losses, are stored under `STATE/competitor-response`. The next
+`serve --agent on` using that state loads qualifying budgets for the same hardware, GGUF and native settings.
+The worker applies a budget only with no running requests, matching prompt lengths in 16-token bins and the
+same output limit. An explicit `IRONMULE_GGML_PROMPT_BUDGET` takes precedence. Single-request gaps, external
+draft models and unknown engine configurations leave the budget at its existing value.
+
 ### GPU width experiments
 
 The portable GPU comparison produces a JSON report for a single model and device. Import it with

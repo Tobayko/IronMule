@@ -889,6 +889,8 @@ class MLXWorkerClient:
                             self.draft_model_status = engine["draft_model"]  # DM1: shown under /health
                         if isinstance(engine, dict) and isinstance(engine.get("ggml_agent"), dict):
                             self.ggml_agent_status = engine["ggml_agent"]  # AG10: shown under /health
+                        if isinstance(engine, dict) and isinstance(engine.get("experiment_binding"), dict):
+                            self.ggml_experiment_binding = engine["experiment_binding"]
                         digest = event.get("prompt_ids_sha256")
                         if (finish not in {"stop", "length", "cancelled"} or type(prompt) is not int or prompt < 0
                                 or type(completion) is not int or not token_counts[request_id] <= completion <= request.max_tokens

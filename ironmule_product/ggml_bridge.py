@@ -58,6 +58,7 @@ class GgmlBridge:
         self._demand = 0
         self._start_agent()
         self._bind_pilot_learning()
+        self._bind_compare_learning()
         if self._agent is not None or getattr(getattr(self._engine, "pilot", None), "learning", None) is not None:
             threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True).start()
 
@@ -86,6 +87,15 @@ class GgmlBridge:
             self._switch(self._agent.current)
         self._engine.observer = self._agent.observe_step
 
+    def _bind_compare_learning(self):
+        root = (self._gate or {}).get("compare_state_root")
+        if root:
+            from ironmule.compare_learning import engine_binding, read_rules
+
+            self._experiment_binding = engine_binding(self._engine, self._gguf_sha256)
+            self._engine.competitor_budgets = read_rules(root, self._experiment_binding)
+            self._engine.competitor_budget_hits = 0
+
     def _bind_pilot_learning(self) -> None:
         engine = self._engine
         pilot = getattr(engine, "pilot", None)
@@ -107,6 +117,7 @@ class GgmlBridge:
             started = time.perf_counter()
             self._engine.reconfigure(int(config["seqs"]), config.get("settings") or {})
             self._bind_pilot_learning()
+            self._bind_compare_learning()
             elapsed = time.perf_counter() - started
         self._agent.switched(name, seconds=elapsed if self._engine.gpu_layers else None)
 
@@ -154,6 +165,7 @@ class GgmlBridge:
         summary = self._engine.summary()
         return {"ggml_steps": summary["steps"], **({"speculation": summary["speculation"]}
                                                    if isinstance(summary["speculation"], dict) else {}),
+                **({"experiment_binding": self._experiment_binding} if getattr(self, "_experiment_binding", None) else {}),
                 **({"draft_model": summary["draft_model"]} if "draft_model" in summary else {}),
                 **({"pilot": summary["pilot"]} if "pilot" in summary else {}),
                 **({"ggml_agent": self._agent.status()} if self._agent is not None else {})}
