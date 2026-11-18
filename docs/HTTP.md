@@ -69,7 +69,11 @@ Open `/live#inference` to watch the active engine and recent requests, or
 scores and its final verdict. The benchmark tab reads `benchmark-progress.json`
 in the server's state directory. Set `IRONMULE_BENCH_PROGRESS` to an explicit
 report path when the comparison runs in another directory. The monitor exposes
-counts, timings and controller decisions. Prompts and responses stay private.
+counts, timings and controller decisions. The request history shows prompt and output
+lengths, time from submission to dispatch, time from dispatch to first token and time
+from first token to completion. The benchmark tab can also read a prompt-processing
+trial report and show each configuration's throughput, p95 latency and checked answers.
+Prompts and responses stay private.
 
 For a benchmark-only monitor on loopback, run the following command and open
 the address it prints.

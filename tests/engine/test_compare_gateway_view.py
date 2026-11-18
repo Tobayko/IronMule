@@ -130,3 +130,19 @@ def test_separate_deployment_report_preserves_scope_ratios_and_privacy(tmp_path)
     assert benchmark(path)["failed_stage"] == "verifying_prompts" and "private" not in json.dumps(benchmark(path))
     wrong = public_snapshot(tmp_path)["benchmark"]
     assert wrong.get("kind") != "deployment" and all(r["engine"] != "vllm_awq" for r in wrong["runs"])
+
+
+def test_prefill_watch_shows_verified_numeric_rows_and_preserves_partial_status(tmp_path):
+    (tmp_path / "status.json").write_text('{"stage":"prefill_http","state":"running"}')
+    report = {"schema": "ironmule.prefill-http.v1", "stage": "finished", "status": "partial",
+              "current": {"deployment": "batch", "concurrency": 8, "repeat": 1},
+              "deployments": [{"identity": {"device_name": "NVIDIA L40S", "secret": "private"}}],
+              "measurements": [{"deployment": "batch", "tokens_per_second": 120.0, "ttft_p95_ms": 1040,
+                                "prompt_ids_sha256": ["private"], "quality": {"passed": 18, "total": 18}}]}
+    (tmp_path / "prefill-http.json").write_text(json.dumps(report))
+    public = public_snapshot(tmp_path, "prefill")["benchmark"]
+    assert (public["kind"], public["status"], public["stage"]) == ("prefill", "partial", "finished")
+    assert public["model"] == "Qwen3-32B" and public["device"] == "NVIDIA L40S"
+    assert public["engine"] == public["runs"][0]["engine"] == "batch"
+    assert public["runs"][0]["ttft_p95_ms"] == 1040
+    assert public["updated_at"] and "private" not in json.dumps(public)

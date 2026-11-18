@@ -14,7 +14,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from ironmule_product.live_page import LIVE_PAGE
-from ironmule_product.live_view import DEPLOYMENT_SCHEMA, PROVIDER_EVENTS, benchmark
+from ironmule_product.live_view import DEPLOYMENT_SCHEMA, PREFILL_SCHEMA, PROVIDER_EVENTS, benchmark
 
 MODELS = {"qwen3-06b": "Qwen3-0.6B", "qwen3-32b": "Qwen3-32B"}
 HARDWARE = re.compile(r"NVIDIA (?:[ABH]\d{2,3}|L\d{2}S?|(?:GeForce )?RTX [0-9]{4})(?:[- ](?:SXM[0-9]?|PCIe|NVL|Ada|Generation|HBM3e?|[0-9]{2,3}GB))*", re.IGNORECASE)
@@ -45,14 +45,17 @@ def public_snapshot(root, kind="gguf"):
     if not isinstance(phase, str) or phase not in PROVIDER_EVENTS:
         phase = None
     deployment = kind == "deployment"
-    large = deployment or phase == "finished" or bool(phase and phase.endswith("_qwen3_32b"))
+    prefill = kind == "prefill"
+    large = prefill or deployment or phase == "finished" or bool(phase and phase.endswith("_qwen3_32b"))
     model = "qwen3-32b" if large else "qwen3-06b"
     expected = DEPLOYMENT_SCHEMA if deployment else "ironmule.compare.v1"
     path = root / ("deployment-32b.json" if deployment else model + ".json")
+    if prefill:
+        expected, path = PREFILL_SCHEMA, root / "prefill-http.json"
     summary = benchmark(path, expected_schema=expected)
-    if deployment:
-        summary["kind"] = "deployment"
-    if not deployment and phase == "finished" and summary["status"] == "idle":
+    if deployment or prefill:
+        summary["kind"] = kind
+    if not (deployment or prefill) and phase == "finished" and summary["status"] == "idle":
         model = "qwen3-06b"
         summary = benchmark(root / (model + ".json"), expected_schema=expected)
     failed = life.get("state") == "error"
@@ -60,8 +63,8 @@ def public_snapshot(root, kind="gguf"):
         state = "error" if failed else "preparing" if phase and phase != "finished" else "unavailable"
         summary.update(status=state, stage="preflight" if state == "preparing" else None, updated_at=stamp)
     elif failed and summary["status"] == "running" or phase == "finished" and summary["status"] == "running":
-        summary.update(status="incomplete" if deployment else "error")
-        if not deployment:
+        summary.update(status="incomplete" if deployment or prefill else "error")
+        if not (deployment or prefill):
             summary["verdict"] = "incomplete"
     # The capability exposes only a product name, never a local model path, host ID or accelerator UUID.
     device = summary.get("device")

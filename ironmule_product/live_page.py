@@ -125,7 +125,7 @@ const sharedWatch = document.documentElement.dataset.watch === "shared";
 const $ = (id) => document.getElementById(id),
   present = (n) => typeof n === "number" && Number.isFinite(n);
 const fmt = (n, d = 1) => (present(n) ? n.toLocaleString(undefined, { maximumFractionDigits: d }) : "—");
-const engineName = (e) => ({ ironmule: "IronMule", llama_cpp: "llama.cpp", vllm: "vLLM", ironmule_gguf: "IronMule GGUF", vllm_awq: "vLLM AWQ" })[e] || "—";
+const engineName = (e) => ({ ironmule: "IronMule", llama_cpp: "llama.cpp", vllm: "vLLM", ironmule_gguf: "IronMule GGUF", vllm_awq: "vLLM AWQ", stock: "Split KV", batch: "Grouped prefill", shared: "Shared KV" })[e] || "—";
 const at = (t) => (present(t) ? new Date(t * 1000).toLocaleTimeString() : "—");
 const txt = (id, v) => {
   $(id).textContent = v;
@@ -269,6 +269,7 @@ function chart(values) {
 const stateNames = {
   incomplete: "Incomplete",
   measured: "Measured",
+  partial: "Partially measured",
   preparing: "Preparing",
   idle: "Idle",
   running: "Running",
@@ -296,6 +297,7 @@ function status(state, stale = false) {
           complete: "good",
           incomplete: "warn",
           measured: "good",
+          partial: "warn",
           error: "bad",
           timeout: "bad",
           unavailable: "warn",
@@ -343,15 +345,17 @@ function draw() {
     txt("tableTitle", "Request history");
     txt("rowCount", rows.length + " recent");
     table(
-      ["Completed at", "Output tokens", "Throughput", "First token"],
+      ["Completed at", "Input tokens", "Output tokens", "Throughput", "First token", "Queue", "Dispatch to first", "First to finish"],
       rows
         .slice()
         .reverse()
         .map((s) => [
           at(s.at),
+          fmt(s.prompt_tokens, 0),
           fmt(s.completion_tokens, 0),
           fmt(s.tokens_per_second) + " tok/s",
-          fmt(s.ttft_ms) + " ms"
+          fmt(s.ttft_ms) + " ms",
+          ...[s.queue_ms, s.dispatch_to_first_ms, s.first_to_end_ms].map((v) => present(v) ? fmt(v) + " ms" : "—")
         ]),
       r.status === "detached"
         ? "Open the inference server’s /live page to watch serving requests."
@@ -394,7 +398,8 @@ function draw() {
     const preparing = !rows.length && b.status === "running" && (provider.phase || provider.event)
       && (!b.stage || b.stage === "preflight" || b.stage === "initializing");
     status(preparing ? "preparing" : b.status, stale);
-    txt("title", deployment ? "Deployment comparison" : "Engine comparison");
+    const prefill = b.kind === "prefill";
+    txt("title", prefill ? "Prompt processing" : deployment ? "Deployment comparison" : "Engine comparison");
     txt("context", [b.model, deployment ? "IronMule GGUF Q4_K_M vs vLLM AWQ" : null, b.device].filter(Boolean).join("  /  ") || "No benchmark model reported");
     txt("rateLabel", "Latest measured throughput");
     txt("rate", fmt(last.tokens_per_second));
@@ -419,7 +424,7 @@ function draw() {
     txt("tableTitle", "Measured workloads");
     txt("rowCount", fmt(b.run_count, 0) + " completed");
     table(
-      ["Engine", "Repeat", "Concurrency", "tok/s", "TTFT p50", "Holdout"],
+      [prefill ? "Prompt processing" : "Engine", "Repeat", "Concurrency", "tok/s", "TTFT p50", "TTFT p95", "Holdout"],
       rows
         .slice()
         .reverse()
@@ -429,6 +434,7 @@ function draw() {
           fmt(v.concurrency, 0),
           fmt(v.tokens_per_second),
           fmt(v.ttft_median_ms) + " ms",
+          fmt(v.ttft_p95_ms) + " ms",
           v.quality ? v.quality.passed + " / " + v.quality.total : "—"
         ]),
       b.status === "idle"

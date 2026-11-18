@@ -16,6 +16,8 @@ STAGES = {"initializing", "preflight", "starting", "warmup", "benchmark", "quali
 ERRORS = {"launch_failed", "identity_unverified", "measurement_failed", "learning_failed", "budget_exhausted",
           "invalid_input"}
 DEPLOYMENT_SCHEMA = "ironmule.deployment-comparison.v1"
+PREFILL_SCHEMA = "ironmule.prefill-http.v1"
+PREFILL_ARMS = {"stock", "batch", "shared"}
 DEPLOYMENTS = {"ironmule_gguf", "vllm_awq"}
 DEPLOYMENT_STAGES = STAGES | {"hashing", "verifying_prompts", "verified"}
 VERDICTS = {"pending", "incomplete", "does_not_qualify", "qualifies"}
@@ -26,6 +28,7 @@ REASONS = {"insufficient_repeats_or_loads", "missing_arm", "throughput_margin", 
            "stock_provenance_unverified", "generated_lengths_or_stops_differ", *ERRORS}
 LEARNING = {"deferred", "qualified", "retained_incumbent", "error"}
 PROVIDER_EVENTS = {
+    "prefill_http": "Measuring IronMule prompt processing",
     "fetch_awq": "Downloading Qwen3-32B AWQ", "fetch_gguf": "Downloading Qwen3-32B GGUF",
     "tokenizer": "Preparing the shared tokenizer", "production_compare": "Comparing GGUF and AWQ deployments",
     "error": "Remote workload failed", "cleanup_verified": "Confirmed instance shutdown",
@@ -121,16 +124,25 @@ def benchmark(path, expected_schema=None):
         if not isinstance(data, dict):
             raise TypeError("invalid report")
         schema = data.get("schema")
-        if schema not in ("ironmule.compare.v1", DEPLOYMENT_SCHEMA) or (expected_schema and expected_schema != schema):
+        if schema not in ("ironmule.compare.v1", DEPLOYMENT_SCHEMA, PREFILL_SCHEMA) or (expected_schema and expected_schema != schema):
             raise ValueError("invalid schema")
         deployment = schema == DEPLOYMENT_SCHEMA
-        engine_key, engines = ("deployment", DEPLOYMENTS) if deployment else ("engine", ENGINES)
-        stages = DEPLOYMENT_STAGES if deployment else STAGES
+        prefill = schema == PREFILL_SCHEMA
+        measured = deployment or prefill
+        engine_key, engines = ("engine", ENGINES)
+        stages, statuses = STAGES, STATUSES
+        if measured:
+            engine_key, engines = "deployment", PREFILL_ARMS if prefill else DEPLOYMENTS
+            stages = DEPLOYMENT_STAGES
+            statuses = {"preparing", "running", "measured", "incomplete"}
+        if prefill:
+            stages = stages | {"binding", "arm_unavailable"}
+            statuses = statuses | {"partial", "error"}
         status = data.get("status")
-        if status not in ({"preparing", "running", "measured", "incomplete"} if deployment else STATUSES):
+        if status not in statuses:
             raise ValueError("invalid status")
         current = data.get("current") or {}
-        runs = data.get("measurements" if deployment else "runs", [])
+        runs = data.get("measurements" if measured else "runs", [])
         if not isinstance(current, dict) or not isinstance(runs, list):
             raise TypeError("invalid rows")
         rows = []
@@ -158,17 +170,21 @@ def benchmark(path, expected_schema=None):
         failure = failures[-1] if isinstance(failures, list) and failures and isinstance(failures[-1], dict) else {}
         learning = data.get("learning") or {}
         device = label(data.get("device"))
-        for arm in reversed(data.get("deployments" if deployment else "arms") or []):
+        for arm in reversed(data.get("deployments" if measured else "arms") or []):
             identity = arm.get("identity") if isinstance(arm, dict) else None
-            if isinstance(identity, dict) and identity.get("device") == device and label(identity.get("device_name")):
+            if isinstance(identity, dict) and (prefill or identity.get("device") == device) and label(identity.get("device_name")):
                 device = label(identity["device_name"])
                 break
         common = {"status": status, "stage": data.get("stage") if data.get("stage") in stages else None,
-                "model": "Qwen3-32B" if deployment else label(data.get("model")), "device": device,
+                "model": "Qwen3-32B" if measured else label(data.get("model")), "device": device,
                 "updated_at": timestamp(data.get("updated_at")),
                 "engine": current.get(engine_key) if current.get(engine_key) in engines else None,
                 "repeat": number(current.get("repeat")), "concurrency": number(current.get("concurrency")),
                 "runs": rows, "run_count": len(runs), "provider": provider}
+        if prefill:
+            if common["updated_at"] is None:
+                common["updated_at"] = datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat()
+            return {**common, "kind": "prefill"}
         if deployment:
             failure = data.get("failure") or {}
             failed_stage = failure.get("stage") if isinstance(failure, dict) else None
@@ -271,7 +287,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Watch benchmark progress on a local read-only dashboard.")
     parser.add_argument("--state-dir", type=Path)
-    parser.add_argument("--progress", type=Path, help="path to a same-GGUF or deployment-comparison progress file")
+    parser.add_argument("--progress", type=Path, help="path to a serving comparison or prefill trial progress file")
     parser.add_argument("--port", type=int, default=8787)
     args = parser.parse_args()
     path = (args.progress or os.environ.get("IRONMULE_BENCH_PROGRESS")
