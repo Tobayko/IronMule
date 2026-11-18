@@ -110,3 +110,23 @@ Launch the generated gateway with a new random `WATCH_ID` from
 job's fixed Qwen3-0.6B and Qwen3-32B reports and the bootstrap status from
 `ROOT`. The view exposes aggregate scores, timings, model names and setup events.
 The original gateway continues to authenticate its private result and upload routes.
+
+### Production deployment comparison on one NVIDIA GPU
+
+Use this separate protocol to compare autonomous IronMule serving the official Qwen3-32B Q4_K_M GGUF with vLLM 0.11.0 serving the official Qwen3-32B-AWQ Safetensors checkpoint. The two deployments use different quantized weights. vLLM selects its backend automatically and the report records the resolved quantization method and dtype from the running engine. The same-GGUF benchmark and the hardware controller's competitor-response training consume a different report schema.
+
+```bash
+python -m lab.portable_gpu.fetch qwen3-32b --dir /models
+python -m ironmule_product.compare_tokenizer qwen3-32b --dir /models/tokenizers
+python -m lab.portable_gpu.fetch_awq /models/Qwen3-32B-AWQ
+python -m lab.portable_gpu.production_compare \
+  --gguf /models/Qwen3-32B-Q4_K_M.gguf --awq-dir /models/Qwen3-32B-AWQ \
+  --tokenizer /models/tokenizers/qwen3-32b --vllm /usr/local/bin/vllm \
+  --concurrency 1,8,32 --requests 8 --repeats 3 --context 2048 --max-tokens 32 \
+  --budget-seconds 2700 --startup-timeout 1200 --agent-dir /results/awq-agent \
+  --log-dir /results/awq-logs --output /results/qwen3-32b-deployments.json
+```
+
+The fetches are public and pinned. The GGUF is 19,762,149,024 bytes at commit `938a7432affaec9157f883a87164e2646ae17555`. The AWQ snapshot is 19,341,507,104 bytes across twelve files at `0499c3ac83fdef8810b907a23894ba91e95eddd8`. The runner verifies each weight shard and the tokenizer before timing. Allow space for both formats, server logs and compiler caches. The benchmark budget covers local verification, startups and traffic. Apply a separate outer wall-clock limit if provisioning and downloading count towards a rental budget. [GGUF release](https://huggingface.co/Qwen/Qwen3-32B-GGUF/tree/938a7432affaec9157f883a87164e2646ae17555) · [AWQ release](https://huggingface.co/Qwen/Qwen3-32B-AWQ/tree/0499c3ac83fdef8810b907a23894ba91e95eddd8)
+
+Each repeat alternates server order on the same GPU UUID. Both arms receive matching client request IDs, identical post-template input token IDs, the same greedy sampling settings and 18 short-answer holdouts at each concurrency. Use `--seed` to replay the workload. Each verified pair reports output tokens/s, requests/s, p95 time to first token and per-answer quality changes. `by_concurrency` gives medians of paired ratios in IronMule/vLLM order. When the output token counts or stop reasons differ, `output_tokens_and_stops_match` is false. Inspect requests/s and answer quality alongside token throughput in those cells. A failed identity check or server startup preserves completed rows and stops the run. The output path must be new.

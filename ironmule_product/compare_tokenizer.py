@@ -73,6 +73,44 @@ def _ids(value):
     return value
 
 
+def rendered_prompt_ids(engine, server, messages, deadline, tok=None):
+    """Read exact prompt IDs from a caller-verified serving configuration."""
+    base, model = server["base_url"].rstrip("/"), server["model_id"]
+    served = _json(base + "/v1/models", deadline)
+    if not any(m["id"] == model for m in served["data"]):
+        raise ValueError(f"server does not expose expected model {model}")
+    unique = {}
+    digest = hashlib.sha256()
+    digests, lengths = [], []
+    for conversation in messages:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("tokenizer preflight exhausted the benchmark deadline")
+        key = json.dumps(conversation, sort_keys=True, ensure_ascii=False)
+        if key not in unique:
+            if engine == "ironmule":
+                ids = tok.apply_chat_template(conversation, add_generation_prompt=True, enable_thinking=False)
+            elif engine == "llama_cpp":
+                rendered = _json(base + "/apply-template", deadline, {"messages": conversation})["prompt"]
+                ids = _json(base + "/tokenize", deadline,
+                            {"content": rendered, "add_special": True, "parse_special": True})["tokens"]
+            else:
+                params = {"model": model, "messages": conversation, "add_generation_prompt": True,
+                          "add_special_tokens": False, "chat_template_kwargs": {"enable_thinking": False}}
+                result = _json(base + "/tokenize", deadline, params)
+                ids = _ids(result["tokens"])
+                if result.get("count") != len(ids):
+                    raise ValueError("vLLM tokenizer count and IDs disagree")
+            ids = _ids(ids)
+            encoded = json.dumps(ids, separators=(",", ":")).encode()
+            unique[key] = (len(ids), hashlib.sha256(encoded).digest())
+        count, row_digest = unique[key]
+        digest.update(row_digest)
+        lengths.append(count)
+        digests.append(row_digest.hex())
+    return {"verified": True, "digest": digest.hexdigest(), "prompt_ids_sha256": digests,
+            "prompt_tokens": lengths, "reason": None}
+
+
 def preflight(engine, server, args, messages, deadline):
     """Derive IDs for every timed conversation using the active arm's own template and tokenizer.
 
@@ -99,40 +137,7 @@ def preflight(engine, server, args, messages, deadline):
         if engine == "vllm" and (not args.tokenizer or "--tokenizer" not in argv or
                                 Path(argv[argv.index("--tokenizer") + 1]).resolve() != Path(args.tokenizer).resolve()):
             raise ValueError("launcher did not bind the local tokenizer to vLLM")
-        base, model = server["base_url"].rstrip("/"), server["model_id"]
-        served = _json(base + "/v1/models", deadline)
-        if not any(m["id"] == model for m in served["data"]):
-            raise ValueError(f"server does not expose expected model {model}")
-        unique = {}
-        digest = hashlib.sha256()
-        digests, lengths = [], []
-        for conversation in messages:
-            if time.monotonic() >= deadline:
-                raise TimeoutError("tokenizer preflight exhausted the benchmark deadline")
-            key = json.dumps(conversation, sort_keys=True, ensure_ascii=False)
-            if key not in unique:
-                if engine == "ironmule":
-                    ids = tok.apply_chat_template(conversation, add_generation_prompt=True, enable_thinking=False)
-                elif engine == "llama_cpp":
-                    rendered = _json(base + "/apply-template", deadline, {"messages": conversation})["prompt"]
-                    ids = _json(base + "/tokenize", deadline,
-                                {"content": rendered, "add_special": True, "parse_special": True})["tokens"]
-                else:
-                    params = {"model": model, "messages": conversation, "add_generation_prompt": True,
-                              "add_special_tokens": False, "chat_template_kwargs": {"enable_thinking": False}}
-                    result = _json(base + "/tokenize", deadline, params)
-                    ids = _ids(result["tokens"])
-                    if result.get("count") != len(ids):
-                        raise ValueError("vLLM tokenizer count and IDs disagree")
-                ids = _ids(ids)
-                encoded = json.dumps(ids, separators=(",", ":")).encode()
-                unique[key] = (len(ids), hashlib.sha256(encoded).digest())
-            count, row_digest = unique[key]
-            digest.update(row_digest)
-            lengths.append(count)
-            digests.append(row_digest.hex())
-        return {"verified": True, "digest": digest.hexdigest(), "prompt_ids_sha256": digests,
-                "prompt_tokens": lengths, "reason": None}
+        return rendered_prompt_ids(engine, server, messages, deadline, tok)
     except Exception as exc:  # noqa: BLE001 - an unavailable arm cannot qualify a comparison
         return {"verified": False, "digest": None, "reason": f"{type(exc).__name__}: {exc}"}
     finally:

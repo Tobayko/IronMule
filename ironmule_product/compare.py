@@ -75,7 +75,7 @@ def remaining(deadline):
     return value
 
 
-def stream(engine, server, prompt, limit, deadline):
+def stream(engine, server, prompt, limit, deadline, *, request_id=None):
     """Require successful OpenAI SSE termination and server-generated token counts in each arm."""
     parsed = urllib.parse.urlsplit(server["base_url"])
     if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
@@ -93,8 +93,10 @@ def stream(engine, server, prompt, limit, deadline):
     try:
         conn.connect()
         connected_socket = conn.sock  # HTTPConnection drops its own reference on Connection: close.
-        conn.request("POST", parsed.path.rstrip("/") + "/v1/chat/completions", json.dumps(body),
-                     {"Content-Type": "application/json"})
+        headers = {"Content-Type": "application/json"}
+        if request_id is not None:
+            headers["X-Request-Id"] = request_id
+        conn.request("POST", parsed.path.rstrip("/") + "/v1/chat/completions", json.dumps(body), headers)
         response = conn.getresponse()
         if response.status != 200:
             raise RuntimeError(f"{engine} chat endpoint returned HTTP {response.status}: {response.read(500)!r}")
@@ -131,11 +133,14 @@ def stream(engine, server, prompt, limit, deadline):
         conn.close()
 
 
-def batch(engine, server, prompts, width, limit, deadline):
+def batch(engine, server, prompts, width, limit, deadline, *, request_id_prefix=None):
     started = time.perf_counter()
     pool = ThreadPoolExecutor(max_workers=width)
     try:
-        futures = [pool.submit(stream, engine, server, prompt, limit, deadline) for prompt in prompts]
+        futures = []
+        for index, prompt in enumerate(prompts):
+            options = {} if request_id_prefix is None else {"request_id": f"{request_id_prefix}-{index}"}
+            futures.append(pool.submit(stream, engine, server, prompt, limit, deadline, **options))
         rows = [future.result(timeout=remaining(deadline)) for future in futures]
     except BaseException:
         # Return to the server context immediately. Its cleanup closes in-flight
@@ -144,6 +149,17 @@ def batch(engine, server, prompts, width, limit, deadline):
         raise
     pool.shutdown()
     return rows, time.perf_counter() - started
+
+
+
+def performance_metrics(rows, elapsed):
+    tokens = sum(row["tokens"] for row in rows)
+    firsts = sorted(row["ttft_ms"] for row in rows)
+    return {"requests": len(rows), "completion_tokens": tokens, "tokens_per_second": tokens / elapsed,
+            "requests_per_second": len(rows) / elapsed, "wall_s": elapsed,
+            "generation": [[r["tokens"], r["finish_reason"]] for r in rows],
+            "performance_prompt_tokens": [r["prompt_tokens"] for r in rows],
+            "ttft_median_ms": statistics.median(firsts), "ttft_p95_ms": firsts[math.ceil(.95 * len(firsts)) - 1]}
 
 
 def check_usage(prompts, rows, token_counts):
@@ -258,7 +274,12 @@ def run(args, report, save, deadline):
     from ironmule.factual_gate import MAX_TOKENS, correct
 
     from .code_identity import sources_digest
-    from .compare_servers import StartupError, open_server, prepare_artifacts, refresh_identity
+    from .compare_servers import (
+        StartupError,
+        open_server,
+        prepare_artifacts,
+        refresh_identity,
+    )
     from .compare_tokenizer import preflight
 
     prepare_artifacts(args)
@@ -305,15 +326,8 @@ def run(args, report, save, deadline):
                         save("benchmark")
                         rows, wall = batch(engine, server, prompts, width, args.max_tokens, deadline)
                         served_lengths.extend(r["prompt_tokens"] for r in rows)
-                        tokens = sum(row["tokens"] for row in rows)
-                        firsts = sorted(row["ttft_ms"] for row in rows)
-                        result = {"engine": engine, "repeat": rep, "concurrency": width, "requests": len(rows),
-                                  "completion_tokens": tokens, "tokens_per_second": tokens / wall,
-                                  "requests_per_second": len(rows) / wall, "wall_s": wall,
-                                  "generation": [[r["tokens"], r["finish_reason"]] for r in rows],
-                                  "performance_prompt_tokens": [r["prompt_tokens"] for r in rows],
-                                  "ttft_median_ms": statistics.median(firsts),
-                                  "ttft_p95_ms": firsts[math.ceil(.95 * len(firsts)) - 1], "quality": None}
+                        result = {"engine": engine, "repeat": rep, "concurrency": width,
+                                  **performance_metrics(rows, wall), "quality": None}
                         report["runs"].append(result)
                         save("quality")
                         rows, _ = batch(engine, server, [q.prompt for q in cases], width, MAX_TOKENS, deadline)
