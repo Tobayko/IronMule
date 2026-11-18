@@ -2403,3 +2403,28 @@ per render fell from 11.400 to 0.024 ms for the Qwen3-32B template and from 1.56
 0.010 ms for SmolLM2-135M on the Linux cloud worker. These times cover prompt rendering
 alone. End-to-end throughput and time to first visible token are measured through the
 HTTP servers in the [comparison workflow](COMPARE.md).
+
+### 2026-11-18: Qwen3-0.6B on two EPYC vCPUs against upstream llama-server
+
+On two pinned virtual cores of an AMD EPYC 9V74 cloud worker, a frozen checkout
+(`1223ae5`) served Qwen3-0.6B Q4_K_M through the normal agent and a separate stock
+llama-server built from upstream `4227c9b`. All six starts verified the same GGUF,
+input token IDs and CPU placement. The timed workload combined short requests and
+document summaries with an eight-token output limit and 512 context tokens. A
+separate 18-question holdout at each load and repeat allowed up to 32 output tokens.
+Three paired repetitions at each load alternated which server went first.
+
+| Clients | IronMule output tok/s | llama-server output tok/s | IronMule p95 TTFT | llama-server p95 TTFT |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 4.67 | 3.69 | 2,954 ms | 3,962 ms |
+| 4 | 4.95 | 3.52 | 6,014 ms | 8,463 ms |
+
+The table gives the median of the three per-round measurements. IronMule delivered
+higher throughput in all six pairs. At one client, its p95 first-token time regressed
+22.4% in the first round. Across the 108 scored answers IronMule scored 13 and stock
+scored 10. At four clients in round two, IronMule missed one answer that stock got right.
+Some reference rounds scored zero in an entire category. The comparison therefore
+did not qualify. The hardware controller found no concurrent performance deficit
+requiring its local admission experiment. The initial gate took 1,302 seconds in a
+separate startup. Once cached, the complete six-server comparison took 297 seconds.
+[Redacted measurement and per-question scores](../evidence/comparison/qwen3-06b-cpu-frozen-20261118.json)

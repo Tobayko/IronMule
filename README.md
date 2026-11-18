@@ -121,6 +121,13 @@ The following results use the same 4-vCPU Intel Xeon, Qwen3-4B Q8_0 GGUF and que
 
 IronMule, llama-server, Ollama and LM Studio each answered 49 of the 50 fact questions correctly. The burst comparison used 32 llama-server slots. At 8 and 16 clients, sizing llama-server to each burst produced 27.3 and 40.9 tok/s, compared with IronMule's 50.4 and 71.3. Ollama used 16 parallel slots after its 32-slot configuration ran out of memory. [Lab notes, CMP1](docs/LAB.md#2026-11-13-cmp1-ironmule-against-llamacpp-ollama-and-lm-studio-on-this-cpu-same-gguf)
 
+A separate three-round test used Qwen3-0.6B Q4_K_M on two AMD EPYC virtual cores.
+With four concurrent clients the medians were **4.95 vs 3.52 output tokens/s** for
+IronMule and stock llama-server. IronMule had higher throughput in all six pairs,
+but one pair regressed in first-token latency and one lost a previously correct
+answer. It did not meet the comparison's overall acceptance criteria.
+[Measured loads, latency and answer scores](docs/LAB.md#2026-11-18-qwen3-06b-on-two-epyc-vcpus-against-upstream-llama-server)
+
 <details>
 <summary>CPU performance when other programs compete for cores</summary>
 
