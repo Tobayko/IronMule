@@ -132,6 +132,14 @@ def test_gate_rejects_lost_answer_and_p95_even_if_tok_s_improve():
              "tokenization": {"digest": "a" * 64}} for e in compare.ENGINES for r in range(3)]
     report = {"protocol": protocol, "runs": runs, "arms": arms}
     assert compare.evaluate(report)["status"] == "qualifies"
+    for arm in arms:
+        if arm["engine"] == "ironmule":
+            arm["identity"]["ggml"] = {"implementation": "older" if arm["repeat"] == 0 else "current"}
+    mixed = compare.evaluate(report)
+    assert mixed["status"] == "incomplete" and "mixed_ironmule_implementations" in mixed["reasons"]
+    assert mixed["by_opponent"]["llama_cpp"]["status"] == "incomplete" and mixed["comparisons"]
+    for arm in arms:
+        arm["identity"].pop("ggml", None)
     arms[0]["identity"]["placement_verified"] = False
     assert compare.evaluate(report)["status"] == "incomplete"
     arms[0]["identity"]["placement_verified"] = True

@@ -10,7 +10,8 @@ from ironmule import compare_learning as learn
 
 
 def comparison():
-    b = {"gguf_sha256": "1" * 64, "machine": "fixture", "host_sha256": "2" * 64, "seq_ctx": 512, "prompt_budget": 0}
+    b = {"gguf_sha256": "1" * 64, "machine": "fixture", "host_sha256": "2" * 64, "seq_ctx": 512, "prompt_budget": 0,
+         "implementation": learn.implementation()}
     report = {"schema": "ironmule.compare.v1", "device": "cpu:host", "protocol": {"max_tokens": 6},
               "arms": [], "runs": []}
     for engine, rate, ttft in (("ironmule", 10, 40), ("vllm", 15, 37), ("llama_cpp", 9, 43)):
@@ -80,6 +81,23 @@ def test_timeout_keeps_a_plan_without_qualifying(tmp_path):
     out = learn.respond(comparison(), gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic()-1)
     assert out["status"] == "deferred" and "budget exhausted" in out["reason"]
     assert not list(tmp_path.rglob("qualified.json"))
+
+
+def test_current_gap_selected_even_when_old_engine_lost_by_more(tmp_path):
+    from copy import deepcopy
+
+    report = comparison()
+    new = deepcopy(report["arms"] + report["runs"])
+    for row in new:
+        row["repeat"] = 1
+    report["arms"].extend(new[:3])
+    report["runs"].extend(new[3:])
+    report["arms"][0]["identity"]["ggml"]["implementation"] = "old"
+    report["runs"][0]["tokens_per_second"] = 3
+    assert learn.select(report)["binding"]["implementation"] == "old"
+    out = learn.respond(report, gguf="none", state=tmp_path, provider="cpu", deadline=time.monotonic() - 1)
+    assert out["selection"]["binding"]["implementation"] == learn.implementation()
+    assert out["selection"]["throughput_ratio"] == 10/15
 
 
 def test_next_report_uses_different_candidate_after_a_loss(tmp_path):

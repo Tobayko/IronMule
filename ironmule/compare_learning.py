@@ -23,6 +23,11 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def implementation():
+    names = ("compare_learning.py", "ggml_engine.py", "pilot.py", "speculation.py")
+    return digest([hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in names])
+
+
 def engine_binding(engine, model):
     from . import ggml_engine as ge
 
@@ -45,8 +50,7 @@ def engine_binding(engine, model):
             "has_drafter": engine.drafter is not None, "collective": engine.collective is not None,
             "kv_defrag": ge.DEFRAG, "kv_keep": ge.KEEP, "split": ge.SPLIT, "padding": ge.PAD,
             "kg_sha256": ge.file_sha256(ge.KG_LIB) if ge.KG_LIB else None,
-            "implementation": digest([ge.file_sha256(str(Path(__file__).with_name(name))) for name in
-                                      ("compare_learning.py", "ggml_engine.py", "pilot.py", "speculation.py")])}
+            "implementation": implementation()}
 
 
 def shape(lengths, limit):
@@ -69,7 +73,7 @@ def read_rules(state, binding):
     return {}
 
 
-def select(report):
+def select(report, *, required_implementation=None):
     """Require independently verified prompt IDs and concrete, same-device, same-model measurements."""
     if report.get("schema") != "ironmule.compare.v1":
         return None
@@ -84,6 +88,8 @@ def select(report):
             continue
         a, b = arms.get(("ironmule", repeat), {}), arms.get((name, repeat), {})
         aid, bid = a.get("identity", {}), b.get("identity", {})
+        if required_implementation is not None and (aid.get("ggml") or {}).get("implementation") != required_implementation:
+            continue
         ta, tb = a.get("tokenization", {}), b.get("tokenization", {})
         model = aid.get("gguf_sha256")
         if (not re.fullmatch("[0-9a-f]{64}", str(model))
@@ -235,10 +241,10 @@ def respond(report, *, gguf, state, provider, deadline):
     """Bounded child owns the native context. Only a complete local holdout can change the scoped rule."""
     from ironmule_product.state import _atomic_write, _ensure_directory
 
-    choice = select(report)
+    choice = select(report, required_implementation=implementation())
     result = {"schema": SCHEMA, "status": "deferred", "selection": choice}
     if not choice:
-        return {**result, "reason": "no verified rival gap at a supported concurrent workload"}
+        return {**result, "reason": "no verified concurrent rival gap for this IronMule implementation"}
     b = choice["binding"]
     if (not b or not b.get("host_sha256") or b.get("gguf_sha256") != choice["model"] or b.get("has_drafter")
             or b.get("prompt_budget") != 0 or provider not in ("cpu", "cuda", "rocm")):

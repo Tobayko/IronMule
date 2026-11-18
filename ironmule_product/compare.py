@@ -202,13 +202,21 @@ def evaluate(report):
                 if tested["performance_prompt_tokens"] != reference["performance_prompt_tokens"] or (
                         tested["quality"]["prompt_tokens"] != reference["quality"]["prompt_tokens"]):
                     reasons_here.append("served_prompt_lengths_differ")
+                native = (candidate_identity.get("identity", {}).get("ggml") or {}).get("implementation")
                 checks.append({"opponent": engine, "repeat": rep, "concurrency": width, "throughput_ratio": ratio,
+                               "ironmule_implementation": native,
                                "ttft_p95_ratio": latency, "lost_answers": lost, "reasons": reasons_here})
                 reasons.update(reasons_here)
+    def mixed_versions(rows):
+        return len({row["ironmule_implementation"] for row in rows if row["ironmule_implementation"]}) > 1
+
+    if mixed_versions(checks):
+        reasons.add("mixed_ironmule_implementations")
+
     def classify(flags):
         incomplete = {"failed_arm", "missing_arm", "insufficient_repeats_or_loads", "served_prompt_lengths_differ",
                       "prompt_ids_unmatched", "stock_provenance_unverified", "unverified_device_placement",
-                      "generated_lengths_or_stops_differ"}
+                      "generated_lengths_or_stops_differ", "mixed_ironmule_implementations"}
         if flags & incomplete:
             return "incomplete"
         return "does_not_qualify" if flags else "qualifies"
@@ -221,6 +229,8 @@ def evaluate(report):
             flags.add("insufficient_repeats_or_loads")
         if len(rows) != protocol["repeats"] * len(protocol["concurrency"]):
             flags.add("missing_arm")
+        if mixed_versions(rows):
+            flags.add("mixed_ironmule_implementations")
         if any(f["engine"] in ("ironmule", engine) for f in report.get("failures", [])):
             flags.add("failed_arm")
         by_opponent[engine] = {"status": classify(flags), "paired_cells": len(rows), "reasons": sorted(flags)}
