@@ -148,6 +148,9 @@ def _sample(engine, tasks, limit, budget, key):
         buf = ctypes.create_string_buffer(4096)
         used = engine.L.llama_detokenize(engine.vocab, ids, len(ids), buf, len(buf), True, False)
         if used < 0:
+            buf = ctypes.create_string_buffer(-used)
+            used = engine.L.llama_detokenize(engine.vocab, ids, len(ids), buf, len(buf), True, False)
+        if used < 0:
             raise ValueError("unreadable holdout answer")
         first = re.search(r"\w+", buf.raw[:used].decode("utf8", errors="replace").casefold())
         correct.append(bool(first and first.group() == word))
@@ -159,9 +162,15 @@ def _sample(engine, tasks, limit, budget, key):
 
 def trial(payload):
     import random
-    from .ggml_engine import GgmlEngine, file_sha256, ggml_devices
 
     b, gguf = payload["binding"], payload["gguf"]
+    affinity = b.get("cpu_affinity")
+    if affinity and hasattr(os, "sched_setaffinity"):
+        if not set(affinity).issubset(os.sched_getaffinity(0)):
+            raise ValueError("the serving worker's CPUs are unavailable")
+        os.sched_setaffinity(0, affinity)
+    from .ggml_engine import GgmlEngine, file_sha256, ggml_devices
+
     if file_sha256(gguf) != b["gguf_sha256"]:
         raise ValueError("GGUF changed")
     opened = {k: b[k] for k in ("threads", "seqs", "seq_ctx", "speculate", "shared", "cap", "max_rows")}
@@ -235,7 +244,7 @@ def respond(report, *, gguf, state, provider, deadline):
             or b.get("prompt_budget") != 0 or provider not in ("cpu", "cuda", "rocm")):
         return {**result, "reason": "missing or unsupported native serving configuration"}
     lengths, limit = choice["prompt_lengths"], report["protocol"]["max_tokens"]
-    if type(limit) is not int or not 1 <= limit <= 128 or max(lengths) + limit > b["seq_ctx"]:
+    if type(limit) is not int or limit < 1 or max(lengths) + limit > b["seq_ctx"]:
         return {**result, "reason": "workload outside supported context"}
     key = shape(lengths, limit)
     directory = rule_directory(state, b)
