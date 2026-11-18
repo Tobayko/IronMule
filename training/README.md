@@ -8,7 +8,7 @@ The agent itself ships in `ironmule_product/`. Nothing here is imported by the p
 | `ag1_online.py` | The agent, unchanged, against a simulated server priced by a machine's fitted costs. Live traces, idle replays and qualification run on a simulated clock. `--prompts` adds real prompt texts with one limit for all (AG2). |
 | `rl2_headroom.py` | The hardware harness. It runs the product's own service with the agent attached, records the online phase, then compares the default, the fixed rule and the frozen agent on held-out traces. `--plan ag1 --profile NAME` picks a protocol, `--write-kernel` writes a Kaggle kernel, and `--analyse` judges a report. |
 | `ag4_routing.py` | AG4 step 2: the product's router between a single path and a stacked engine on one card, against each path alone, priced by a hardware measurement. |
-| `rl4_h9_replay.py` | Trains two dispatch checkpoints from zero, selects one on validation traffic, and evaluates both against the fixed arms, simple rules and the published checkpoint on unseen quiet, burst and spike traces. [H9 simulation results](../evidence/runtime/rl4-h9-holdout.json) |
+| `rl4_h9_replay.py` | Trains two dispatch checkpoints from zero, selects one on validation traffic, and evaluates both against the fixed arms, simple rules and the published checkpoint on unseen quiet, burst and spike traces. |
 | `rl4_agent.py` | RL4, the offline REINFORCE agent whose policy format the product's learned dispatch (LD1) and the agent share. |
 
 Their tests are in [tests/agent/](../tests/agent/). The tests run without a model or GPU, also in CI:
@@ -16,6 +16,19 @@ Their tests are in [tests/agent/](../tests/agent/). The tests run without a mode
 ```bash
 python -m pytest tests/agent
 ```
+
+## Replaying the H9 dispatch training
+
+Run these from the repository root. Each command trains two controllers from zero for 16,000 episodes per seed on one CPU core. They use simulated requests and the published timing coefficients for the two-T4 Qwen3-1.7B H9 pool.
+
+```sh
+python -m training.rl4_h9_replay --out rl4-replay.json
+python -m training.rl4_h9_replay --width-followup --out rl6-replay.json
+```
+
+Sixty validation traces per phase select one seed. Each frozen controller then runs on 128 unseen traces per phase, sharing the same arrivals with every baseline. The follow-up reads the first study's archived checkpoint, adds 16 trainable group-width weights, and uses a new test set. The objective adds mean time to first token and mean time to completion.
+
+The width controller selected a cap of two on every held-out decision with at least two requests waiting. During spikes this cut simulated cost by 6.01% against the first study's frozen controller, while mean time to first token rose from 8.32 to 11.15 simulated seconds. Against the best fixed policy in each phase, cost rose 0.29% in quiet traffic and fell 0.62% in bursts and 0.88% in spikes. Both studies saved their checkpoints for replay in the simulator. Hardware qualification would require fresh on-device measurements. [First study](../evidence/runtime/rl4-h9-holdout.json) · [Width follow-up](../evidence/runtime/rl6-h9-width-holdout.json)
 
 ## The workflow
 
