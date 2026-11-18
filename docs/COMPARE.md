@@ -57,3 +57,17 @@ resume. An interrupted process reserves at most one complete cycle against the l
 Idle time between checks is free of inference work. A cloud provider can still bill for
 an allocated machine during that interval. For rented GPUs, run the one-shot comparison
 inside the job and release the instance when it finishes.
+
+### Verify a separately built llama-server
+
+The benchmark recognizes the bundled upstream `4227c9b` CUDA reference by its executable and six library hashes. To use another upstream revision or a build for another GPU, keep its reference manifest alongside your build artifacts. Build from a clean upstream checkout into an external directory. Record the executable and every `libggml*`, `libllama*` and `libmtmd*` library the server loads. Use one `--library` per file. A statically linked build can omit that option.
+
+```bash
+python -m ironmule_product.compare_stock \
+  --source /src/llama.cpp --executable /opt/llama/bin/llama-server \
+  --library /opt/llama/lib/libggml.so --library /opt/llama/lib/libggml-base.so \
+  --library /opt/llama/lib/libggml-cpu.so --library /opt/llama/lib/libllama.so \
+  --output stock-reference.json
+```
+
+Pass `--stock-manifest stock-reference.json` to `ironmule compare`. At startup IronMule checks the revision reported by `llama-server --version`, the running executable, and its complete set of mapped llama.cpp libraries. Linux uses `/proc` and macOS uses `ps` and `lsof`. The arm's `identity` records the `built-in` or `caller-pinned` provenance, the commit, and all measured SHA-256 digests. A caller-pinned result relies on the builder's identification of the source used for the binary. A manifest declaring patches, an incomplete library set, or a mismatched revision leaves the stock comparison unverified.
