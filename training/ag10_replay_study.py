@@ -46,12 +46,13 @@ def forecast(memory, matched, seed):
     return [statistics.fmean(values) for values in zip(*profiles)]
 
 
-def prepare_wave(engine, role, phase, block, wave):
+def prepare_wave(engine, role, phase, block, wave, *, vocabulary=None):
     jobs, targets = [], []
     length = 32 if phase == "short" else 128
     rng = random.Random(SEED + block * 32 + wave * 8)
+    words = TARGETS[role] if vocabulary is None else vocabulary
     for lane in range(8):
-        target = TARGETS[role][(wave + block + lane) % len(TARGETS[role])]
+        target = words[(wave + block + lane) % len(words)]
         if phase == "followup":
             prefix = f"Session {lane % 4}. Tool result: " + " city records show clear weather. " * 40
         else:
