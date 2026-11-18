@@ -224,8 +224,13 @@ is cheaper per attended token. `ironmule/ggml_agent.py` makes that choice while 
    each finished request, no text; persisted per GGUF, machine, engine version and GPU offload in `ggml-agent/` of the
    state directory.
 4. *Dreaming:* after 3 s without a request, and only when new traffic came since the last dream, windows of 32
-   recorded arrivals (gaps scaled 0.5-1.5, three in four from the last 256) run through a simulation of the engine's
-   continuous batching under every configuration's price, on the same windows. Width calibration also times context
+   recorded arrivals run through a simulation of continuous batching under every configuration's price, on the same
+   windows. The agent compares the latest block with earlier nonoverlapping blocks by average prompt length, uncached
+   prompt length, generated length and within-block arrival spacing. When the two latest agree, at least four blocks
+   match, and the history also contains a different workload, three in four draws favor the matching blocks. Otherwise
+   three in four favor the latest 256 arrivals. The other draws cover the full history, and simulated gaps scale by a
+   factor from 0.5 to 1.5. One CPU study checked the workload forecast on 576 subsequent requests. [Study](../training/README.md#forecasting-the-next-native-workload)
+   Width calibration also times context
    release, creation and warmup. The server records completed GPU switches for the same context sizes and pool.
    A separate diagnostic replay tests a policy that charges these times against the latest busy period. On an H100
    with Qwen3-4B that policy stayed on one slot throughout the sustained load and lost throughput and latency.

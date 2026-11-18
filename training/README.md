@@ -30,6 +30,27 @@ Sixty validation traces per phase select one seed. Each frozen controller then r
 
 The width controller selected a cap of two on every held-out decision with at least two requests waiting. During spikes this cut simulated cost by 6.01% against the first study's frozen controller, while mean time to first token rose from 8.32 to 11.15 simulated seconds. Against the best fixed policy in each phase, cost rose 0.29% in quiet traffic and fell 0.62% in bursts and 0.88% in spikes. Both studies saved their checkpoints for replay in the simulator. Hardware qualification would require fresh on-device measurements. [First study](../evidence/runtime/rl4-h9-holdout.json) · [Width follow-up](../evidence/runtime/rl6-h9-width-holdout.json)
 
+## Forecasting the next native workload
+
+Use the normal local GGML bindings and a SmolLM2-135M-Instruct Q4_K_M GGUF. The study opens the native engine on
+two CPU threads, checks that widths four and eight produce identical calibration output, and observes 864 real
+requests. Each set of eight arrives together. The three workloads have short prompts, longer distinct prompts or
+longer prompts with a shared session prefix. All have a three-token generation limit. The controller sees timings
+and token counts. Phase labels and copy targets stay in the study.
+
+```sh
+IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_GGML_THREADS=2 IRONMULE_GGML_PREFIX_REUSE=1 IRONMULE_PILOT=0 \
+  python training/ag10_replay_study.py --gguf /path/to/SmolLM2-135M-Instruct-Q4_K_M.gguf \
+  --state-dir ./new-ag10-state --output ./ag10-replay.json
+```
+
+The sampler forecast all 18 held-out blocks before they arrived. It found matching history for eight.
+Across four traffic measurements, mean absolute log₂ forecast error fell from 1.010 to 0.976 (3.33%).
+Short requests improved from 0.962 to 0.786 and distinct long prompts from 0.734 to 0.723. Follow-ups with
+shared prefixes worsened from 1.333 to 1.419. All 576 held-out first words passed the copy check. All requests
+ran at width four, providing 1,401 measured processing steps. The agent rebuilt to width eight after the last
+block. Measuring the serving effect of that switch requires subsequent traffic. [Per-block evidence and fitted weights](../evidence/runtime/smollm2-135m-cpu-dream-replay.json)
+
 ## The workflow
 
 Every step below follows [AGENTS.md](../AGENTS.md), "Performance and evidence". A result counts only when it was
