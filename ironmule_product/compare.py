@@ -299,6 +299,7 @@ def arguments(argv):
     p.add_argument("--gguf", required=True, type=Path, help="a single local GGUF weight file used by all three engines")
     p.add_argument("--tokenizer", required=True, type=Path, help="matching offline Hugging Face tokenizer/config folder")
     p.add_argument("--llama-server", type=Path, help="stock llama-server executable")
+    p.add_argument("--stock-manifest", type=Path, help="attested clean-upstream executable and library SHA manifest")
     p.add_argument("--vllm", type=Path, help="vLLM executable")
     p.add_argument("--ironmule", type=Path, help="IronMule executable; defaults to this interpreter's CLI")
     p.add_argument("--output", type=Path, help="live JSON report; defaults to benchmark-progress.json in product state")
