@@ -44,7 +44,7 @@ def _fingerprint(args, workload):
             stamps.append((str(source), None, None))
     # Quotas and affinity alter the available CPU even when the host name stays the same.
     quota = Path("/sys/fs/cgroup/cpu.max")
-    identity = (compare_servers._device(os.environ.copy()), platform.machine(), stamps, workload,
+    identity = (compare_servers._device(os.environ.copy(), "ironmule"), platform.machine(), stamps, workload,
                 quota.read_text().strip() if quota.is_file() else None,
                 sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None)
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
