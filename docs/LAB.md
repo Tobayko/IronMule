@@ -2487,3 +2487,29 @@ had no higher p95 time to first visible token. The controller found no verified
 concurrent deficit at these loads. The result applies to the bounded Q4_K_M GGUF
 protocol; AWQ serving uses a different artifact and kernel path.
 [Full report and per-question scores](../evidence/comparison/qwen3-32b-l40s-20261118.json)
+
+### 2026-11-18: Qwen3-0.6B on GeForce RTX 4090
+
+IronMule, stock llama.cpp `4227c9b` and vLLM 0.11.0 each served the same Q4_K_M
+file on one RTX 4090. Each server completed nine cells with verified device placement
+and rendered input IDs. The load and quality protocol matched the L40S small-model
+test. The table reports medians over the three repetitions.
+
+| Clients | IronMule output tok/s | llama.cpp output tok/s | vLLM GGUF output tok/s | p95 first visible token, IronMule / llama.cpp / vLLM |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 392.13 | 378.08 | 295.56 | 24.6 / 22.1 / 58.3 ms |
+| 8 | 907.21 | 660.76 | 733.68 | 109.4 / 86.6 / 220.4 ms |
+| 32 | 1,176.00 | 853.03 | 1,188.59 | 425.0 / 333.6 / 646.8 ms |
+
+IronMule answered 27/162 short questions correctly, stock llama.cpp 26/162, and
+vLLM 25/162. Some answers previously correct on the reference were lost, and some
+reference categories scored zero. The comparison missed the acceptance criteria
+against both reference servers. [Server measurements](../evidence/comparison/qwen3-06b-rtx4090-20261118.json)
+
+In a separate on-device replay, IronMule selected the first-token latency gap against
+llama.cpp at 32 clients and tested a 33-token prefill budget. Four alternating
+candidate/incumbent pairs produced identical completions, with 128/128 graded answers
+correct on both sides of this scheduling holdout. The candidate improved p95 first-token
+time by 11.7%, 8.7%, 15.7% and 2.5%. Its throughput gains were 6.7%, 6.8%, 9.5% and
+0.7%. The last pair missed the required 3% gain. IronMule recorded the trial and
+retained its previous setting. [Autonomous holdout](../evidence/comparison/qwen3-06b-rtx4090-holdout-20261118.json)

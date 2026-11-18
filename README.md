@@ -84,7 +84,7 @@ See the HTTP documentation for supported OpenAI-compatible routes, authenticatio
 | Hardware | Execution path and evidence |
 | --- | --- |
 | Linux x86-64 CPU | GGUF through llama.cpp with IronMule scheduling and optional CPU kernels. Published tests include Intel Xeon and an AMD EPYC HTTP workload. MLX also offers a Linux CPU build. |
-| NVIDIA GPU | GGUF via the CUDA build of llama.cpp, or MLX with its CUDA backend. Published single- and dual-GPU measurements use Tesla T4 cards. |
+| NVIDIA GPU | GGUF via the CUDA build of llama.cpp, or MLX with its CUDA backend. HTTP comparisons include Tesla T4, NVIDIA L40S and GeForce RTX 4090. |
 | Apple Silicon | MLX with Metal. Published results include the M1 Max. Current CI runs on Linux. |
 | AMD Radeon GPU | Experimental ROCm/HIP build for GGUF. With the ROCm toolkit, `python tools/build_ggml.py --rocm` detects the architecture. To select a target explicitly, use e.g. `--rocm gfx1100`. After exporting the library paths, `ironmule doctor --ggml rocm` checks device execution. Radeon serving and throughput still need a hardware run. |
 | Google TPU | Research probes measured matrix operations on a TPU v5e. An experimental JAX tool can calibrate a decode loop with synthetic weights. Full checkpoint inference through the HTTP server remains open. [TPU calibration](docs/TPU.md) |
@@ -157,6 +157,8 @@ delivered **772**. At 32 clients vLLM led with **1,285**, followed by IronMule a
 **1,248** and llama-server at **1,124**. These are medians of three repetitions with
 identical tokenized requests. IronMule missed the overall latency and quality criteria.
 [Full results and holdout scores](docs/LAB.md#2026-11-18-qwen3-06b-on-nvidia-l40s-against-llamacpp-and-vllm)
+
+A second three-server run on an RTX 4090 found the same load-dependent result for Qwen3-0.6B. IronMule led at eight clients with 907 output tokens/s. At 32 clients vLLM led with 1,189 to IronMule’s 1,176. IronMule also tested a scheduling change automatically on that GPU and retained the incumbent after four held-out trials. [RTX 4090 measurements and learning decision](docs/LAB.md#2026-11-18-qwen3-06b-on-geforce-rtx-4090)
 
 ### Single-GPU inference against vLLM
 
