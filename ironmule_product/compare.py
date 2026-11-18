@@ -383,6 +383,7 @@ def main(argv=None):
         save("initializing")
         try:
             run(args, report, save, deadline)
+            learn(args, report, save, deadline)
         except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - persist the actual partial result and stage
             code = "identity_unverified" if isinstance(exc, Unverified) else {
                 "starting": "launch_failed", "initializing": "invalid_input", "preflight": "identity_unverified",
@@ -394,16 +395,11 @@ def main(argv=None):
                 code = "budget_exhausted"
             report.update(status="timeout" if timed_out else "error", error_code=code, error=str(exc)[:600],
                           verdict={"status": "incomplete", "reasons": [code]})
-            failed_stage = report["stage"]
-            # Completed pairs survive an unavailable third engine. A deadline or interruption ends all work.
-            if not timed_out and not isinstance(exc, KeyboardInterrupt) and report["runs"]:
-                learn(args, report, save, deadline)
-            save(failed_stage)
+            save(report["stage"])
             print(f"{code}: {report['error']} (report {args.output})", file=sys.stderr)
             if isinstance(exc, KeyboardInterrupt):
                 return 130
             return 124 if timed_out else 1
-        learn(args, report, save, deadline)
         report["status"] = "error" if report["failures"] else "complete"
         if report["failures"]:
             report["error_code"] = report["failures"][-1]["code"]
