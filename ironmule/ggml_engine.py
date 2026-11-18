@@ -23,10 +23,11 @@ import statistics
 import sys
 import threading
 import time
-import types
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
+
+from ironmule_devices import bindings, ggml_devices
 
 SEQS, SEQ_CTX, MAX_ROWS = 8, 2048, 16
 
@@ -92,20 +93,6 @@ SPLIT = os.environ.get("IRONMULE_GGML_SPLIT", "layer")
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
-def bindings() -> Any:
-    """`llama_cpp`, from an install or from `IRONMULE_GGML_BINDINGS` (an unpacked `llama-cpp-python` source)."""
-    path = os.environ.get("IRONMULE_GGML_BINDINGS")
-    if path and path not in sys.path:
-        sys.path.insert(0, path)
-    try:
-        import diskcache  # noqa: F401 - the bindings import it for a cache class this engine never uses
-    except ImportError:
-        sys.modules.setdefault("diskcache", types.SimpleNamespace(Cache=object))
-    import llama_cpp
-
-    return llama_cpp
-
-
 def fa1_version() -> int:
     """FA1's version in the loaded ggml CPU library (native/ggml_patches/fa1; 3 = FA1u for several tokens), 0 without it.
     A shared KV pool (SP1) serves only with FA1u: llama.cpp's own CPU attention scans every cell of a unified pool for
@@ -125,9 +112,15 @@ def gpu_offload(L: Any | None = None) -> bool:
     """Whether the loaded llama.cpp library has a GPU backend to offload layers to."""
     try:
         L = L or bindings()
-        return bool(L.llama_supports_gpu_offload())
+        return bool(ggml_devices(L))
     except Exception:  # noqa: BLE001 - no library, no GPU
         return False
+
+
+def cuda_kernel_device(L: Any | None = None) -> bool:
+    """KG1/KG5 target a single CUDA GPU. Other registered providers retain their own kernels."""
+    devices = ggml_devices(L)
+    return len(devices) == 1 and devices[0]["provider"] == "cuda"
 
 
 def pad_table(prices: dict[int, float], margin: float = 0.95) -> dict[int, int]:
@@ -144,7 +137,12 @@ def pad_table(prices: dict[int, float], margin: float = 0.95) -> dict[int, int]:
 def gpu_layers(L: Any | None = None) -> int:
     """Layers to offload: IRONMULE_GGML_GPU_LAYERS, else all (-1 means every layer to llama.cpp) where a GPU backend is."""
     if GPU_LAYERS is not None:
-        return int(GPU_LAYERS)
+        requested = int(GPU_LAYERS)
+        if requested < -1:
+            raise ValueError("IRONMULE_GGML_GPU_LAYERS must be -1 (all layers) or a nonnegative count")
+        if requested and not gpu_offload(L):
+            raise ValueError("IRONMULE_GGML_GPU_LAYERS requested offload but GGML registered no GPU")
+        return 999 if requested == -1 else requested
     return 999 if gpu_offload(L) else 0
 
 
@@ -428,6 +426,8 @@ class GgmlEngine:
         L.llama_backend_init()
         self._owns_model = model is None  # SEQ1: a width measurement opens several contexts on one loaded model
         self.gpu_layers = gpu_layers(L)  # the same for a context opened on an already loaded model (SEQ1)
+        if self.gpu_layers and KG_LIB and not cuda_kernel_device(L):
+            raise ValueError("a generated CUDA kernel library needs exactly one GGML CUDA device")
         if model is None:
             mparams = L.llama_model_default_params()
             mparams.n_gpu_layers = self.gpu_layers
@@ -1274,7 +1274,7 @@ def rank_settings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
     """GG1 (amendment of 2026-11-10): llama.cpp's flash attention and unified KV cache, each on and off, timed on a fixed
-    synthetic workload (8 sequences of a fixed 64-token prompt and one sequence alone, `steps` decode steps each,
+    synthetic workload (up to 8 configured sequences of a fixed 64-token prompt and one sequence alone, `steps` decode steps each,
     median of `repeats`); the setting with the highest geometric mean of the two rates."""
     rows = []
     for setting in SETTINGS:
@@ -1282,7 +1282,8 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
         try:
             prompt = (engine.tokenize(CHECK_TEXT) * 8)[:64]
             rates = {}
-            for width in (8, 1):
+            wide = min(8, engine.seqs)
+            for width in dict.fromkeys((wide, 1)):
                 times = []
                 for _ in range(repeats):
                     engine.L.llama_memory_clear(engine.memory, True)
@@ -1295,7 +1296,7 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
                 rates[str(width)] = width * steps / statistics.median(times)
         finally:
             engine.close()
-        rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates["8"] * rates["1"])})
+        rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates[str(wide)] * rates["1"])})
     # ST1 (2026-11-15): a float32 KV cache moves twice the bytes per attended token, which a 64-token tuning context
     # does not show: it ranks first only where it beats the rest by KV_F32_MARGIN (two fresh starts on the 4-vCPU Xeon
     # ranked it first and third on 1-6 % noise, and it then served 30 % slower at the context of real requests)
@@ -1360,26 +1361,31 @@ def memory_bytes() -> tuple[int, int]:
 
 
 def gpu_memory_bytes(devices: str | None = None) -> tuple[int, int] | None:
-    """(free, total) bytes of the GPUs a context will use, from `nvidia-smi` (MG2): the visible devices' sum when a model
-    is split over them, or the one device named in `devices`. None where no NVIDIA GPU answers."""
-    import subprocess
+    """Free and total memory from the same GGML registry that runs the model.
 
-    command = ["nvidia-smi", "--query-gpu=index,memory.free,memory.total", "--format=csv,noheader,nounits"]
-    try:
-        done = subprocess.run(command, capture_output=True, text=True, timeout=20, check=True)
-    except (OSError, subprocess.SubprocessError):
+    A selected CUDA worker may remap a physical index or UUID. Query its registry in a
+    child before opening the model, never sum cards from another provider by host index.
+    """
+    rows = ggml_devices()
+    if devices is not None:
+        if not rows or any(row["provider"] != "cuda" for row in rows):
+            return None
+        if devices != os.environ.get("CUDA_VISIBLE_DEVICES"):
+            import subprocess
+            query = "import json;from ironmule_devices import ggml_devices;print(json.dumps(ggml_devices()))"
+            try:
+                proc = subprocess.run([sys.executable, "-c", query], capture_output=True, text=True, check=True,
+                                      env={**os.environ, "CUDA_VISIBLE_DEVICES": devices}, timeout=15)
+                rows = json.loads(proc.stdout)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                return None
+            if any(row["provider"] != "cuda" for row in rows):
+                return None
+    if SPLIT == "none":
+        rows = rows[:1]  # llama.cpp's main GPU is device 0
+    if not rows or any(not (0 <= row["free_memory"] <= row["total_memory"] and row["total_memory"] > 0) for row in rows):
         return None
-    rows = {}
-    for line in done.stdout.strip().splitlines():
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) == 3 and all(p.isdigit() for p in parts):
-            rows[parts[0]] = (int(parts[1]) * 2**20, int(parts[2]) * 2**20)
-    visible = devices or os.environ.get("CUDA_VISIBLE_DEVICES")
-    if visible:
-        rows = {k: v for k, v in rows.items() if k in [d.strip() for d in visible.split(",")]}
-    if not rows:
-        return None
-    return sum(v[0] for v in rows.values()), sum(v[1] for v in rows.values())
+    return sum(row["free_memory"] for row in rows), sum(row["total_memory"] for row in rows)
 
 
 def fitting_widths(cell_bytes: int, seq_ctx: int, model_bytes: int, available: int, total: int) -> list[int]:
@@ -1496,22 +1502,27 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     on_gpu = gpu_layers() > 0
     if on_gpu:  # MG2: the KV cache and the weights live in the GPU's memory
         found = gpu_memory_bytes(device)
-        if found is not None:
-            available, total = found
+        if found is None:
+            return {"sequences": 1, "memory": "gpu-unknown", "seq_ctx": seq_ctx,
+                    "reason": "visible GGML device memory unavailable; width measurement skipped"}
+        available, total = found
     # Under generated matmuls even the default attention setting can change answers. AG10 may then
     # vary width only within the settings actually chosen by the gate.
     default_alternative = not os.environ.get("IRONMULE_KG_LIB")
     key = hashlib.sha256(json.dumps([file_sha256(gguf), settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS,
                                      default_alternative,
                                      int(extra_bytes) >> 28,
-                                     WIDTH_GAIN, machine_key(), round(total / 2**30)], sort_keys=True).encode()
+                                     WIDTH_GAIN, machine_key(), device, round(total / 2**30)], sort_keys=True).encode()
                          ).hexdigest()[:24]
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"width-{key}.json"
+    model_bytes = os.path.getsize(gguf) + int(extra_bytes)
     if stored.exists():
         try:
-            return json.loads(stored.read_text())
-        except (OSError, ValueError):
+            cached = json.loads(stored.read_text())
+            if fitting_widths(cached["cell_bytes"], seq_ctx, model_bytes, available, total) == cached["fitting"]:
+                return cached
+        except (OSError, ValueError, KeyError, TypeError):
             pass
     root = root or Path(__file__).resolve().parents[1]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
@@ -1530,7 +1541,6 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         except (OSError, ValueError, IndexError, subprocess.SubprocessError):
             return None
 
-    model_bytes = os.path.getsize(gguf) + int(extra_bytes)  # DM1: a draft model's weights and KV take memory too
     cell = child(CELL_CHILD, {"settings": settings})
     record: dict[str, Any] = {"seq_ctx": seq_ctx, "memory_available": available, "memory_total": total,
                               "memory": "gpu" if on_gpu else "host",
@@ -1571,7 +1581,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
 
 
 def machine_key() -> str:
-    """What makes a measured setting this machine's: architecture, CPU count and the CPU's model name."""
+    """Bind GGML measurements to the CPU, visible backend devices and driver context."""
     import platform
 
     model = ""
@@ -1582,7 +1592,13 @@ def machine_key() -> str:
                 break
     except OSError:
         pass
-    return f"{platform.machine()}|{os.cpu_count()}|{model}"
+    from ironmule_devices import runtime_binding
+
+    from .ggml_binary import identity as native_identity
+
+    binding = {**runtime_binding(ggml_devices()), "native": native_identity()}
+    digest = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
+    return f"{platform.machine()}|{os.cpu_count()}|{model}|{digest}"
 
 
 TUNE_CHILD = r"""
@@ -1679,7 +1695,7 @@ def gate_key(snapshot: str, gguf: str) -> str:
                "device": os.environ.get("CUDA_VISIBLE_DEVICES"), "gpu_layers": gpu_layers(),
                "width": SEQS, "context": SEQ_CTX}
     return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, FACT_VERSION,
-                                     ENGINE_VERSION, OPTION_BOUND, machine_key(), kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
+                                     ENGINE_VERSION, OPTION_BOUND, machine_key(), SEQS, SEQ_CTX, kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
                                      file_sha256(kg) if kg and Path(kg).is_file() else ""],
                                     sort_keys=True).encode()).hexdigest()[:24]
 

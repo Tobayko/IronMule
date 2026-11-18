@@ -14,7 +14,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = ("ironmule", "ironmule_product", "friday_evidence")
-TOP_LEVEL = ("ironmule_cli.py", "ironmule_inventory.py", "ironmule_controller.py")
+TOP_LEVEL = ("ironmule_cli.py", "ironmule_inventory.py", "ironmule_controller.py", "ironmule_devices.py")
 
 
 def loaded_sources(root: Path = ROOT) -> dict[str, str]:

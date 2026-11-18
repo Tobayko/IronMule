@@ -200,7 +200,7 @@ def current_code_digest(stage):
     if stage != "smoke":
         sources.extend(sorted((ROOT / "ironmule").glob("*.py")))
         sources.extend(sorted((ROOT / "ironmule_product").glob("*.py")))
-        sources.extend([ROOT / "ironmule_cli.py", ROOT / "lab/row1/facts.py"])
+        sources.extend([ROOT / "ironmule_cli.py", ROOT / "ironmule_devices.py", ROOT / "lab/row1/facts.py"])
     for path in sources:
         code.update(path.read_bytes())
     return code.hexdigest()

@@ -36,7 +36,7 @@ def package(args):
     paths = ["native/ggml_patches/kg5", "lab/kg5/bench.py", "lab/kg5/worker.py", "lab/kg5/kaggle_session.py"]
     if args.through != "smoke":
         paths += ["ironmule", "ironmule_product", "friday_evidence", "ironmule_cli.py",
-                  "ironmule_controller.py", "ironmule_inventory.py", "lab/row1/facts.py"]
+                  "ironmule_controller.py", "ironmule_inventory.py", "ironmule_devices.py", "lab/row1/facts.py"]
     archive = subprocess.check_output(["git", "archive", "--format=zip", commit, *paths], cwd=ROOT)
     config = {"commit": commit, "through": args.through, "budget_s": budget}
     for name in ["gguf", "kg2_archive", "lib_dir", "bindings", "llama_source", "kg_lib", "preload", "wheelhouse", "gate_cache"]:

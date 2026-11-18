@@ -125,7 +125,7 @@ def _probe_gpu(backend: str) -> tuple[bool, str]:
     if not available:
         return False, f"{backend} unavailable"
     if device == "cpu":
-        return True, "CPU operation verified; no GPU, so answers come much more slowly"
+        return True, "CPU operation verified"
     detail = f"{backend} GPU operation verified"
     if backend == "CUDA" and len(words) == 3 and words[1].isdigit() and int(words[1]) < 8:
         # This used to advise `--compute-dtype float32` on every such card. PORT2 measured
@@ -189,7 +189,10 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
         # MLX's CUDA backend ships Linux wheels: `pip install "mlx[cuda12]"`; without an
         # NVIDIA driver, `mlx[cpu]` (CPU4).
         import shutil
-        backend = "CUDA" if shutil.which("nvidia-smi") else "CPU"
+        from ironmule_devices import host_accelerators
+        nvidia = shutil.which("nvidia-smi") or any(row["vendor"] == "nvidia" and row["driver"] == "nvidia"
+                                                   for row in host_accelerators())
+        backend = "CUDA" if nvidia else "CPU"
         checks = [("Linux", system == "Linux", f"{system} {machine} ({_cpu_name()})")]
     checks += [
         ("Python", sys.version_info[:2] >= MIN_PYTHON,
@@ -207,16 +210,50 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
     return checks
 
 
+def _ggml_check(provider: str) -> tuple[str, bool, str]:
+    command = ("import json,sys; from ironmule_devices import verify_ggml; "
+               "print(json.dumps(verify_ggml(sys.argv[1])))")
+    name = f"GGML {provider} device"
+    try:
+        done = subprocess.run([sys.executable, "-c", command, provider], capture_output=True,
+                              text=True, timeout=30, check=False)
+        if done.returncode:
+            lines = done.stderr.strip().splitlines()
+            return name, False, (lines[-1] if lines else f"probe exited {done.returncode}")
+        rows = json.loads(done.stdout)
+        return name, True, "F32 addition verified on " + ", ".join(row["description"] for row in rows)
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+        return name, False, str(exc)
+
+
 def doctor(argv: Iterable[str] = ()) -> int:
     parser = argparse.ArgumentParser(
         prog="ironmule doctor", description="Check IronMule runtime prerequisites."
     )
     parser.add_argument("--json", action="store_true", help="machine-readable diagnostic report")
+    parser.add_argument("--ggml", choices=("cpu", "cuda", "rocm", "metal", "vulkan", "sycl"),
+                        help="verify an F32 addition on the named GGML provider using the configured bindings")
     args = parser.parse_args(list(argv))
-    checks = _doctor_checks()
+    from ironmule_devices import host_accelerators
+
+    observations = host_accelerators()
+    checks = _doctor_checks() if args.ggml is None else [_ggml_check(args.ggml)]
+    optional = []
+    if args.ggml is None and any(row["vendor"] == "amd" and row["driver"] == "amdgpu" for row in observations):
+        optional.append(_ggml_check("rocm"))
+    if not args.json:
+        for name, ok, reason in optional:
+            print(f"{name} ({'verified' if ok else 'unavailable'}): {reason}")
+        for row in observations:
+            if row["vendor"] in ("tpu", "edge-tpu"):
+                print(f"TPU indicator ({row['source']}); GGML/MLX serving unavailable on TPU")
+            elif row["vendor"] == "amd":
+                print(f"AMD device at {row['pci']}; verify ROCm offload with ironmule doctor --ggml rocm")
     if args.json:
         print(json.dumps({
             "schema": "ironmule.doctor.v1",
+            "observed_accelerators": observations,
+            "optional_backends": [{"name": name, "verified": ok, "detail": detail} for name, ok, detail in optional],
             "ready": all(ok for _, ok, _ in checks),
             "checks": [{"name": name, "ok": ok, "detail": detail} for name, ok, detail in checks],
             "performance_claim": False,
