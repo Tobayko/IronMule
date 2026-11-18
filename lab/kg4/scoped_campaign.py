@@ -28,6 +28,9 @@ PINNED = {
     "run.py": "f738f4c8191c525f4ce7c25a46499638e6c79022028bbf3ea6b078d9861683e1",
 }
 SEED = 1178421
+PUBLIC = {"report.json": "kg4-status.json", "native-qualification.json": "kg4-native.json",
+          "scoped-http.json": "kg4-http.json",
+          **{f"native-{arm}.json": f"kg4-native-{arm}.json" for arm in ("stock", "scoped", "stock-closing")}}
 
 
 def sha(path):
@@ -119,9 +122,31 @@ def run(args):
     report = {"schema": "ironmule.kg4-scoped-campaign.v1", "status": "running", "stages": stages,
               "native_eligible": False, "http_eligible": False, "seed": SEED}
 
+    publish = args.publish_dir.resolve() if args.publish_dir else None
+    if publish:
+        publish.mkdir(parents=True, exist_ok=True)
+        if any((publish / name).exists() for name in PUBLIC.values()):
+            raise ValueError("previous scoped campaign mirrors exist")
+    published = {}
+
+    def mirror():
+        if publish:
+            for name, public_name in PUBLIC.items():
+                path = out / name
+                if not path.is_file():
+                    continue
+                stat = path.stat()
+                stamp = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+                if stamp == published.get(name) or not stat.st_size:
+                    continue
+                data = json.loads(path.read_bytes())
+                write(publish / public_name, data)
+                published[name] = stamp
+
     def save():
         report["elapsed_s"] = round(time.monotonic() - started, 3)
         write(out / "report.json", report)
+        mirror()
 
     def stage(key, argv, env, cap):
         available = min(cap, deadline - time.monotonic())
@@ -133,7 +158,16 @@ def run(args):
         with (work / f"{key}.log").open("wb") as log:
             child = subprocess.Popen(argv, env=env, cwd=base, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             try:
-                rc = child.wait(timeout=available)
+                expires = begin + available
+                while True:
+                    remaining = expires - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(argv, available)
+                    try:
+                        rc = child.wait(timeout=min(remaining, 2) if publish else remaining)
+                        break
+                    except subprocess.TimeoutExpired:
+                        mirror()
             except subprocess.TimeoutExpired:
                 stop(child)
                 stages[key]["status"] = "timeout"
@@ -234,6 +268,7 @@ if __name__ == "__main__":
             parser.add_argument("--" + key, type=Path, required=True)
         parser.add_argument("--budget-seconds", type=int, default=1500)
         parser.add_argument("--native-only", action="store_true")
+        parser.add_argument("--publish-dir", type=Path, help="atomically mirror only numeric reports for a live collector")
         args = parser.parse_args()
         if not 1 <= args.budget_seconds <= 3600:
             parser.error("budget must be between one and 3600 seconds")
