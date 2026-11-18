@@ -1005,3 +1005,19 @@ def test_serve_wires_cpu_pilot_learning_with_default_speculation(tmp_path, monke
     monkeypatch.setattr(backend, "MLXWorkerClient", capture)
     with pytest.raises(Captured):
         cli.serve(["--gguf", str(model), "--agent", agent, "--state-dir", str(state)])
+
+
+def test_native_batch_refuses_oversized_quality_chunk_before_pointer_access():
+    from types import SimpleNamespace
+
+    from ironmule.ggml_engine import GgmlEngine
+
+    engine = object.__new__(GgmlEngine)
+    engine.seq_ctx = 512
+    engine.batch = SimpleNamespace(n_tokens=17)
+    engine.np = None
+    engine._clear = lambda: None
+    with pytest.raises(ValueError, match="513 decode rows"):
+        engine.chunk_nll([1] * 513, [1])
+    assert engine.batch.n_tokens == 17
+    assert engine._batch_for(512).n_tokens == 512

@@ -612,10 +612,17 @@ class GgmlEngine:
             return None
         return Drafter(engine, max_running=DRAFT_MAX_RUNNING)
 
+    def _batch_for(self, count: int) -> Any:
+        # ctypes' row pointers have no Python bounds. n_batch is the usable
+        # limit even when extra native slots were reserved for speculative rows.
+        if count > self.seq_ctx:
+            raise ValueError(f"{count} decode rows exceed the context batch limit of {self.seq_ctx}")
+        self.batch.n_tokens = count
+        return self.batch
+
     def _decode_conf(self, rows: list[tuple[int, int, int, bool]]) -> list[tuple[int, float]]:
         """As `_decode`, but per row that asks for logits its top token and that token's probability."""
-        b, np = self.batch, self.np
-        b.n_tokens = len(rows)
+        b, np = self._batch_for(len(rows)), self.np
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
             b.seq_id[i][0] = seq
@@ -769,8 +776,7 @@ class GgmlEngine:
 
     # --- decode calls -------------------------------------------------------------------------------------------------
     def _decode(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
-        b = self.batch
-        b.n_tokens = len(rows)
+        b = self._batch_for(len(rows))
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
             b.seq_id[i][0] = seq
@@ -1183,8 +1189,7 @@ class GgmlEngine:
         np = self.np
         self._clear()
         tokens = lead + ids[:-1]
-        b = self.batch
-        b.n_tokens = len(tokens)
+        b = self._batch_for(len(tokens))
         for i, token in enumerate(tokens):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, i, 1, int(i >= len(lead))
             b.seq_id[i][0] = 0
@@ -1611,19 +1616,27 @@ print(json.dumps(autotune(sys.argv[1])))
 
 GATE_CANDIDATE = r"""
 import json, sys
-from ironmule.ggml_engine import GgmlEngine
+from ironmule.ggml_engine import GgmlEngine, SEQ_CTX
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, gate_lead
 from ironmule.factual_gate import ggml_scores
 from pathlib import Path
 data = json.loads(sys.stdin.read())
 fixture = {"seqs": 32, "seq_ctx": 1024, "max_rows": 32} if data["kg5_shape"] else {}
-engine = GgmlEngine(sys.argv[1], speculate=False, shared=data["shared"], **fixture, **data["settings"])
 ids, bos, rows = data["ids"], data["bos"], []
+serving_ctx = fixture.get("seq_ctx", SEQ_CTX)
+# Gate2 scores 512 positions plus an optional BOS, in one native call.
+fixture["seq_ctx"] = max(serving_ctx, CHUNK_TOKENS + int(bos is not None))
+engine = GgmlEngine(sys.argv[1], speculate=False, shared=data["shared"], **fixture, **data["settings"])
 for index in range(CHUNKS):
     chunk = ids[index * CHUNK_TOKENS:(index + 1) * CHUNK_TOKENS + 1]
     if len(chunk) < CHUNK_TOKENS + 1:
         break
     rows.append(engine.chunk_nll(chunk, gate_lead(chunk, bos)))
+if engine.seq_ctx != serving_ctx:
+    engine.close_context()
+    cache_settings = {k: v for k, v in engine.settings.items() if k != "shared_prefix"}
+    engine._open(engine.seqs, serving_ctx, **cache_settings)
+    engine._warm_up()
 snapshot = Path(data["snapshot"])
 if snapshot.suffix.lower() == ".gguf":
     from ironmule.gguf_tokenizer import GgufTokenizer
