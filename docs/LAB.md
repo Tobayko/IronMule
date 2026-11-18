@@ -2727,4 +2727,4 @@ the worker's dispatch-to-first interval dominates the delay. The grouped-prompt
 deployment selected a shared KV pool during startup and produced zero verified
 grouped measurements. The shared-pool trial ended with a runtime error before
 it completed prompt verification. Neither arm qualified for selection.
-[Verified IronMule cells](../evidence/runtime/qwen3-32b-l40s-prefill-selection.json) · [Archived matched requests and vLLM results](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
+[Server timings and attempted configurations](../evidence/comparison/qwen3-32b-l40s-prefill-http.json) · [Verified IronMule cells](../evidence/runtime/qwen3-32b-l40s-prefill-selection.json) · [Archived matched requests and vLLM results](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
