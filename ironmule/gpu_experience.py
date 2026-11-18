@@ -63,6 +63,57 @@ def _fit(rows):
     return result
 
 
+def _transition_evidence(replay):
+    """Keep paired, switch-inclusive replay outcomes apart from the width training data."""
+    if not isinstance(replay, dict) or type(replay.get("quality_matched")) is not bool:
+        raise ValueError("invalid GPU transition replay")
+    arms = replay.get("arms")
+    if not isinstance(arms, dict) or not all(isinstance(arms.get(k), list) for k in ("fixed", "selected")):
+        raise ValueError("GPU transition needs fixed and selected arms")
+    fixed, selected = arms["fixed"], arms["selected"]
+    if not fixed or len(fixed) != len(selected):
+        raise ValueError("GPU transition needs paired repeats")
+    repeats, elapsed_ratios, switches, quality = [], [], 0, True
+    for control, choice in zip(fixed, selected):
+        if not isinstance(control, list) or not isinstance(choice, list) or not control or len(control) != len(choice):
+            raise ValueError("GPU transition needs paired waves")
+        waves = []
+        elapsed = [0.0, 0.0]
+        for baseline, candidate in zip(control, choice):
+            wave = {}
+            for i, (key, row) in enumerate((("fixed", baseline), ("selected", candidate))):
+                if not isinstance(row, dict):
+                    raise ValueError("invalid GPU transition wave")
+                ctx, n, width = (row.get(k) for k in ("prompt_tokens", "concurrency", "seqs"))
+                correct, tokens = row.get("correct"), row.get("output_tokens")
+                if (not all(type(v) is int and v > 0 for v in (ctx, n, width))
+                        or not _positive_series([row.get("elapsed_s"), row.get("ttft_ms")])
+                        or type(row.get("reconfigured")) is not bool
+                        or not isinstance(correct, list) or len(correct) != n or any(type(v) is not bool for v in correct)
+                        or not isinstance(tokens, list) or len(tokens) != n or any(not isinstance(v, list) for v in tokens)):
+                    raise ValueError("invalid GPU transition measurements")
+                if i and (ctx, n) != (wave["prompt_tokens"], wave["concurrency"]):
+                    raise ValueError("GPU transition arms must replay the same workload")
+                wave.update(prompt_tokens=ctx, concurrency=n)
+                wave[key] = {k: row[k] for k in ("seqs", "reconfigured", "elapsed_s", "ttft_ms")}
+                elapsed[i] += row["elapsed_s"]
+            wave["matched"] = (baseline["output_tokens"] == candidate["output_tokens"]
+                               and all(baseline["correct"]) and all(candidate["correct"]))
+            quality = quality and wave["matched"]
+            switches += int(candidate["reconfigured"])
+            waves.append(wave)
+        repeats.append(waves)
+        ratio = elapsed[1] / elapsed[0]
+        if not math.isfinite(ratio):
+            raise ValueError("non-finite GPU transition elapsed ratio")
+        elapsed_ratios.append(ratio)
+    if (replay["quality_matched"] and not quality
+            or type(replay.get("switches")) is not int or switches != replay["switches"]):
+        raise ValueError("GPU transition summary disagrees with its measured waves")
+    return {"quality_matched": replay["quality_matched"], "switches": switches,
+            "selected_over_fixed_elapsed": elapsed_ratios, "waves": repeats}
+
+
 def import_report(path: Path, state: Path) -> dict:
     """Persist compact calibration outcomes, including unsuccessful comparisons. Import is idempotent."""
     raw = path.read_bytes()
@@ -126,6 +177,10 @@ def import_report(path: Path, state: Path) -> dict:
     digest = hashlib.sha256(raw).hexdigest()
     record = {"schema": HINT_SCHEMA, "model": model, "provider": provider, "machine": machine,
               "devices": _device_models(devices), "source_sha256": digest, "pairs": summary, "fit": _fit(summary)}
+    replay = {}
+    if "transition" in report:
+        record["transition"] = _transition_evidence(report["transition"])
+        replay["transition"] = {k: v for k, v in record["transition"].items() if k != "waves"}
     from ironmule_product.state import _ensure_directory
 
     directory = state / "gpu-width-experience" / model
@@ -138,7 +193,7 @@ def import_report(path: Path, state: Path) -> dict:
             Path(handle.name).replace(directory / f"{digest}.json")
         finally:
             Path(handle.name).unlink(missing_ok=True)
-    return {"source_sha256": digest, "model_sha256": model, "fit": record["fit"],
+    return {"source_sha256": digest, "model_sha256": model, "fit": record["fit"], **replay,
             "pooled_fit": _fit(_pooled_pairs(state, model, devices, machine)),
             "quality_mismatches": sum(not row["matched"] for row in summary),
             "coverage": {role: {"pairs": sum(r["role"] == role for r in summary),

@@ -54,6 +54,27 @@ def test_relabelled_holdout_never_enters_a_pooled_fit(tmp_path):
     assert learned["training_pairs"] == 1 and learned["widths"] == [1, 4]
 
 
+def test_import_retains_slow_and_failed_transition_observations_outside_fit(tmp_path):
+    training = [pair("calibration", 10, 20)]
+    original = put(tmp_path, training)
+    control = {"prompt_tokens": 32, "concurrency": 1, "seqs": 1, "reconfigured": False,
+               "elapsed_s": 1.0, "ttft_ms": 4, "correct": [True], "output_tokens": [[42]]}
+    slower = {**control, "seqs": 4, "reconfigured": True, "elapsed_s": 3.0, "ttft_ms": 15}
+    failed = {**slower, "correct": [False], "output_tokens": [[13]]}
+    replay = {"arms": {"fixed": [[control], [control]], "selected": [[slower], [failed]]},
+              "quality_matched": False, "switches": 2}
+    imported = put(tmp_path, training, filename="replay", transition=replay)
+    assert imported["fit"] == imported["pooled_fit"] == original["fit"]
+    assert imported["transition"] == {"quality_matched": False, "switches": 2,
+                                      "selected_over_fixed_elapsed": [3.0, 3.0]}
+    record = tmp_path / "gpu-width-experience" / MODEL / (imported["source_sha256"] + ".json")
+    waves = json.loads(record.read_text())["transition"]["waves"]
+    assert waves[0][0]["matched"] and waves[0][0]["selected"]["ttft_ms"] == 15
+    assert not waves[1][0]["matched"] and waves[1][0]["selected"]["reconfigured"]
+    with pytest.raises(ValueError, match="disagrees"):
+        put(tmp_path, training, filename="invalid", transition={**replay, "quality_matched": True})
+
+
 @pytest.mark.parametrize("kwargs", [{"offloaded_layers": []}, {"status": "incomplete"}, {"provider": "cpu"},
                                    {"model_sha256": "x"}])
 def test_import_refuses_incomplete_non_gpu_or_unbound_records(tmp_path, kwargs):
@@ -106,3 +127,24 @@ def test_import_cli_defaults_to_private_product_state_read_by_serve(tmp_path, mo
     assert state.stat().st_mode & 0o777 == 0o700
     ProductStore().setup("server")
     assert exp.suggest(state, MODEL, GPU, "box", 512)["widths"] == [4, 1]
+
+
+def test_leave_one_gpu_model_out_separates_devices_quality_and_duplicate_trials(tmp_path):
+    from lab.portable_gpu.transfer import evaluate
+
+    put(tmp_path, [pair("calibration", 10, 40), pair("holdout", 12, 36)])
+    assert not evaluate(tmp_path)["folds"]
+    put(tmp_path, [pair("calibration", 10, 40)], filename="overlap", note="same physical source trial")
+    put(tmp_path, [pair("calibration", 40, 10), pair("holdout", 33, 11),
+                   pair("holdout", 15, 25, matched=False)], filename="second",
+        machine="other box", devices=[{"description": "second card", "name": "CUDA0", "provider": "cuda"}])
+    report = evaluate(tmp_path)
+    assert len(report["folds"]) == 2 and not report["skipped"]
+    folds = {f["target_gpu"]: f for f in report["folds"]}
+    assert folds["fixture card"]["metrics"]["single_slot"] == 1  # the other card's calibration prefers one
+    blind = folds["second card"]
+    assert blind["training_pairs"] == 1 and blind["metrics"]["wider"] == 2
+    assert blind["metrics"]["unsafe_wider_quality"] == 1
+    assert blind["metrics"]["matched_wider_lost_throughput"] == blind["metrics"]["matched_wider_later_ttft"] == 1
+    assert report["corpus"]["scored_pairs"] == 2
+    assert report["corpus"]["throughput"]["model_mae"] > report["corpus"]["throughput"]["equal_cost_mae"]

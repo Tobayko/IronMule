@@ -21,6 +21,15 @@ MODELS = {
     "qwen3-4b": ("Qwen/Qwen3-4B-GGUF", "bc640142c66e1fdd12af0bd68f40445458f3869b",
                  "Qwen3-4B-Q4_K_M.gguf", 2497280256,
                  "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"),
+    "granite-2b": ("ibm-granite/granite-3.3-2b-instruct-GGUF", "7cdf86ccd1f1bb3491c9b7017b033f2e51367397",
+                   "granite-3.3-2b-instruct-Q4_K_M.gguf", 1545303328,
+                   "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852"),
+    "phi35-mini": ("bartowski/Phi-3.5-mini-instruct-GGUF", "6d70da17e749a471ccb62ade694486011a75cda3",
+                   "Phi-3.5-mini-instruct-Q4_K_M.gguf", 2393232672,
+                   "e4165e3a71af97f1b4820da61079826d8752a2088e313af0c7d346796c38eff5"),
+    "mistral-7b": ("bartowski/Mistral-7B-Instruct-v0.3-GGUF", "61fd4167fff3ab01ee1cfe0da183fa27a944db48",
+                   "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf", 4372812000,
+                   "1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6"),
 }
 
 

@@ -276,6 +276,11 @@ record under `STATE/gpu-width-experience`. It fits a ridge regression with two o
 first-token latency) using the calibration split and reports the mean absolute log-ratio error on independent
 holdout measurements next to a prediction of equal cost. Widths with mismatched outputs receive no speed credit.
 
+When the report includes a transition replay, the compact record also retains each fixed and selected wave's
+width, switch flag, elapsed time, first-token latency and paired quality result. The import prints the selected
+to fixed elapsed-time ratio for each full replay. Values above one mean the selected policy took longer, including
+context rebuilding and warmup. Transition waves remain evaluation data and never enter the width regression.
+
 `ironmule serve --gguf MODEL.gguf --agent on --state-dir STATE` recomputes the fit from distinct trials for this
 GGUF and backend, preferring matching machines and device models. Of the workload shapes actually measured, it
 chooses one where the model predicts higher throughput with a first token at least as early. A previously unseen
