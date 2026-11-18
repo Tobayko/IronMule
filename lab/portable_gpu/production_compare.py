@@ -94,7 +94,7 @@ def proof(engine, server, args, prompts, deadline):
     return result
 
 
-def measure(args, name, rep, data, report, save, deadline):
+def measure(args, name, rep, data, report, save, deadline, *, profile=None, label=None):
     from lab.portable_gpu.awq_server import open_awq_server
 
     engine = 'ironmule' if name == 'ironmule_gguf' else 'vllm'
@@ -104,7 +104,7 @@ def measure(args, name, rep, data, report, save, deadline):
     with launched as server:
         check_server(name, server, args, report.get('device'))
         report['device'] = server['device']
-        arm = {'deployment': name, 'repeat': rep, 'identity': server, 'prompt_ids_verified': False}
+        arm = {'deployment': label or name, 'repeat': rep, 'identity': server, 'prompt_ids_verified': False}
         report['deployments'].append(arm)
         save('warmup')
         warm = compare.stream(engine, server, compare.WARMUP, min(8, args.max_tokens), deadline, request_id=prefix + '-warm')
@@ -116,11 +116,15 @@ def measure(args, name, rep, data, report, save, deadline):
             report['current']['concurrency'] = width
             ids = f'{prefix}-{width}'
             save('benchmark')
+            if profile is not None:
+                checkpoint = profile.before(server, deadline)
             rows, elapsed = compare.batch(engine, server, prompts, width, args.max_tokens, deadline,
                                           request_id_prefix=ids + '-perf')
             start = len(texts)
-            result = {'deployment': name, 'repeat': rep, 'concurrency': width, 'request_id_prefix': ids,
+            result = {'deployment': label or name, 'repeat': rep, 'concurrency': width, 'request_id_prefix': ids,
                       **compare.performance_metrics(rows, elapsed), 'quality': None}
+            if profile is not None:
+                result['profile'] = profile.after(server, deadline, checkpoint, rows)
             report['measurements'].append(result)
             texts.extend(prompts)
             lengths.extend(result['performance_prompt_tokens'])
