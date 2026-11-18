@@ -21,7 +21,9 @@ VERDICTS = {"pending", "incomplete", "does_not_qualify", "qualifies"}
 ENGINES = {"ironmule", "vllm", "llama_cpp"}
 REASONS = {"insufficient_repeats_or_loads", "missing_arm", "throughput_margin", "first_token_regressed",
            "request_rate_regressed", "quality_regressed", "uninformative_quality_reference",
-           "served_prompt_lengths_differ", *ERRORS}
+           "served_prompt_lengths_differ", "failed_arm", "prompt_ids_unmatched", "unverified_device_placement",
+           "stock_provenance_unverified", "generated_lengths_or_stops_differ", *ERRORS}
+LEARNING = {"deferred", "qualified", "retained_incumbent", "error"}
 LABEL = re.compile(r"[\w ./+():@-]{1,180}\Z")
 CONFIG = re.compile(r"w\d+(?:-(?:fa|uni|f32|kv8))*\Z")
 
@@ -83,6 +85,9 @@ def benchmark(path):
             rows.append(row)
         verdict = data.get("verdict") or {}
         reasons = verdict.get("reasons") if isinstance(verdict, dict) else None
+        failures = data.get("failures") or []
+        failure = failures[-1] if isinstance(failures, list) and failures and isinstance(failures[-1], dict) else {}
+        learning = data.get("learning") or {}
         device = label(data.get("device"))
         for arm in reversed(data.get("arms") or []):
             identity = arm.get("identity") if isinstance(arm, dict) else None
@@ -97,6 +102,9 @@ def benchmark(path):
                 "runs": rows, "run_count": len(runs),
                 "verdict": verdict.get("status") if isinstance(verdict, dict) and verdict.get("status") in VERDICTS else None,
                 "reasons": [r for r in reasons if isinstance(r, str) and r in REASONS] if isinstance(reasons, list) else [],
+                "failed_engine": failure.get("engine") if failure.get("engine") in ENGINES else None,
+                "failed_stage": failure.get("stage") if failure.get("stage") in STAGES else None,
+                "learning": learning.get("status") if isinstance(learning, dict) and learning.get("status") in LEARNING else None,
                 "error_code": data.get("error_code") if data.get("error_code") in ERRORS else None}
     except FileNotFoundError:
         return {"status": "idle", "runs": [], "run_count": 0}

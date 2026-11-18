@@ -35,9 +35,14 @@ def test_benchmark_progress_contains_metrics_without_raw_evidence(tmp_path):
     assert data["runs"][0]["tokens_per_second"] == 7.25
     assert "private" not in json.dumps(data)
     report.update(status="error", error_code="launch_failed", updated_at="private",
-                  verdict={"status": "incomplete", "reasons": ["missing_arm", "private"]})
+                  verdict={"status": "incomplete", "reasons": ["failed_arm", "private"]},
+                  failures=[{"engine": "vllm", "stage": "starting", "error": "private"}],
+                  learning={"status": "retained_incumbent", "holdout": ["private"]})
     path.write_text(json.dumps(report))
-    assert benchmark(path)["reasons"] == ["missing_arm"]
+    assert benchmark(path)["reasons"] == ["failed_arm"]
+    assert benchmark(path)["failed_engine"] == "vllm" and benchmark(path)["failed_stage"] == "starting"
+    assert benchmark(path)["learning"] == "retained_incumbent"
+    assert "private" not in json.dumps(benchmark(path))
     assert benchmark(path)["error_code"] == "launch_failed"
     assert benchmark(path)["updated_at"] is None
 

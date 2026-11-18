@@ -322,7 +322,7 @@ function draw() {
     );
     const decision = (r.decisions || []).at(-1);
     details([
-      ["Active configuration", r.config],
+      ["Reported configuration", r.config],
       ["Latest width decision", decision ? [decision.action, decision.to].filter(Boolean).join(" → ") : null],
       ["Decision time", decision ? at(decision.at) : null],
       ["Engine", r.backend],
@@ -396,6 +396,8 @@ function draw() {
       ["Verdict", (b.verdict || "").replaceAll("_", " ") || null],
       ["Error", (b.error_code || "").replaceAll("_", " ") || null],
       ["Repeat", present(b.repeat) ? fmt(b.repeat + 1, 0) : "—"],
+      ...(b.failed_engine ? [["Last failing engine", [engineName(b.failed_engine), b.failed_stage].filter(Boolean).join(" · ")]] : []),
+      ...(b.learning ? [["Local learning", b.learning.replaceAll("_", " ")]] : []),
       ["Verdict details", (b.reasons || []).map((reason) => reason.replaceAll("_", " ")).join(" · ") || null]
     ]);
   }
