@@ -116,6 +116,7 @@ main{padding:16px 13px 32px}
 <section class="panel" id="paired" hidden><div class="panelhead"><h2>Paired deployment results</h2></div>
 <p>Ratios use IronMule GGUF divided by vLLM AWQ. Higher throughput and lower first-token latency are faster.</p>
 <div class="table-shelf"><table class="rows" id="pairedTable"></table></div><p class="empty" id="pairedEmpty"></p></section>
+<section class="panel" id="admissionPanel" hidden><div class="panelhead"><h2 id="admissionTitle">Prompt admission tuning</h2><span id="admissionState" class="caption"></span></div><dl class="details" id="admissionDetails"></dl></section>
 <section class="panel"><div class="panelhead"><h2 id="detailTitle">Runtime</h2><span id="detailBadge" class="caption"></span></div><dl class="details" id="details"></dl></section>
 <p class="sr" role="status" id="announce"></p></main></div>
 <script>
@@ -184,8 +185,8 @@ function cards(rows) {
     box.append(c);
   }
 }
-function details(rows) {
-  const box = $("details");
+function details(rows, id = "details") {
+  const box = $(id);
   box.replaceChildren();
   rows.forEach(([k, v]) => {
     const d = el("div");
@@ -193,6 +194,33 @@ function details(rows) {
     box.append(d);
   });
 }
+function renderAdmission(a, workers) {
+  $("admissionPanel").hidden = !a;
+  if (!a) return;
+  const names = {waiting: "Waiting for local observations", testing: "Testing a budget", deferred: "Trial deferred",
+    qualified: "Budget qualified", retained_incumbent: "Previous budget retained"};
+  const reasons = {unchanged_execution: "Execution did not change", quality: "Quality check failed",
+    throughput_margin: "Throughput margin missed", first_token_regression: "First-token latency increased",
+    incomplete_holdout: "Holdout incomplete", invalid_measurement: "Invalid measurement"};
+  const last = a.last || {}, target = last.selection || {}, rows = [];
+  txt("admissionTitle", workers > 1 ? "Prompt admission tuning · first worker" : "Prompt admission tuning");
+  txt("admissionState", a.enabled ? (names[a.status] || "Status unavailable") : "Off");
+  if (present(a.observations)) rows.push(["Eligible local request batches", fmt(a.observations, 0)]);
+  if (present(a.rules)) rows.push(["Qualified rules", fmt(a.rules, 0)]);
+  const shape = [present(target.concurrency) ? fmt(target.concurrency, 0) + " parallel requests" : null,
+    present(target.max_tokens) ? fmt(target.max_tokens, 0) + " output-token limit" : null,
+    present(target.samples) ? fmt(target.samples, 0) + " observed batches" : null].filter(Boolean);
+  if (shape.length) rows.push(["Trial workload", shape.join(" · ")]);
+  if (present(last.incumbent_budget)) rows.push(["Incumbent admission budget", fmt(last.incumbent_budget, 0) + " tokens"]);
+  if (present(last.candidate_budget)) rows.push(["Candidate admission budget", fmt(last.candidate_budget, 0) + " tokens"]);
+  if (last.status && names[last.status]) rows.push(["Last trial", names[last.status]]);
+  if (last.reason) rows.push(["Trial deferred", reasons[last.reason] || last.reason]);
+  const findings = (last.reasons || []).map(code => reasons[code]).filter(Boolean);
+  if (findings.length) rows.push(["Holdout checks", findings.join(" · ")]);
+  if (a.remaining_cooldown_s > 0) rows.push(["Next eligible in", fmt(a.remaining_cooldown_s, 0) + " s"]);
+  details(rows, "admissionDetails");
+}
+
 function chart(values) {
   points = values.filter(present);
   const c = $("plot"),
@@ -292,6 +320,7 @@ function draw() {
   $("provider").hidden = true;
   const deployment = isBench && b.kind === "deployment";
   $("paired").hidden = !deployment;
+  renderAdmission(isBench ? null : r.admission_learning, r.workers);
   if (!isBench) {
     status(r.status);
     txt("title", "Inference");

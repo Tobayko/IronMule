@@ -186,6 +186,43 @@ def benchmark(path, expected_schema=None):
         return {"status": "unavailable", "runs": [], "run_count": 0}
 
 
+
+def admission_learning(value):
+    """Project the worker's local trial state without prompts, identifiers or child errors."""
+    if not isinstance(value, dict) or type(value.get("enabled")) is not bool:
+        return None
+    statuses = ("disabled", "waiting", "testing", "deferred", "qualified", "retained_incumbent")
+    reasons = ("unchanged_execution", "quality", "throughput_margin", "first_token_regression",
+               "incomplete_holdout", "invalid_measurement")
+    deferrals = ("another local trial is running", "candidate budgets already measured for this workload",
+                 "current native engine differs from measured incumbent", "foreground work resumed",
+                 "invalid local admission history", "local trial budget exhausted", "local trial unavailable",
+                 "missing or unsupported native serving configuration", "no recurring concurrent admission workload",
+                 "unreadable local admission history", "insufficient memory for isolated holdout", "incomplete_holdout",
+                 "invalid_measurement")
+
+    def counts(source, keys):
+        return {key: source[key] for key in keys if type(source.get(key)) is int and 0 <= source[key] <= 2**31}
+
+    result = {"enabled": value["enabled"], "status": value.get("status") if value.get("status") in statuses else None,
+              **counts(value, ("observations", "rules", "remaining_cooldown_s"))}
+    last = value.get("last")
+    if isinstance(last, dict):
+        decision = counts(last, ("candidate_budget", "incumbent_budget"))
+        if last.get("status") in statuses:
+            decision["status"] = last["status"]
+        if last.get("reason") in deferrals:
+            decision["reason"] = last["reason"]
+        if isinstance(last.get("reasons"), list):
+            decision["reasons"] = [reason for reason in reasons if reason in last["reasons"]]
+        target = last.get("selection")
+        if isinstance(target, dict) and target.get("focus") == "admission":
+            decision["selection"] = counts(target, ("concurrency", "max_tokens", "samples"))
+        if decision:
+            result["last"] = decision
+    return result
+
+
 def runtime(service):
     if service is None:
         return {"status": "detached", "samples": []}
@@ -218,7 +255,8 @@ def runtime(service):
             "schedule_width": number(schedule.get("max_width")),
             "schedule_order": schedule.get("order") if schedule.get("order") in ("fifo", "sjf") else None,
             "workers": len(shards), "live_windows": number(agent.get("live_windows")),
-            "decision_us": number(group_agent.get("decision_us")), "gate": gate if type(gate) is bool else None}
+            "decision_us": number(group_agent.get("decision_us")), "gate": gate if type(gate) is bool else None,
+            "admission_learning": admission_learning(ggml.get("admission_learning"))}
 
 
 def snapshot(service: Any, path: Path):

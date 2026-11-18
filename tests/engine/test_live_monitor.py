@@ -149,3 +149,23 @@ def test_standalone_exposes_only_authenticated_data_and_static_page(tmp_path):
         finally:
             server.shutdown()
             thread.join(timeout=2)
+
+
+def test_runtime_reports_local_admission_trial_without_request_content():
+    learning = {'enabled': True, 'status': 'retained_incumbent', 'observations': 11, 'rules': 0,
+                'remaining_cooldown_s': 19, 'binding': '/private/device',
+                'last': {'status': 'retained_incumbent', 'incumbent_budget': 256, 'candidate_budget': 128,
+                         'reasons': ['throughput_margin', 'private'], 'reason': '/private/path',
+                         'selection': {'focus': 'admission', 'concurrency': 8, 'samples': 3, 'max_tokens': 16,
+                                       'prompt_lengths': [1234], 'model_id': 'private'}}}
+    health = {'ready': True, 'ggml': {'admission_learning': learning}}
+    service = SimpleNamespace(health=lambda: health)
+    result = runtime(service)['admission_learning']
+    assert result == {'enabled': True, 'status': 'retained_incumbent', 'observations': 11, 'rules': 0,
+        'remaining_cooldown_s': 19, 'last': {'status': 'retained_incumbent', 'incumbent_budget': 256,
+         'candidate_budget': 128, 'reasons': ['throughput_margin'], 'selection': {'concurrency': 8, 'samples': 3, 'max_tokens': 16}}}
+    assert 'private' not in json.dumps(result)
+    learning.update(status='private', rules=-1, observations=float('nan'), last=[])
+    assert runtime(service)['admission_learning'] == {'enabled': True, 'status': None, 'remaining_cooldown_s': 19}
+    del health['ggml']['admission_learning']
+    assert runtime(service)['admission_learning'] is None
