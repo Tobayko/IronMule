@@ -181,3 +181,32 @@ For a local functional smoke, start a standalone GGUF service with
 python -m lab.portable_gpu.mixed_traffic --url http://127.0.0.1:8080 \
   --gguf /models/model.gguf --budget-seconds 60 --output /tmp/ironmule-mixed.json
 ```
+
+#### Scoped 444-token prefill follow-up
+
+Once the local native study produces a successful receipt, the HTTP runner
+compares the normal IronMule agent on split KV streams with and without
+grouping cold 444-token prompts in twos or fours. Use the same full
+`CUDA_VISIBLE_DEVICES` UUID and `IRONMULE_GGML_GPU_LAYERS` setting that
+the native study used. The native libraries, worker implementation and model
+must still match. This is a comparison of two IronMule configurations.
+
+```bash
+python -m lab.portable_gpu.prefill_http \
+  --gguf /models/Qwen3-32B-Q4_K_M.gguf --tokenizer /models/qwen3-32b-tokenizer \
+  --state-dir /results/long-prefill-state --output /results/long-prefill-http.json \
+  --long-native-receipt /results/long-prefill-native.json
+```
+
+The scoped default is two alternating repetitions at 8 and 32 clients under
+a 900-second total budget. Widths share each server startup. Both arms receive
+the same held-out requests, plus the ordinary factual holdouts. The runner
+checks the receipt before launching an HTTP server and against the worker after
+warmup. The candidate receives `IRONMULE_GGML_PREFILL_BATCH=long-444` and the
+absolute receipt path. The usual model and stream gates must pass. Each
+candidate traffic wave must show positive two- or four-prompt group counts
+that account for every grouped call, prompt and row. Missing proof ends the
+scoped experiment and preserves completed measurements. The paired report
+records identical-token-and-stop checks, answer gains and losses, per-wave
+shape counts, latency and throughput. A completed study leaves serving
+configuration selection to the caller.
