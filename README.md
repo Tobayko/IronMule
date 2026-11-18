@@ -229,6 +229,19 @@ The published CPU and GPU versions began with random weights, learned from a sho
 
 **What happened when the traffic changed?** On a four-vCPU AMD EPYC, 16 clients switched from short chats to long documents and back. The agent predicted that widening the batch from 8 to 64 slots would help. Live throughput fell, and the updated controller reverted after 16 completions. It kept the recovered setting through all three returning chat waves. Those chats reached 50.77 output tok/s with the agent and 78.68 with the fixed setting. Each arm answered 138 of 144 factual requests correctly. This was one run per arm. [Workload, timings and earlier attempts](docs/LAB.md#2026-11-18--earlier-ag10-withdrawal-and-recovery-after-a-failed-live-switch)
 
+A later SmolLM2-135M CPU run tested whether the controller could act on its own
+workload forecasts. It selected eight slots, served 64 requests and returned to
+four after observing the higher cost. On 576 held-out requests, matching previous
+traffic by workload reduced the controller's forecast error by 3.33%.
+[Measurements and saved controller state](training/README.md#serving-the-proposed-width-and-testing-its-rollback)
+
+The local answer-quality lab measures grounded responses, false refusals and completed
+tool calls. In one Qwen3-0.6B test, passing an actual first lookup result to the next
+tool completed 12 of 12 two-step tasks. The model-driven reference completed zero.
+Both workflows answered all 12 supported lookups correctly. These results apply to
+the structured lookup application and its tested schema.
+[Tasks, model outputs and tool traces](lab/answer_quality/README.md)
+
 ## Where the speed comes from
 
 - **Continuous batching** lets arriving requests join a decode batch while earlier requests are still generating.
