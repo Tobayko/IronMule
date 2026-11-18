@@ -314,7 +314,6 @@ _COMMAND_GROUPS = (
         ("benchmark", "Run the existing reproducible local benchmark"),
         ("tune", "Tune or inspect the existing local profile (--show)"),
         ("learn", "Bounded hardware session: learned test planner, confirmation, replay"),
-        ("adapt", "Train, evaluate or roll back a local MLX LoRA adapter"),
         ("dream", "Learn the serving policy (group width, joining, gather wait) from logged traffic"),
         ("optimize", "Run bounded automatic calibration and inspect its history"),
         ("revalidate", "Canary-check the stored profile"),
@@ -725,9 +724,6 @@ def _dispatch(argv: list[str] | None) -> int:
     if command == "autopilot":
         from ironmule.autopilot import main as autopilot_main
         return autopilot_main(rest)
-    if command == "adapt":
-        from ironmule.adaptation import main as adapt_main
-        return adapt_main(rest)
     if command == "learn":
         from ironmule.dream import main as learn_main
         return learn_main(rest)

@@ -1,7 +1,7 @@
 """QG1. Independent, short-answer checks for a reference, its repeat, and a candidate.
 
 The prompt and grading protocol are fixed before a comparison. Vary the seed for fresh
-arithmetic and extraction tasks when selecting a new adapter. Facts test retention. Never
+arithmetic and extraction tasks when comparing inference paths. Facts test retention. Never
 provide the expected answers to the generation callback.
 """
 
