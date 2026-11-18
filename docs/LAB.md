@@ -2316,3 +2316,79 @@ from its preferred KV stream. The 64-token threshold for moving a request to a d
 applied to the stream the scheduler had already chosen. After limiting that threshold to stream changes, the
 same request reused 15 prompt tokens and produced the same output as the fresh request. The HTTP timings above
 precede this change. Its end-to-end speed impact has not been measured.
+
+### 2026-11-18 — GGUF sequence widths on Runpod, including the cost of a load transition
+
+The [portable width experiment](../lab/portable_gpu/README.md) compares one and four sequence
+slots on the same GGUF with greedy decoding. Each workload has a separate calibration and
+holdout prompt set, two repetitions per width, alternating arm order, and cleared KV between
+batches. One or four requests arrive together. Throughput counts generated tokens over engine
+wall time. First-token latency is the median across requests, then the median across repetitions.
+The GPU must execute a device-local arithmetic graph and the loader must confirm every model
+layer was offloaded. A comparison qualifies only when both widths copy every expected first
+word and generate identical full token sequences. The six-token answer limit and synthetic
+copy task bound the scope of the results.
+
+| GPU, model and held-out workload | Width 1 output tok/s | Width 4 output tok/s | Width 1 first token | Width 4 first token |
+| --- | ---: | ---: | ---: | ---: |
+| A100 SXM 80 GB, SmolLM2-135M, four 32-token requests | 250.74 | 391.56 | 44.53 ms | 21.99 ms |
+| A100 SXM 80 GB, Qwen2.5-0.5B, four 256-token requests | 168.57 | 261.05 | 72.39 ms | 36.70 ms |
+| H100 80 GB, Qwen3-4B, four 32-token requests | 164.15 | 288.93 | 65.91 ms | 27.03 ms |
+| H100 80 GB, Qwen3-4B, four 1,024-token requests | 49.71 | 51.95 | 276.11 ms | 248.86 ms |
+
+On the H100, Qwen3-4B served a fresh short request, a burst of four 1,024-token requests,
+then another short request. The calibration rule selected widths 1, 4, 1. Each switch rebuilt
+the native context and warmed it while the new wave waited. Both trials returned identical,
+correct answers. The two fixed-width runs each took 551 ms. The two switching runs took
+650 and 648 ms. Median first-token latency on the returning short request rose from about
+11 ms to 63 ms. These measurements include reconfiguration at arrival. An idle server may
+absorb some rebuild time when the next request arrives later.
+
+The two arms use IronMule's own GGUF engine with the same pinned llama.cpp kernel build.
+These measurements quantify the effect of sequence width inside that engine. Stock HTTP
+serving and vLLM require their own end-to-end comparisons.
+
+A second H100 experiment exercised the controller itself, with measured context creation
+and release times on Qwen3-4B. The two policies received the same 47 calibration requests
+before 54 fresh requests per arm, including sustained concurrency after the document burst.
+The harness called the real idle decision between waves and charged the decision and any
+physical rebuild to arriving requests. This was a single ordered comparison.
+The original policy switched once and delivered 125.21 tokens/s with a median first-token
+latency of 188.86 ms. The cost-aware challenger stayed at width 1 and delivered 103.49
+tokens/s with 268.46 ms median first-token latency. Both policies produced the same token
+IDs and stop reasons and copied all 54 answers correctly. The challenger lost 17.35% in
+throughput on this trace. Its short-horizon estimate missed the subsequent sustained
+traffic. The original policy remains the serving default.
+
+**32B models.** The same experiment used two monolithic Q4_K_M files on the A100 SXM
+80 GB and RTX 6000 Ada 48 GB. Both models loaded all 65 layers
+on each tested device. The following rows are held-out medians for four simultaneous
+requests. First-token measurements follow the same per-request timing boundary.
+
+| Model, GPU | Input tokens per request | Width 1 → 4, output tok/s | Width 1 → 4, first token | Quality |
+| --- | ---: | ---: | ---: | --- |
+| Qwen3-32B, A100 SXM | 32 | 33.81 → 51.34 | 324.56 → 145.51 ms | Exact, correct |
+| Qwen3-32B, A100 SXM | 1,024 | 5.67 → 5.74 | 2,519.53 → 2,406.09 ms | Exact, correct |
+| Qwen3-32B, RTX 6000 Ada | 32 | 34.61 → 68.52 | 302.97 → 97.19 ms | Exact, correct |
+| Qwen3-32B, RTX 6000 Ada | 1,024 | 7.73 → 8.18 | 1,796.81 → 1,649.01 ms | Later tokens differed; excluded |
+| Qwen2.5-32B-Instruct, A100 SXM | 32 | 33.92 → 52.30 | 322.76 → 141.39 ms | Exact, correct |
+| Qwen2.5-32B-Instruct, A100 SXM | 1,024 | 5.90 → 6.06 | 2,420.54 → 2,281.51 ms | Exact, correct |
+| Qwen2.5-32B-Instruct, RTX 6000 Ada | 32 | 34.54 → 68.22 | 304.42 → 98.36 ms | Exact, correct |
+| Qwen2.5-32B-Instruct, RTX 6000 Ada | 1,024 | 8.04 → 8.62 | 1,721.66 → 1,560.91 ms | Exact, correct |
+
+All four calibrations selected width 4 for four short requests. Qwen3-32B on A100
+selected width 1 for four document requests. On RTX 6000 Ada, calibration selected 4
+for the same long shape but generated-token agreement failed on fresh targets. A device
+or model name alone would have missed that behavior.
+
+**Coverage and learning.** Twenty-one completed comparisons covered 20 GPU/GGUF combinations
+on A40, A100 SXM, H100, L40S, RTX 4090 and RTX 6000 Ada. The nine models ranged from
+SmolLM2-135M through Qwen2.5-32B-Instruct and Qwen3-32B. Repeated H100/Qwen3-4B
+measurements count as separate runs. Of 168 paired workload measurements, 83
+calibration pairs entered the fits, 81 holdout pairs passed quality and four pairs
+were rejected. For the GPU-type transfer test, 16 folds had both an eligible source
+GPU and target data. On 61 quality-matched target pairs the log-ratio mean absolute
+error was 0.068 for throughput and 0.099 for first-token latency. Predicting equal
+costs gave 0.224 and 0.326, respectively. Blind transfer selected the wider setting on
+three additional holdout cases whose outputs failed the quality gate. Local remeasurement
+remains part of the serving path.
