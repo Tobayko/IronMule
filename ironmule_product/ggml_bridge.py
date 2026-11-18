@@ -97,7 +97,7 @@ class GgmlBridge:
         root = (self._gate or {}).get("admission_state_root")
         if root:
             from pathlib import Path
-            from ironmule.compare_learning import engine_binding
+            from ironmule.compare_learning import digest, engine_binding
             from .admission_learning import AdmissionLearning
 
             # A configuration change invalidates the old rule, including when the new binding
@@ -109,6 +109,18 @@ class GgmlBridge:
                 self._experiment_binding = engine_binding(self._engine, self._gguf_sha256)
                 self._admission = AdmissionLearning(Path(root), self._gguf, self._engine, self._experiment_binding,
                                                    enabled=os.environ.get("IRONMULE_ADMISSION_LEARN", "1") != "0")
+                if os.environ.get("IRONMULE_PREFILL_STUDY") == "1":
+                    from ironmule.ggml_binary import identity
+                    from ironmule.ggml_engine import ggml_devices
+                    from ironmule_devices import runtime_binding
+
+                    native = identity().get("sha256")
+                    if native:
+                        machine = runtime_binding(ggml_devices(self._engine.L))
+                        # Only this opt-in diagnostic view omits the grouped-prefill toggle. The admission
+                        # learner retains its original, full binding and never consumes this study field.
+                        self._experiment_binding = {**self._experiment_binding,
+                            "study_native_runtime_sha256": digest([native, machine])}
             except (OSError, ValueError, RuntimeError):
                 return
 

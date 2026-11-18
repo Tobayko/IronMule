@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import statistics
 import time
 from pathlib import Path
@@ -19,6 +20,25 @@ ARMS = {"stock": ("1", "0"), "batch": ("1", "1"), "shared": ("0", "0")}
 
 def read(server, path, deadline):
     return compare_servers._json(server["base_url"], path, min(5, compare.remaining(deadline)))
+
+
+def _scope(binding, server):
+    # machine_key contains the expected grouped-prompt toggle. Preserve its hash
+    # per arm and compare the rest of the model/device/execution contract directly.
+    placement = server.get("device") or ""
+    uuid = re.fullmatch(r"GPU-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})", placement)
+    if (not uuid or binding.get("provider") != "cuda" or not binding.get("host_sha256")
+            or not binding.get("implementation") or not binding.get("machine")
+            or not re.fullmatch(r"[a-f0-9]{64}", binding.get("study_native_runtime_sha256") or "")
+            or binding.get("cuda_uuid") != uuid.group(1).replace("-", "").lower()
+            or binding.get("gguf_sha256") != server.get("gguf_sha256")):
+        raise compare.Unverified("missing same-worker prefill identity")
+    raw = {k: v for k, v in binding.items() if k != "machine"}
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {"settings_device_sha256": digest(raw), "arm_sha256": digest(binding),
+            "native_runtime_sha256": binding["study_native_runtime_sha256"],
+            "implementation_sha256": binding["implementation"]}
 
 
 class Profile:
@@ -37,10 +57,10 @@ class Profile:
             raise compare.Unverified("actual shared-pool placement differs from requested arm")
         if self.arm != "shared" and layout.get("settings", {}).get("kv_unified") is not False:
             raise compare.Unverified("separate KV streams are unverified")
-        return live["observed_at"], stats
+        return live["observed_at"], stats, _scope(layout, server)
 
     def after(self, server, deadline, checkpoint, rows):
-        cutoff, previous = checkpoint
+        cutoff, previous, scope = checkpoint
         until = min(time.monotonic() + 4, deadline)
         expected = sorted((r["prompt_tokens"], r["tokens"]) for r in rows)
         while True:
@@ -55,6 +75,9 @@ class Profile:
         ggml = health["ggml"]
         binding = ggml["experiment_binding"]
         stats = ggml["prefill_batch"]
+        if (_scope(binding, server) != scope or stats.get("enabled") is not (self.arm == "batch")
+                or binding.get("shared") is not (self.arm == "shared")):
+            raise compare.Unverified("execution configuration changed during the measured wave")
         timings = {}
         for key in ("queue_ms", "dispatch_to_first_ms", "first_to_end_ms"):
             values = sorted(s[key] for s in samples)
@@ -65,7 +88,7 @@ class Profile:
         if min(deltas.values()) < 0:
             raise compare.Unverified("worker counters restarted within a wave")
         outputs = [(r["text"], r["tokens"], r["finish_reason"]) for r in rows]
-        return {"intervals": timings, "samples": len(samples), "batch_delta": deltas, "shared": binding["shared"],
+        return {"scope": scope, "intervals": timings, "samples": len(samples), "batch_delta": deltas, "shared": binding["shared"],
                 "sequences": binding["seqs"], "context": binding["seq_ctx"], "schedule": health.get("schedule"),
                 "outputs_sha256": hashlib.sha256(json.dumps(outputs, ensure_ascii=True).encode()).hexdigest()}
 
@@ -105,6 +128,7 @@ def run(args):
             identity = arm["identity"]
             safe = {k: identity.get(k) for k in ("version", "provider", "device_name", "placement_verified",
                         "gguf_sha256", "tokenizer_sha256", "implementation_sha256", "autonomous", "startup_seconds")}
+            safe["implementation_sha256"] = (identity.get("ggml") or {}).get("implementation")
             public["deployments"].append({**arm, "identity": safe})
         _atomic_write(args.output, dict(public, stage=stage, elapsed_seconds=round(time.monotonic()-started, 3)))
 
@@ -123,6 +147,7 @@ def run(args):
             for name in args.arms[start:] + args.arms[:start]:
                 if name in failed:
                     continue
+                os.environ["IRONMULE_PREFILL_STUDY"] = "1"
                 os.environ["IRONMULE_GGML_STREAMS"], os.environ["IRONMULE_GGML_PREFILL_BATCH"] = ARMS[name]
                 args.agent_dir = args.state_dir / name
                 report["current"] = {"deployment": name, "repeat": rep}

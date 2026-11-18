@@ -84,6 +84,29 @@ IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_GGML_THREADS=2 IRONMULE_GGML_PREFIX_REUSE=1 
   --output ./ag10-continuation.json
 ```
 
+## Testing grouped prompt processing on recorded HTTP traffic
+
+The optional selector reads a single completed IronMule prefill HTTP study. The two eligible arms use the same
+GGUF and separate KV streams. One processes prompts individually, the other can group them in a native batch.
+
+```sh
+python -m training.prefill_selection prefill-http.json --output prefill-cross-validation.json
+```
+
+A fold holds out an entire server repeat, including its measured concurrency levels. The selector groups
+observations by device and model binding, active sequence layout, concurrency, output limit and the histogram
+of prompt lengths in powers of two. To select grouping, at least two other matching repeats must have run the
+two arms in both orders. Every such repeat must show actual native grouping, identical greedy output and stops,
+an informative baseline for each factual category, preservation of every correct answer, at least 3% more
+generated tokens per second and p95 time to first token no later than split processing.
+The held-out repeat records the selected action and its own measurements. A failed held-out prediction and a
+newly lost factual answer remain in the report. A repeated timed prompt across folds invalidates that workload.
+
+The producer can emit a hash of the loaded worker libraries, driver, device and visible execution settings.
+Historical reports with verified in-run GPU placement and missing worker hashes can support a descriptive
+comparison within their one run. A promising result calls for a new bound local holdout. This offline command
+reads no other engine's measurements and installs no serving rules.
+
 ## The workflow
 
 Every step below follows [AGENTS.md](../AGENTS.md), "Performance and evidence". A result counts only when it was
