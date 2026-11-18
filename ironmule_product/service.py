@@ -158,6 +158,7 @@ class ProductService:
         self._closed = threading.Event()
         self._active: set[str] = set()
         self._completed = self._failed = self._cancelled = 0
+        self._live_samples: deque[dict] = deque(maxlen=32)
         self._last_batch_size: int | None = None
         self._batch_count = 0
         self._joined = 0  # requests that joined a running group (SERVE8, the dense plan's slot reuse)
@@ -257,6 +258,11 @@ class ProductService:
             result["knobs"] = {"source": engine.get("profile_source"), "values": engine["selected_knobs"],
                                "class_a": class_a_knobs(engine["selected_knobs"]) is not None}
         return result
+
+    def live_samples(self) -> list[dict]:
+        """Recent completed real requests, limited to timings and counts."""
+        with self._lock:
+            return [sample.copy() for sample in self._live_samples]
 
     def accepting(self) -> bool:
         """HW1: whether `stream` would admit a request now (open, and a worker ready or being replaced)."""
@@ -747,12 +753,19 @@ class ProductService:
                 self.learning.ended(session.request.request_id, session.end_ns)
             except Exception:  # noqa: BLE001 - a learner error must not stop the scheduler (STAB1)
                 self._learning_fault()
+        elapsed = (session.end_ns - session.submitted_ns) / 1e9
+        first_seconds = (session.first_ns - session.submitted_ns) / 1e9 if session.first_ns is not None else None
         self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
                   error=session.error, tokens=session.tokens,
                   queue_s=None if session.dispatched_ns is None else (session.dispatched_ns - session.submitted_ns) / 1e9,
-                  first_s=None if session.first_ns is None else (session.first_ns - session.submitted_ns) / 1e9,
-                  total_s=(session.end_ns - session.submitted_ns) / 1e9)
+                  first_s=first_seconds, total_s=elapsed)
         with self._lock:
+            if session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
+                self._live_samples.append({
+                    "at": time.time(), "completion_tokens": session.tokens,
+                    "tokens_per_second": session.tokens / elapsed,
+                    "ttft_ms": first_seconds * 1000 if first_seconds is not None else None,
+                })
             self._sessions.pop(session.request.request_id, None)
             self._active.discard(session.request.request_id)
         self._pending.task_done()

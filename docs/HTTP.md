@@ -49,6 +49,8 @@ when it is ready:
 | Method | Path | Behaviour |
 | :-- | :-- | :-- |
 | `GET` | `/` | a chat page for the browser; static, served without a key, and every call it makes goes through the routes below. It shows which engine answers and, live, completion tokens per second from sending to the last token |
+| `GET` | `/live` | read-only monitor with inference and benchmark tabs, updated every two seconds |
+| `GET` | `/v1/ironmule/live` | monitor data protected by the server's API key when configured. Serving history covers the latest 32 completed requests. Start-to-finish throughput and first-token latency include time spent in the queue |
 | `GET` | `/health` | service, mode, backend, the worker's actual `device` (`gpu` or `cpu`), loaded model, queue and completion counters, the `schedule` that serves, the tuned engine's `knobs` (values, their `source`, and whether they are `class_a`: only knobs that leave every answer unchanged), and a `learning` summary when learning is on |
 | `GET` | `/ready` | the same report; readiness is part of it |
 | `GET` | `/v1/models` | the registered models, each with its exact snapshot revision |
@@ -61,6 +63,20 @@ when it is ready:
 The request body is read as OpenAI chat completion input: `messages` (required,
 non-empty) and `max_tokens` or `max_completion_tokens`. Sampling fields are accepted
 and ignored. Decoding is greedy, so the same prompt gives the same tokens.
+
+Open `/live#inference` to watch the active engine and recent requests, or
+`/live#benchmarks` to watch `ironmule compare` report measured workloads, holdout
+scores and its final verdict. The benchmark tab reads `benchmark-progress.json`
+in the server's state directory. Set `IRONMULE_BENCH_PROGRESS` to an explicit
+report path when the comparison runs in another directory. The monitor exposes
+counts, timings and controller decisions. Prompts and responses stay private.
+
+For a benchmark-only monitor on loopback, run the following command and open
+the address it prints.
+
+```sh
+python -m ironmule_product.live_view --progress /path/to/benchmark-progress.json --port 8787
+```
 
 ## Concurrency
 

@@ -71,6 +71,7 @@ def _service(backend: _Transport) -> ProductService:
     service._lock = threading.RLock()
     service._closed = threading.Event()
     service._active = set()
+    service._live_samples = deque(maxlen=32)
     service._completed = service._failed = service._cancelled = 0
     service._last_batch_size = None
     service._batch_count = 0
