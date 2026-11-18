@@ -212,8 +212,10 @@ is cheaper per attended token. `ironmule/ggml_agent.py` makes that choice while 
    each configuration's start model knows its price per attended KV token. Nothing the gate did not pass is ever a
    configuration.
 2. *World model, online:* a step's seconds = a + b x decode rows + c x prompt tokens + d x attended KV tokens, per
-   configuration, by recursive least squares with forgetting, from every step the engine serves (the hot path only
-   appends one tuple; the fit runs while idle). The startup measurement's points (one row, full width, a longer
+   configuration, by recursive least squares with forgetting. Each standalone prompt-processing call contributes
+   its own duration, newly computed prompt tokens and preceding context length. In a decode batch, placeholder
+   rows used to bridge gaps between GPU streams count towards decode work. The hot path appends a tuple and
+   the agent fits the model while idle. The startup measurement's points (one row, full width, a longer
    context, a prompt alone) are folded in at every idle call, so a fit never drifts where live steps carry no
    information. A configuration is priced by its live model after 200 live steps; before that by its start model
    times a live factor (its own after 20 steps, else that of the configuration that served most), so a configuration

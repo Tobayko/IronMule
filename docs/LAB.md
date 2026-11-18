@@ -2535,6 +2535,13 @@ median p95 time to first visible token at all three loads. The ratios describe c
 deployment configurations, including differences in weight representation and kernels.
 This report is external evaluation data. [Per-round measurements and paired comparisons](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
 
+The distribution of first-token latency also matters. At 32 clients the median request
+received its first visible token in 0.95 s with IronMule and 2.33 s with vLLM AWQ.
+IronMule's p95 was 4.26 s and vLLM's was 3.46 s. All 32 answers finished in 6.21 s
+and 4.55 s respectively. Each figure is the median of three repetitions. IronMule's
+first-token latency deficit appeared in the slow end of the distribution. Distinguishing
+queuing, prompt processing and token generation requires timings inside the server.
+
 ### 2026-11-18: own-traffic admission learning on an AMD EPYC CPU
 
 The production IronMule server at `268911b` served SmolLM2-135M Q4_K_M with
@@ -2561,3 +2568,19 @@ profile recorded nine own workload observations. The worker deferred the experim
 No candidate/incumbent pairs or new rules were recorded. This run captured GPU
 placement and the decision. The exact reason was absent from this first export.
 [RTX 4090, 2,048-token profile](../evidence/self-admission/qwen3-06b-rtx4090-deferred-20261118.json)
+
+### 2026-11-18: measuring standalone GGUF prompt processing
+
+IronMule can process a prompt in its own native call when it cannot share the current
+batch. The previous step observer timed the combined batch and missed those separate
+calls. This hid prompt-processing work from the controller's cost model. The observer
+now records each prompt chunk when it finishes. It also classifies placeholder rows
+between active GPU streams as decode work.
+
+On a two-thread AMD EPYC CPU, SmolLM2-135M Q4_K_M served short, long and short prompt
+waves at concurrency 8 and 32. The six waves totaled 120 requests. An independent hook
+counted 114 native decode calls in each run. The old observer recorded 18. The fixed
+observer recorded all 114, including the 96 standalone calls that processed 4,223
+prompt tokens. All 360 generated tokens and all stop reasons matched between revisions.
+The experiment verifies measurement coverage. Its timings apply to this CPU workload.
+[Paired measurements](../evidence/runtime/smollm2-prefill-observer-cpu.json) · [Reproduction script](../lab/portable_gpu/prefill_observer_probe.py)
