@@ -1566,6 +1566,20 @@ engine.close()
 """
 
 
+def _kernel_digest() -> str | None:
+    """Empty for stock kernels, a content hash for a pinned library, or None for an unresolved loader path."""
+    name = os.environ.get("IRONMULE_KG_LIB")
+    if not name:
+        return ""
+    path = Path(name)
+    if path.is_absolute() and path.is_file():
+        try:
+            return file_sha256(str(path))
+        except OSError:
+            pass
+    return None
+
+
 def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_ctx: int | None = None,
                      cache: Path | None = None, root: Path | None = None, device: str | None = None,
                      extra_bytes: int = 0, experience_root: Path | None = None) -> dict[str, Any]:
@@ -1587,7 +1601,8 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         available, total = found
     # Under generated matmuls even the default attention setting can change answers. AG10 may then
     # vary width only within the settings actually chosen by the gate.
-    default_alternative = not os.environ.get("IRONMULE_KG_LIB")
+    kernel = _kernel_digest()
+    default_alternative = kernel == ""
     model_digest = file_sha256(gguf)
     machine = machine_key()
     experience = None
@@ -1597,13 +1612,15 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         experience = suggest(experience_root, model_digest, ggml_devices(), machine, seq_ctx)
     key_parts = [model_digest, settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS, default_alternative,
                  int(extra_bytes) >> 28, WIDTH_GAIN, machine, device, round(total / 2**30)]
+    if not default_alternative:
+        key_parts.append(kernel)
     if experience:
         key_parts.append(experience)
     key = hashlib.sha256(json.dumps(key_parts, sort_keys=True).encode()).hexdigest()[:24]
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"width-{key}.json"
     model_bytes = os.path.getsize(gguf) + int(extra_bytes)
-    if stored.exists():
+    if kernel is not None and stored.exists():
         try:
             cached = json.loads(stored.read_text())
             if fitting_widths(cached["cell_bytes"], seq_ctx, model_bytes, available, total) == cached["fitting"]:
@@ -1688,6 +1705,8 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
                 alternatives.append(other)
         record["measured"] = alternatives
     record["seconds"] = round(time.perf_counter() - started, 1)
+    if kernel is None or _kernel_digest() != kernel:
+        return record
     try:
         cache.mkdir(parents=True, exist_ok=True)
         stored.write_text(json.dumps(record))
@@ -1819,7 +1838,6 @@ def gate_key(snapshot: str, gguf: str) -> str:
     from .factual_gate import VERSION as FACT_VERSION
     from .numeric_choice import GATE_VERSION
 
-    kg = os.environ.get("IRONMULE_KG_LIB") or ""
     kg5 = None
     if os.environ.get("IRONMULE_KG5") == "1":
         kg5 = {"libraries": [file_sha256(str(p)) for p in _kg5_files()],
@@ -1827,7 +1845,7 @@ def gate_key(snapshot: str, gguf: str) -> str:
                "width": SEQS, "context": SEQ_CTX}
     return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, FACT_VERSION,
                                      ENGINE_VERSION, OPTION_BOUND, machine_key(), SEQS, SEQ_CTX, kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
-                                     file_sha256(kg) if kg and Path(kg).is_file() else ""],
+                                     _kernel_digest()],
                                     sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -1859,7 +1877,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     # A fresh worker in the opposite benchmark order may reuse its own content-matched gate.
     experimental = os.environ.get("IRONMULE_KG5") == "1"
     shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
-    cacheable = not experimental or bool(_kg5_files())
+    cacheable = _kernel_digest() is not None and (not experimental or bool(_kg5_files()))
     if cacheable and stored.exists():
         try:
             kept = json.loads(stored.read_text())
