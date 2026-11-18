@@ -1,0 +1,68 @@
+{
+  "schema": "ironmule.prefill-selection.v1",
+  "status": "insufficient_evidence",
+  "groups": [],
+  "excluded": [],
+  "native_arms": {
+    "stock": {
+      "timed_cells": 3,
+      "verified_repeats": [
+        0
+      ]
+    },
+    "batch": {
+      "timed_cells": 0,
+      "verified_repeats": []
+    }
+  },
+  "arm_failures": [
+    {
+      "deployment": "batch",
+      "repeat": 0,
+      "reason": "requested_kv_layout_unavailable"
+    }
+  ],
+  "reason": "unfinished_or_failed_native_measurement",
+  "verified_cells": [
+    {
+      "deployment": "stock",
+      "repeat": 0,
+      "concurrency": 1,
+      "device_name": "NVIDIA L40S",
+      "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+      "tokenizer_sha256": "73e8498e84b63390c00558cf8cbf06aa7f6d623c4f219b903259db7a85782874",
+      "requests": 8,
+      "tokens_per_second": 37.74468686600965,
+      "ttft_p95_ms": 239.913711004192,
+      "correct": 18,
+      "questions": 18
+    },
+    {
+      "deployment": "stock",
+      "repeat": 0,
+      "concurrency": 8,
+      "device_name": "NVIDIA L40S",
+      "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+      "tokenizer_sha256": "73e8498e84b63390c00558cf8cbf06aa7f6d623c4f219b903259db7a85782874",
+      "requests": 8,
+      "tokens_per_second": 113.52299760960896,
+      "ttft_p95_ms": 1147.8826950042276,
+      "correct": 18,
+      "questions": 18
+    },
+    {
+      "deployment": "stock",
+      "repeat": 0,
+      "concurrency": 32,
+      "device_name": "NVIDIA L40S",
+      "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+      "tokenizer_sha256": "73e8498e84b63390c00558cf8cbf06aa7f6d623c4f219b903259db7a85782874",
+      "requests": 32,
+      "tokens_per_second": 161.13295762353928,
+      "ttft_p95_ms": 4405.537368002115,
+      "correct": 18,
+      "questions": 18
+    }
+  ],
+  "source_sha256": "00fbf869a1c34d57b5d62fb66f07db7ad8a592f37a1d2e4d63de357daee63601"
+}

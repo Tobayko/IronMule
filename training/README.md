@@ -107,6 +107,11 @@ Historical reports with verified in-run GPU placement and missing worker hashes 
 comparison within their one run. A promising result calls for a new bound local holdout. This offline command
 reads no other engine's measurements and installs no serving rules.
 
+On the NVIDIA L40S, Qwen3-32B Q4_K_M completed one verified split-stream round at concurrency 1, 8 and 32.
+It generated 37.74, 113.52 and 161.13 tokens/s, with p95 times to first token of 0.240, 1.148 and 4.406 seconds.
+All 18 factual checks passed at each level. The grouped arm started with a different KV layout and produced zero
+comparable measurements. The recorded decision is insufficient evidence. [Verified cells and rejection](../evidence/runtime/qwen3-32b-l40s-prefill-selection.json)
+
 ## The workflow
 
 Every step below follows [AGENTS.md](../AGENTS.md), "Performance and evidence". A result counts only when it was

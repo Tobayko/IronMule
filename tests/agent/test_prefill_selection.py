@@ -135,3 +135,7 @@ def test_unavailable_grouped_arm_keeps_incumbent_measurements_and_layout_reason(
     assert out["native_arms"]["stock"] == {"timed_cells": 3, "verified_repeats": [0, 1, 2]}
     assert out["native_arms"]["batch"] == {"timed_cells": 0, "verified_repeats": []}
     assert out["arm_failures"][0]["reason"] == "requested_kv_layout_unavailable"
+    report["status"] = "incomplete"
+    incomplete = evaluate(report)
+    assert not incomplete["groups"] and incomplete["status"] == "insufficient_evidence"
+    assert [r["correct"] for r in incomplete["verified_cells"]] == [18, 18, 18]

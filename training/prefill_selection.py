@@ -172,7 +172,7 @@ def folds(rows):
 def evaluate(report):
     require(report.get("schema") == "ironmule.prefill-http.v1", "requires_native_prefill_http_report")
     out = {"schema": "ironmule.prefill-selection.v1", "status": "insufficient_evidence", "groups": [], "excluded": []}
-    if report.get("status") not in ("measured", "partial") or report.get("stage") != "finished":
+    if report.get("status") not in ("measured", "partial", "incomplete") or report.get("stage") != "finished":
         out["reason"] = "unfinished_or_failed_native_measurement"
         return out
     protocol = report["protocol"]
@@ -197,6 +197,24 @@ def evaluate(report):
     out["arm_failures"] = [{"deployment": row["deployment"], "repeat": row["repeat"],
                             "reason": known_errors.get(row.get("reason"), "measurement_failure")}
                            for row in report.get("errors", []) if row.get("deployment") in ARMS]
+    if report["status"] == "incomplete":
+        out["reason"] = "unfinished_or_failed_native_measurement"
+        out["verified_cells"] = []
+        for (arm, rep, width), row in rows.items():
+            deployment = deployments.get((arm, rep))
+            if not deployment or deployment.get("prompt_ids_verified") is not True:
+                continue
+            try:
+                identity, _, scores = arm_values(row, deployment, protocol["seed"] + rep * 1009 + width,
+                                                 max(width, protocol["requests"]), protocol["max_tokens"])
+            except (ValueError, KeyError, TypeError, IndexError):
+                continue
+            out["verified_cells"].append({
+                "deployment": arm, "repeat": rep, "concurrency": width, "device_name": identity[2],
+                "gguf_sha256": identity[3], "tokenizer_sha256": identity[4], "requests": row["requests"],
+                "tokens_per_second": row["tokens_per_second"], "ttft_p95_ms": row["ttft_p95_ms"],
+                "correct": sum(scores.values()), "questions": len(scores)})
+        return out
     groups = defaultdict(list)
     for width in protocol["concurrency"]:
         for rep in range(protocol["repeats"]):
