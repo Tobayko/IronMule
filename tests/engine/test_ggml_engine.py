@@ -916,3 +916,90 @@ def test_kg5_gate_key_binds_to_the_native_backend_and_probe(monkeypatch, tmp_pat
     assert len({original, probe, key()}) == 3
     monkeypatch.setenv("LD_PRELOAD", "unresolved-name.so")
     assert not gg._kg5_files()
+
+
+@pytest.mark.parametrize("speculation", ["padding", "drafts"])
+def test_pilot_weights_only_apply_to_actual_plain_decode_rows(speculation):
+    import types
+
+    from ironmule.ggml_engine import Job
+
+    engine, _, _ = _streams_engine()
+    switches, calls = [], []
+    learning = types.SimpleNamespace(bin_size=64, max_rows=4, choose=lambda *args: 2)
+    engine.pilot = types.SimpleNamespace(learning=learning, load=types.SimpleNamespace(foreign=0),
+                                         last_fallback=False, observe=lambda *args: None,
+                                         decide=lambda *args: {"threads": 4, "cap": 4, "budget": 4096, "draft": True})
+    def set_threads(n):
+        switches.append(n)
+        engine.threads = n
+    engine.set_threads = set_threads
+    decode = engine._decode
+
+    def traced(rows):
+        calls.append((engine.threads, list(rows)))
+        return decode(rows)
+    engine._decode = traced
+    if speculation == "padding":
+        engine.pad_to, engine.padded = {3: 6}, 0
+    else:
+        # The engine's own n-gram source produces real drafts once the answer repeats 7s.
+        engine.policy = types.SimpleNamespace(choose=lambda offers: [min(1, len(tokens)) for tokens, _ in offers],
+                                              observe_step=lambda *args: None, observe_drafts=lambda *args: None)
+
+    jobs = [Job([2] * 64, 6), Job([3] * 64, 3), Job([4] * 64, 15)]
+    engine.run(jobs)
+    assert all(job.tokens == [7] * job.limit for job in jobs)
+    assert any(len(rows) > len({seq for _, _, seq, _ in rows}) and all(row[3] for row in rows)
+               for _, rows in calls)
+    assert calls[0][0] == 4
+    assert any(threads == 2 for threads, rows in calls)
+    for threads, rows in calls:
+        if any(not logits for _, _, _, logits in rows) or len(rows) != len({seq for _, _, seq, _ in rows}):
+            assert threads == 4  # prompt, padding or placeholder rows
+    # Consecutive plain steps keep their committed pool.
+    expected = [t for i, (t, _) in enumerate(calls) if i == 0 or t != calls[i - 1][0]]
+    assert switches == expected
+
+
+@pytest.mark.parametrize("agent,override,enabled", [("on", None, True), ("on", "0", False),
+                                                   ("off", None, False), ("off", "1", True)])
+def test_serve_wires_cpu_pilot_learning_with_default_speculation(tmp_path, monkeypatch, agent, override, enabled):
+    import types
+
+    from ironmule import ggml_engine as ge
+    from ironmule_product import backend, cli
+    from ironmule_product.ggml_bridge import GgmlBridge
+    from ironmule_product.state import ProductStore
+
+    state = tmp_path / "store"
+    ProductStore(state).setup("server")
+    model = tmp_path / "test.gguf"
+    model.write_bytes(b"local model fixture")
+    monkeypatch.setenv("IRONMULE_GGML_SEQS", "4")
+    if override is None:
+        monkeypatch.delenv("IRONMULE_PILOT_LEARN", raising=False)
+    else:
+        monkeypatch.setenv("IRONMULE_PILOT_LEARN", override)
+    monkeypatch.setattr(ge, "available", lambda: None)
+    monkeypatch.setattr(ge, "gpu_layers", lambda: 0)
+    monkeypatch.setattr(ge, "gate", lambda *args, **kwargs: {"passes": True})
+    class Captured(Exception):
+        pass
+
+    def capture(spec, **options):
+        assert options["speculate"] is True
+        bridge = GgmlBridge.__new__(GgmlBridge)
+        pilot = types.SimpleNamespace(learning=None, weights_path=model, cores=4)
+        bridge._engine = types.SimpleNamespace(pilot=pilot, settings={}, seqs=4, seq_ctx=512, shared=False,
+                                               cap=4, gpu_layers=0)
+        bridge._speculate, bridge._gguf_sha256, bridge._gate = True, "model", options["ggml_gate"]
+        bridge._bind_pilot_learning()
+        assert (pilot.learning is not None) == enabled
+        if enabled:
+            assert pilot.learning.path.parent == state / "pilot"
+        raise Captured
+
+    monkeypatch.setattr(backend, "MLXWorkerClient", capture)
+    with pytest.raises(Captured):
+        cli.serve(["--gguf", str(model), "--agent", agent, "--state-dir", str(state)])

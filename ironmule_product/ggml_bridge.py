@@ -85,15 +85,15 @@ class GgmlBridge:
     def _bind_pilot_learning(self) -> None:
         engine = self._engine
         pilot = getattr(engine, "pilot", None)
-        if (os.environ.get("IRONMULE_PILOT_LEARN") != "1" or pilot is None or self._speculate
-                or engine.gpu_layers or pilot.cores < 2):
+        root = (self._gate or {}).get("pilot_state_root")
+        enabled = os.environ.get("IRONMULE_PILOT_LEARN", "1" if root is not None else "0") == "1"
+        if not enabled or pilot is None or engine.gpu_layers or pilot.cores < 2:
             return
         from pathlib import Path
         from ironmule.ggml_engine import file_sha256
         from ironmule.hw import STORE
         from ironmule.pilot_learning import ThreadLearning
 
-        root = (self._gate or {}).get("pilot_state_root")
         pilot.learning = ThreadLearning(engine, Path(root) if root else STORE, self._gguf_sha256,
                                         file_sha256(str(pilot.weights_path)))
 

@@ -165,3 +165,49 @@ def test_local_thread_head_refuses_aa_noise_and_interruption(tmp_path, monkeypat
     assert learner.last is None
     learner.idle(lambda: False)
     assert not learner.weights and learner.last["result"] == "refused"
+
+
+def test_hardware_policy_learns_from_success_and_failure_across_machines_without_activating(tmp_path):
+    import sqlite3
+
+    from ironmule.hardware_policy import HardwarePolicy
+
+    path = tmp_path / "pilot" / "model.sqlite3"
+    first = HardwarePolicy(path, "model-A-device-A", "device-A", 4, COSTS)
+    free = "1:3:1:0"
+    busy = "2:3:2:2"
+    for _ in range(5):
+        first.record(free, 4, "qualification", 0.78, True, True, 0.02)
+        first.record(free, 2, "qualification", 1.25, True, False, 0.02)
+        first.record(busy, 4, "qualification", 0.80, False, False, 0.02)
+        first.record(busy, 2, "qualification", 0.73, True, True, 0.02)
+    resumed = HardwarePolicy(path, "model-A-device-A", "device-A", 4, COSTS)
+    assert resumed.rank(free, [2, 4]) == [4, 2]
+    assert resumed.rank(busy, [2, 4]) == [2, 4]
+    assert resumed.status()["observations"] == 20
+    assert resumed.status()["negative_or_unresolved"] == 10
+    # A new fingerprint shares the shape features but has no local trial yet.
+    other = HardwarePolicy(path, "model-B-device-B", "device-B", 8, COSTS)
+    assert other.rank(busy, [4, 2]) == [2, 4]
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT count(*) FROM profiles").fetchone() == (2,)
+        assert db.execute("SELECT count(*) FROM observations WHERE matched=0").fetchone() == (5,)
+        assert db.execute("SELECT count(*) FROM weights WHERE value!=0").fetchone()[0] > 8
+
+
+def test_qualified_concurrent_thread_weights_are_local_to_load_and_width(tmp_path, monkeypatch):
+    from ironmule.pilot_learning import MIN_STEPS, ThreadLearning
+
+    e = types.SimpleNamespace(settings={}, seqs=4, seq_ctx=512, shared=False, cap=4,
+                              pilot=types.SimpleNamespace(cores=4, costs=COSTS))
+    learner = ThreadLearning(e, tmp_path, "model", "weights")
+    monkeypatch.setattr(learner, "_probe", lambda context, base, threads, seed, interrupted:
+                        (0.8 if threads == 2 else 1.0, (5, 6)))
+    for _ in range(MIN_STEPS):
+        assert learner.choose(96, 1.1, 3, 2) == 3
+    learner.idle(lambda: False)
+    assert learner.choose(96, 1.1, 3, 2) == 2
+    assert learner.choose(96, 2.1, 3, 2) == 3
+    assert learner.choose(96, 1.1, 3, 1) == 3
+    assert learner.choose(96, 1.1, 3, 5) == 3
+    assert learner.status()["model"]["observations"] == 3

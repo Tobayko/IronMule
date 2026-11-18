@@ -912,6 +912,7 @@ class GgmlEngine:
                 return True
             return False
 
+        learning = getattr(self.pilot, "learning", None)
         decision = {"cap": 1 << 30, "budget": 1 << 30, "draft": True}
         arrived = 0
         try:
@@ -928,13 +929,8 @@ class GgmlEngine:
                     served.extend(more)
                     pending.extend(more)
                     arrived += len(more)
-                if self.pilot is not None:
-                    threads = decision["threads"]
-                    learning = getattr(self.pilot, "learning", None)
-                    if learning is not None and len(active) == 1 and not pending and not self.pilot.last_fallback:
-                        threads = learning.choose(ctx, self.pilot.load.foreign, threads)
-                    if threads != self.threads:
-                        self.set_threads(threads)
+                if self.pilot is not None and learning is None and decision["threads"] != self.threads:
+                    self.set_threads(decision["threads"])
                 # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
                 # budget (whole prompts, at least one), and one passed over too often first
                 fresh: list[tuple[int, Job, int]] = []
@@ -986,6 +982,8 @@ class GgmlEngine:
                     self.prompt_tokens += len(job.ids)
                     self.reused_tokens += keep
                     fresh.append((seq, job, keep))
+                if fresh and learning is not None and decision["threads"] != self.threads:
+                    self.set_threads(decision["threads"])  # includes separate prefills issued before the main decode
                 if not active and not fresh:
                     if pending:
                         continue
@@ -1116,6 +1114,18 @@ class GgmlEngine:
                             held = 0
                         rows += [(bos, held + j, sq, False) for j in range(per)]
                         fillers.append((sq, held))
+                if rows and learning is not None:
+                    threads = decision["threads"]
+                    # The learned trials priced only one real decode row per sequence. Draft selection,
+                    # padding and late admissions above finish before this test of the actual call.
+                    if (not fresh and not pending and not fillers and not modelled and len(rows) == len(order)
+                            and len(order) <= learning.max_rows and not self.pilot.last_fallback):
+                        band = int(ctx) // learning.bin_size
+                        if all((len(active[s].ids) + len(active[s].tokens)) // learning.bin_size == band
+                               for s in order):
+                            threads = learning.choose(ctx, self.pilot.load.foreign, threads, len(order))
+                    if threads != self.threads:
+                        self.set_threads(threads)
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
                 seconds = time.perf_counter() - started
