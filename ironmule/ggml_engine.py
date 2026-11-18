@@ -20,10 +20,12 @@ import json
 import math
 import os
 import statistics
+import stat
 import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -155,12 +157,36 @@ def available() -> str | None:
     return None
 
 
-def file_sha256(path: str) -> str:
+def _file_identity(st):
+    return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
+
+
+def _hash_contents(path: str, identity=None) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
+        if identity is not None and _file_identity(os.fstat(handle.fileno())) != identity:
+            raise OSError("file changed before SHA-256 verification")
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
+        if identity is not None and _file_identity(os.fstat(handle.fileno())) != identity:
+            raise OSError("file changed during SHA-256 verification")
     return digest.hexdigest()
+
+
+_cached_file_hash = lru_cache(maxsize=32)(_hash_contents)
+
+
+def file_sha256(path: str) -> str:
+    """Reuse a verified large regular file within this process while its identity is stable."""
+    path = os.path.abspath(path)
+    st = os.stat(path)
+    if st.st_size < 1 << 20 or not stat.S_ISREG(st.st_mode):
+        return _hash_contents(path)
+    identity = _file_identity(st)
+    digest = _cached_file_hash(path, identity)
+    if _file_identity(os.stat(path)) != identity:
+        raise OSError("file changed during SHA-256 verification")
+    return digest
 
 
 @dataclass
@@ -1815,6 +1841,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
 
     from .factual_gate import KG5_SHAPE, VERSION as FACT_VERSION, _protocol, compare
     from . import ggml_gate_checkpoint as checkpoint
+    from . import ggml_gate_diagnostics as diag
     from .numeric_choice import CHUNKS, CHUNK_TOKENS, GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
@@ -1846,24 +1873,45 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
            "HF_HUB_OFFLINE": "1"}
     started = time.perf_counter()
 
+    def failure(diagnostic, *, tried=None, ran=False):
+        result = {"ran": ran, "passes": False, "diagnostic": diagnostic,
+                  "reason": f"GGUF qualification {diagnostic['stage']} returned {diagnostic['code']}"}
+        if tried is not None:
+            result["tried"] = tried
+        return result
+
     def child(code: str, argument: str, payload: str | None = None, *, stock: bool = False):
+        stage = "tokenize" if code == GATE_IDS else "tuning" if code == TUNE_CHILD else "reference" if stock else "candidate"
         if model_identity() != original:
-            return None, "the GGUF changed during qualification"
+            return None, diag.make("model_changed", "model_changed")
         child_env = {**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0"} if stock else env
         if shape and code == GATE_CANDIDATE:
             # Admit all 32 near-1k prompts on the first step. Width and context are fixed in the measuring child.
             child_env = {**child_env, "IRONMULE_PILOT": "0", "IRONMULE_GGML_PROMPT_BUDGET": str(32 * 1024)}
-        done = subprocess.run([sys.executable, "-c", code, argument], env=child_env, input=payload, capture_output=True,
-                              text=True, timeout=7200, check=False)
+        try:
+            done = subprocess.run([sys.executable, "-c", code, argument], env=child_env, input=payload, capture_output=True,
+                                  text=True, timeout=7200, check=False)
+        except (subprocess.TimeoutExpired, OSError, UnicodeDecodeError) as exc:
+            return None, diag.failed_child(stage, "", exception=exc)
         if model_identity() != original:
-            return None, "the GGUF changed during qualification"
+            return None, diag.make("model_changed", "model_changed")
         if done.returncode != 0:
-            return None, done.stderr[-300:]
-        return json.loads(done.stdout.strip().splitlines()[-1]), ""
+            return None, diag.failed_child(stage, done.stderr, done.returncode)
+        try:
+            output = json.loads(done.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError) as exc:
+            return None, diag.make(stage, "invalid_result", status=0, exception=type(exc).__name__)
+        if not isinstance(output, dict):
+            return None, diag.make(stage, "invalid_result", status=0)
+        return output, ""
 
     text, error = child(GATE_IDS, snapshot)
     if text is None:
-        return {"ran": False, "passes": False, "reason": f"the gate's text could not be tokenized: {error}"}
+        return failure(error)
+    if (not isinstance(text.get("ids"), list) or not all(type(v) is int for v in text["ids"])
+            or len(text["ids"]) < 4 * CHUNK_TOKENS + 1 or "bos" not in text
+            or text["bos"] is not None and type(text["bos"]) is not int):
+        return failure(diag.make("tokenize", "invalid_result", status=0))
     folder = checkpoint.directory(cache, key=key, snapshot=snapshot, gguf=gguf, text=text,
                                   flags=[shape, experimental, SEQS, SEQ_CTX, THREADS, MAX_ROWS]) if cacheable else None
     completed = {"measured": 0, "reused": 0}
@@ -1874,7 +1922,9 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
 
     tune, error = checkpoint.stage(folder, {"role": "tuning"}, lambda: child(TUNE_CHILD, gguf), completed, valid_tune)
     if tune is None:
-        return {"ran": False, "passes": False, "reason": f"the tuning child failed: {error}"}
+        return failure(error)
+    if not valid_tune(tune):
+        return failure(diag.make("tuning", "invalid_result", status=0))
 
     fact_keys = {case.key for case in _protocol(0, shape)}
     chunks = min(CHUNKS, (len(text["ids"]) - 1) // CHUNK_TOKENS)
@@ -1893,12 +1943,15 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         payload = json.dumps({**text, "snapshot": str(snapshot), "settings": settings, "reference": reference,
                               "shared": shared, "kg5_shape": shape})
         label = {"role": "reference" if reference else "candidate", "settings": settings, "shared": shared}
-        return checkpoint.stage(folder, label, lambda: child(GATE_CANDIDATE, gguf, payload, stock=reference),
-                                completed, complete)
+        output, error = checkpoint.stage(folder, label, lambda: child(GATE_CANDIDATE, gguf, payload, stock=reference),
+                                         completed, complete)
+        if output is not None and not complete(output):
+            return None, diag.make("reference" if reference else "candidate", "invalid_result", status=0)
+        return output, error
 
     reference, error = measure(DEFAULT_SETTINGS, reference=True)
     if reference is None:
-        return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}"}
+        return failure(error)
 
     measured: dict[tuple, dict[str, Any]] = {}
 
@@ -1908,9 +1961,15 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
             return measured[identity]
         output, error = measure(settings, shared=shared)
         if output is None:
-            return {"settings": settings, "passes": False, "error": error}
-        interval = ratio_interval(reference["nll"], output["nll"])
-        factual = compare(reference["facts"], reference["repeat"], output["facts"], kg5=shape)
+            return {"settings": settings, "passes": False, "error": error["code"], "diagnostic": error}
+        try:
+            interval = ratio_interval(reference["nll"], output["nll"])
+            factual = compare(reference["facts"], reference["repeat"], output["facts"], kg5=shape)
+            if not all(math.isfinite(n) for n in interval["interval"]):
+                raise ValueError("invalid interval")
+        except (ValueError, ArithmeticError) as exc:
+            return {"settings": settings, "passes": False, "error": "invalid_result",
+                    "diagnostic": diag.make("candidate", "invalid_result", status=0, exception=type(exc).__name__)}
         launches = output.get("kg5_launches")
         hit = not (experimental and settings.get("flash_attn")) or isinstance(launches, int) and launches > 0
         record = {"settings": settings, **interval, "factual": factual, "kg5_launches": launches,
@@ -1926,13 +1985,16 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
             break
         row = check(settings)
         if "error" in row:
-            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {row['error']}", "tried": tried}
+            details = {**row["diagnostic"], "candidates": [diag.candidate(t, OPTION_BOUND, experimental) for t in [*tried, row]]}
+            return failure(diag.sanitize(details), tried=tried)
         tried.append(row)
         if row["passes"]:
             break
     chosen = tried[-1]
     if not chosen["passes"]:
-        return {"ran": True, "passes": False, "reason": "no configuration passed both quality checks", "tried": tried}
+        return failure(diag.make("acceptance", "quality_rejected",
+                                 candidates=[diag.candidate(t, OPTION_BOUND, experimental) for t in tried]),
+                       ran=True, tried=tried)
     shared = None
     if fa1_version() >= 3 or gpu_layers() > 0:
         shared = check({**chosen["settings"], "flash_attn": True, "kv_unified": True}, shared=True)
@@ -1940,7 +2002,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     if gpu_layers() > 0:
         streams = check({**chosen["settings"], "flash_attn": True, "kv_unified": False})
     if model_identity() != original:
-        return {"ran": False, "passes": False, "reason": "the GGUF changed during qualification"}
+        return failure(diag.make("model_changed", "model_changed"))
     result = {"ran": True, "shared": shared, "streams": streams,
               **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),

@@ -112,3 +112,37 @@ def test_the_gguf_tokenizer_gives_the_engines_ids_and_its_own_end_tokens():
     finally:
         engine.close()
         tokenizer.close()
+
+
+def test_large_gguf_revision_reuses_verified_bytes_and_detects_replacement(tmp_path, monkeypatch):
+    import builtins
+    import hashlib
+    import os
+
+    from ironmule.ggml_engine import file_sha256
+    from ironmule.gguf_tokenizer import gguf_revision
+
+    weights = tmp_path / "model.gguf"
+    original = b"a" * (1 << 20)
+    weights.write_bytes(original)
+    old_time = weights.stat().st_mtime_ns
+    opens = []
+    normal_open = builtins.open
+
+    def observed(path, *args, **kwargs):
+        if path == str(weights):
+            opens.append(path)
+        return normal_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", observed)
+    expected = hashlib.sha256(original).hexdigest()
+    assert gguf_revision(str(weights)) == f"sha256:{expected}"
+    assert file_sha256(str(weights)) == expected
+    assert len(opens) == 1
+    replacement = tmp_path / "new.gguf"
+    changed = b"b" * len(original)
+    replacement.write_bytes(changed)
+    os.utime(replacement, ns=(old_time, old_time))
+    replacement.replace(weights)
+    assert file_sha256(str(weights)) == hashlib.sha256(changed).hexdigest()
+    assert len(opens) == 2

@@ -12,7 +12,6 @@ tokenizer interface the worker's ggml path uses: `apply_chat_template`, `encode`
 from __future__ import annotations
 
 import ctypes
-import hashlib
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -170,11 +169,9 @@ def is_gguf_spec(spec: Any) -> bool:
 
 def gguf_revision(gguf: str) -> str:
     """The GGUF's content as a revision: its SHA-256."""
-    digest = hashlib.sha256()
-    with open(gguf, "rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return "sha256:" + digest.hexdigest()
+    from .ggml_engine import file_sha256
+
+    return "sha256:" + file_sha256(gguf)
 
 
 __all__ = ["GgufDetokenizer", "GgufTokenizer", "gguf_model_id", "gguf_revision", "is_gguf_spec", "render"]

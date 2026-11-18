@@ -2428,3 +2428,17 @@ did not qualify. The hardware controller found no concurrent performance deficit
 requiring its local admission experiment. The initial gate took 1,302 seconds in a
 separate startup. Once cached, the complete six-server comparison took 297 seconds.
 [Redacted measurement and per-question scores](../evidence/comparison/qwen3-06b-cpu-frozen-20261118.json)
+
+### 2026-11-18: repeated GGUF verification during startup
+
+The GGUF serving path obtains a content revision, binds quality results to the file and
+binds batch-width results to the file. In one process it can reuse the SHA-256 of a
+large regular file while its device, inode, size, modification and change times agree.
+The initial scan checks the opened descriptor and the named file before accepting its
+digest. Each new process performs its own verification.
+
+Five alternating paired runs on the Linux cloud CPU read the 484,220,320-byte
+Qwen3-0.6B Q4_K_M GGUF from a warm OS file cache. Three consecutive identity checks
+took 1.044 s in the preceding implementation versus 0.360 s with one cold process-level
+verification followed by two lookups. Every check returned the pinned model SHA-256.
+This measurement covers file verification alone.
