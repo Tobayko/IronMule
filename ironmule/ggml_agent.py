@@ -254,12 +254,16 @@ class GgmlAgent:
     "step_full", "prefill_per_1k"}; every configuration here has passed the quality gate."""
 
     def __init__(self, root: str | Path | None, binding: dict[str, Any], configs: dict[str, dict[str, Any]],
-                 incumbent: str, seed: int = 0, *, shared_cap: int | None = None):
+                 incumbent: str, seed: int = 0, *, shared_cap: int | None = None, price_switches: bool = False):
         if incumbent not in configs:
             raise ValueError("the incumbent must be one of the configurations")
         self.configs = {k: dict(v) for k, v in configs.items()}
         self.binding = dict(binding)
-        key = hashlib.sha256(json.dumps([binding, sorted(configs), VERSION], sort_keys=True).encode()).hexdigest()[:20]
+        self.price_switches = price_switches is True and bool(binding.get("gpu_layers"))
+        state_key = [binding, sorted(configs), VERSION]
+        if self.price_switches:
+            state_key.append("priced-width-diagnostic-v1")
+        key = hashlib.sha256(json.dumps(state_key, sort_keys=True).encode()).hexdigest()[:20]
         self.path = Path(root) / "ggml-agent" / f"{key}.json" if root is not None else None
         self.costs = {name: StepCost.from_measurement(int(c["seqs"]), float(c["step_one"]), float(c["step_full"]),
                                                       float(c.get("prefill_per_1k", 0.0)), float(c.get("kv_per_1k", 0.0)))
@@ -463,7 +467,7 @@ class GgmlAgent:
                                 matching=recovery["matching"])
                 self._remember(decision)
                 return None
-        if self.binding.get("gpu_layers"):
+        if self.price_switches:
             switch_costs = {name: (self._switch_cost(self.current, name), self._switch_cost(name, self.current))
                             for name in self.configs if name != self.current}
             # A short observed busy period cannot pay the measured rebuild using
@@ -535,6 +539,7 @@ class GgmlAgent:
         return {"version": VERSION, "serving": self.current, "configs": {k: {"seqs": v["seqs"],
                                                                            "settings": v.get("settings")}
                                                                        for k, v in self.configs.items()},
+                "price_switches": self.price_switches,
                 "observed_switch_s": {s: dict(v) for s, v in self.switch_seconds.items()},
                 "requests": self.requests, "live_windows": len(self.observations), "recovery": self.recovery, "trial": self.trial, "rejected": sorted(self.rejected),
                 "live_factor": {k: round(v, 4) for k, v in self.factors.items()}, "live_steps": dict(self.live),

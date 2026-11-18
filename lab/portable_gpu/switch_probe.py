@@ -48,12 +48,8 @@ def record(agent, arrivals, shift=0.0):
 def replay(engine, configs, binding, calibration, fixtures, args, label, seed):
     from ironmule.ggml_agent import GgmlAgent
 
-    # The old policy had neither measured entry/release costs nor feedback about physical rebuilds.
-    priced = label == "cost_aware"
-    active_configs = configs if priced else {
-        k: {key: value for key, value in row.items() if key not in ("context_build_s", "context_release_s")}
-        for k, row in configs.items()}
-    agent = GgmlAgent(None, binding, active_configs, "w1", seed=seed)
+    # Both arms observe local costs; only the diagnostic arm applies them to its dream.
+    agent = GgmlAgent(None, binding, configs, "w1", seed=seed, price_switches=label == "cost_aware")
     if engine.seqs != 1:
         start = time.monotonic()
         engine.reconfigure(1, configs["w1"]["settings"])
@@ -80,10 +76,7 @@ def replay(engine, configs, binding, calibration, fixtures, args, label, seed):
             config = configs[target]
             engine.reconfigure(config["seqs"], config["settings"])
             switched_s = time.monotonic() - started
-            if priced:
-                agent.switched(target, seconds=switched_s)
-            else:
-                agent.switched(target)
+            agent.switched(target, seconds=switched_s)
         if engine.seqs != configs[agent.current]["seqs"]:
             raise RuntimeError("selected and serving widths diverged")
         result, completions = serve(engine, tasks, args.tokens, arrived)
@@ -94,7 +87,7 @@ def replay(engine, configs, binding, calibration, fixtures, args, label, seed):
     engine.observer = None
     duration = sum(w["elapsed_s"] for w in waves)
     requests = [r for w in waves for r in w["requests"]]
-    return {"policy": label, "seed": seed, "between_replays_reset_s": reset_s, "waves": waves,
+    return {"policy": label, "price_switches": agent.price_switches, "seed": seed, "between_replays_reset_s": reset_s, "waves": waves,
             "elapsed_s": duration, "output_tokens": sum(len(r["tokens"]) for r in requests),
             "tokens_per_second": sum(len(r["tokens"]) for r in requests) / duration,
             "median_ttft_ms": statistics.median(r["ttft_ms"] for r in requests),

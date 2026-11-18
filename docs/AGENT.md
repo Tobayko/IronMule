@@ -217,12 +217,11 @@ is cheaper per attended token. `ironmule/ggml_agent.py` makes that choice while 
    state directory.
 4. *Dreaming:* after 3 s without a request, and only when new traffic came since the last dream, windows of 32
    recorded arrivals (gaps scaled 0.5-1.5, three in four from the last 256) run through a simulation of the engine's
-   continuous batching under every configuration's price, on the same windows. When local GPU context timings
-   are available, an optional switch must repay the measured rebuild within the latest busy period, up to 32
-   arrivals. Rebuilding the candidate delays arrivals in the simulation. Throughput also reserves time to return to
-   the incumbent. Width calibration times each context's release, creation and warmup on the loaded model.
-   Completed switches supply directional measurements for the same context sizes and pool. Old unpriced
-   plans retain their existing dream, with unknown timings recorded as null.
+   continuous batching under every configuration's price, on the same windows. Width calibration also times context
+   release, creation and warmup. The server records completed GPU switches for the same context sizes and pool.
+   A separate diagnostic replay tests a policy that charges these times against the latest busy period. On an H100
+   with Qwen3-4B that policy stayed on one slot throughout the sustained load and lost throughput and latency.
+   The production controller uses its original 32-arrival simulation. [Diagnostic runner](../lab/portable_gpu/README.md#gguf-controller-decisions-during-load-changes)
 5. *Switch and guard:* a configuration replaces the incumbent when the 2.5 % bootstrap bound of its dreamed
    tokens-per-second gain is above 3 % and its mean first token is at most 2 % later. The context is rebuilt on the
    loaded model in that idle spell (a request that arrives meanwhile waits for it, a few seconds at most). While the
@@ -285,6 +284,14 @@ When the report includes a transition replay, the compact record also retains ea
 width, switch flag, elapsed time, first-token latency and paired quality result. The import prints the selected
 to fixed elapsed-time ratio for each full replay. Values above one mean the selected policy took longer, including
 context rebuilding and warmup. Transition waves remain evaluation data and never enter the width regression.
+
+The same import command accepts a completed GPU `switch_probe.py` report comparing the cost-aware controller
+with the unpriced controller. It stores the device, model and source-bound result in `STATE/gpu-switch-experience`.
+Each seed records arm order, actual throughput, median first-token latency, observed switches and counts of correct
+answers. The verdict uses matched tokens and stops, complete answer correctness and the median paired ratios.
+Positive TTFT change means a later first token. A single ordered repeat is identified by `repeats: 1` and
+`both_orders_measured: false`. All switch-probe imports have `qualification: observation_only`.
+Width-regression training uses its separate calibration records. Controller activation requires local qualification.
 
 `ironmule serve --gguf MODEL.gguf --agent on --state-dir STATE` recomputes the fit from distinct trials for this
 GGUF and backend, preferring matching machines and device models. Of the workload shapes actually measured, it

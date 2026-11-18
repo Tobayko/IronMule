@@ -14,6 +14,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from . import gpu_switch_experience
+
 SCHEMA = "ironmule.gpu-width-bench.v1"
 HINT_SCHEMA = "ironmule.gpu-width-hint.v1"
 
@@ -114,15 +116,31 @@ def _transition_evidence(replay):
             "selected_over_fixed_elapsed": elapsed_ratios, "waves": repeats}
 
 
+def _store_record(state, family, model, digest, record):
+    from ironmule_product.state import _ensure_directory
+
+    directory = state / family / model
+    for private in (state, directory.parent, directory):
+        _ensure_directory(private)
+    with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as handle:
+        try:
+            json.dump(record, handle, allow_nan=False)
+            handle.close()
+            Path(handle.name).replace(directory / f"{digest}.json")
+        finally:
+            Path(handle.name).unlink(missing_ok=True)
+
+
 def import_report(path: Path, state: Path) -> dict:
-    """Persist compact calibration outcomes, including unsuccessful comparisons. Import is idempotent."""
+    """Import width calibration or a separate switch-controller observation, bound to its device."""
     raw = path.read_bytes()
     report = json.loads(raw)
-    if not isinstance(report, dict) or report.get("schema") != SCHEMA:
-        raise ValueError(f"expected {SCHEMA}")
-    if report.get("status") != "complete" or report.get("stage") != "compare":
-        raise ValueError("only completed GPU width comparisons can be imported")
-    offload = report.get("offloaded_layers")
+    if not isinstance(report, dict) or report.get("schema") not in (SCHEMA, gpu_switch_experience.PROBE_SCHEMA):
+        raise ValueError("expected a GPU width comparison or controller switch probe")
+    switch = report["schema"] == gpu_switch_experience.PROBE_SCHEMA
+    if report.get("status") != "complete" or (not switch and report.get("stage") != "compare"):
+        raise ValueError("only completed GPU comparisons can be imported")
+    offload = report.get("serving_offloaded_layers" if switch else "offloaded_layers")
     if not isinstance(offload, list) or not any(
         isinstance(a, list) and len(a) == 2 and all(type(k) is int for k in a) and a[0] > 0 and a[0] == a[1]
         for a in offload
@@ -137,6 +155,13 @@ def import_report(path: Path, state: Path) -> dict:
             or not isinstance(machine, str) or not machine
             or any(not isinstance(d, dict) or d.get("provider") != provider for d in devices)):
         raise ValueError("GPU measurements need a matching backend, device inventory and machine identity")
+    digest = hashlib.sha256(raw).hexdigest()
+    if switch:
+        result = {"schema": gpu_switch_experience.EVIDENCE_SCHEMA, "model_sha256": model, "machine": machine,
+                  "provider": provider, "devices": _device_models(devices), "source_sha256": digest,
+                  **gpu_switch_experience.summarize(report)}
+        _store_record(state, "gpu-switch-experience", model, digest, result)
+        return result
     summary = []
     runs = report.get("runs")
     if not isinstance(runs, list):
@@ -174,25 +199,13 @@ def import_report(path: Path, state: Path) -> dict:
                         "repeats": repeats, "arms": arms})
     if not any(r["role"] == "calibration" for r in summary):
         raise ValueError("no calibration measurements")
-    digest = hashlib.sha256(raw).hexdigest()
     record = {"schema": HINT_SCHEMA, "model": model, "provider": provider, "machine": machine,
               "devices": _device_models(devices), "source_sha256": digest, "pairs": summary, "fit": _fit(summary)}
     replay = {}
     if "transition" in report:
         record["transition"] = _transition_evidence(report["transition"])
         replay["transition"] = {k: v for k, v in record["transition"].items() if k != "waves"}
-    from ironmule_product.state import _ensure_directory
-
-    directory = state / "gpu-width-experience" / model
-    for private in (state, directory.parent, directory):
-        _ensure_directory(private)
-    with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as handle:
-        try:
-            json.dump(record, handle, allow_nan=False)
-            handle.close()
-            Path(handle.name).replace(directory / f"{digest}.json")
-        finally:
-            Path(handle.name).unlink(missing_ok=True)
+    _store_record(state, "gpu-width-experience", model, digest, record)
     return {"source_sha256": digest, "model_sha256": model, "fit": record["fit"], **replay,
             "pooled_fit": _fit(_pooled_pairs(state, model, devices, machine)),
             "quality_mismatches": sum(not row["matched"] for row in summary),

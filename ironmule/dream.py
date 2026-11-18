@@ -605,7 +605,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", action="store_true",
                         help="print what the planner learned and the held-out replay; measures nothing")
     parser.add_argument("--import-gpu-report", type=Path, metavar="REPORT",
-                        help="remember a measured GGUF GPU width comparison for local remeasurement")
+                        help="import a measured GGUF GPU width comparison or paired switch-controller experiment")
     parser.add_argument("--state-dir", type=Path, default=None, help="state directory for imported GPU reports")
     args = parser.parse_args(argv)
     if args.import_gpu_report is not None:

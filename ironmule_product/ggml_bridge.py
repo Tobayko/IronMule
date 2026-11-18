@@ -78,7 +78,8 @@ class GgmlBridge:
         if "experience_sha256" in plan:
             binding["width_experience"] = plan["experience_sha256"]
         self._agent = GgmlAgent(plan.get("root"), binding, configs, incumbent,
-                                shared_cap=self._engine.cap if getattr(self._engine, "shared", False) else None)
+                                shared_cap=self._engine.cap if getattr(self._engine, "shared", False) else None,
+                                price_switches=False)
         serving = configs[self._agent.current]  # resumed: what this binding learned last time
         wanted = {k: bool(v) for k, v in (serving.get("settings") or {}).items() if v}
         if self._engine.seqs != int(serving["seqs"]) or wanted != {k: v for k, v in self._engine.settings.items() if v}:

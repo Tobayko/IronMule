@@ -63,8 +63,8 @@ remeasurement and qualification requirements in force.
 
 ## GGUF controller decisions during load changes
 
-Run the previous and cost-aware idle decision rules against fresh requests on one GPU. Both
-arms start from the same measured calibration. The probe calls the normal agent decision
+Compare the production idle decision rule with an explicitly enabled diagnostic candidate that prices GPU
+width changes. Both arms receive the same measured calibration and record completed switch costs. The probe calls the normal agent decision
 between waves and charges its elapsed time and any context rebuild to the arriving requests.
 The regular server waits for an idle interval. Inspect wave-level quality, exact output,
 selected widths, switch timings and complete-run wall time before comparing policies.

@@ -316,7 +316,7 @@ def test_gpu_burst_must_repay_actual_rebuilds_within_the_observed_window(tmp_pat
         "one": {"seqs": 1, "step_one": .01, "step_full": .01, "context_build_s": .109, "context_release_s": .001},
         "four": {"seqs": 4, "step_one": .01, "step_full": .01, "context_build_s": .009, "context_release_s": .001},
     }
-    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one")
+    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one", price_switches=True)
     for batch in range(12):
         for _ in range(4):
             agent.observe_request(1, 8, 3)
@@ -330,11 +330,11 @@ def test_gpu_burst_must_repay_actual_rebuilds_within_the_observed_window(tmp_pat
         agent.observe_request(1, 8, 3)
     assert agent.idle() == "four"
     agent.switched("four", seconds=.08)
-    restored = GgmlAgent(tmp_path, agent.binding, configs, "one")
+    restored = GgmlAgent(tmp_path, agent.binding, configs, "one", price_switches=True)
     assert restored.current == "one"  # restore the incumbent after an unconfirmed trial
     assert restored._switch_cost("one", "four") == .08
     assert math.isclose(restored._switch_cost("four", "one"), .11)
-    pooled = GgmlAgent(tmp_path, agent.binding, configs, "one", shared_cap=16)
+    pooled = GgmlAgent(tmp_path, agent.binding, configs, "one", shared_cap=16, price_switches=True)
     assert pooled.requests == restored.requests
     assert pooled._switch_cost("one", "four") is None
     assert pooled._switch_cost("four", "one") is None
@@ -343,7 +343,7 @@ def test_gpu_burst_must_repay_actual_rebuilds_within_the_observed_window(tmp_pat
 def test_gpu_existing_unpriced_plans_retain_their_dream_and_unknown_costs(tmp_path):
     configs = {"one": {"seqs": 1, "step_one": .01, "step_full": .01},
                "four": {"seqs": 4, "step_one": .01, "step_full": .01}}
-    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one")
+    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one", price_switches=True)
     for _ in range(48):
         agent.observe_request(1, 8, 3)
     assert agent.idle() == "four"
@@ -355,3 +355,31 @@ def test_gpu_existing_unpriced_plans_retain_their_dream_and_unknown_costs(tmp_pa
     agent.switched("one", seconds=.04)
     assert agent._switch_cost("four", "one") == .04
     assert agent._switch_cost("one", "four") is None
+
+def test_product_gpu_uses_the_standard_window_with_measured_rebuild_costs(tmp_path):
+    from types import SimpleNamespace
+
+    from ironmule_product.ggml_bridge import GgmlBridge
+
+    configs = {name: {"seqs": width, "step_one": .01, "step_full": .01,
+                      "context_build_s": 10.0, "context_release_s": 1.0}
+               for name, width in (("one", 1), ("four", 4))}
+    bridge = GgmlBridge.__new__(GgmlBridge)
+    bridge._engine = SimpleNamespace(gpu_layers=999, seqs=1, settings={})
+    bridge._gguf_sha256 = "a" * 64
+    bridge._gate = {"agent": {"configs": configs, "incumbent": "one", "root": str(tmp_path)}}
+    bridge._start_agent()
+    agent = bridge._agent
+    assert agent.status()["price_switches"] is False
+    for batch in range(12):
+        for _ in range(4):
+            agent.observe_request(1, 8, 3)
+        decision = agent.idle()
+    assert decision == "four"
+    forecast = agent.history[-1]["dream"]
+    assert forecast["window_requests"] == 32 and "switch_costs_s" not in forecast
+    agent.switched("four", seconds=.25)
+    restored = GgmlAgent(tmp_path, agent.binding, configs, "one")
+    assert restored.switch_seconds == {"one": {"four": .25}}
+    challenger = GgmlAgent(tmp_path, agent.binding, configs, "one", price_switches=True)
+    assert challenger.path != agent.path and challenger.requests == 0
