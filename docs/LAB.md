@@ -2632,3 +2632,40 @@ second from 196.10 to 192.71. For the document bursts the median per-wave p95
 first-token time increased from 492.0 to 498.5 ms. These measurements cover two
 repetitions of a short-output workload. The model and the GPU both differ from the
 L40S experiment. [A40 controller decisions and paired timings](../evidence/runtime/qwen3-06b-prefill-controller-a40.json)
+
+### 2026-11-18: GGUF admission with a long answer and a waiting burst
+
+The HTTP scheduler used to start a new group after its 32nd lifetime member, even when
+31 members had already finished and the native engine had free sequences. IronMule now
+allows up to one additional group-width of waiting requests to run beside the last
+member. Only requests already waiting when the group drops to its last member qualify.
+The concurrent width stays at most 32. The group retains at most 32 requests' maximum
+output-token allowance (262,144 tokens). The worker also hands an oversized initial
+GGUF group to the native pending queue, which fills only available sequences.
+
+On an AMD EPYC CPU, the public HTTP test started one long answer and sent 31 requests
+with varying prompt lengths and output limits. After eight short answers finished it
+sent another seven. Fresh workers used the same SmolLM2-135M Q4_K_M, eight sequences,
+2,048-token context, two inference threads and checked standard GGUF settings. Each
+cell delivered 39 requests and 161 output tokens. Other jobs shared the host quota.
+
+| Fresh worker pair | Baseline / final tok/s | Baseline / final last-wave p95 first visible text | Last-wave requests finished before the long answer |
+| --- | --- | --- | --- |
+| Final then baseline | 44.89 / 46.51 | 1.905 / 1.716 s | 0 / 7 |
+| Baseline then final | 39.26 / 50.34 | 2.430 / 1.465 s | 0 / 7 |
+
+36 and 38 of the 39 response texts matched their paired baseline byte for byte.
+The prompts exercise timing and carry no semantic score. A separate late-arrival test
+waited for all 31 short HTTP responses before sending the seven. Both revisions put
+the seven in a new group, as intended. The long answers ended at different token
+counts in that pair. A worker-level test with 16 initial requests verified that all
+eight waiting rows finished before the long row in both candidate runs, against zero
+at baseline. All four worker runs generated 97 tokens over 57 steps. Their total
+wall times varied in both directions, and 15 of 16 token streams matched.
+
+An earlier unrestricted refill produced 53.76 and 60.10 tok/s against 72.42 and 73.74
+at baseline in an equal-token test with different cache histories. Waiting for the
+last member improved the early-burst trials, but doing so for newly arriving requests
+still lost throughput in both late-arrival trials on fresh workers. These observations
+led to the final backlog restriction. The measurements cover this CPU configuration.
+[All trials, source identities and group counts](../evidence/runtime/gguf-tail-refill-cpu.json) · [HTTP workload](../lab/ag10/http_refill.py) · [Worker workload](../lab/ag10/worker_refill.py)

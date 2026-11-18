@@ -1380,6 +1380,7 @@ class ProductService:
         # records to one extra wave and retained token frames to the original 32-request maximum.
         refill = reuses and getattr(self.backend, "engine_configuration", None) == "ggml"
         lifetime = MAX_GROUP_MEMBERS + (capacity if refill else 0)
+        tail_started_ns = None
         token_budget = MAX_GROUP_MEMBERS * MAX_OUTPUT_TOKENS - sum(item.request.max_tokens for item in live)
 
         def consume(item: _Session) -> None:
@@ -1401,6 +1402,9 @@ class ProductService:
                 return taken
             while ((len(members) - len(finished) if reuses else len(members)) < capacity
                    and len(members) < lifetime):
+                overflow = len(members) >= MAX_GROUP_MEMBERS
+                if overflow and tail_started_ns is None:
+                    break
                 with self._lock:
                     item = self._carry.popleft() if self._carry else None
                 if item is None:
@@ -1408,7 +1412,8 @@ class ProductService:
                         item = self._pending.get_nowait()
                     except queue.Empty:
                         break
-                if (item.cancelled.is_set() or item.request.max_tokens > token_budget
+                if ((overflow and item.submitted_ns > tail_started_ns)
+                        or item.cancelled.is_set() or item.request.max_tokens > token_budget
                         or not self.backend.can_batch_requests([live[0].request, item.request])):
                     with self._lock:
                         self._carry.appendleft(item)  # keeps its place; the scheduler serves it next
@@ -1428,6 +1433,7 @@ class ProductService:
             return taken
 
         def deliver(request_id: str, event: dict[str, Any]) -> None:
+            nonlocal tail_started_ns
             if request_id in unheard:
                 consume(unheard.pop(request_id))
             queues[request_id].put(event)
@@ -1435,6 +1441,11 @@ class ProductService:
             if event.get("type") in ("done", "rejected"):
                 queues[request_id].put(None)
                 finished.add(request_id)
+                # Only clear an existing backlog once the first wave has drained to a straggler.
+                # Prefilling new arrivals at that point cost throughput on mixed-length CPU traffic.
+                if (refill and tail_started_ns is None and len(members) >= MAX_GROUP_MEMBERS
+                        and len(members) - len(finished) == 1):
+                    tail_started_ns = time.monotonic_ns()
                 # STAB4: when the group stops counting it as open, before any join that takes its place; its
                 # `end` is written only when the whole group ends.
                 self.note("member_done", id=request_id, group=live[0].group)

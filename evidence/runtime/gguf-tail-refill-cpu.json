@@ -1,0 +1,596 @@
+{
+  "model": "SmolLM2-135M-Instruct-Q4_K_M",
+  "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "hardware": "AMD EPYC 9V74, Linux 4-vCPU quota, affinity 2,3, 2 inference threads; other jobs on the host",
+  "native_revision": "llama-cpp-python 0.3.16, libllama.so SHA256 d19d38460897c211b36e0c21cdb76bbdb33f6c75b9ee6c373db16ed8ac47b1f0",
+  "baseline": "0a7a9c3",
+  "candidate_isolation": "baseline sources plus only service.py and worker.py",
+  "final_runtime_sha256": {
+    "service.py": "6432703d346b6cf8ad9a3e92a3fead7d3706953286c8505d9d8d33bb4f11200b",
+    "worker.py": "09b4318222727fbc6091e247a8621a1b800cdacf3bed6eac3af914acf618095e"
+  },
+  "qualification": {
+    "gate_key": "f9402a21fcbf4f0c3d9b5e7e",
+    "context": 2048,
+    "sequences": 8,
+    "gate_settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "ratio": 1.0,
+    "pilot_and_speculation": false,
+    "agent_on": true
+  },
+  "variants": {
+    "A": "baseline 0a7a9c3",
+    "B": "one additional width of unconstrained turnover (445ac0e)",
+    "C": "open overflow after all but one original member have finished",
+    "D": "open overflow for pre-existing backlog at the straggler only"
+  },
+  "http": {
+    "discovery": {
+      "server_start": "both fresh for first cell, warm for second",
+      "order": [
+        "A1",
+        "B1",
+        "B2",
+        "A2"
+      ],
+      "cells": [
+        {
+          "arm": "A1",
+          "total_tokens": 165,
+          "straggler_tokens": 52,
+          "http_wall_s": 2.9699,
+          "tokens_per_second": 55.558,
+          "wave_wall_s": [
+            2.0528,
+            0.8548
+          ],
+          "wave_p95_ttft_ms": [
+            1796.3,
+            712.2
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "B1",
+          "total_tokens": 206,
+          "straggler_tokens": 93,
+          "http_wall_s": 4.3057,
+          "tokens_per_second": 47.844,
+          "wave_wall_s": [
+            2.9076,
+            0.3866
+          ],
+          "wave_p95_ttft_ms": [
+            2606.6,
+            257.5
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        },
+        {
+          "arm": "B2",
+          "total_tokens": 206,
+          "straggler_tokens": 93,
+          "http_wall_s": 4.0268,
+          "tokens_per_second": 51.158,
+          "wave_wall_s": [
+            2.6537,
+            0.4992
+          ],
+          "wave_p95_ttft_ms": [
+            2064.6,
+            358.5
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        },
+        {
+          "arm": "A2",
+          "total_tokens": 206,
+          "straggler_tokens": 93,
+          "http_wall_s": 4.5203,
+          "tokens_per_second": 45.572,
+          "wave_wall_s": [
+            2.9822,
+            1.4324
+          ],
+          "wave_p95_ttft_ms": [
+            2615.0,
+            1308.9
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        }
+      ],
+      "answer_hash_matches_per_39": {
+        "A1/B1": 37,
+        "A2/B2": 37
+      },
+      "anchor_max_tokens": 384,
+      "send_second_wave_after": 31
+    },
+    "early_unguarded": {
+      "server_start": "persistent baseline, restarted B before B3",
+      "order": [
+        "B3",
+        "A3",
+        "A4",
+        "B4"
+      ],
+      "cells": [
+        {
+          "arm": "B3",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 2.9948,
+          "tokens_per_second": 53.759,
+          "wave_wall_s": [
+            2.6379,
+            1.2802
+          ],
+          "wave_p95_ttft_ms": [
+            2200.5,
+            1165.8
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        },
+        {
+          "arm": "A3",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 2.2233,
+          "tokens_per_second": 72.415,
+          "wave_wall_s": [
+            1.6388,
+            1.5375
+          ],
+          "wave_p95_ttft_ms": [
+            1369.8,
+            1460.3
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "A4",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 2.1833,
+          "tokens_per_second": 73.74,
+          "wave_wall_s": [
+            1.5569,
+            1.6433
+          ],
+          "wave_p95_ttft_ms": [
+            1336.6,
+            1576.6
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "B4",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 2.6787,
+          "tokens_per_second": 60.104,
+          "wave_wall_s": [
+            2.1176,
+            1.9356
+          ],
+          "wave_p95_ttft_ms": [
+            1676.1,
+            1826.1
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        }
+      ],
+      "answer_hash_matches_per_39": {
+        "A3/B3": 38,
+        "A4/B4": 37
+      },
+      "anchor_max_tokens": 48,
+      "send_second_wave_after": 8
+    },
+    "early_tail": {
+      "server_start": "fresh server per cell",
+      "order": [
+        "A5",
+        "C5",
+        "C6",
+        "A6"
+      ],
+      "cells": [
+        {
+          "arm": "A5",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 4.4776,
+          "tokens_per_second": 35.956,
+          "wave_wall_s": [
+            3.2963,
+            2.7794
+          ],
+          "wave_p95_ttft_ms": [
+            2876.6,
+            2663.1
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "C5",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 3.8986,
+          "tokens_per_second": 41.297,
+          "wave_wall_s": [
+            3.0759,
+            1.915
+          ],
+          "wave_p95_ttft_ms": [
+            2728.6,
+            1806.3
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        },
+        {
+          "arm": "C6",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 3.7765,
+          "tokens_per_second": 42.632,
+          "wave_wall_s": [
+            2.9894,
+            1.8755
+          ],
+          "wave_p95_ttft_ms": [
+            2700.7,
+            1751.3
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        },
+        {
+          "arm": "A6",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 3.9993,
+          "tokens_per_second": 40.257,
+          "wave_wall_s": [
+            3.197,
+            2.1578
+          ],
+          "wave_p95_ttft_ms": [
+            2876.5,
+            2069.4
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        }
+      ],
+      "answer_hash_matches_per_39": {
+        "A5/C5": 37,
+        "A6/C6": 38
+      },
+      "anchor_max_tokens": 48,
+      "send_second_wave_after": 8
+    },
+    "late_tail": {
+      "server_start": "fresh server per cell",
+      "order": [
+        "C7",
+        "A7",
+        "A8",
+        "C8"
+      ],
+      "cells": [
+        {
+          "arm": "C7",
+          "total_tokens": 165,
+          "straggler_tokens": 52,
+          "http_wall_s": 3.6177,
+          "tokens_per_second": 45.609,
+          "wave_wall_s": [
+            2.5019,
+            0.6005
+          ],
+          "wave_p95_ttft_ms": [
+            2172.5,
+            395.9
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        },
+        {
+          "arm": "A7",
+          "total_tokens": 165,
+          "straggler_tokens": 52,
+          "http_wall_s": 3.4457,
+          "tokens_per_second": 47.886,
+          "wave_wall_s": [
+            2.5125,
+            0.8119
+          ],
+          "wave_p95_ttft_ms": [
+            2228.7,
+            691.9
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "A8",
+          "total_tokens": 165,
+          "straggler_tokens": 52,
+          "http_wall_s": 3.466,
+          "tokens_per_second": 47.605,
+          "wave_wall_s": [
+            2.6086,
+            0.7732
+          ],
+          "wave_p95_ttft_ms": [
+            2276.1,
+            665.1
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "C8",
+          "total_tokens": 165,
+          "straggler_tokens": 52,
+          "http_wall_s": 3.9112,
+          "tokens_per_second": 42.186,
+          "wave_wall_s": [
+            3.0244,
+            0.5074
+          ],
+          "wave_p95_ttft_ms": [
+            2652.9,
+            375.1
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        }
+      ],
+      "answer_hash_matches_per_39": {
+        "A7/C7": 38,
+        "A8/C8": 37
+      },
+      "anchor_max_tokens": 384,
+      "send_second_wave_after": 31
+    },
+    "early_backlog": {
+      "server_start": "fresh server per cell",
+      "order": [
+        "D9",
+        "A9",
+        "A10",
+        "D10"
+      ],
+      "cells": [
+        {
+          "arm": "D9",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 3.4619,
+          "tokens_per_second": 46.507,
+          "wave_wall_s": [
+            2.6438,
+            1.8327
+          ],
+          "wave_p95_ttft_ms": [
+            2200.5,
+            1716.2
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        },
+        {
+          "arm": "A9",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 3.5867,
+          "tokens_per_second": 44.888,
+          "wave_wall_s": [
+            2.7562,
+            2.0532
+          ],
+          "wave_p95_ttft_ms": [
+            2426.9,
+            1905.4
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "A10",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 4.1004,
+          "tokens_per_second": 39.264,
+          "wave_wall_s": [
+            3.0035,
+            2.5637
+          ],
+          "wave_p95_ttft_ms": [
+            2632.6,
+            2430.2
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "D10",
+          "total_tokens": 161,
+          "straggler_tokens": 48,
+          "http_wall_s": 3.1985,
+          "tokens_per_second": 50.336,
+          "wave_wall_s": [
+            2.357,
+            1.6329
+          ],
+          "wave_p95_ttft_ms": [
+            1996.5,
+            1465.4
+          ],
+          "members_per_group": [
+            39
+          ],
+          "last_wave_finished_before_straggler": 7
+        }
+      ],
+      "answer_hash_matches_per_39": {
+        "A9/D9": 36,
+        "A10/D10": 38
+      },
+      "anchor_max_tokens": 48,
+      "send_second_wave_after": 8
+    },
+    "late_backlog": {
+      "server_start": "fresh server per cell",
+      "order": [
+        "D11",
+        "A11"
+      ],
+      "cells": [
+        {
+          "arm": "D11",
+          "total_tokens": 165,
+          "straggler_tokens": 52,
+          "http_wall_s": 2.5527,
+          "tokens_per_second": 64.637,
+          "wave_wall_s": [
+            1.8921,
+            0.5806
+          ],
+          "wave_p95_ttft_ms": [
+            1726.1,
+            506.5
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        },
+        {
+          "arm": "A11",
+          "total_tokens": 206,
+          "straggler_tokens": 93,
+          "http_wall_s": 3.197,
+          "tokens_per_second": 64.435,
+          "wave_wall_s": [
+            2.1239,
+            0.9759
+          ],
+          "wave_p95_ttft_ms": [
+            1940.3,
+            897.8
+          ],
+          "members_per_group": [
+            32,
+            7
+          ],
+          "last_wave_finished_before_straggler": 0
+        }
+      ],
+      "answer_hash_matches_per_39": {
+        "A11/D11": 38
+      },
+      "anchor_max_tokens": 384,
+      "send_second_wave_after": 31
+    }
+  },
+  "native": {
+    "A1": {
+      "tokens": 97,
+      "wall_s": 2.6265,
+      "last_eight_p95_ttft_ms": 2526.3,
+      "last_eight_finished_before_straggler": 0,
+      "worker_steps_at_last_terminal": 57
+    },
+    "B1": {
+      "tokens": 97,
+      "wall_s": 2.5583,
+      "last_eight_p95_ttft_ms": 1848.8,
+      "last_eight_finished_before_straggler": 8,
+      "worker_steps_at_last_terminal": 57
+    },
+    "B2": {
+      "tokens": 97,
+      "wall_s": 2.8767,
+      "last_eight_p95_ttft_ms": 2173.0,
+      "last_eight_finished_before_straggler": 8,
+      "worker_steps_at_last_terminal": 57
+    },
+    "A2": {
+      "tokens": 97,
+      "wall_s": 2.4469,
+      "last_eight_p95_ttft_ms": 2339.9,
+      "last_eight_finished_before_straggler": 0,
+      "worker_steps_at_last_terminal": 57
+    },
+    "answer_hash_matches_per_16": [
+      15,
+      15
+    ]
+  }
+}
