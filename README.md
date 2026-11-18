@@ -141,6 +141,15 @@ With one competing process, time to first token was 23 s for llama-server at one
 
 </details>
 
+### Same-GGUF serving on NVIDIA L40S
+
+On a 48 GB L40S running Qwen3-0.6B Q4_K_M, IronMule served **929 output tokens/s**
+at eight concurrent clients. Stock llama-server delivered **717** and vLLM 0.11.0
+delivered **772**. At 32 clients vLLM led with **1,285**, followed by IronMule at
+**1,248** and llama-server at **1,124**. These are medians of three repetitions with
+identical tokenized requests. IronMule missed the overall latency and quality criteria.
+[Full results and holdout scores](docs/LAB.md#2026-11-18-qwen3-06b-on-nvidia-l40s-against-llamacpp-and-vllm)
+
 ### Single-GPU inference against vLLM
 
 On one Tesla T4, the IronMule KG4 engine and vLLM served Qwen3-4B. The table reports aggregate output tokens per second. IronMule used Q4_K_M GGUF, and vLLM used the AWQ model. The values come from separate benchmark sessions on this GPU type. A matched run through both current HTTP servers would be needed for a new end-to-end comparison.

@@ -2442,3 +2442,27 @@ Qwen3-0.6B Q4_K_M GGUF from a warm OS file cache. Three consecutive identity che
 took 1.044 s in the preceding implementation versus 0.360 s with one cold process-level
 verification followed by two lookups. Every check returned the pinned model SHA-256.
 This measurement covers file verification alone.
+
+### 2026-11-18: Qwen3-0.6B on NVIDIA L40S against llama.cpp and vLLM
+
+All three HTTP servers ran sequentially on the same 48 GB L40S with the same Q4_K_M
+GGUF and offline Hugging Face tokenizer. The stock binary was built from llama.cpp
+`4227c9b`. IronMule used upstream CUDA GGML kernels with its own agent and scheduler.
+vLLM 0.11.0 used its normal GGUF serving configuration. All nine server starts verified
+placement and the rendered token IDs. The 27 cells covered 1, 8 and 32 simultaneous
+clients, three rotated repetitions and a 32-token output limit. Values are medians
+of the three observations per engine and load.
+
+| Clients | IronMule tok/s | llama.cpp tok/s | vLLM tok/s | p95 first visible token, IronMule / llama.cpp / vLLM |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 376.1 | 371.6 | 314.4 | 20.2 / 18.0 / 45.7 ms |
+| 8 | 928.7 | 716.8 | 772.2 | 93.2 / 83.8 / 198.6 ms |
+| 32 | 1,247.6 | 1,123.7 | 1,285.1 | 392.4 / 329.3 / 566.0 ms |
+
+IronMule's throughput led at one and eight clients. vLLM led at 32. At 32 clients
+the total holdout questions answered correctly across rounds were 7/54 (IronMule),
+11/54 (llama.cpp) and 8/54 (vLLM). Some reference categories registered zero correct
+answers. Both competitor verdicts failed the acceptance criteria. The controller
+selected a local experiment targeting first-token latency at 32 clients, then
+deferred it because it could not reproduce the serving worker's native configuration.
+[Redacted per-cell measurements and verdicts](../evidence/comparison/qwen3-06b-l40s-20261118.json)
