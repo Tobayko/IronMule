@@ -377,10 +377,11 @@ def _help() -> None:
         print(_banner())
     else:
         print(usage + "\n\ncommands:")
+    label_width = max(len(name) for _, group in _COMMAND_GROUPS for name, _ in group) + 1
     for title, group in _COMMAND_GROUPS:
         print(f"\n{paint(title, 'bold', 'amber')}" if fancy() else f"{title}:")
         for name, description in group:
-            print(f"  {paint(f'{name:<12}', 'cyan')} {description}")
+            print(f"  {paint(f'{name:<{label_width}}', 'cyan')} {description}")
     if fancy():
         print(paint("\nusage: ironmule <command> [options]   ·   ironmule <command> --help\n"
                     "New here? ironmule doctor, then ironmule start.\n", "dim"))
