@@ -216,6 +216,12 @@ class ProductService:
             if getattr(self.backend, "ggml_gate", None) is not None:  # GG1: the gate the engine passed at its start
                 result["ggml"] = {"gate": {k: self.backend.ggml_gate.get(k) for k in ("ratio", "interval", "passes")},
                                   "answers": "may differ from the MLX plans, within the gate"}
+                if self.backend.ggml_gate.get("diagnostic"):
+                    from ironmule.ggml_gate_diagnostics import sanitize
+
+                    diagnostic = sanitize(self.backend.ggml_gate["diagnostic"])
+                    if diagnostic:
+                        result["ggml"]["gate"]["diagnostic"] = diagnostic
                 fallback = self.backend.ggml_gate.get("kernel_fallback")
                 if fallback:
                     result["ggml"]["kernel_fallback"] = fallback

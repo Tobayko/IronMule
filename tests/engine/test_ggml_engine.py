@@ -96,12 +96,14 @@ def test_serve_refuses_ggml_without_a_gguf(tmp_path, capsys):
 
 
 def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
+    from ironmule import ggml_gate_diagnostics as diag
     from ironmule_product.service import ProductService
     from ironmule_product.state import ProductStore
 
     class Backend:
         device, ready, engine_configuration, execution_variant = "cpu", True, "ggml", "current_engine"
         ggml_gate = {"ratio": 1.003, "interval": [1.001, 1.0048], "passes": True, "seconds": 70,
+                     "diagnostic": {**diag.make("acceptance", "quality_rejected"), "private_log": "private"},
                      "kernel_generation": {"status": "skipped", "reason": "cuda_backend_has_no_kg1_hook"}}
         speculate, speculation_status = True, {"policy_version": 3, "drafted": 4}
         ready_payload = {"engine": {"ggml": {"speculation": "context"}}}
@@ -118,6 +120,7 @@ def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
         service.close()
     assert health["execution"] == "numeric@ggml" and health["ggml"]["gate"]["passes"] is True
     assert health["ggml"]["kernel_generation"] == Backend.ggml_gate["kernel_generation"]
+    assert health["ggml"]["gate"]["diagnostic"] == diag.make("acceptance", "quality_rejected")
     assert health["speculation"]["serving"] == "context" and health["speculation"]["learned"]["policy_version"] == 3
 
 
