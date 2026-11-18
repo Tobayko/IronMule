@@ -96,3 +96,20 @@ def test_evidence_condition_withholds_even_a_lucky_oracle_guess_without_a_return
     assert guarded["tools"]["correct_final"] == 0 and guarded["tools"]["false_abstentions"] == 1
     assert guarded["tools"]["withheld_after_budget"] == 1 and guarded["tools"]["model_turns"] == 4
     assert guarded["tool_traces"][0]["turns"][0]["response"] == answer
+
+
+def test_offline_verification_recomputes_instead_of_trusting_grades():
+    import hashlib
+
+    from lab.answer_quality import check_report
+    from lab.answer_quality.evaluate import PROTOCOL
+
+    dataset = cases(87, "development", 1)
+    report = {"protocol": PROTOCOL, "seed": 87, "split": "development", "groups": 1,
+              "cases_sha256": hashlib.sha256(json.dumps(dataset, sort_keys=True).encode()).hexdigest(),
+              "conditions": {c: evaluate(lambda conv, tools: [Turn("UNKNOWN", "eos", 1) for _ in conv], dataset, c)
+                             for c in ("reference", "evidence_first")}}
+    check_report.verify(report)
+    report["conditions"]["reference"]["supported"]["correct"] = 1
+    with pytest.raises(ValueError, match="recorded grades"):
+        check_report.verify(report)
