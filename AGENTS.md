@@ -91,6 +91,8 @@ dependency of IronMule and nothing in the package, the tests or CI imports it.
 
 ## Working method and scope
 
+Use the Sol, Terra and Luna model families for Codex subagents on IronMule. The Runpod operator uses Luna.
+
 1. Check the working tree, requested outcome, affected subsystem and existing
    contracts. Preserve other people's changes.
 2. Use filenames, headings and focused searches before large documents. Follow the
