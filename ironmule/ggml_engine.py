@@ -682,7 +682,11 @@ class GgmlEngine:
         params = L.llama_context_default_params()
         shared = getattr(self, "shared", False)
         ids = LLAMA_MAX_SEQ if shared else seqs  # SP1: running sequences and finished ones kept as a cache
-        params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, seq_ctx, 512
+        physical = getattr(self, "_study_ubatch", 512)
+        if physical != 512 and not (physical in (1024, 2048) and self.prefill_batch_long and self.gpu_layers
+                                    and seqs == 32 and seq_ctx == 2048 and not shared and not kv_unified and flash_attn):
+            raise ValueError("larger physical batches require the isolated split-KV long-prompt study")
+        params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, seq_ctx, physical
         params.n_seq_max, params.n_threads, params.n_threads_batch = ids, threads, threads
         params.flash_attn, params.kv_unified = bool(flash_attn), bool(kv_unified)  # GG1: measured at the first start
         if DEFRAG > 0:  # KVD1: llama.cpp compacts the cache when holes reach this share of its attended range
@@ -723,6 +727,7 @@ class GgmlEngine:
         run lock). The old context and its KV go; the new one is warmed up as at the start."""
         if self.prefill_batch_long:
             self.prefill_batch = False  # the previous receipt and holdout apply only to their original context
+            self._study_ubatch = 512
         self.close_context()
         self._open(seqs, self.seq_ctx, **{k: bool(v) for k, v in settings.items() if k in SETTING_KEYS})
         self._warm_up()
