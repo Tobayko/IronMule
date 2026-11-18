@@ -129,25 +129,32 @@ def evaluate(generate: Callable[[str], str], *, seed: int = 0) -> dict[str, bool
     return {case.key: correct(case, generate(case.prompt)) for case in cases(seed)}
 
 
+def _counts(scores, protocol):
+    keys = {case.key for case in protocol}
+    if set(scores) != keys or any(type(v) is not bool for v in scores.values()):
+        raise ValueError("QG1 requires one boolean score per case in every arm")
+    return {category: sum(scores[case.key] for case in protocol if case.category == category)
+            for category in ("arithmetic", "extraction", "facts")}
+
+
+def reference_tallies(reference, repeat, *, seed=0, kg5=False):
+    protocol = _protocol(seed, kg5)
+    a, aa = _counts(reference, protocol), _counts(repeat, protocol)
+    return {category: {"total": sum(case.category == category for case in protocol),
+                       "reference_correct": a[category], "repeat_correct": aa[category]} for category in a}
+
+
 def compare(reference: Mapping[str, bool], repeat: Mapping[str, bool], candidate: Mapping[str, bool],
             *, seed: int = 0, kg5: bool = False) -> dict:
     """Accept when each category is informative and its loss is within the reference's own score variation."""
-    protocol = _protocol(seed, kg5)
-    keys = {case.key for case in protocol}
-    for scores in (reference, repeat, candidate):
-        if set(scores) != keys or any(type(value) is not bool for value in scores.values()):
-            raise ValueError("QG1 requires one boolean score per case in every arm")
-    by_category = {}
-    for category in ("arithmetic", "extraction", "facts"):
-        ids = [case.key for case in protocol if case.category == category]
-        a, aa, b = (sum(scores[key] for key in ids) for scores in (reference, repeat, candidate))
-        by_category[category] = {
-            "total": len(ids), "reference_correct": a, "repeat_correct": aa, "candidate_correct": b,
-            "aa_difference": abs(a - aa), "passes": min(a, aa) > 0 and b >= min(a, aa),
-        }
+    by_category = reference_tallies(reference, repeat, seed=seed, kg5=kg5)
+    candidates = _counts(candidate, _protocol(seed, kg5))
+    for category, row in by_category.items():
+        a, aa, b = row["reference_correct"], row["repeat_correct"], candidates[category]
+        row.update(candidate_correct=b, aa_difference=abs(a - aa), passes=min(a, aa) > 0 and b >= min(a, aa))
     return {
         "version": VERSION, "seed": seed, "shape": KG5_SHAPE if kg5 else None,
-        "total": len(keys), "reference_correct": sum(reference.values()),
+        "total": len(reference), "reference_correct": sum(reference.values()),
         "repeat_correct": sum(repeat.values()), "candidate_correct": sum(candidate.values()),
         "by_category": by_category, "passes": all(row["passes"] for row in by_category.values()),
     }

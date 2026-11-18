@@ -1857,7 +1857,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     Reference and candidate see the same questions. Cached by the GGUF, snapshot, gate rule, engine version and machine."""
     import subprocess
 
-    from .factual_gate import KG5_SHAPE, VERSION as FACT_VERSION, _protocol, compare
+    from .factual_gate import KG5_SHAPE, VERSION as FACT_VERSION, _protocol, compare, reference_tallies
     from . import ggml_gate_checkpoint as checkpoint
     from . import ggml_gate_diagnostics as diag
     from .numeric_choice import CHUNKS, CHUNK_TOKENS, GATE_VERSION, ratio_interval
@@ -1939,12 +1939,6 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
                 and isinstance(output.get("order"), list) and bool(output["order"])
                 and all(settings in SETTINGS for settings in output["order"]))
 
-    tune, error = checkpoint.stage(folder, {"role": "tuning"}, lambda: child(TUNE_CHILD, gguf), completed, valid_tune)
-    if tune is None:
-        return failure(error)
-    if not valid_tune(tune):
-        return failure(diag.make("tuning", "invalid_result", status=0))
-
     fact_keys = {case.key for case in _protocol(0, shape)}
     chunks = min(CHUNKS, (len(text["ids"]) - 1) // CHUNK_TOKENS)
 
@@ -1971,6 +1965,24 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     reference, error = measure(DEFAULT_SETTINGS, reference=True)
     if reference is None:
         return failure(error)
+    if model_identity() != original:
+        return failure(diag.make("model_changed", "model_changed"))
+    tallies = reference_tallies(reference["facts"], reference["repeat"], kg5=shape)
+    skipped = None
+    if any(min(row["reference_correct"], row["repeat_correct"]) == 0 for row in tallies.values()):
+        # No B score can satisfy QG1 in this category. Only the identical, already executed
+        # reference can serve. A generated or explicit experimental kernel still needs its own gate.
+        skipped = diag.sanitize({**diag.make("acceptance", "skipped_uninformative_reference"),
+                                 "reference_factual": tallies})
+        if experimental or os.environ.get("IRONMULE_KG_LIB"):
+            return failure(skipped, ran=True, tried=[])
+        tune = {"order": [DEFAULT_SETTINGS], "measured": []}
+    else:
+        tune, error = checkpoint.stage(folder, {"role": "tuning"}, lambda: child(TUNE_CHILD, gguf), completed, valid_tune)
+        if tune is None:
+            return failure(error)
+        if not valid_tune(tune):
+            return failure(diag.make("tuning", "invalid_result", status=0))
 
     measured: dict[tuple, dict[str, Any]] = {}
 
@@ -2000,7 +2012,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     for settings in tune["order"]:  # the fastest option passing likelihood and factual correctness serves
         if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB"):
             tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference["nll"]),
-                          "passes": True})
+                          "passes": True, "basis": "identical_reference"})
             break
         row = check(settings)
         if "error" in row:
@@ -2016,6 +2028,8 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
                        ran=True, tried=tried)
 
     def probe(settings, role):
+        if skipped:
+            return {"settings": settings, "passes": False, "status": skipped["code"]}
         row = check(settings, shared=role == "shared")
         if row["passes"]:
             return row
@@ -2037,6 +2051,8 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
               "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
               "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION,
               "factual_version": FACT_VERSION, "key": key, "checkpoint_stages": completed}
+    if skipped:
+        result.update(diagnostic=skipped, reason=skipped["code"])
     if not cacheable or any("error" in (row or {}) for row in (shared, streams)):
         return result
     try:

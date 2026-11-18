@@ -7,7 +7,7 @@ SCHEMA = "ironmule.gguf-gate-diagnostic.v1"
 STAGES = ("tokenize", "tuning", "reference", "candidate", "acceptance", "model_changed")
 CODES = ("out_of_memory", "missing_cuda_library", "missing_cpu_library", "missing_dependency", "missing_fixture",
          "invalid_argument", "cuda_kernel_error", "timeout", "child_signal", "child_failed", "invalid_result",
-         "quality_rejected", "model_changed")
+         "quality_rejected", "model_changed", "skipped_uninformative_reference")
 EXCEPTIONS = ("MemoryError", "OutOfMemoryError", "ModuleNotFoundError", "ImportError", "FileNotFoundError",
               "OSError", "RuntimeError", "ValueError", "TypeError", "OverflowError", "IndexError", "KeyError",
               "JSONDecodeError", "TimeoutExpired", "TimeoutError", "AssertionError", "UnicodeDecodeError")
@@ -19,6 +19,16 @@ def _number(n):
     return n if type(n) in (int, float) and 0 < n <= 1e300 else None
 
 
+def _factual(scores, keys):
+    facts = {}
+    for category in ("arithmetic", "extraction", "facts"):
+        counts = scores.get(category) if isinstance(scores, dict) else None
+        if (isinstance(counts, dict) and all(type(counts.get(k)) is int and 0 <= counts[k] <= 64 for k in keys)
+                and all(counts[k] <= counts["total"] for k in keys[1:])):
+            facts[category] = {k: counts[k] for k in keys}
+    return facts
+
+
 def sanitize(value):
     """Project untrusted JSON onto whitelisted field names, enums and bounded numeric values."""
     if (not isinstance(value, dict) or value.get("schema") != SCHEMA or value.get("stage") not in STAGES
@@ -28,24 +38,21 @@ def sanitize(value):
     result = {"schema": SCHEMA, "stage": value["stage"], "code": value["code"],
               "exit_code": status if type(status) is int and -255 <= status <= 255 else None,
               "exception_class": exc if exc in EXCEPTIONS else None, "candidates": []}
+    if "reference_factual" in value:
+        result["reference_factual"] = _factual(value["reference_factual"], COUNTS[:3])
     candidates = value.get("candidates")
     for row in candidates[:12] if isinstance(candidates, list) else ():
         if not isinstance(row, dict) or row.get("role") not in ("option", "shared", "streams"):
             continue
-        settings, scores, facts = row.get("settings"), row.get("factual"), {}
+        settings = row.get("settings")
         if not isinstance(settings, dict) or type(row.get("passes")) is not bool:
             continue
-        for category in ("arithmetic", "extraction", "facts"):
-            counts = scores.get(category) if isinstance(scores, dict) else None
-            if (isinstance(counts, dict) and all(type(counts.get(k)) is int and
-                    0 <= counts[k] <= 64 for k in COUNTS) and all(counts[k] <= counts["total"] for k in COUNTS[1:])):
-                facts[category] = {k: counts[k] for k in COUNTS}
         launches = row.get("kg5_launches")
         result["candidates"].append({"role": row["role"], "passes": row["passes"],
             "settings": {k: settings[k] for k in SETTINGS if type(settings.get(k)) is bool},
             "nll_upper": _number(row.get("nll_upper")), "bound": _number(row.get("bound")),
             "kg5_launches": launches if type(launches) is int and 0 <= launches <= 2147483647 else None,
-            "dispatch_required": row.get("dispatch_required") is True, "factual": facts})
+            "dispatch_required": row.get("dispatch_required") is True, "factual": _factual(row.get("factual"), COUNTS)})
     return result
 
 
