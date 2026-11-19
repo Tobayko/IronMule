@@ -7,7 +7,7 @@ JOBS=${JOBS:-16}
 cd /work/IronMule
 export PIP_ROOT_USER_ACTION=ignore
 mkdir -p /models /work/logs
-apt-get -qq update >/dev/null && apt-get -qq install -y patch cmake >/dev/null 2>&1 || true
+pip install -q cmake ninja > /work/logs/cmake.log 2>&1
 
 # 1. downloads in the background (verified against pinned SHA-256)
 ( python lab/portable_gpu/fetch.py qwen3-32b --dir /models > /work/logs/fetch_gguf.log 2>&1; echo "rc=$?" >> /work/logs/fetch_gguf.log ) &
