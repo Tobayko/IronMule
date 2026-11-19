@@ -127,8 +127,8 @@ def tune(gguf: str, lib_path: Path, *, tokens=TOKENS, reps: int = 20, log=print,
         for (K, N), t in sorted(q4k_tensors(gguf, kind=kind).items()):
             if shapes is not None and (K, N) not in shapes:
                 continue
-            if N > 100000 and shapes is None:
-                continue  # token embedding (a row lookup) and the output matrix: llama.cpp's own kernels
+            if N > 100000 and shapes is None and kind == "Q4_K":
+                continue  # the token embedding is a row lookup, not a matmul; the Q6_K output matrix is tuned
             raw = np.ascontiguousarray(np.asarray(t["data"])).reshape(-1)
             wbytes = raw.nbytes
             copies = max(1, min(8, int(2e9 // max(1, wbytes))))  # beyond the 40 MB L2 cache
