@@ -65,6 +65,14 @@ __device__ __forceinline__ void fused_x(const float *__restrict__ x, int K, int 
     sv.y = __shfl_sync(0xffffffffu, t, (2 * c + 1) * 4);
 }
 
+// byte b of w as a float, exactly: the byte becomes the low mantissa bits of 2^23, then 2^23 is subtracted (two
+// full-rate instructions instead of a shift, a mask and a quarter-rate I2F; ptxas -v / SASS, A100). The constant
+// comes from blockDim.y (1 at run time) so that ptxas keeps it in a register and the PRMT selector is the immediate.
+__device__ __forceinline__ float byte_f(uint32_t w, int b) {
+    const uint32_t k = 0x4AFFFFFFu + blockDim.y;  // 0x4B000000
+    return __int_as_float(__byte_perm(w, k, 0x7540u | (uint32_t)b)) - 8388608.f;
+}
+
 // word i of a register array of uint4 (i a compile-time constant after unrolling: stays in registers)
 template <int NQ>
 __device__ __forceinline__ uint32_t wget(const uint4 (&q)[NQ], int i) {
@@ -300,8 +308,8 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
                     for (int h = 0; h < 2; h++) {
                         const int sh = 8 * (j & 3);
-                        const half2 s2 = __float2half2_rn(dd[h] * (float)((sw[h][j >> 2] >> sh) & 0xFF));
-                        const half2 m2 = __float2half2_rn(-dm[h] * (float)((mw[h][j >> 2] >> sh) & 0xFF));
+                        const half2 s2 = __float2half2_rn(dd[h] * byte_f(sw[h][j >> 2], j & 3));
+                        const half2 m2 = __float2half2_rn(-dm[h] * byte_f(mw[h][j >> 2], j & 3));
                         const uint32_t wd = wget(Q, 2 * j + h);
 #pragma unroll
                         for (int t = 0; t < 2; t++) {
@@ -329,8 +337,8 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
                 for (int h = 0; h < 2; h++) {
                     const int sh = 8 * (j & 3);
-                    S[h] = dd[h] * (float)((sw[h][j >> 2] >> sh) & 0xFF);
-                    NB[h] = -fmaf(1024.f, S[h], dm[h] * (float)((mw[h][j >> 2] >> sh) & 0xFF));
+                    S[h] = dd[h] * byte_f(sw[h][j >> 2], j & 3);
+                    NB[h] = -fmaf(1024.f, S[h], dm[h] * byte_f(mw[h][j >> 2], j & 3));
                     const uint32_t wd = wget(Q, 2 * j + h);
                     const uint32_t v0 = wd & 0x0F0F0F0Fu, v1 = (wd >> 4) & 0x0F0F0F0Fu;
                     a[0][h] = __byte_perm(v0, 0x64u, 0x4140);
@@ -559,8 +567,8 @@ w4p(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
                 for (int h = 0; h < 2; h++) {
                     const int sh = 8 * (j & 3);
-                    S[m][h] = dd[m][h] * (float)((sw[m][h][j >> 2] >> sh) & 0xFF);
-                    NB[m][h] = -fmaf(1024.f, S[m][h], dm[m][h] * (float)((mw[m][h][j >> 2] >> sh) & 0xFF));
+                    S[m][h] = dd[m][h] * byte_f(sw[m][h][j >> 2], j & 3);
+                    NB[m][h] = -fmaf(1024.f, S[m][h], dm[m][h] * byte_f(mw[m][h][j >> 2], j & 3));
                     const uint32_t wd = wget(b.q[m], 2 * j + h);
                     const uint32_t v0 = wd & 0x0F0F0F0Fu, v1 = (wd >> 4) & 0x0F0F0F0Fu;
                     a[m][0][h] = __byte_perm(v0, 0x64u, 0x4140);
@@ -724,6 +732,10 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
             xv[nt] = __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)(nt * 8 + g) * K + (size_t)sb * 256 + 32 * j + 8 * c));
     };
     const half2 h1024 = __half2half2(__ushort_as_half(0x6400));
+    // 0x64 in a register ptxas cannot fold (blockDim.y is 1 at run time, unknown when compiling): a PRMT takes one
+    // immediate, and with 0x64 as that immediate ptxas rebuilt the selector 0x4140 / 0x4342 in a register before
+    // every PRMT (SASS of v9: about 300 IMAD.U32 of 2,400 instructions); this way the selector is the immediate
+    const uint32_t k64 = 0x63u + blockDim.y;
     auto compute = [&](const Buf &b, int sb) {
         // the two rows' (g, g + 8) super-block scale and minimum as half2 {row g, row g + 8}; the 6-bit sub-block
         // scales and minimums become half2 {s_g, s_g8} by the 1024 + s trick (exact), and their products with d are
@@ -751,8 +763,8 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
             for (int m = 0; m < MT; m++) {
                 const uint32_t pick = (uint32_t)(j & 3) | ((uint32_t)(4 + (j & 3)) << 4);
-                const half2 sc = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick), 0x64u, 0x4140)), h1024), bits_h2(D[m]));
-                const half2 mn = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick), 0x64u, 0x4140)), h1024), bits_h2(NM[m]));
+                const half2 sc = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(D[m]));
+                const half2 mn = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(NM[m]));
 #pragma unroll
                 for (int h = 0; h < 2; h++) {
                     const half2 s2 = h ? __high2half2(sc) : __low2half2(sc);
@@ -761,7 +773,7 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
                     for (int t = 0; t < 2; t++) {
                         const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
-                        const uint32_t p0 = __byte_perm(v, 0x64u, 0x4140), p1 = __byte_perm(v, 0x64u, 0x4342);
+                        const uint32_t p0 = __byte_perm(v, k64, 0x4140), p1 = __byte_perm(v, k64, 0x4342);
                         a[m][t][h] = h2_bits(__hfma2(__hsub2(bits_h2(p0), h1024), s2, m2));
                         a[m][t][2 + h] = h2_bits(__hfma2(__hsub2(bits_h2(p1), h1024), s2, m2));
                     }
@@ -856,6 +868,10 @@ w4e(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
             xv[nt] = __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)(nt * 8 + g) * K + (size_t)sb * 256 + 32 * j + 8 * c));
     };
     const half2 h1024 = __half2half2(__ushort_as_half(0x6400));
+    // 0x64 in a register ptxas cannot fold (blockDim.y is 1 at run time, unknown when compiling): a PRMT takes one
+    // immediate, and with 0x64 as that immediate ptxas rebuilt the selector 0x4140 / 0x4342 in a register before
+    // every PRMT (SASS of v9: about 300 IMAD.U32 of 2,400 instructions); this way the selector is the immediate
+    const uint32_t k64 = 0x63u + blockDim.y;
     float acc[MT][NT][4];
 #pragma unroll
     for (int m = 0; m < MT; m++)
@@ -903,8 +919,8 @@ w4e(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
                 // piece i of the interleaved tile holds words 4i..4i+3 of every lane; word 2j + h is in piece j / 2
                 const uint4 qv = *reinterpret_cast<const uint4 *>(base + m * T4 + ((j >> 1) * 32 + lane) * 16);
                 const uint32_t pick = (uint32_t)(j & 3) | ((uint32_t)(4 + (j & 3)) << 4);
-                const half2 sc = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick), 0x64u, 0x4140)), h1024), bits_h2(D[m]));
-                const half2 mn = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick), 0x64u, 0x4140)), h1024), bits_h2(NM[m]));
+                const half2 sc = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(D[m]));
+                const half2 mn = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(NM[m]));
 #pragma unroll
                 for (int h = 0; h < 2; h++) {
                     const half2 s2 = h ? __high2half2(sc) : __low2half2(sc);
@@ -914,7 +930,7 @@ w4e(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
                     for (int t = 0; t < 2; t++) {
                         const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
-                        const uint32_t p0 = __byte_perm(v, 0x64u, 0x4140), p1 = __byte_perm(v, 0x64u, 0x4342);
+                        const uint32_t p0 = __byte_perm(v, k64, 0x4140), p1 = __byte_perm(v, k64, 0x4342);
                         a[m][t][h] = h2_bits(__hfma2(__hsub2(bits_h2(p0), h1024), s2, m2));
                         a[m][t][2 + h] = h2_bits(__hfma2(__hsub2(bits_h2(p1), h1024), s2, m2));
                     }
@@ -1197,8 +1213,8 @@ w4q(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
             for (int h = 0; h < 2; h++) {
                 const int sh = 8 * (j & 3);
-                S[h] = dd[h] * (float)((sw[h][j >> 2] >> sh) & 0xFF);
-                NB[h] = -fmaf(1024.f, S[h], dm[h] * (float)((mw[h][j >> 2] >> sh) & 0xFF));
+                S[h] = dd[h] * byte_f(sw[h][j >> 2], j & 3);
+                NB[h] = -fmaf(1024.f, S[h], dm[h] * byte_f(mw[h][j >> 2], j & 3));
                 const uint32_t wd = wget(q, 2 * j + h);
                 const uint32_t v0 = wd & 0x0F0F0F0Fu, v1 = (wd >> 4) & 0x0F0F0F0Fu;
                 a[0][h] = __byte_perm(v0, 0x64u, 0x4140);

@@ -2944,3 +2944,30 @@ Next: decode steps. At 32 rows the matmuls alone (about 23 ms) are near vLLM's w
 at 32 tokens against 1.3 TB/s at one token. Then the per-step small kernels (prep_x deduplicated for q/k/v and
 gate/up, which needs a per-graph epoch from llama.cpp to be safe; reduce_split folded into the kernel; rms_norm) and
 the 2.5-3 ms the GPU waits per step.
+
+### 2026-11-19, fourth A100 session: registers, SASS and constants of the W4R kernels
+Question from the owner: were PTX, SASS and the driver optimised? Before this session the kernels used inline PTX
+only for `mma.sync` and `cp.async`, built with plain `nvcc -O3 -arch=sm_80`; nobody had read their SASS or register
+counts, and no driver or GPU setting was touched (clock, persistence and L2 policy were never tried).
+
+- Registers without a GPU: NVRTC and `ptxas -v` from pip (`nvidia-cuda-nvrtc-cu12`, `nvidia-cuda-nvcc-cu12`) on the
+  device code. No kernel spills. The v9 variants the tuner picks at 32 tokens (two tiles per warp) use 236-245
+  registers per thread, 8 warps per SM; one-token v7 uses 125.
+- v10 (`w4e`): v9's arithmetic with a per-warp cp.async ring in shared memory, 71-106 registers (140 with two tiles).
+  Twice the warps did not help: slower than v9 on most shapes (5120x25600 at 32 tokens 99.4 against 78.6 us), faster
+  only on 5120x8192 at 16 and 32 tokens (39.5 / 48.8 against 40.3 / 54.4 us, same run). Occupancy is not the limit.
+- SASS (`cuobjdump -sass` on the pod): about 300 of v9's 2,400 instructions per two-tile super-block were
+  `IMAD.U32 R, RZ, RZ, UR4`: a PRMT takes one immediate, ptxas made the data constant 0x64 the immediate and rebuilt
+  the selector 0x4140 / 0x4342 in a register before every PRMT (an `asm mov` of 0x64 was folded by ptxas). A 0x64 that
+  ptxas cannot prove (`0x63 + blockDim.y`) makes the selector the immediate: v9 2,368 -> 2,072 instructions, IMAD
+  438 -> 144. v7 converted every 6-bit scale with a quarter-rate I2F (64 per super-block); `byte_f` puts the byte into
+  the mantissa of 2^23 and subtracts 2^23 (exact, PRMT + FADD at full rate).
+- Precomputing 64-bit x row pointers made the SASS longer (more LEA/IADD3.X); reverted.
+- A/B on the same A100, two interleaved rounds, best us per call, before -> after the constant and I2F changes:
+  1 token -1 to -2 %, 8 tokens -1.4 to -2.6 %, 16 tokens -0.4 to -3.6 %, 32 tokens -1.6 to -3.8 % on all Q4_K shapes
+  except 8192x5120 at 32 tokens (43.7 -> 49.6 us, +13 %, not explained). 12 % fewer instructions bought 1-4 %, so
+  instruction issue is not the main limit either; the remaining suspect is memory latency with one super-block of
+  prefetch per warp. No HTTP run: the expected 1-2 % is inside its run-to-run spread.
+Pod time 0.41 h, 0.89 USD; total 15.63 of 20 USD.
+Next for the kernels: deeper prefetch at 32 tokens (two super-blocks ahead within v9's registers, or a hybrid of v9
+registers and a short cp.async ring), measured per shape on the A100; driver-side L2 persistence for activations.
