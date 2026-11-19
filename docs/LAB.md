@@ -2873,3 +2873,20 @@ Engine-level, tok/s at 1 / 8 / 32 (two repeats), decode ms per step at 8 / 32:
 
 [Engine arms](../lab/pk1/results/a100-engine-arms-pod2.jsonl). Against vLLM on this pod: -10 % / +54 % at one client
 (prompt-dependent speculation), -13 % at 8, -4 % at 32 clients.
+
+Production server over HTTP on the second pod (`ironmule serve --agent on`, the pod's own tuned W4R table including
+the Q6_K output matrix, PK1 with a 20 ms arrival-gathering window from idle, PK2 auto, AM1, CUDA graphs on; the
+quality gate passed at a perplexity ratio of 0.994; SEQ1 chose 32 sequences), same client, prompts and seeds:
+
+| Clients | IronMule tok/s (repeat 0 / 1) | vLLM AWQ tok/s, same pod | p95 first token IronMule / vLLM | facts |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 50.2 / 85.1 | 51.9 / 52.0 | 290 / 208 ms | 18/18 both |
+| 8 | 147.8 / 150.7 | 184.2 / 183.7 | 964 / 863 ms | 18/18 both |
+| 32 | 238.5 / 238.8 | 273.8 / 273.6 | 3,002 / 3,013 ms | 18/18 both |
+
+Without the gathering window repeat 0 at 32 clients was 225.4 (the first HTTP arrivals were prefilled before the rest
+of the burst had come in). Against vLLM AWQ: level-to-ahead at one client (-3 % / +64 % by prompt), -19 % at 8 and
+-13 % at 32 clients. The server is 8-9 % behind the engine on the same pod (238 against 262 at 32 clients): the packed
+prefill takes about 3.0 s through the service against 2.7 s in the engine; the cause is not yet located.
+[HTTP results](../lab/pk1/results/a100-ironmule-http-pod2.jsonl) · [W4R tuning](../lab/pk1/results/a100-w4-tuning-pod2.json)
+Next: the 0.3 s service-path prefill gap, then decode steps at 8 rows (25.7 ms against vLLM's about 17).
