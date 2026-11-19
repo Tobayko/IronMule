@@ -27,7 +27,7 @@ from .kernel_gen import compile_cuda, compute_capability, fingerprint, nvcc_path
 SOURCE = Path(__file__).resolve().parents[1] / "native" / "kernels" / "w4mma.cu"
 TYPE_Q4_K, TYPE_Q6_K = 12, 14
 TOKENS = (1, 8, 16, 32)  # measured; every token count is served by the measurement of its tile count
-KSPLITS = (1, 2, 4)
+KSPLITS = (1, 2, 4, 8)  # 8: long-K matrices with few output rows (down, 25600 -> 5120) at 32 tokens
 ERROR_BOUND = 4e-3  # relative L2 error against float64; fp16 activations and weights give about 3e-4
 VERSION = 2  # 2: W4R, weights repacked once into tile order
 

@@ -984,6 +984,283 @@ int launch_e(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     return cudaGetLastError() == cudaSuccess ? 0 : 3;
 }
 
+// v11 (Q4_K, 9-32 tokens, long K): v9 with the x of each super-block staged once per block in shared memory
+// (cp.async, double buffered) and read by all WARPS x MT tiles of the block. A diagnostic with x folded onto two
+// super-blocks (L1-resident) took the 25600 x 5120 down matrix at 32 tokens from 99 to 87 us: v9 re-read the 1.6 MB of
+// x from L2 for every one or two tiles.
+template <int WARPS, int NT, int MT>
+__global__ void __launch_bounds__(WARPS * 32)
+w4f(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
+    float *__restrict__ out, int N, int K, int B, int sb_per_split) {
+    constexpr int ROWS = NT * 8, XROW = 256 + 32;  // halves per staged token row (64-byte pad: conflict-free)
+    __shared__ __align__(16) half xbuf[2][ROWS * XROW];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
+    const int nb = K / 256;
+    const int tile0 = (blockIdx.x * WARPS + warp) * MT;
+    const int sb0 = blockIdx.y * sb_per_split, sb1 = min(nb, sb0 + sb_per_split);
+    const bool live = tile0 * 16 < N;
+    const int tiles = (N + 15) / 16;
+    const int ns = sb1 - sb0;
+    float acc[MT][NT][4];
+#pragma unroll
+    for (int m = 0; m < MT; m++)
+#pragma unroll
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) acc[m][nt][i] = 0.f;
+    struct Buf { uint4 q[MT][4], h[MT][2]; };
+    auto fetch = [&](int sb, Buf &b) {
+#pragma unroll
+        for (int m = 0; m < MT; m++) {
+            const int t = min(tile0 + m, tiles - 1);
+            const uint8_t *p = wr + ((size_t)t * nb + sb) * T4;
+#pragma unroll
+            for (int i = 0; i < 4; i++) b.q[m][i] = ldg_stream(p + (i * 32 + lane) * 16);
+            b.h[m][0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 16));
+            b.h[m][1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16));
+        }
+    };
+    auto stage = [&](int buf, int sb) {  // ROWS x 256 halves = ROWS x 32 pieces of 16 bytes
+        for (int i = threadIdx.x; i < ROWS * 32; i += WARPS * 32) {
+            const int n = i / 32, piece = i % 32;
+            cp_async16(&xbuf[buf][n * XROW + piece * 8], xh + (size_t)n * K + (size_t)sb * 256 + piece * 8);
+        }
+    };
+    const half2 h1024 = __half2half2(__ushort_as_half(0x6400));
+    const uint32_t k64 = 0x63u + blockDim.y;  // see w4d
+    auto compute = [&](const Buf &b, int buf) {
+        uint32_t D[MT], NM[MT], sw[MT][2][2], mw[MT][2][2];
+#pragma unroll
+        for (int m = 0; m < MT; m++) {
+            D[m] = __byte_perm(b.h[m][0].x, b.h[m][1].x, 0x5410);
+            NM[m] = h2_bits(__hneg2(bits_h2(__byte_perm(b.h[m][0].x, b.h[m][1].x, 0x7632))));
+#pragma unroll
+            for (int h = 0; h < 2; h++) {
+                const uint4 hv = b.h[m][h];
+                sw[m][h][0] = hv.y & 0x3F3F3F3Fu;
+                mw[m][h][0] = hv.z & 0x3F3F3F3Fu;
+                sw[m][h][1] = (hv.w & 0x0F0F0F0Fu) | ((hv.y >> 2) & 0x30303030u);
+                mw[m][h][1] = ((hv.w >> 4) & 0x0F0F0F0Fu) | ((hv.z >> 2) & 0x30303030u);
+            }
+        }
+        const half *xb = xbuf[buf];
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            uint32_t a[MT][2][4];
+#pragma unroll
+            for (int m = 0; m < MT; m++) {
+                const uint32_t pick = (uint32_t)(j & 3) | ((uint32_t)(4 + (j & 3)) << 4);
+                const half2 sc = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(D[m]));
+                const half2 mn = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(NM[m]));
+#pragma unroll
+                for (int h = 0; h < 2; h++) {
+                    const half2 s2 = h ? __high2half2(sc) : __low2half2(sc);
+                    const half2 m2 = h ? __high2half2(mn) : __low2half2(mn);
+                    const uint32_t wd = wget(b.q[m], 2 * j + h);
+#pragma unroll
+                    for (int t = 0; t < 2; t++) {
+                        const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
+                        const uint32_t p0 = __byte_perm(v, k64, 0x4140), p1 = __byte_perm(v, k64, 0x4342);
+                        a[m][t][h] = h2_bits(__hfma2(__hsub2(bits_h2(p0), h1024), s2, m2));
+                        a[m][t][2 + h] = h2_bits(__hfma2(__hsub2(bits_h2(p1), h1024), s2, m2));
+                    }
+                }
+            }
+#pragma unroll
+            for (int nt = 0; nt < NT; nt++) {
+                const uint4 bx = *reinterpret_cast<const uint4 *>(xb + (nt * 8 + g) * XROW + 32 * j + 8 * c);
+#pragma unroll
+                for (int m = 0; m < MT; m++) {
+                    mma16816(acc[m][nt], a[m][0][0], a[m][0][1], a[m][0][2], a[m][0][3], bx.x, bx.y);
+                    mma16816(acc[m][nt], a[m][1][0], a[m][1][1], a[m][1][2], a[m][1][3], bx.z, bx.w);
+                }
+            }
+        }
+    };
+    // every warp takes part in staging and barriers, live or not
+    Buf ba, bb;
+    if (ns > 0) {
+        stage(0, sb0);
+        cp_commit();
+        fetch(sb0, ba);
+    }
+    for (int k = 0; k < ns; k += 2) {
+        if (k + 1 < ns) stage(1, sb0 + k + 1);
+        cp_commit();
+        cp_wait<1>();
+        __syncthreads();
+        if (k + 1 < ns) fetch(sb0 + k + 1, bb);
+        if (live) compute(ba, 0);
+        __syncthreads();
+        if (k + 1 >= ns) break;
+        if (k + 2 < ns) stage(0, sb0 + k + 2);
+        cp_commit();
+        cp_wait<1>();
+        __syncthreads();
+        if (k + 2 < ns) fetch(sb0 + k + 2, ba);
+        if (live) compute(bb, 1);
+        __syncthreads();
+    }
+    cp_wait<0>();
+    if (!live) return;
+    float *o = out + (size_t)blockIdx.y * B * N;
+#pragma unroll
+    for (int m = 0; m < MT; m++)
+#pragma unroll
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) {
+                const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
+                const int tok = nt * 8 + 2 * c + (i % 2);
+                if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
+            }
+}
+
+template <int WARPS, int NT, int MT>
+__global__ void __launch_bounds__(WARPS * 32)
+w4f6(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
+    float *__restrict__ out, int N, int K, int B, int sb_per_split) {
+    constexpr int ROWS = NT * 8, XROW = 256 + 32;  // halves per staged token row (64-byte pad: conflict-free)
+    __shared__ __align__(16) half xbuf[2][ROWS * XROW];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
+    const int nb = K / 256;
+    const int tile0 = (blockIdx.x * WARPS + warp) * MT;
+    const int sb0 = blockIdx.y * sb_per_split, sb1 = min(nb, sb0 + sb_per_split);
+    const bool live = tile0 * 16 < N;
+    const int tiles = (N + 15) / 16;
+    const int ns = sb1 - sb0;
+    float acc[MT][NT][4];
+#pragma unroll
+    for (int m = 0; m < MT; m++)
+#pragma unroll
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) acc[m][nt][i] = 0.f;
+    struct Buf { uint4 q[MT][6], h[MT][4]; };
+    auto fetch = [&](int sb, Buf &b) {
+#pragma unroll
+        for (int m = 0; m < MT; m++) {
+            const int t = min(tile0 + m, tiles - 1);
+            const uint8_t *p = wr + ((size_t)t * nb + sb) * T6;
+#pragma unroll
+            for (int i = 0; i < 6; i++) b.q[m][i] = ldg_stream(p + (i * 32 + lane) * 16);
+#pragma unroll
+            for (int h = 0; h < 2; h++) {
+                b.h[m][2 * h] = __ldg(reinterpret_cast<const uint4 *>(p + 3072 + (g + 8 * h) * 32));
+                b.h[m][2 * h + 1] = __ldg(reinterpret_cast<const uint4 *>(p + 3072 + (g + 8 * h) * 32 + 16));
+            }
+        }
+    };
+    auto stage = [&](int buf, int sb) {  // ROWS x 256 halves = ROWS x 32 pieces of 16 bytes
+        for (int i = threadIdx.x; i < ROWS * 32; i += WARPS * 32) {
+            const int n = i / 32, piece = i % 32;
+            cp_async16(&xbuf[buf][n * XROW + piece * 8], xh + (size_t)n * K + (size_t)sb * 256 + piece * 8);
+        }
+    };
+    const half2 h1056 = __float2half2_rn(1056.f), h1152 = __float2half2_rn(1152.f);
+    const uint32_t k64 = 0x63u + blockDim.y;  // see w4d
+    auto compute = [&](const Buf &b, int buf) {
+        uint32_t D[MT];
+#pragma unroll
+        for (int m = 0; m < MT; m++) D[m] = __byte_perm(b.h[m][1].x, b.h[m][3].x, 0x5410);
+        const half *xb = xbuf[buf];
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            uint32_t a[MT][2][4];
+#pragma unroll
+            for (int m = 0; m < MT; m++) {
+                const uint32_t hw = wget(b.q[m], 16 + j);
+                half2 sc[2];
+#pragma unroll
+                for (int t = 0; t < 2; t++) {
+                    const int si = 8 * (j / 4) + t + 2 * (j % 4);
+                    const uint4 s0 = b.h[m][0], s1 = b.h[m][2];
+                    const uint32_t w0 = si < 4 ? s0.x : si < 8 ? s0.y : si < 12 ? s0.z : s0.w;
+                    const uint32_t w1 = si < 4 ? s1.x : si < 8 ? s1.y : si < 12 ? s1.z : s1.w;
+                    const uint32_t pair = __byte_perm(w0, w1, (uint32_t)(si & 3) | ((uint32_t)(4 + (si & 3)) << 4)) ^ 0x8080u;
+                    sc[t] = __hmul2(__hsub2(bits_h2(__byte_perm(pair, k64, 0x4140)), h1152), bits_h2(D[m]));
+                }
+#pragma unroll
+                for (int h = 0; h < 2; h++) {
+                    const uint32_t wd = wget(b.q[m], 2 * j + h);
+#pragma unroll
+                    for (int t = 0; t < 2; t++) {
+                        const uint32_t v = ((t ? wd >> 4 : wd) & 0x0F0F0F0Fu) |
+                                           (((hw >> (2 * (2 * h + t))) & 0x03030303u) << 4);
+                        const half2 s2 = h ? __high2half2(sc[t]) : __low2half2(sc[t]);
+                        a[m][t][h] = h2_bits(__hmul2(__hsub2(bits_h2(__byte_perm(v, k64, 0x4140)), h1056), s2));
+                        a[m][t][2 + h] = h2_bits(__hmul2(__hsub2(bits_h2(__byte_perm(v, k64, 0x4342)), h1056), s2));
+                    }
+                }
+            }
+#pragma unroll
+            for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+                for (int t = 0; t < 2; t++) {
+                    const uint2 bx = *reinterpret_cast<const uint2 *>(xb + (nt * 8 + g) * XROW + 32 * j + 16 * t + 4 * c);
+#pragma unroll
+                    for (int m = 0; m < MT; m++)
+                        mma16816(acc[m][nt], a[m][t][0], a[m][t][1], a[m][t][2], a[m][t][3], bx.x, bx.y);
+                }
+        }
+    };
+    // every warp takes part in staging and barriers, live or not
+    Buf ba, bb;
+    if (ns > 0) {
+        stage(0, sb0);
+        cp_commit();
+        fetch(sb0, ba);
+    }
+    for (int k = 0; k < ns; k += 2) {
+        if (k + 1 < ns) stage(1, sb0 + k + 1);
+        cp_commit();
+        cp_wait<1>();
+        __syncthreads();
+        if (k + 1 < ns) fetch(sb0 + k + 1, bb);
+        if (live) compute(ba, 0);
+        __syncthreads();
+        if (k + 1 >= ns) break;
+        if (k + 2 < ns) stage(0, sb0 + k + 2);
+        cp_commit();
+        cp_wait<1>();
+        __syncthreads();
+        if (k + 2 < ns) fetch(sb0 + k + 2, ba);
+        if (live) compute(bb, 1);
+        __syncthreads();
+    }
+    cp_wait<0>();
+    if (!live) return;
+    float *o = out + (size_t)blockIdx.y * B * N;
+#pragma unroll
+    for (int m = 0; m < MT; m++)
+#pragma unroll
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) {
+                const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
+                const int tok = nt * 8 + 2 * c + (i % 2);
+                if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
+            }
+}
+
+template <int TYPE, int WARPS, int NT, int MT>
+int launch_f(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
+             cudaStream_t s) {
+    const int nb = K / 256;
+    const int per = (nb + ksplit - 1) / ksplit;
+    const int splits = (nb + per - 1) / per;
+    dim3 grid((((N + 15) / 16 + MT - 1) / MT + WARPS - 1) / WARPS, splits);
+    if constexpr (TYPE == TYPE_Q4_K)
+        w4f<WARPS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+    else
+        w4f6<WARPS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+    if (splits > 1) {
+        const size_t n = (size_t)B * N;
+        reduce_split<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(part, y, n, splits);
+    }
+    return cudaGetLastError() == cudaSuccess ? 0 : 3;
+}
+
 // v9 for Q6_K: the same structure over w4r's Q6_K tile layout (16 nibble words, 8 two-bit words, 16 int8 scales)
 template <int WARPS, int KS, int NT, int MT>
 __global__ void __launch_bounds__(WARPS * 32)
@@ -1285,6 +1562,8 @@ struct Variant {
 #define VE(W, ST, N, M) Variant{TYPE_Q4_K, W, 40000 + 100 * M + ST, N, launch_e<W, ST, N, M>}
 #define VEN(N) VE(4, 4, N, 1), VE(4, 3, N, 1), VE(8, 3, N, 1), VE(8, 4, N, 1), VE(2, 4, N, 1), VE(4, 3, N, 2), \
                VE(2, 4, N, 2), VE(4, 2, N, 2)
+#define VF(W, N, M) Variant{TYPE_Q4_K, W, 50000 + 100 * M, N, launch_f<TYPE_Q4_K, W, N, M>}
+#define VF6(W, N, M) Variant{TYPE_Q6_K, W, 50000 + 100 * M, N, launch_f<TYPE_Q6_K, W, N, M>}
 #define VW6(W, S, N, M) Variant{TYPE_Q6_K, W, 30000 + 100 * M + S, N, launch_d<TYPE_Q6_K, W, S, N, M>}
 #define VW6N(N) VW6(4, 1, N, 1), VW6(8, 1, N, 1), VW6(8, 2, N, 1), VW6(8, 4, N, 1), VW6(2, 1, N, 2), VW6(4, 1, N, 2), \
                 VW6(4, 2, N, 2), VW6(8, 4, N, 2)
@@ -1302,7 +1581,14 @@ const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
                             VW(4, 4, 2, 1), VW(8, 8, 2, 1), VW(16, 8, 2, 1), VW(16, 16, 2, 1),
                             VW(4, 4, 4, 1), VW(8, 8, 4, 1), VW(16, 8, 4, 1), VW(16, 16, 4, 1), VW(8, 4, 4, 1),
                             VW6(4, 4, 2, 1), VW6(8, 8, 2, 1), VW6(16, 16, 2, 1),
-                            VW6(4, 4, 4, 1), VW6(8, 8, 4, 1), VW6(16, 16, 4, 1), VW6(8, 4, 4, 1)};
+                            VW6(4, 4, 4, 1), VW6(8, 8, 4, 1), VW6(16, 16, 4, 1), VW6(8, 4, 4, 1),
+                            // long K (down, 25600): x of 32 tokens is 1.6 MB, read from L2 once per tile group; three or
+                            // four tiles per warp (weights through the shared-memory ring) cut that L2 traffic 3-4x
+                            VE(4, 2, 4, 4), VE(8, 2, 4, 4), VE(4, 3, 4, 4), VE(4, 2, 4, 3), VE(8, 2, 4, 3), VE(4, 3, 4, 3),
+                            VE(2, 3, 4, 4), VE(4, 2, 2, 4),
+                            VF(4, 4, 1), VF(8, 4, 1), VF(16, 4, 1), VF(4, 4, 2), VF(8, 4, 2), VF(2, 4, 2),
+                            VF(4, 2, 1), VF(8, 2, 1), VF(4, 2, 2), VF(8, 2, 2),
+                            VF6(4, 4, 1), VF6(8, 4, 1), VF6(2, 4, 1), VF6(4, 4, 2), VF6(4, 2, 1), VF6(8, 2, 1)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {

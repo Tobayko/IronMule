@@ -2971,3 +2971,23 @@ counts, and no driver or GPU setting was touched (clock, persistence and L2 poli
 Pod time 0.41 h, 0.89 USD; total 15.63 of 20 USD.
 Next for the kernels: deeper prefetch at 32 tokens (two super-blocks ahead within v9's registers, or a hybrid of v9
 registers and a short cp.async ring), measured per shape on the A100; driver-side L2 persistence for activations.
+
+### 2026-11-19, fifth A100 session: the 5120-row matrices at 32 tokens (o and down)
+Correction to the fourth session's note: the +13 % outlier was the o matrix (K 8192 -> N 5120), not down; in this
+session the same old variant measured 48.9 and 40.5 us in two rounds, so that outlier is run-to-run noise.
+The matrices with 5120 output rows are the least efficient at 32 tokens (o about 40-48 us against about 16 us at
+1.5 TB/s, down about 99 us against 49 us). Tried, A100 SXM4, best us per call, two rounds each:
+- In-block K-split variants of v9 (one tile per 4-16 warps, shared-memory reduction, no reduce kernel): slightly better
+  at 16 tokens (down Q4 68.5 -> 66.2, down Q6 91.3 -> 86.3), worse at 32 (down Q4 104 against 99). The GPU's
+  fill (80 blocks for 108 SMs in the chosen variant) is not the limit.
+- v10 with three or four tiles per warp (more x reuse per load): slower (down Q4 at 32 tokens 121 against 99).
+- Diagnostic: the same kernels with every x read folded onto two super-blocks (L1-resident, wrong values) took down
+  Q4 at 32 tokens from 99.3 to 86.5 us: re-reading the 1.6 MB of x from L2 for every tile costs about 13 %.
+- v11 (`w4f`, `w4f6`): v9's register-prefetched weights with each super-block's x staged once per block in shared
+  memory (cp.async, double buffered) and read by all the block's tiles. Down Q4 at 32 tokens 99.1 -> 92.0 us
+  (variant VF(4,4,1), grid K-split 4, both rounds); Q6 down 121.8 -> 111.6-117.1. Worse on o, gate and at 16 tokens,
+  where the tuner keeps the older variants.
+- A grid K-split of 8 helped the older variants as well (down Q4 91.8, Q6 118.0 at 32 tokens); the tuner now tries
+  1, 2, 4 and 8 (`ironmule/w4_kernels.py`).
+Expected effect per 32-row decode step: about 0.4 ms of about 38 ms (1 %), inside the HTTP run-to-run spread, so no
+HTTP run. Pod time 0.54 h, 1.18 USD; total 16.82 of 20 USD.
