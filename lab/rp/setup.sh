@@ -3,6 +3,7 @@
 # Usage on the pod: bash /work/IronMule/lab/rp/setup.sh ARCH   (ARCH = CUDA compute capability, e.g. 80 for A100)
 set -euo pipefail
 ARCH=${1:-80}
+JOBS=${JOBS:-16}
 cd /work/IronMule
 export PIP_ROOT_USER_ACTION=ignore
 mkdir -p /models /work/logs
@@ -19,11 +20,11 @@ apt-get -qq update >/dev/null && apt-get -qq install -y patch cmake >/dev/null 2
 # 3. IronMule + its ggml build for this GPU
 pip install -q -e ".[dev]" > /work/logs/pip.log 2>&1
 pip install -q "numpy" "jinja2" "typing-extensions" "diskcache" >> /work/logs/pip.log 2>&1
-python tools/build_ggml.py --cuda "$ARCH" --jobs "$(nproc)" > /work/logs/build.log 2>&1
-python tools/build_ggml.py --cuda "$ARCH" --jobs "$(nproc)" --no-patches > /work/logs/build_stock.log 2>&1
+python tools/build_ggml.py --cuda "$ARCH" --jobs "$JOBS" > /work/logs/build.log 2>&1
+python tools/build_ggml.py --cuda "$ARCH" --jobs "$JOBS" --no-patches > /work/logs/build_stock.log 2>&1
 for t in ironmule stock; do
   tree=$(ls -d ~/.cache/ironmule/ggml/$t/cuda/llama_cpp_python-*/vendor/llama.cpp)
-  cmake --build "$tree/build" --target llama-bench -j "$(nproc)" >> /work/logs/build_bench.log 2>&1
+  cmake --build "$tree/build" --target llama-bench -j "$JOBS" >> /work/logs/build_bench.log 2>&1
 done
 wait
 echo SETUP-DONE
