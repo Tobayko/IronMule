@@ -1,0 +1,15 @@
+2666a2667,2676
+> // GR2 (IronMule): CUDA graphs for decode steps of up to IRONMULE_CUDA_GRAPHS_ROWS rows (llama.cpp: one row);
+> // a step of another size or context range is captured again, as llama.cpp does for one row
+> static int64_t ironmule_graph_rows() {
+>     static const int64_t rows = [] {
+>         const char * v = std::getenv("IRONMULE_CUDA_GRAPHS_ROWS");
+>         return v ? std::max<int64_t>(1, std::atoll(v)) : (int64_t) 1;
+>     }();
+>     return rows;
+> }
+> 
+2701c2711
+<             node->src[1] && node->src[1]->ne[1] > 1 &&
+---
+>             node->src[1] && node->src[1]->ne[1] > ironmule_graph_rows() &&
