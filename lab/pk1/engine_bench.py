@@ -65,7 +65,10 @@ def main():
     p.add_argument("--label", default=os.environ.get("PK1_LABEL", "arm"))
     a = p.parse_args()
     started = time.monotonic()
-    engine = GgmlEngine(a.gguf, seqs=a.seqs, seq_ctx=a.seq_ctx, flash_attn=True)
+    engine = GgmlEngine(a.gguf, seqs=a.seqs, seq_ctx=a.seq_ctx, flash_attn=True,
+                        speculate=os.environ.get("PK1_SPEC", "1") != "0")
+    steps = []
+    engine.observer = lambda rows, prompt, kv, seconds: steps.append((rows, prompt, seconds))
     print(json.dumps({"label": a.label, "load_s": round(time.monotonic() - started, 1),
                       "settings": getattr(engine, "settings", {}), "gpu_layers": engine.gpu_layers}), flush=True)
     widths = [int(w) for w in a.widths.split(",")]
@@ -74,9 +77,17 @@ def main():
     for rep in range(a.repeats):
         for width in widths:
             prompts = performance_prompts(1000 + rep * 1009 + width, width, max(width, 8))
+            steps.clear()
             row = wave(engine, prompts, width, a.limit)
-            row.update(label=a.label, repeat=rep)
+            decode = [s for s in steps if s[1] == 0]
+            prefill = [s for s in steps if s[1] > 0]
+            row.update(label=a.label, repeat=rep, decode_steps=len(decode),
+                       decode_ms=round(1000 * sum(s[2] for s in decode) / max(1, len(decode)), 2),
+                       decode_rows=round(sum(s[0] for s in decode) / max(1, len(decode)), 1),
+                       prefill_calls=len(prefill), prefill_s=round(sum(s[2] for s in prefill), 3))
             print(json.dumps(row), flush=True)
+    print(json.dumps({"label": a.label, "summary": {k: v for k, v in engine.summary().items()
+                                                    if k in ("pack", "prefill_batch", "kernels", "pilot")}}), flush=True)
     engine.close()
 
 

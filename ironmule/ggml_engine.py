@@ -100,6 +100,10 @@ SPLIT = os.environ.get("IRONMULE_GGML_SPLIT", "layer")
 PACK = os.environ.get("IRONMULE_GGML_PACK", "") == "1"
 PACK_TOKENS = int(os.environ.get("IRONMULE_GGML_PACK_TOKENS", 8192))
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
+# PK2 (2026-11-19): with packing on a CUDA build that has the PK2 patch, the engine measures at its start whether prompt
+# matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
+# IRONMULE_CUBLAS_MIN_ROWS fixes the threshold instead (0 = never), IRONMULE_PK2=0 skips the measurement.
+PK2_AUTO = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS") is None and os.environ.get("IRONMULE_PK2", "1") != "0"
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
@@ -116,6 +120,21 @@ def fa1_version() -> int:
         return int(lib.ironmule_fa1_version())
     except Exception:  # noqa: BLE001 - no library, no symbol: a stock build
         return 0
+
+
+def pk2_set_min_rows(rows: int) -> int | None:
+    """PK2: route quantized matmuls with at least `rows` prompt rows through dequantization + cuBLAS (0 = llama.cpp's
+    own kernels). Returns the previous threshold, or None where the loaded CUDA library lacks the PK2 patch."""
+    import ctypes
+
+    try:
+        L = bindings()
+        folder = Path(L.llama_cpp._lib._name).parent if hasattr(L, "llama_cpp") else Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+        fn = ctypes.CDLL(str(next(folder.glob("libggml-cuda.so*")))).ironmule_pk2_set_min_rows
+    except Exception:  # noqa: BLE001 - no CUDA library or a build without PK2
+        return None
+    fn.argtypes, fn.restype = [ctypes.c_long], ctypes.c_long
+    return int(fn(int(rows)))
 
 
 def gpu_offload(L: Any | None = None) -> bool:
@@ -505,6 +524,7 @@ class GgmlEngine:
                 raise
         elif KG_LIB and self.gpu_layers:
             self.kg = self.measure_kg(KG_LIB)
+        self.pk2: dict[str, Any] = self.measure_pk2() if PK2_AUTO and getattr(self, "pack", False) else {}
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
@@ -541,6 +561,55 @@ class GgmlEngine:
             prices[t] = sorted(times[1:])[len(times[1:]) // 2]
         self._clear()
         return prices
+
+    def measure_pk2(self, thresholds: Sequence[int] = (256, 512, 1024), repeats: int = 3) -> dict[str, Any]:
+        """PK2: time one packed prompt burst (eight 444-token prompts on eight KV streams, as a busy step carries) with
+        llama.cpp's own matmul kernels and with the cuBLAS path from each row threshold on, alternating arms; keep the
+        fastest threshold when it is at least 5 % faster and its teacher-forced likelihood on a 512-token chunk stays
+        within OPTION_BOUND of the incumbent's. {} where the loaded CUDA library lacks PK2 or there is no GPU."""
+        if not self.gpu_layers or not getattr(self, "pack", False) or pk2_set_min_rows(0) is None:
+            return {}
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        ids = self.tokenize(" ".join(f"Site {1000 + j} measured {20 + j % 60} units." for j in range(400)))
+        width = min(8, self.seqs)
+        length = min(444, self.seq_ctx - 8, max(64, (len(ids) - 1) // width))
+        group = [(seq, Job([bos] + ids[seq * length:(seq + 1) * length - 1], 1), 0) for seq in range(width)]
+
+        def burst() -> float:
+            self._clear()
+            started = time.perf_counter()
+            self._pack_prefill(group)
+            return time.perf_counter() - started
+
+        arms = (0, *thresholds)
+        times: dict[int, list[float]] = {t: [] for t in arms}
+        try:
+            for t in arms:  # warm each path once (cuBLAS handles, dequantization buffers)
+                pk2_set_min_rows(t)
+                burst()
+            for _ in range(repeats):
+                for t in arms:
+                    pk2_set_min_rows(t)
+                    times[t].append(burst())
+            med = {t: sorted(v)[len(v) // 2] for t, v in times.items()}
+            best = min(thresholds, key=lambda t: med[t])
+            chosen, reason = 0, "llama.cpp's kernels were as fast"
+            if med[best] <= 0.95 * med[0]:
+                chunk = ids[:min(len(ids), max(513, best + 65), self.seq_ctx - 1)]
+                pk2_set_min_rows(0)
+                ref = self.chunk_nll(chunk, [bos])
+                pk2_set_min_rows(best)
+                cand = self.chunk_nll(chunk, [bos])
+                ratio = math.exp(cand - ref)
+                if ratio <= OPTION_BOUND:
+                    chosen, reason = best, f"{med[0] / med[best]:.2f}x a packed burst, likelihood ratio {ratio:.5f}"
+                else:
+                    reason = f"likelihood ratio {ratio:.5f} above {OPTION_BOUND}"
+        finally:
+            self._clear()
+        pk2_set_min_rows(chosen)
+        return {"min_rows": chosen, "reason": reason, "rows": width * length,
+                "burst_ms": {str(t): round(1000 * v, 1) for t, v in med.items()}}
 
     def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:
         """KG1: the step for 1-8 tokens (KG4: and 16, 24, 32) with the generated kernels on and off (alternating, median
@@ -1457,7 +1526,8 @@ class GgmlEngine:
                                      if self.prefill_batch_long else {}),
                                   "prompts": self.prefill_batch_prompts, "rows": self.prefill_batch_rows},
                 **({"pack": {"calls": self.pack_calls, "prompts": self.pack_prompts, "rows": self.pack_rows,
-                             "ubatch": UBATCH or 512, "batch": self.batch_cap}} if self.pack else {}),
+                             "ubatch": UBATCH or 512, "batch": self.batch_cap,
+                             "pk2": getattr(self, "pk2", {})}} if self.pack else {}),
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
