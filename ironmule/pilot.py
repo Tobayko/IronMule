@@ -140,7 +140,10 @@ class Pilot:
         self.w = None
         default = WEIGHTS_GPU if self.gpu and WEIGHTS_GPU.exists() else WEIGHTS
         path = weights or Path(os.environ.get("IRONMULE_PILOT_WEIGHTS") or default)
+        self.weights_path = path
         self.weights_name = path.name
+        self.learning = None
+        self.last_fallback = False
         if os.environ.get("IRONMULE_PILOT", "1") == "0":
             self.reason = "turned off (IRONMULE_PILOT=0)"
         elif not path.exists():
@@ -197,9 +200,11 @@ class Pilot:
         """Threads, running cap, prompt budget and drafting for the next step."""
         started = time.perf_counter()
         f = self._features(running, queued, waiting_prompt_tokens, mean_ctx)
+        self.last_fallback = False
         if self.w is None:
             return self.apply(self.cur)
         if not all(math.isfinite(v) and abs(v) <= 4.0 for v in f):  # outside what it was trained on: keep defaults
+            self.last_fallback = True
             self.out_of_range += 1
             return self.apply([len(THREAD_FRACTIONS) - 1, len(CAPS) - 1, len(BUDGETS) - 1, 1])
         w1, b1, w2, b2, w3, b3 = self.w
@@ -234,7 +239,8 @@ class Pilot:
                 "foreign_cores": round(self.load.foreign, 2), "decision": self.apply(self.cur) if self.active else None,
                 "decisions": self.decisions,
                 "decide_us_mean": round(self.decide_us / self.decisions, 1) if self.decisions else None,
-                "out_of_range": self.out_of_range}
+                "out_of_range": self.out_of_range,
+                **({"thread_learning": self.learning.status()} if self.learning is not None else {})}
 
 
 __all__ = ["BUDGETS", "CAPS", "HEADS", "OBS", "WEIGHTS", "WEIGHTS_GPU", "Pilot", "THREAD_FRACTIONS", "CpuLoad",

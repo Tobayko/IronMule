@@ -23,10 +23,11 @@ import statistics
 import sys
 import threading
 import time
-import types
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
+
+from ironmule_devices import bindings, ggml_devices
 
 SEQS, SEQ_CTX, MAX_ROWS = 8, 2048, 16
 
@@ -92,20 +93,6 @@ SPLIT = os.environ.get("IRONMULE_GGML_SPLIT", "layer")
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
-def bindings() -> Any:
-    """`llama_cpp`, from an install or from `IRONMULE_GGML_BINDINGS` (an unpacked `llama-cpp-python` source)."""
-    path = os.environ.get("IRONMULE_GGML_BINDINGS")
-    if path and path not in sys.path:
-        sys.path.insert(0, path)
-    try:
-        import diskcache  # noqa: F401 - the bindings import it for a cache class this engine never uses
-    except ImportError:
-        sys.modules.setdefault("diskcache", types.SimpleNamespace(Cache=object))
-    import llama_cpp
-
-    return llama_cpp
-
-
 def fa1_version() -> int:
     """FA1's version in the loaded ggml CPU library (native/ggml_patches/fa1; 3 = FA1u for several tokens), 0 without it.
     A shared KV pool (SP1) serves only with FA1u: llama.cpp's own CPU attention scans every cell of a unified pool for
@@ -125,9 +112,15 @@ def gpu_offload(L: Any | None = None) -> bool:
     """Whether the loaded llama.cpp library has a GPU backend to offload layers to."""
     try:
         L = L or bindings()
-        return bool(L.llama_supports_gpu_offload())
+        return bool(ggml_devices(L))
     except Exception:  # noqa: BLE001 - no library, no GPU
         return False
+
+
+def cuda_kernel_device(L: Any | None = None) -> bool:
+    """KG1/KG5 target a single CUDA GPU. Other registered providers retain their own kernels."""
+    devices = ggml_devices(L)
+    return len(devices) == 1 and devices[0]["provider"] == "cuda"
 
 
 def pad_table(prices: dict[int, float], margin: float = 0.95) -> dict[int, int]:
@@ -144,7 +137,12 @@ def pad_table(prices: dict[int, float], margin: float = 0.95) -> dict[int, int]:
 def gpu_layers(L: Any | None = None) -> int:
     """Layers to offload: IRONMULE_GGML_GPU_LAYERS, else all (-1 means every layer to llama.cpp) where a GPU backend is."""
     if GPU_LAYERS is not None:
-        return int(GPU_LAYERS)
+        requested = int(GPU_LAYERS)
+        if requested < -1:
+            raise ValueError("IRONMULE_GGML_GPU_LAYERS must be -1 (all layers) or a nonnegative count")
+        if requested and not gpu_offload(L):
+            raise ValueError("IRONMULE_GGML_GPU_LAYERS requested offload but GGML registered no GPU")
+        return 999 if requested == -1 else requested
     return 999 if gpu_offload(L) else 0
 
 
@@ -428,6 +426,8 @@ class GgmlEngine:
         L.llama_backend_init()
         self._owns_model = model is None  # SEQ1: a width measurement opens several contexts on one loaded model
         self.gpu_layers = gpu_layers(L)  # the same for a context opened on an already loaded model (SEQ1)
+        if self.gpu_layers and KG_LIB and not cuda_kernel_device(L):
+            raise ValueError("a generated CUDA kernel library needs exactly one GGML CUDA device")
         if model is None:
             mparams = L.llama_model_default_params()
             mparams.n_gpu_layers = self.gpu_layers
@@ -768,14 +768,14 @@ class GgmlEngine:
         return tuple(sorted(found))
 
     # --- decode calls -------------------------------------------------------------------------------------------------
-    def _decode(self, rows: list[tuple[int, int, int, bool]]) -> list[int]:
+    def _decode(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         b = self.batch
         b.n_tokens = len(rows)
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
             b.seq_id[i][0] = seq
         status = self.L.llama_decode(self.ctx, b)
-        if status == 1 and getattr(self, "pool", None) is not None:  # SP1: no free cells; drop the cached sequences
+        if status == 1 and evict and getattr(self, "pool", None) is not None:  # SP1: no free cells; drop the cached sequences
             with self._lock:
                 while self.pool._evict(None):
                     pass
@@ -818,9 +818,11 @@ class GgmlEngine:
             # ids, so a new request takes the lowest free id unless a kept prefix of 64 tokens or more is elsewhere
             best = min(self._free)
             if self.prefix_reuse and self._kept:
+                lowest = best
                 for seq in self._free:
                     n = self._common(self._kept.get(seq) or [], ids)
-                    if n >= max(64, keep + 1):
+                    # Reuse even a short match when the preferred stream already holds it.
+                    if (seq == lowest and n >= keep) or (n >= 64 and n > keep):
                         best, keep = seq, n
             return best, min(keep, len(ids) - 1)
         if self.prefix_reuse and self._kept:
@@ -912,6 +914,7 @@ class GgmlEngine:
                 return True
             return False
 
+        learning = getattr(self.pilot, "learning", None)
         decision = {"cap": 1 << 30, "budget": 1 << 30, "draft": True}
         arrived = 0
         try:
@@ -919,8 +922,6 @@ class GgmlEngine:
                 if self.pilot is not None:  # PI1: threads, running cap, prompt budget and drafting for this step
                     ctx = (sum(len(j.ids) + len(j.tokens) for j in active.values()) / len(active)) if active else 0.0
                     decision = self.pilot.decide(len(active), len(pending), sum(len(j.ids) for j in pending), ctx)
-                    if decision["threads"] != self.threads:
-                        self.set_threads(decision["threads"])
 
                 def room() -> int:
                     return max(0, min(self._slots(), decision["cap"] - len(active)))
@@ -930,6 +931,8 @@ class GgmlEngine:
                     served.extend(more)
                     pending.extend(more)
                     arrived += len(more)
+                if self.pilot is not None and learning is None and decision["threads"] != self.threads:
+                    self.set_threads(decision["threads"])
                 # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
                 # budget (whole prompts, at least one), and one passed over too often first
                 fresh: list[tuple[int, Job, int]] = []
@@ -981,6 +984,8 @@ class GgmlEngine:
                     self.prompt_tokens += len(job.ids)
                     self.reused_tokens += keep
                     fresh.append((seq, job, keep))
+                if fresh and learning is not None and decision["threads"] != self.threads:
+                    self.set_threads(decision["threads"])  # includes separate prefills issued before the main decode
                 if not active and not fresh:
                     if pending:
                         continue
@@ -1111,6 +1116,18 @@ class GgmlEngine:
                             held = 0
                         rows += [(bos, held + j, sq, False) for j in range(per)]
                         fillers.append((sq, held))
+                if rows and learning is not None:
+                    threads = decision["threads"]
+                    # The learned trials priced only one real decode row per sequence. Draft selection,
+                    # padding and late admissions above finish before this test of the actual call.
+                    if (not fresh and not pending and not fillers and not modelled and len(rows) == len(order)
+                            and len(order) <= learning.max_rows and not self.pilot.last_fallback):
+                        band = int(ctx) // learning.bin_size
+                        if all((len(active[s].ids) + len(active[s].tokens)) // learning.bin_size == band
+                               for s in order):
+                            threads = learning.choose(ctx, self.pilot.load.foreign, threads, len(order))
+                    if threads != self.threads:
+                        self.set_threads(threads)
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
                 seconds = time.perf_counter() - started
@@ -1259,7 +1276,7 @@ def rank_settings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
     """GG1 (amendment of 2026-11-10): llama.cpp's flash attention and unified KV cache, each on and off, timed on a fixed
-    synthetic workload (8 sequences of a fixed 64-token prompt and one sequence alone, `steps` decode steps each,
+    synthetic workload (up to 8 configured sequences of a fixed 64-token prompt and one sequence alone, `steps` decode steps each,
     median of `repeats`); the setting with the highest geometric mean of the two rates."""
     rows = []
     for setting in SETTINGS:
@@ -1267,7 +1284,8 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
         try:
             prompt = (engine.tokenize(CHECK_TEXT) * 8)[:64]
             rates = {}
-            for width in (8, 1):
+            wide = min(8, engine.seqs)
+            for width in dict.fromkeys((wide, 1)):
                 times = []
                 for _ in range(repeats):
                     engine.L.llama_memory_clear(engine.memory, True)
@@ -1280,7 +1298,7 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
                 rates[str(width)] = width * steps / statistics.median(times)
         finally:
             engine.close()
-        rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates["8"] * rates["1"])})
+        rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates[str(wide)] * rates["1"])})
     # ST1 (2026-11-15): a float32 KV cache moves twice the bytes per attended token, which a 64-token tuning context
     # does not show: it ranks first only where it beats the rest by KV_F32_MARGIN (two fresh starts on the 4-vCPU Xeon
     # ranked it first and third on 1-6 % noise, and it then served 30 % slower at the context of real requests)
@@ -1345,26 +1363,31 @@ def memory_bytes() -> tuple[int, int]:
 
 
 def gpu_memory_bytes(devices: str | None = None) -> tuple[int, int] | None:
-    """(free, total) bytes of the GPUs a context will use, from `nvidia-smi` (MG2): the visible devices' sum when a model
-    is split over them, or the one device named in `devices`. None where no NVIDIA GPU answers."""
-    import subprocess
+    """Free and total memory from the same GGML registry that runs the model.
 
-    command = ["nvidia-smi", "--query-gpu=index,memory.free,memory.total", "--format=csv,noheader,nounits"]
-    try:
-        done = subprocess.run(command, capture_output=True, text=True, timeout=20, check=True)
-    except (OSError, subprocess.SubprocessError):
+    A selected CUDA worker may remap a physical index or UUID. Query its registry in a
+    child before opening the model, never sum cards from another provider by host index.
+    """
+    rows = ggml_devices()
+    if devices is not None:
+        if not rows or any(row["provider"] != "cuda" for row in rows):
+            return None
+        if devices != os.environ.get("CUDA_VISIBLE_DEVICES"):
+            import subprocess
+            query = "import json;from ironmule_devices import ggml_devices;print(json.dumps(ggml_devices()))"
+            try:
+                proc = subprocess.run([sys.executable, "-c", query], capture_output=True, text=True, check=True,
+                                      env={**os.environ, "CUDA_VISIBLE_DEVICES": devices}, timeout=15)
+                rows = json.loads(proc.stdout)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                return None
+            if any(row["provider"] != "cuda" for row in rows):
+                return None
+    if SPLIT == "none":
+        rows = rows[:1]  # llama.cpp's main GPU is device 0
+    if not rows or any(not (0 <= row["free_memory"] <= row["total_memory"] and row["total_memory"] > 0) for row in rows):
         return None
-    rows = {}
-    for line in done.stdout.strip().splitlines():
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) == 3 and all(p.isdigit() for p in parts):
-            rows[parts[0]] = (int(parts[1]) * 2**20, int(parts[2]) * 2**20)
-    visible = devices or os.environ.get("CUDA_VISIBLE_DEVICES")
-    if visible:
-        rows = {k: v for k, v in rows.items() if k in [d.strip() for d in visible.split(",")]}
-    if not rows:
-        return None
-    return sum(v[0] for v in rows.values()), sum(v[1] for v in rows.values())
+    return sum(row["free_memory"] for row in rows), sum(row["total_memory"] for row in rows)
 
 
 def fitting_widths(cell_bytes: int, seq_ctx: int, model_bytes: int, available: int, total: int) -> list[int]:
@@ -1481,18 +1504,27 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     on_gpu = gpu_layers() > 0
     if on_gpu:  # MG2: the KV cache and the weights live in the GPU's memory
         found = gpu_memory_bytes(device)
-        if found is not None:
-            available, total = found
+        if found is None:
+            return {"sequences": 1, "memory": "gpu-unknown", "seq_ctx": seq_ctx,
+                    "reason": "visible GGML device memory unavailable; width measurement skipped"}
+        available, total = found
+    # Under generated matmuls even the default attention setting can change answers. AG10 may then
+    # vary width only within the settings actually chosen by the gate.
+    default_alternative = not os.environ.get("IRONMULE_KG_LIB")
     key = hashlib.sha256(json.dumps([file_sha256(gguf), settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS,
+                                     default_alternative,
                                      int(extra_bytes) >> 28,
-                                     WIDTH_GAIN, machine_key(), round(total / 2**30)], sort_keys=True).encode()
+                                     WIDTH_GAIN, machine_key(), device, round(total / 2**30)], sort_keys=True).encode()
                          ).hexdigest()[:24]
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"width-{key}.json"
+    model_bytes = os.path.getsize(gguf) + int(extra_bytes)
     if stored.exists():
         try:
-            return json.loads(stored.read_text())
-        except (OSError, ValueError):
+            cached = json.loads(stored.read_text())
+            if fitting_widths(cached["cell_bytes"], seq_ctx, model_bytes, available, total) == cached["fitting"]:
+                return cached
+        except (OSError, ValueError, KeyError, TypeError):
             pass
     root = root or Path(__file__).resolve().parents[1]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
@@ -1511,7 +1543,6 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         except (OSError, ValueError, IndexError, subprocess.SubprocessError):
             return None
 
-    model_bytes = os.path.getsize(gguf) + int(extra_bytes)  # DM1: a draft model's weights and KV take memory too
     cell = child(CELL_CHILD, {"settings": settings})
     record: dict[str, Any] = {"seq_ctx": seq_ctx, "memory_available": available, "memory_total": total,
                               "memory": "gpu" if on_gpu else "host",
@@ -1536,7 +1567,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         # by definition and differs from flash attention in what a step pays per attended token
         alternatives = [measured]
         default = {k: False for k in DEFAULT_SETTINGS}
-        if {k: v for k, v in settings.items() if v} and os.environ.get("IRONMULE_GGML_AGENT", "1") != "0":
+        if default_alternative and any(settings.values()) and os.environ.get("IRONMULE_GGML_AGENT", "1") != "0":
             other = child(WIDTH_CHILD, {"settings": default, "seq_ctx": seq_ctx, "widths": widths,
                                         "long_ctx": AGENT_LONG_CTX})
             if other is not None:
@@ -1552,7 +1583,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
 
 
 def machine_key() -> str:
-    """What makes a measured setting this machine's: architecture, CPU count and the CPU's model name."""
+    """Bind GGML measurements to the CPU, visible backend devices and driver context."""
     import platform
 
     model = ""
@@ -1563,7 +1594,13 @@ def machine_key() -> str:
                 break
     except OSError:
         pass
-    return f"{platform.machine()}|{os.cpu_count()}|{model}"
+    from ironmule_devices import runtime_binding
+
+    from .ggml_binary import identity as native_identity
+
+    binding = {**runtime_binding(ggml_devices()), "native": native_identity()}
+    digest = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
+    return f"{platform.machine()}|{os.cpu_count()}|{model}|{digest}"
 
 
 TUNE_CHILD = r"""
@@ -1576,16 +1613,35 @@ GATE_CANDIDATE = r"""
 import json, sys
 from ironmule.ggml_engine import GgmlEngine
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, gate_lead
+from ironmule.factual_gate import ggml_scores
+from pathlib import Path
 data = json.loads(sys.stdin.read())
-engine = GgmlEngine(sys.argv[1], speculate=False, **data["settings"])
+fixture = {"seqs": 32, "seq_ctx": 1024, "max_rows": 32} if data["kg5_shape"] else {}
+engine = GgmlEngine(sys.argv[1], speculate=False, shared=data["shared"], **fixture, **data["settings"])
 ids, bos, rows = data["ids"], data["bos"], []
 for index in range(CHUNKS):
     chunk = ids[index * CHUNK_TOKENS:(index + 1) * CHUNK_TOKENS + 1]
     if len(chunk) < CHUNK_TOKENS + 1:
         break
     rows.append(engine.chunk_nll(chunk, gate_lead(chunk, bos)))
+snapshot = Path(data["snapshot"])
+if snapshot.suffix.lower() == ".gguf":
+    from ironmule.gguf_tokenizer import GgufTokenizer
+    tokenizer = GgufTokenizer(snapshot)
+else:
+    from mlx_lm.tokenizer_utils import load
+    tokenizer = load(snapshot)
+import os
+require_dispatch = os.environ.get("IRONMULE_KG5") == "1" and data["settings"].get("flash_attn")
+if require_dispatch:
+    from ironmule.factual_gate import kg5_counter
+    launches = kg5_counter(engine)
+    before = launches()
+facts = ggml_scores(engine, tokenizer, kg5=data["kg5_shape"])
+dispatched = launches() - before if require_dispatch else None
+repeat = ggml_scores(engine, tokenizer, kg5=data["kg5_shape"]) if data["reference"] else None
 engine.close()
-print(json.dumps({"nll": rows}))
+print(json.dumps({"nll": rows, "facts": facts, "repeat": repeat, "kg5_launches": dispatched}))
 """
 
 
@@ -1605,14 +1661,44 @@ DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
 SETTING_KEYS = ("flash_attn", "kv_unified", "kv_f32", "kv_q8")
 
 
+def _kg5_files() -> tuple[Path, ...]:
+    """Identify the CUDA build and optional interposers. An ambiguous loader path disables cache reuse."""
+    folder = Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+    if not folder.is_absolute():
+        return ()
+    files = []
+    for stem in ("libllama.so", "libggml-cuda.so"):
+        linked = folder / stem
+        if linked.is_file():
+            files.append(linked.resolve())
+        else:
+            found = {p.resolve() for p in folder.glob(stem + ".*") if p.is_file()}
+            if len(found) != 1:
+                return ()
+            files.extend(found)
+    for entry in os.environ.get("LD_PRELOAD", "").replace(":", " ").split():
+        path = Path(entry)
+        if not path.is_absolute() or not path.is_file():
+            return ()
+        files.append(path.resolve())
+    return tuple(files)
+
+
 def gate_key(snapshot: str, gguf: str) -> str:
     """The gate's cache key: the GGUF, the snapshot (or the GGUF itself, GG4), the gate rule, the engine, the machine,
     and the generated kernel library the gate ran with (KG1: IRONMULE_KG_LIB), so that a new library is gated anew."""
+    from .factual_gate import VERSION as FACT_VERSION
     from .numeric_choice import GATE_VERSION
 
     kg = os.environ.get("IRONMULE_KG_LIB") or ""
-    return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
-                                     OPTION_BOUND, machine_key(), file_sha256(kg) if kg and Path(kg).is_file() else ""],
+    kg5 = None
+    if os.environ.get("IRONMULE_KG5") == "1":
+        kg5 = {"libraries": [file_sha256(str(p)) for p in _kg5_files()],
+               "device": os.environ.get("CUDA_VISIBLE_DEVICES"), "gpu_layers": gpu_layers(),
+               "width": SEQS, "context": SEQ_CTX}
+    return hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, FACT_VERSION,
+                                     ENGINE_VERSION, OPTION_BOUND, machine_key(), SEQS, SEQ_CTX, kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
+                                     file_sha256(kg) if kg and Path(kg).is_file() else ""],
                                     sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -1620,17 +1706,22 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     """The owner's bar (2026-11-10, 2026-11-11): answer quality at least llama.cpp's, its own options included. The
     engine's settings (all llama.cpp options) are timed (`autotune`), and the fastest one whose perplexity on the
     numeric gate's chunks, through the multi-position decode, is within `OPTION_BOUND` of llama.cpp's default setting
-    on the same GGUF (the ratio's 95 % upper end) serves; the default passes by definition. Cached by the GGUF,
-    snapshot, gate rule, engine version and machine."""
+    on the same GGUF (the ratio's 95 % upper end) serves when it also preserves short-answer accuracy under QG1.
+    Reference and candidate see the same questions. Cached by the GGUF, snapshot, gate rule, engine version and machine."""
     import subprocess
 
+    from .factual_gate import KG5_SHAPE, VERSION as FACT_VERSION, compare
     from .numeric_choice import GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
     key = gate_key(snapshot, gguf)
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"{key}.json"
-    if stored.exists():
+    # A fresh worker in the opposite benchmark order may reuse its own content-matched gate.
+    experimental = os.environ.get("IRONMULE_KG5") == "1"
+    shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
+    cacheable = not experimental or bool(_kg5_files())
+    if cacheable and stored.exists():
         try:
             kept = json.loads(stored.read_text())
             if not (gpu_layers() > 0 and kept.get("ran") and "streams" not in kept):  # KG3: gate the streams too
@@ -1641,8 +1732,12 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
            "HF_HUB_OFFLINE": "1"}
     started = time.perf_counter()
 
-    def child(code: str, argument: str, payload: str | None = None) -> tuple[dict[str, Any] | None, str]:
-        done = subprocess.run([sys.executable, "-c", code, argument], env=env, input=payload, capture_output=True,
+    def child(code: str, argument: str, payload: str | None = None, *, stock: bool = False):
+        child_env = {**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0"} if stock else env
+        if shape and code == GATE_CANDIDATE:
+            # Admit all 32 near-1k prompts on the first step. Width and context are fixed in the measuring child.
+            child_env = {**child_env, "IRONMULE_PILOT": "0", "IRONMULE_GGML_PROMPT_BUDGET": str(32 * 1024)}
+        done = subprocess.run([sys.executable, "-c", code, argument], env=child_env, input=payload, capture_output=True,
                               text=True, timeout=7200, check=False)
         if done.returncode != 0:
             return None, done.stderr[-300:]
@@ -1655,47 +1750,62 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     if text is None:
         return {"ran": False, "passes": False, "reason": f"the gate's text could not be tokenized: {error}"}
 
-    def nll(settings: dict[str, bool]) -> tuple[list[float] | None, str]:
-        out, why = child(GATE_CANDIDATE, gguf, json.dumps({**text, "settings": settings}))
-        return (None, why) if out is None else (out["nll"], "")
+    def measure(settings: dict[str, bool], *, reference: bool = False, shared: bool = False):
+        payload = json.dumps({**text, "snapshot": str(snapshot), "settings": settings, "reference": reference,
+                              "shared": shared, "kg5_shape": shape})
+        return child(GATE_CANDIDATE, gguf, payload, stock=reference)
 
-    reference, error = nll(DEFAULT_SETTINGS)
+    reference, error = measure(DEFAULT_SETTINGS, reference=True)
     if reference is None:
         return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}"}
+
+    measured: dict[tuple, dict[str, Any]] = {}
+
+    def check(settings: dict[str, bool], *, shared: bool = False) -> dict[str, Any]:
+        identity = (shared, tuple(sorted(settings.items())))
+        if identity in measured:
+            return measured[identity]
+        output, error = measure(settings, shared=shared)
+        if output is None:
+            return {"settings": settings, "passes": False, "error": error}
+        interval = ratio_interval(reference["nll"], output["nll"])
+        factual = compare(reference["facts"], reference["repeat"], output["facts"], kg5=shape)
+        launches = output.get("kg5_launches")
+        hit = not (experimental and settings.get("flash_attn")) or isinstance(launches, int) and launches > 0
+        record = {"settings": settings, **interval, "factual": factual, "kg5_launches": launches,
+                  "passes": interval["interval"][1] <= OPTION_BOUND and factual["passes"] and hit}
+        measured[identity] = record
+        return record
+
     tried = []
-    for settings in tune["order"]:  # the fastest setting that is not worse than llama.cpp's default serves
-        if settings == DEFAULT_SETTINGS:
-            tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference),
+    for settings in tune["order"]:  # the fastest option passing likelihood and factual correctness serves
+        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB"):
+            tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference["nll"]),
                           "passes": True})
             break
-        rows, error = nll(settings)
-        if rows is None:
-            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}", "tried": tried}
-        interval = ratio_interval(reference, rows)
-        tried.append({"settings": settings, **interval, "passes": interval["interval"][1] <= OPTION_BOUND})
-        if tried[-1]["passes"]:
+        row = check(settings)
+        if "error" in row:
+            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {row['error']}", "tried": tried}
+        tried.append(row)
+        if row["passes"]:
             break
     chosen = tried[-1]
+    if not chosen["passes"]:
+        return {"ran": True, "passes": False, "reason": "no configuration passed both quality checks", "tried": tried}
     shared = None
-    if fa1_version() >= 3 or gpu_layers() > 0:  # SP1: the shared pool (unified KV, flash attention: FA1u on a CPU,
-        # llama.cpp's own on a GPU) is gated on its own
-        settings = {**chosen["settings"], "flash_attn": True, "kv_unified": True}
-        rows, error = nll(settings)
-        shared = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
-                  else {"settings": settings, "error": error})
-        shared["passes"] = rows is not None and shared["interval"][1] <= OPTION_BOUND
+    if fa1_version() >= 3 or gpu_layers() > 0:
+        shared = check({**chosen["settings"], "flash_attn": True, "kv_unified": True}, shared=True)
     streams = None
-    if gpu_layers() > 0:  # KG3: one KV stream per request (flash attention, no unified cache) is gated on its own
-        settings = {**chosen["settings"], "flash_attn": True, "kv_unified": False}
-        rows, error = nll(settings)
-        streams = ({"settings": settings, **ratio_interval(reference, rows)} if rows is not None
-                   else {"settings": settings, "error": error})
-        streams["passes"] = rows is not None and streams["interval"][1] <= OPTION_BOUND
+    if gpu_layers() > 0:
+        streams = check({**chosen["settings"], "flash_attn": True, "kv_unified": False})
     result = {"ran": True, "shared": shared, "streams": streams,
               **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
               "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
-              "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}
+              "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION,
+              "factual_version": FACT_VERSION, "key": key}
+    if not cacheable:
+        return result
     try:
         cache.mkdir(parents=True, exist_ok=True)
         stored.write_text(json.dumps(result))

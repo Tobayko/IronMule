@@ -90,7 +90,7 @@ correct it.
 
 ## Open: the GGUF engine and the Pilot
 
-### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
+### QG1 — A correctness check for answer quality
 
 **Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers
 stay factually correct. QG1 adds that check: a fixed set of questions with checkable answers (arithmetic, facts,
@@ -98,6 +98,19 @@ extraction from a given context), each answered greedily by the reference path a
 passes when its share of correct answers is not lower than the reference's by more than the reference's own A/A
 noise. It joins the perplexity gate for every path that changes tokens; its protocol is fixed before it serves a
 decision.
+
+The GGUF gate now compares 18 greedy short answers (six each for arithmetic, extraction and general knowledge),
+with a repeat of the reference and a 32-token limit. QG1 v3 scores the entire final answer. It accepts an
+exact value or a verified restatement, such as a complete equation with the requested operands and result,
+a value assigned to the requested slot, or one of the listed affirmative factual statements. Each category
+must score at least as well as the lower of
+the two informative reference scores. An arm with failed generations cannot qualify. Changed GGUF settings must
+pass both this check and the existing perplexity bound; the stock default remains available. QG1 covers the regular
+settings and the separate shared-pool and stream checks. The T4 KG5 shape check (`1024,32,8`) uses 32 scored
+requests with 960–970 prompt tokens per stream on both arms, and the flash candidate must register an actual
+kernel launch during the answer check. Its small set checks for regressions in these tasks;
+it does not establish general factual accuracy. The MLX numeric-plan and stacked scheduling protocols keep their
+existing criteria. See `ironmule/factual_gate.py` for the prompts, grading and seeded holdouts.
 
 ### PI3 — The Pilot decides on GPUs too (owner goal 2026-11-16; accepted by the owner 2026-11-17)
 
@@ -182,7 +195,7 @@ either way. Open: attention (10-25 ms of a 32-request step) and Q6_K beyond 8 to
 training on the KG4-era costs was checked first in the dream world (LAB.md, PI4): the shipped weights are already at
 the best of the remaining decisions there, so the owner chose not to spend the quota on it.
 
-### NEXT — What would take the GPU further, by what it is worth (noted 2026-11-17 at the owner's request; not started)
+### NEXT — What would take the GPU further (priorities measured 2026-11-17)
 
 Measured on a Kaggle T4 with Qwen3-4B Q4_K_M after KG4 (LAB.md, KG4 and PI4); each item needs the owner's approval
 before it spends GPU quota.
@@ -193,6 +206,8 @@ before it spends GPU quota.
    (`fattn.cu`: `mma_faster_for_bs1`); a decode kernel that reads each KV head once for its 4 query heads could near
    halve it. Needs a hook in `ggml-cuda/fattn.cu` (a patch beside kg1) and one rebuild of llama.cpp (about 57 minutes,
    kept as a kernel output as KG2's build is). Kill: no 10 % shorter 32-request step at context 1,000.
+   The experimental implementation now builds for SM75. The [bounded KG5 experiment](../lab/kg5/README.md)
+   can reuse an eligible KG2 binary via a small probe. An actual T4 result is outstanding.
 2. **The library's activation quantization.** `quant_frag` costs 1.5 ms of a 32-request step against llama.cpp's 0.8
    (one warp per 32 values, 216 launches). Wider work per warp, or one quantization shared by the matmuls that read the
    same activations (Q, K, V; gate and up), with a check that the buffer is unchanged. Worth about 0.7-1.5 ms (2-3 %).
@@ -211,13 +226,36 @@ before it spends GPU quota.
 Not worth the quota now: a new GPU Pilot training (PI4: the shipped weights are already at the best decisions left
 on such a GPU).
 
-### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; built, simulated)
+### GPU kernel experience across startups
+
+The CUDA generator binds its tuning report to the GGUF contents, visible CUDA devices, driver and generator/toolchain.
+It retains numerical rejections as well as measured winners. A later startup reuses the library after checking its
+digest, or skips a previously rejected search for the same binding. Resource or launch failures remain eligible
+for a retry. A new file or device is measured again. Automatic generated-kernel tuning requires a worker with
+one visible CUDA device, since the timing loop measures only that device. The end-to-end step comparison still
+decides whether a built kernel is faster on the serving machine. Hardware performance of these cache changes has
+not been measured.
+
+### Local Pilot thread weights (opt-in, 2026-11-18)
+
+The CPU Pilot has an optional hardware model that learns from scratch on real thread experiments and persists
+gains, regressions and token mismatches. It prioritises experiments for one to four concurrent decodes at observed
+CPU contention and context lengths. Local thread offsets serve after paired qualification and are withdrawn on a
+failed recheck. See the Pilot section in
+[AGENT.md](AGENT.md) and the Linux CPU smoke in [LAB.md](LAB.md). Open: exercise changing traffic with a
+model-sized working set, record how often a candidate qualifies, and compare end-to-end throughput and first-token
+latency with the shipped Pilot across alternating sessions.
+
+### AG10 — The ggml engine's own agent: world model, dreaming, switch and revert (2026-11-13, fast mode; simulated and tested on CPU)
 
 `ironmule/ggml_agent.py`, wired into the ggml bridge and `ironmule serve --gguf` (docs/AGENT.md, AG10). It chooses among
 the configurations SEQ1 measured (width x attention setting, all within the gate) by dreaming recorded traffic through
-a learned step-cost model, switches in idle time and reverts when the live steps disagree. Simulated in
-`training/ag10_sim.py` (LAB.md, AG10 S). Open: a hardware run where the traffic changes regime under a real server,
-and actions beyond configurations (thread count, admission) where a measurement shows headroom.
+a learned step-cost model, switches in idle time and reverts when the live steps disagree. The
+[local HTTP experiment](../lab/ag10/run_pair.py) tested a short–long–short transition on SmolLM2-135M.
+At 16 concurrent requests the agent switched from width 8 to 64 after request 65 and reverted after request 129.
+During the returning short phase it delivered 45.85 against 84.68 tokens/s for fixed width 8 in one paired run.
+See [the lab notes](LAB.md) for the scope and controls. The next question is whether an earlier live regression
+check can shorten a bad trial while retaining profitable switches on fresh traffic.
 
 ### FA1 — IronMule's flash-attention kernel for llama.cpp on AVX-512 (2026-11-13, fast mode; shipped as a patch)
 

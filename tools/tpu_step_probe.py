@@ -204,6 +204,9 @@ def probe(*, smoke: bool = False) -> dict[str, Any]:
     repeats, warmup, chain = (3, 1, 4) if smoke else (20, 3, CHAIN)
     report: dict[str, Any] = {"schema": SCHEMA, "smoke": smoke, "env": environment(), "config": config,
                               "cases": [list(c) for c in cases], "t4_reference": T4_REFERENCE, "results": []}
+    if not smoke and report["env"].get("backend") != "tpu":
+        report["error"] = "the full TPU probe requires JAX on a TPU; use --smoke for a local arithmetic check"
+        return report
     try:
         params = weights(config)
     except Exception as error:  # noqa: BLE001 - a missing runtime is a finding, not a crash
@@ -237,7 +240,9 @@ def analyse(report: dict[str, Any]) -> dict[str, Any]:
     reference = report.get("t4_reference") or T4_REFERENCE
     one = out["cases"].get("1 rows, 2048 cache", {}).get("chained_tok_s")
     eight = out["cases"].get("8 rows, 2048 cache", {}).get("chained_tok_s")
-    if one is None or eight is None:
+    if (report.get("env") or {}).get("backend") != "tpu":
+        out["decision"] = "no decision: TPU backend not established"
+    elif one is None or eight is None:
         out["decision"] = "no decision: a case did not run"
     elif one > reference["float16_single_tok_s"] and eight > reference["dense_width8_tok_s"]:
         out["decision"] = "TP1 reopens: the next step is a JAX decode path, fixed in the backlog before it is built"

@@ -15,8 +15,12 @@ variables the engine reads. Nothing is installed system-wide.
   kg1   CUDA builds only: a hook that hands a matmul to a kernel library generated and tuned for this GPU
         (IRONMULE_KG_LIB, `ironmule/kernel_gen.py`) when it has a kernel for it; llama.cpp's own kernels otherwise.
 
+  kg5   Linux CUDA builds: experimental grouped-query decode attention on Turing, opt-in for a measured shape.
+        Other shapes, types and devices use the library's own attention.
+
     python tools/build_ggml.py                 # CPU build in ~/.cache/ironmule/ggml
     python tools/build_ggml.py --cuda 75,86    # with CUDA for these compute capabilities (T4 = 75)
+    python tools/build_ggml.py --rocm          # detect AMD GPU targets via the local ROCm toolkit
     python tools/build_ggml.py --no-patches    # stock llama.cpp, for a fair comparison
 
 Then, as printed: `export IRONMULE_GGML_BINDINGS=... LLAMA_CPP_LIB_PATH=...` and `ironmule serve --engine ggml --gguf
@@ -26,6 +30,8 @@ Then, as printed: `export IRONMULE_GGML_BINDINGS=... LLAMA_CPP_LIB_PATH=...` and
 from __future__ import annotations
 
 import argparse
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,6 +46,8 @@ PATCH_SETS = {
     "fa1": ([("ggml/src/ggml-cpu/ops.cpp", "ops.cpp.diff")], [("fa1_kern.h", "ggml/src/ggml-cpu/fa1_kern.h")]),
     "row1": ([("ggml/src/ggml-cpu/amx/mmq.cpp", "mmq.cpp.diff"), ("ggml/src/ggml-cpu/amx/amx.cpp", "amx.cpp.diff")],
              [("row1_kern.h", "ggml/src/ggml-cpu/amx/row1_kern.h")]),
+    "kg5": ([("ggml/src/ggml-cuda/fattn.cu", "fattn.cu.diff")],
+            [(h, f"ggml/src/ggml-cuda/{h}") for h in ("kg5_dispatch.cuh", "kg5_kernel.cuh")]),
     "gr1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),
     "kg1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1, on the file gr1 left
 }
@@ -85,9 +93,11 @@ def patch(tree: Path, names: list[str]) -> list[str]:
     return applied
 
 
-def build(tree: Path, cuda: str | None, jobs: int) -> Path:
+def build(tree: Path, cuda: str | None, jobs: int, rocm: str | None = None) -> Path:
     log = tree / "ironmule-build.log"
     options = ["-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=ON", "-DLLAMA_CURL=OFF", "-DGGML_NATIVE=ON"]
+    if rocm:
+        options += ["-DGGML_HIP=ON", f"-DAMDGPU_TARGETS={rocm.replace(',', ';')}"]
     if cuda:
         options += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_ARCHITECTURES={cuda.replace(',', ';')}"]
         # Kaggle: a CUDA 12 toolkit where one is installed (its default CUDA 13 postdates llama.cpp 4227c9b), and its
@@ -109,18 +119,50 @@ def build(tree: Path, cuda: str | None, jobs: int) -> Path:
     return tree / "build" / "bin"
 
 
+def rocm_targets() -> str:
+    """Use ROCm's own enumeration, as CMake does for its native HIP architectures."""
+    root = Path(os.environ.get("ROCM_PATH") or "/opt/rocm")
+    for tool, flags in (("rocm_agent_enumerator", ["-t", "GPU"]), ("amdgpu-arch", [])):
+        path = shutil.which(tool) or next((str(p) for p in (root / "bin" / tool, root / "llvm/bin" / tool)
+                                        if p.is_file()), None)
+        if not path:
+            continue
+        try:
+            done = subprocess.run([path, *flags], capture_output=True, text=True, timeout=10, check=True)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        detected = {token.split(":")[0] for token in done.stdout.split()}
+        targets = sorted(t for t in detected if t != "gfx000" and re.fullmatch(r"gfx[0-9a-f]+", t))
+        if targets:
+            return ",".join(targets)
+    raise ValueError("no native AMD GPU architecture detected; install the ROCm toolkit or specify --rocm gfxTARGET")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--dest", type=Path, default=Path("~/.cache/ironmule/ggml").expanduser())
-    parser.add_argument("--cuda", metavar="ARCHS", help="build with CUDA for these compute capabilities, e.g. 75,86")
+    backend = parser.add_mutually_exclusive_group()
+    backend.add_argument("--rocm", nargs="?", const="auto", metavar="ARCHS",
+                         help="build for detected AMD GPUs or specify targets, e.g. gfx1100 or gfx90a,gfx942")
+    backend.add_argument("--cuda", metavar="ARCHS", help="build with CUDA for these compute capabilities, e.g. 75,86")
     parser.add_argument("--no-patches", action="store_true", help="stock llama.cpp")
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args(argv)
-    dest = args.dest / ("stock" if args.no_patches else "ironmule") / ("cuda" if args.cuda else "cpu")
+    if args.rocm == "auto":
+        try:
+            args.rocm = rocm_targets()
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(f"Detected AMD GPU targets: {args.rocm}", flush=True)
+    if args.rocm and not re.fullmatch(r"gfx[0-9a-f]+(?:,gfx[0-9a-f]+)*", args.rocm):
+        parser.error("--rocm requires comma-separated gfx targets, e.g. gfx1100")
+    dest = args.dest / ("stock" if args.no_patches else "ironmule") / ("rocm" if args.rocm else "cuda" if args.cuda else "cpu")
+    if args.rocm:
+        dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1"] if args.cuda else []))
-    lib = build(tree, args.cuda, args.jobs)
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1", "kg5"] if args.cuda else []))
+    lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")
     print(f"export LLAMA_CPP_LIB_PATH={lib}")

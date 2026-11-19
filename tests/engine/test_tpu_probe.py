@@ -67,13 +67,14 @@ def test_the_step_kernel_runs_one_pinned_commit_on_a_tpu(tmp_path):
 
 def test_the_step_analysis_decides_by_the_chained_step_against_both_t4_references():
     def report(one_s, eight_s):
-        return {"smoke": False, "t4_reference": step_probe.T4_REFERENCE, "results": [
+        return {"smoke": False, "env": {"backend": "tpu"}, "t4_reference": step_probe.T4_REFERENCE, "results": [
             {"rows": 1, "capacity": 2048, "position": 1024, "per_call_s": 0.05, "chained_step_s": one_s},
             {"rows": 8, "capacity": 2048, "position": 1024, "per_call_s": 0.05, "chained_step_s": eight_s},
             {"rows": 64, "capacity": 512, "position": 256, "error": "RESOURCE_EXHAUSTED"}]}
     fast = step_probe.analyse(report(0.010, 0.012))
     assert fast["cases"]["1 rows, 2048 cache"]["chained_tok_s"] == pytest.approx(100.0)
     assert fast["decision"].startswith("TP1 reopens")
+    assert step_probe.analyse({**report(0.010, 0.012), "env": {"backend": "cpu"}})["decision"].startswith("no decision")
     assert fast["cases"]["64 rows, 512 cache"] == {"error": "RESOURCE_EXHAUSTED"}
     assert step_probe.analyse(report(0.010, 0.040))["decision"].startswith("TP1 stays closed"), "8 rows: 200 tok/s"
     assert step_probe.analyse(report(0.020, 0.012))["decision"].startswith("TP1 stays closed"), "1 row: 50 tok/s"
@@ -143,3 +144,32 @@ def test_the_whole_step_matches_a_plain_numpy_step_and_its_chain_matches_single_
     report = step_probe.probe(smoke=True)
     assert report["smoke"] and len(report["results"]) == 2 and all("error" not in r for r in report["results"])
     assert step_probe.analyse(report)["decision"].startswith("smoke")
+
+
+def test_tpu_calibration_restores_only_its_measured_scope_and_keeps_negative_evidence(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "tools"))
+    import tpu_calibrate as calibrate
+
+    identity = {"shape": [8, 2048, 1024], "device": "TPU v5e", "smoke": False}
+    fast = [{"single": 1, "chained": 0.9}] * 4
+    noisy = [*fast[:3], {"single": 1, "chained": 1.01}]
+    assert calibrate.choose(fast, True) == "chained"
+    assert calibrate.choose(noisy, True) == "single"
+    assert calibrate.choose(fast, False) == "single"
+    path = tmp_path / "profile.json"
+    for passed, samples, choice in ((True, fast, "chained"), (True, noisy, "single"), (False, [], "single")):
+        record = {"binding": identity, "matched": passed, "pairs": samples, "choice": choice}
+        calibrate.save(path, record)
+        assert calibrate.restore(path, identity) == record
+        assert calibrate.restore(path, {**identity, "device": "TPU v6e"}) is None
+        assert calibrate.restore(path, {**identity, "smoke": True}) is None
+    calibrate.save(path, {**record, "choice": "chained"})
+    assert calibrate.restore(path, identity) is None
+    path.write_text('{"broken')
+    assert calibrate.restore(path, identity) is None
+
+
+def test_full_probe_refuses_cpu_before_allocating_weights(monkeypatch):
+    monkeypatch.setattr(step_probe, "environment", lambda: {"backend": "cpu"})
+    monkeypatch.setattr(step_probe, "weights", lambda config: pytest.fail("allocated the full model"))
+    assert "requires JAX on a TPU" in step_probe.probe()["error"]

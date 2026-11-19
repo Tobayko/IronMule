@@ -92,7 +92,7 @@ def build():
            f"-DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=ON -DCUDAToolkit_ROOT={cuda} "
            f"-DCMAKE_CUDA_COMPILER={cuda}/bin/nvcc -DCMAKE_LIBRARY_PATH={cuda}/lib64/stubs "
            + (f"-DCUDA_cuda_driver_LIBRARY={driver} " if driver else "") + "> build.log 2>&1 && "
-           f"cmake --build build --target llama-server llama -j 4 >> build.log 2>&1")
+           "cmake --build build --target llama-server llama -j 4 >> build.log 2>&1")
     REPORT["build_s"] = time.time() - t0
     pkg = W / "pkg/ironmule"
     pkg.mkdir(parents=True, exist_ok=True)
@@ -102,6 +102,12 @@ def build():
                  "kernel_gen.py"):
         url = f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/ironmule/{name}"
         (pkg / name).write_bytes(urllib.request.urlopen(url, timeout=60).read())
+    if "from .ggml_binary import" in (pkg / "ggml_engine.py").read_text():
+        url = f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/ironmule/ggml_binary.py"
+        (pkg / "ggml_binary.py").write_bytes(urllib.request.urlopen(url, timeout=60).read())
+    if "from ironmule_devices import" in (pkg / "ggml_engine.py").read_text():
+        url = f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/ironmule_devices.py"
+        (pkg.parent / "ironmule_devices.py").write_bytes(urllib.request.urlopen(url, timeout=60).read())
     facts = urllib.request.urlopen(f"https://raw.githubusercontent.com/Tobayko/IronMule/{COMMIT}/lab/row1/facts.py",
                                    timeout=60).read().decode()
     return eval(facts[facts.index("Q = [") + 4:facts.index("]\nge.") + 1])

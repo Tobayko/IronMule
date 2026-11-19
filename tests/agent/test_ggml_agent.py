@@ -201,3 +201,109 @@ def test_a_configuration_that_never_served_does_not_dream_its_prefill_free(tmp_p
         agent.observe_step(0, 6000, 0, 3.3 * 6 * math.exp(rng.gauss(0, 0.03)))
         t += 10.0
     assert agent.idle() is None and agent.history[-1]["action"] == "stay"
+
+
+def record_busy_window(agent, *, prompt, step, count=16):
+    start = (agent._last_arrival or 0.0) + 10
+    for i in range(count):
+        arrival = start + i * 0.001
+        agent.observe_request(arrival, prompt, 8, first=arrival + step, finished=arrival + 4 * step)
+
+
+def test_a_real_regression_with_matching_traffic_withdraws_a_trial_early(tmp_path):
+    agent = make_agent(tmp_path, heavy(47))
+    assert agent.idle() is None
+    record_busy_window(agent, prompt=1024, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    agent.switched("w32-kv8")
+    record_busy_window(agent, prompt=1018, step=0.3)
+    assert agent.idle() == "w16"  # 16 requests after switching rather than the old 64
+    assert agent.history[-1]["observed"]["rate_ratio"] < 0.5
+    scope = agent.history[-1]["observed"]["scope"]
+    assert agent.idle() == "w16"  # the engine was busy at the previous reconfiguration attempt
+    agent.switched("w16")
+    again = GgmlAgent(tmp_path, {"machine": "test"}, agent.configs, "w16")
+    assert again._observed_regression(scope, "w32-kv8", "w16")
+    assert not again._observed_regression(scope, "w16", "w32-kv8")
+    assert not again.rejected  # other workloads remain eligible
+
+
+def test_trial_cannot_regress_on_unmatched_or_untimed_traffic(tmp_path):
+    agent = make_agent(tmp_path, heavy(47))
+    assert agent.idle() is None
+    record_busy_window(agent, prompt=50, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    agent.switched("w32-kv8")
+    record_busy_window(agent, prompt=1024, step=0.5)
+    assert agent.idle() is None and agent.trial is not None
+    for i in range(16):
+        agent.observe_request(agent._last_arrival + 0.1, 50, 8)  # old or synthetic caller
+    assert agent.idle() is None and agent.trial is not None
+    assert len(agent.observations) == 2
+
+
+def test_rollback_waits_for_a_new_consistent_trace_before_further_exploration(tmp_path, monkeypatch):
+    import ironmule.ggml_agent as module
+
+    agent = make_agent(tmp_path, heavy(47))
+    assert agent.idle() is None
+    record_busy_window(agent, prompt=1024, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    agent.switched("w32-kv8")
+    record_busy_window(agent, prompt=1024, step=0.3)
+    assert agent.idle() == "w16"
+    # A restart between deciding to revert and physically switching restores the qualified incumbent.
+    agent = GgmlAgent(tmp_path, {"machine": "test"}, agent.configs, "w16")
+    assert agent.current == "w16" and agent.recovery["matching"] == 0
+    seen = []
+    def consistent(_configs, _prices, _current, memory, _rng):
+        seen.append([m[1] for m in memory])
+        return {"candidates": {"w32-kv8": {"low": 0.10, "ttft_ratio": 0.90}}}
+    monkeypatch.setattr(module, "dream", consistent)
+    for prompt in [1024, 50, 50, 50]:
+        record_busy_window(agent, prompt=prompt, step=0.1)
+        assert agent.idle() is None and not seen
+    record_busy_window(agent, prompt=50, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    assert seen == [[50] * 64]  # prior documents cannot qualify a switch under the new chat traffic
+
+
+def test_low_volume_after_rollback_supplies_fresh_arrivals_to_the_dream(tmp_path, monkeypatch):
+    import ironmule.ggml_agent as module
+
+    agent = make_agent(tmp_path, [])
+    agent.recovery = {"serving": "w16", "since": 0, "scope": None, "matching": 0}
+    agent.requests = 48
+    agent.memory.extend(heavy(48))  # existing pre-recovery experience
+    agent.recovery["since"] = agent.requests
+    seen = []
+    def fresh(_configs, _prices, _current, memory, _rng):
+        seen.append(len(memory))
+        return {"candidates": {}}
+    monkeypatch.setattr(module, "dream", fresh)
+    for i in range(64):
+        agent.observe_request(1 + i * 10, 20 + i, 8)
+        assert agent.idle() is None
+    assert seen == [64]
+    history = list(agent.history)
+    assert agent.idle() is None and agent.history == history
+    assert not agent.observations  # quiet traffic cannot directly promote or withdraw a configuration
+
+
+def test_continually_changing_load_eventually_leaves_recovery_without_old_evidence(tmp_path, monkeypatch):
+    import ironmule.ggml_agent as module
+
+    agent = make_agent(tmp_path, heavy(80))
+    agent.idle()
+    agent.trial = agent.pending_switch = None
+    agent.recovery = {"serving": agent.current, "since": agent.requests, "scope": None, "matching": 0}
+    seen = []
+    def fresh(_configs, _prices, _current, memory, _rng):
+        seen.append(len(memory))
+        return {"candidates": {}}
+    monkeypatch.setattr(module, "dream", fresh)
+    for i in range(module.RETRY_AFTER // 16):
+        record_busy_window(agent, prompt=40 if i % 2 else 1200, step=0.1)
+        agent.idle()
+    assert seen == [module.RETRY_AFTER]
+    assert agent.recovery is None
