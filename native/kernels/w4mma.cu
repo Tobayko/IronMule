@@ -39,6 +39,9 @@ __device__ __forceinline__ void mma16816(float (&c)[4], uint32_t a0, uint32_t a1
         : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
+__device__ __forceinline__ uint32_t h2_bits(half2 v) { return *reinterpret_cast<uint32_t *>(&v); }
+__device__ __forceinline__ half2 bits_h2(uint32_t u) { return *reinterpret_cast<half2 *>(&u); }
+
 // word i of a register array of uint4 (i a compile-time constant after unrolling: stays in registers)
 template <int NQ>
 __device__ __forceinline__ uint32_t wget(const uint4 (&q)[NQ], int i) {
@@ -355,8 +358,8 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
                         for (int h = 0; h < 2; h++) {
                             const half2 s2 = __float2half2_rn(S[t][h]);
-                            a[t][h] = h2_bits(__hmul2(__hsub2(*reinterpret_cast<const half2 *>(&a[t][h]), h1056), s2));
-                            a[t][2 + h] = h2_bits(__hmul2(__hsub2(*reinterpret_cast<const half2 *>(&a[t][2 + h]), h1056), s2));
+                            a[t][h] = h2_bits(__hmul2(__hsub2(bits_h2(a[t][h]), h1056), s2));
+                            a[t][2 + h] = h2_bits(__hmul2(__hsub2(bits_h2(a[t][2 + h]), h1056), s2));
                         }
 #pragma unroll
                     for (int nt = 0; nt < NT; nt++)
