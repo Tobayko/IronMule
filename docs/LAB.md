@@ -2991,3 +2991,24 @@ The matrices with 5120 output rows are the least efficient at 32 tokens (o about
   1, 2, 4 and 8 (`ironmule/w4_kernels.py`).
 Expected effect per 32-row decode step: about 0.4 ms of about 38 ms (1 %), inside the HTTP run-to-run spread, so no
 HTTP run. Pod time 0.54 h, 1.18 USD; total 16.82 of 20 USD.
+
+### 2026-11-19, sixth A100 session: every winner combined, with and without GR2
+Arm "all": PK1 packing with the gathering window, PK2 auto, AM1, CUDA graphs for one-row steps, the token writer
+thread, the 2 ms join forwarding, and a full W4R tuning on the pod with every variant so far (v7-v11, the SASS constant
+and byte_f changes, in-block K-splits, grid K-split up to 8). Arm "all_gr2": the same plus CUDA graphs for decode
+steps up to 32 rows (`IRONMULE_CUDA_GRAPHS_ROWS=32`). Left out on evidence: the draft model, FP prep variants.
+Same pod, same client, prompts and seeds, three repeats, `ironmule serve --agent on`:
+
+| Clients | all (r0 / r1 / r2) | all_gr2 (r0 / r1 / r2) | third session's best | vLLM AWQ |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 50.8 / 86.2 / 88.4 | 50.9 / 86.2 / 88.9 | 50.5 / 86.8 / 88.8 | 52.0 |
+| 8 | 148.5 / 151.8 / 151.5 | 148.8 / 152.7 / 153.0 | 148.5 / 153.9 / 155.0 | 184 |
+| 32 | 246.9 / 249.0 / 247.1 | 249.0 / 250.5 / 245.2 | 247.4 / 247.2 / 247.5 | 274 |
+
+Facts 18/18 everywhere except repeat 2 at 32 clients (17/18, the known "33 * 6" format answer).
+The startup width measurement rose to 996 tok/s at 32 sequences (929 in the third session, 876 at its start), and a
+32-row decode step through the server fell to about 35.4 ms (first-to-end 1,097 ms over 31 steps; 38.3 ms in the third
+session). The HTTP throughput did not move: with 32-token answers about 73 % of the 32-client wall time is the packed
+prefill (first tokens at 2.96-3.06 s here against 2.90-2.93 s in the third session, a different pod), so the decode
+gain (about 90 ms per wave) is the size of the prefill's pod-to-pod spread. GR2 again made no measurable difference.
+Pod time 0.52 h, 1.14 USD; total 17.96 of 20 USD.
