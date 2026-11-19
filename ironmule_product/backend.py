@@ -34,6 +34,10 @@ DENSE_STARTUP_TIMEOUT = 600.0  # KB1: the dense plan compiles and probes every k
 # retired then instead of at the request deadline plus its grace (up to twice the request timeout before).
 STALL_TIMEOUT_S = 300.0
 _CANCEL_POLL_SECONDS = 0.05
+# PK1-S: a running group's tick also forwards requests that join it. The worker sends nothing while its engine gathers
+# a burst (20 ms) and prefills it, so at the cancel cadence late arrivals of a burst missed that prefill and started
+# a second one; this cadence keeps them within the gather window.
+_JOIN_POLL_SECONDS = 0.002
 _DEFAULT_DEADLINE = object()
 STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
@@ -438,6 +442,8 @@ class MLXWorkerClient:
                     if remaining is None
                     else min(remaining, _CANCEL_POLL_SECONDS if cancel is not None or on_tick is not None else remaining)
                 )
+                if on_tick is not None:
+                    wait = min(wait, _JOIN_POLL_SECONDS)
                 selector.register(fd, selectors.EVENT_READ)
                 try:
                     events = selector.select(wait)
