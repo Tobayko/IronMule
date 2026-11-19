@@ -92,6 +92,14 @@ PREFIX_REUSE = os.environ.get("IRONMULE_GGML_PREFIX_REUSE", "1") != "0"
 GPU_LAYERS = os.environ.get("IRONMULE_GGML_GPU_LAYERS")
 SPLIT_MODES = {"none": 0, "layer": 1, "row": 2}
 SPLIT = os.environ.get("IRONMULE_GGML_SPLIT", "layer")
+# PK1 (2026-11-19, experiment): packed prefill on GPUs with one KV stream per sequence. Every prompt that starts in a step
+# goes into one native call, in ascending sequence order, so llama.cpp splits it into few rectangular micro-batches
+# (all sequences at the shortest remaining length, then the rest) instead of one call per prompt; the step's prompt
+# budget becomes PACK_TOKENS. IRONMULE_GGML_UBATCH sets llama.cpp's physical micro-batch (512 by default): larger ones
+# give the prompt matmuls more rows per weight read. "1" turns packing on; the agent may choose it per machine.
+PACK = os.environ.get("IRONMULE_GGML_PACK", "") == "1"
+PACK_TOKENS = int(os.environ.get("IRONMULE_GGML_PACK_TOKENS", 8192))
+UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
@@ -438,6 +446,8 @@ class GgmlEngine:
     prefill_long_shapes: dict[int, tuple[int, ...]] | None = None
     prefill_long_pairs = prefill_long_quads = 0
     prefill_batch_calls = prefill_batch_prompts = prefill_batch_rows = 0
+    pack = False
+    pack_calls = pack_prompts = pack_rows = 0
     gpu_layers = 0
     kg4_scope = None
     pool: "SharedPool | None" = None
@@ -661,8 +671,9 @@ class GgmlEngine:
     def _batch_for(self, count: int) -> Any:
         # ctypes' row pointers have no Python bounds. n_batch is the usable
         # limit even when extra native slots were reserved for speculative rows.
-        if count > self.seq_ctx:
-            raise ValueError(f"{count} decode rows exceed the context batch limit of {self.seq_ctx}")
+        cap = getattr(self, "batch_cap", self.seq_ctx)
+        if count > cap:
+            raise ValueError(f"{count} decode rows exceed the context batch limit of {cap}")
         self.batch.n_tokens = count
         return self.batch
 
@@ -695,7 +706,12 @@ class GgmlEngine:
         if physical != 512 and not (physical in (1024, 2048) and self.prefill_batch_long and self.gpu_layers
                                     and seqs == 32 and seq_ctx == 2048 and not shared and not kv_unified and flash_attn):
             raise ValueError("larger physical batches require the isolated split-KV long-prompt study")
-        params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, seq_ctx, physical
+        self.pack = PACK and bool(self.gpu_layers) and not shared and not kv_unified
+        logical = seq_ctx
+        if self.pack:  # PK1: one call carries a step's prompts; its micro-batch as set (or llama.cpp's 512)
+            logical = max(seq_ctx, PACK_TOKENS)
+            physical = min(logical, UBATCH or physical)
+        params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, logical, physical
         params.n_seq_max, params.n_threads, params.n_threads_batch = ids, threads, threads
         params.flash_attn, params.kv_unified = bool(flash_attn), bool(kv_unified)  # GG1: measured at the first start
         if DEFRAG > 0:  # KVD1: llama.cpp compacts the cache when holes reach this share of its attended range
@@ -719,7 +735,8 @@ class GgmlEngine:
         self.n_vocab = L.llama_vocab_n_tokens(self.vocab)
         self.memory = L.llama_get_memory(self.ctx)
         self.seqs, self.seq_ctx = seqs, seq_ctx
-        self.batch = L.llama_batch_init(max(seq_ctx, self.max_rows), 0, seqs)
+        self.batch_cap = max(logical, self.max_rows)
+        self.batch = L.llama_batch_init(self.batch_cap, 0, seqs)
         self.policy = StepPolicy(self.max_rows) if self.speculate else None
         if self.speculate and COLLECTIVE and getattr(self, "collective", None) is None:
             from .speculation import CollectiveIndex
@@ -963,6 +980,31 @@ class GgmlEngine:
         self.prefill_batch_rows += len(rows)
         return picks
 
+    def _pack_prefill(self, group: list[tuple[int, Job, int]]) -> list[int]:
+        """PK1: the prompts of `group` (ascending sequence ids) in as few native calls as the logical batch allows."""
+        picks: list[int] = []
+        rows: list[tuple[int, int, int, bool]] = []
+        observer = self.observer
+
+        def flush():
+            if not rows:
+                return
+            started = time.perf_counter() if observer is not None else 0.0
+            picks.extend(self._decode(rows))
+            if observer is not None:
+                observer(0, len(rows), 0, time.perf_counter() - started)
+            self.pack_calls += 1
+            self.pack_rows += len(rows)
+            rows.clear()
+
+        for seq, job, keep in group:
+            if rows and len(rows) + len(job.ids) - keep > self.batch_cap:
+                flush()
+            rows.extend((job.ids[pos], pos, seq, pos + 1 == len(job.ids)) for pos in range(keep, len(job.ids)))
+        flush()
+        self.pack_prompts += len(group)
+        return picks
+
     def check_prefill_batch(self, ids: list[int]) -> dict[str, Any]:
         """Compare the same real greedy requests with grouping disabled and enabled on this context."""
         limit = 8
@@ -1087,6 +1129,8 @@ class GgmlEngine:
                     # PB1: one KV stream per request on a GPU: the Pilot's prompt budget cost 2-9 % on a T4 and gained
                     # nothing there, so the step takes what the Pilot-off engine takes
                     budget = self.seq_ctx
+                    if getattr(self, "pack", False):  # PK1: a step's prompts share one packed call
+                        budget = self.batch_cap
                 if (admission_observer is not None and cohort is None and not active and 2 <= len(pending) <= 64
                         and all(j.limit == pending[0].limit for j in pending)):
                     # The same actual admission boundary the runtime rule can influence.
@@ -1242,7 +1286,14 @@ class GgmlEngine:
                 batched: list[tuple[int, Job]] = []
                 singles = fresh
                 delayed_groups = None
-                if self.prefill_batch and streams and len(fresh) > 1:
+                if getattr(self, "pack", False) and streams and fresh:
+                    group = sorted(fresh, key=lambda item: item[0])
+                    for sq, other, _ in group:
+                        active[sq] = other
+                    for (sq, other, _), pick in zip(group, self._pack_prefill(group), strict=True):
+                        take(sq, other, pick)
+                    singles = []
+                elif self.prefill_batch and streams and len(fresh) > 1:
                     def deliver_group(group):
                         for sq, other, _ in group:
                             active[sq] = other
@@ -1405,6 +1456,8 @@ class GgmlEngine:
                                   **({"long_shape_hits": {"2": self.prefill_long_pairs, "4": self.prefill_long_quads}}
                                      if self.prefill_batch_long else {}),
                                   "prompts": self.prefill_batch_prompts, "rows": self.prefill_batch_rows},
+                **({"pack": {"calls": self.pack_calls, "prompts": self.pack_prompts, "rows": self.pack_rows,
+                             "ubatch": UBATCH or 512, "batch": self.batch_cap}} if self.pack else {}),
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
