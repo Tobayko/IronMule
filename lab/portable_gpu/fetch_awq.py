@@ -1,4 +1,4 @@
-"""Fetch or verify the official, immutable Qwen3-32B AWQ checkpoint for a lab comparison."""
+"""Fetch or verify an official, immutable Qwen3 AWQ checkpoint (32B by default, or 8B) for a lab comparison."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +13,7 @@ import stat
 import urllib.request
 from pathlib import Path
 
+DEFAULT = "qwen3-32b"
 REPO = "Qwen/Qwen3-32B-AWQ"
 REVISION = "0499c3ac83fdef8810b907a23894ba91e95eddd8"
 TOKENIZER_REPO = "Qwen/Qwen3-32B"
@@ -33,6 +34,31 @@ FILES = {
     "model-00003-of-00004.safetensors": (4949671152, "6e9f763d8c31ad19f1cd67b0b599a38edffd76a4465a22ff5f7fcac46d820e63"),
     "model-00004-of-00004.safetensors": (4410702792, "87f180889fead12b00b1bdf4dca3a3a14e4510e1e200bf56e31898e120b993d8"),
 }
+
+CHECKPOINTS = {
+    "qwen3-32b": (REPO, REVISION, TOKENIZER_REPO, TOKENIZER_COMMIT, FILES),
+    "qwen3-8b": ("Qwen/Qwen3-8B-AWQ", "4da05a8edb55c6046cce958586c33b61da07bb79",
+                 "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218", {
+        "LICENSE": (11544, "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"),
+        "config.json": (1042, "7457674d8044143cd4159e47deecf28fd6698a9826569094b60d7bead8f351ee"),
+        "generation_config.json": (239, "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"),
+        "merges.txt": (1671853, "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"),
+        "tokenizer.json": (11422654, "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"),
+        "tokenizer_config.json": (9732, "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"),
+        "vocab.json": (2776833, "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"),
+        "model.safetensors.index.json": (74029, "ad18bc45a440aea0a3298ddfd41d01c48eb9afbd94345f6176c4290e1b524175"),
+        "model-00001-of-00002.safetensors": (4853922024, "6e112429856bc65e3837a9f38d6f6b71ffdda832cb46299a12f4fa8f6352516e"),
+        "model-00002-of-00002.safetensors": (1244659840, "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff"),
+    }),
+}
+MODEL = DEFAULT
+
+
+def select(model: str) -> None:
+    """Point this module at one pinned checkpoint; every later call verifies or fetches that one."""
+    global MODEL, REPO, REVISION, TOKENIZER_REPO, TOKENIZER_COMMIT, FILES
+    REPO, REVISION, TOKENIZER_REPO, TOKENIZER_COMMIT, FILES = CHECKPOINTS[model]
+    MODEL = model
 
 
 def _manifest() -> dict:
@@ -186,7 +212,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--verify-only", action="store_true")
+    parser.add_argument("--model", choices=sorted(CHECKPOINTS), default=DEFAULT)
     args = parser.parse_args()
+    select(args.model)
     if args.verify_only:
         print(json.dumps(verify(args.directory), sort_keys=True))
     else:

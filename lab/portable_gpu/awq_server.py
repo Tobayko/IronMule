@@ -13,19 +13,19 @@ from . import fetch_awq
 
 
 def check_snapshot(args):
-    """Use the four shards verified by fetch_awq.verify and the exact Qwen3-32B base tokenizer."""
+    """Use the shards verified by fetch_awq.verify and the exact base tokenizer of the selected Qwen3 model."""
     receipt = args.awq_manifest
     if not fetch_awq.unchanged(args.awq_dir, receipt):
         raise ValueError("AWQ snapshot differs from the local verification receipt")
     tokenizer = Path(args.tokenizer)
-    _, _, config_hash = compare_tokenizer.TOKENIZERS["qwen3-32b"]
+    _, _, config_hash = compare_tokenizer.TOKENIZERS[fetch_awq.MODEL]
     expected = {**compare_tokenizer._QWEN_FILES, "config.json": config_hash}
     if {p.name for p in tokenizer.iterdir()} != expected.keys():
-        raise ValueError("native AWQ needs the pinned Qwen3-32B base tokenizer directory")
+        raise ValueError(f"native AWQ needs the pinned {fetch_awq.MODEL} base tokenizer directory")
     for name, known in expected.items():
         with (tokenizer / name).open("rb") as handle:
             if hashlib.file_digest(handle, "sha256").hexdigest() != known:
-                raise ValueError(f"invalid Qwen3-32B tokenizer file: {name}")
+                raise ValueError(f"invalid Qwen3 tokenizer file ({fetch_awq.MODEL}): {name}")
     digest = hashlib.sha256(json.dumps(expected, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if getattr(args, "tokenizer_sha256", digest) != digest:
         raise ValueError("AWQ and GGUF tokenizer manifests differ")

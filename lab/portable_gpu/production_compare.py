@@ -1,4 +1,4 @@
-"""Compare real Qwen3-32B deployments using IronMule GGUF and vLLM AWQ on a single GPU."""
+"""Compare real Qwen3 (32B by default, or 8B) deployments using IronMule GGUF and vLLM AWQ on a single GPU."""
 from __future__ import annotations
 
 import argparse
@@ -20,13 +20,14 @@ DEPLOYMENTS = ('ironmule_gguf', 'vllm_awq')
 
 def arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    for flag, help_text in [('gguf', 'official pinned Qwen3-32B-Q4_K_M.gguf'),
-                            ('awq-dir', 'verified local Qwen3-32B-AWQ snapshot'),
-                            ('tokenizer', 'verified local Qwen3-32B base tokenizer and config'),
+    for flag, help_text in [('gguf', 'official pinned Qwen3 Q4_K_M GGUF of --model'),
+                            ('awq-dir', 'verified local Qwen3 AWQ snapshot of --model'),
+                            ('tokenizer', 'verified local base tokenizer and config of --model'),
                             ('vllm', 'vLLM executable'), ('output', 'new, separate deployment report path')]:
         parser.add_argument('--' + flag, type=Path, required=True, help=help_text)
     for flag in ('ironmule', 'agent-dir', 'log-dir'):
         parser.add_argument('--' + flag, type=Path)
+    parser.add_argument('--model', choices=sorted(fetch_awq.CHECKPOINTS), default=fetch_awq.DEFAULT)
     parser.add_argument('--concurrency', default='1,8,32')
     for flag, default in [('seed', secrets.randbits(32)), ('context', 2048), ('requests', 8), ('repeats', 3),
                           ('max-tokens', 32), ('startup-timeout', 1200), ('budget-seconds', 2700)]:
@@ -35,6 +36,7 @@ def arguments(argv):
                         help='optional per-deployment budget for a paired held-out trace, after final standard timings')
     parser.add_argument('--gpu-memory-utilization', type=float, default=.88)
     args = parser.parse_args(argv)
+    fetch_awq.select(args.model)
     try:
         args.concurrency = [int(w) for w in args.concurrency.split(',')]
     except ValueError:
@@ -50,12 +52,12 @@ def arguments(argv):
 
 def bind_inputs(args):
     artifacts = compare_servers.prepare_artifacts(args)
-    repo, revision, _, size, sha = fetch.MODELS['qwen3-32b']
+    repo, revision, _, size, sha = fetch.MODELS[args.model]
     if args.gguf.stat().st_size != size or args.gguf_sha256 != sha:
         raise compare.Unverified('GGUF differs from the pinned official Q4_K_M release')
-    tokenizer_repo, tokenizer_commit, config = compare_tokenizer.TOKENIZERS['qwen3-32b']
+    tokenizer_repo, tokenizer_commit, config = compare_tokenizer.TOKENIZERS[args.model]
     if artifacts['tokenizer_files'] != {**compare_tokenizer._QWEN_FILES, 'config.json': config}:
-        raise compare.Unverified('tokenizer differs from the official Qwen3-32B base release')
+        raise compare.Unverified(f'tokenizer differs from the official {args.model} base release')
     args.awq_manifest = fetch_awq.verify(args.awq_dir)
     if not args.awq_manifest.get('verified') or not args.awq_manifest.get('tokenizer_files_match'):
         raise compare.Unverified('AWQ checkpoint or tokenizer could not be confirmed')

@@ -11,7 +11,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-# These two Qwen3 releases share the complete tokenizer and chat template.
+# These Qwen3 releases share the complete tokenizer and chat template.
 _QWEN_FILES = {
     "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
     "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
@@ -21,6 +21,8 @@ _QWEN_FILES = {
 TOKENIZERS = {
     "qwen3-32b": ("Qwen/Qwen3-32B", "9216db5781bf21249d130ec9da846c4624c16137",
                   "97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb"),
+    "qwen3-8b": ("Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218",
+                 "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30"),
     "qwen3-06b": ("Qwen/Qwen3-0.6B", "c1899de289a04d12100db370d81485cdf75e47ca",
                   "660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd"),
 }
