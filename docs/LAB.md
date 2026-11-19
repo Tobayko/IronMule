@@ -2827,3 +2827,19 @@ Read: prefill is now faster than vLLM's (2.7 s against about 3.0 s for the 32-re
 at 8 and 16 % at 32 clients and level at 1 client on this GPU. What follows: the decode step, where the remaining
 cost is the kernels at 8-32 tokens (0.5-1.3 TB/s), small per-layer ops and launch gaps without CUDA graphs, and the
 19 MB logits copy per 32-row step (2.3 ms).
+
+Production server over HTTP, same prompts, seeds and client as the vLLM run (`ironmule serve --agent on` with the
+tuned W4R library, PK1, PK2 auto, 8192-row micro-batches; the quality gate passed with the generated kernels at a
+perplexity ratio of 0.994 against llama.cpp's default, interval 0.985-1.001; SEQ1 chose 64 sequences):
+
+| Clients | IronMule tok/s (repeat 0 / 1) | vLLM AWQ tok/s | p95 first token IronMule / vLLM | facts |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 44.5 / 83.4 | 51.8 / 51.9 | 285 / 208 ms | 18/18 both |
+| 8 | 140.2 / 144.5 | 183.1 / 182.1 | 972 / 870 ms | 18/18 both |
+| 32 | 214.3 / 214.1 | 273.0 / 270.6 | 2,986 / 3,045 ms | 18/18 both |
+
+IronMule is level or ahead at one client (speculation decides by prompt: -14 % and +61 %), 22 % behind at 8 and
+21 % behind at 32 clients. The owner's minimum (vLLM's speed) is not reached at 8 and 32 clients on this GPU.
+[IronMule results](../lab/pk1/results/a100-ironmule-w4-http.jsonl) · [W4R tuning record](../lab/pk1/results/a100-w4-tuning.json)
+Pod time 4.5 h, 9.92 USD. Next: decode steps at 8-32 rows (kernels at 1.3 TB/s for 1-8 tokens and 0.5 TB/s at 32,
+capture-safe W4R so CUDA graphs can stay on, an on-GPU argmax instead of the 19 MB logits copy).
