@@ -99,6 +99,10 @@ SPLIT = os.environ.get("IRONMULE_GGML_SPLIT", "layer")
 # give the prompt matmuls more rows per weight read. "1" turns packing on; the agent may choose it per machine.
 PACK = os.environ.get("IRONMULE_GGML_PACK", "") == "1"
 PACK_TOKENS = int(os.environ.get("IRONMULE_GGML_PACK_TOKENS", 8192))
+# PK1: from idle, a packed engine gathers arrivals for up to GATHER_MS (until GATHER_QUIET_MS pass without one), so a
+# burst that reaches the server over a few milliseconds is prefilled in one call instead of one prompt first
+GATHER_S = float(os.environ.get("IRONMULE_GGML_GATHER_MS", 20)) / 1000
+GATHER_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_QUIET_MS", 4)) / 1000
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # PK2 (2026-11-19): with packing on a CUDA build that has the PK2 patch, the engine measures at its start whether prompt
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
@@ -1263,6 +1267,22 @@ class GgmlEngine:
                     served.extend(more)
                     pending.extend(more)
                     arrived += len(more)
+                    if (getattr(self, "pack", False) and not active and pending and GATHER_S > 0
+                            and (more or arrived == 0)):
+                        # PK1: gather the rest of a burst before the first packed prefill
+                        started_wait = last = time.monotonic()
+                        while time.monotonic() - started_wait < GATHER_S and room():
+                            got = admit(room())
+                            now = time.monotonic()
+                            if got:
+                                served.extend(got)
+                                pending.extend(got)
+                                arrived += len(got)
+                                last = now
+                            elif now - last >= GATHER_QUIET_S:
+                                break
+                            else:
+                                time.sleep(0.0005)
                 if scope is not None:
                     scope.update(len(active) + len(pending))
                 if self.pilot is not None and learning is None and decision["threads"] != self.threads:
