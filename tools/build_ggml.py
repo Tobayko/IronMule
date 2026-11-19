@@ -17,6 +17,8 @@ variables the engine reads. Nothing is installed system-wide.
 
   kg5   Linux CUDA builds: experimental grouped-query decode attention on Turing, opt-in for a measured shape.
         Other shapes, types and devices use the library's own attention.
+  am1   a decode can return only each output row's argmax (ironmule_set_argmax_only), computed where the logits are,
+        instead of copying every row of logits to the host.
   pk2   CUDA builds only: from IRONMULE_CUBLAS_MIN_ROWS prompt rows on, quantized matmuls go through dequantization
         and cuBLAS with fp32 accumulation instead of llama.cpp's MMQ kernels; unset keeps llama.cpp's choice.
 
@@ -53,6 +55,7 @@ PATCH_SETS = {
     "gr1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),
     "kg1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1, on the file gr1 left
     "pk2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after kg1, on the file kg1 left
+    "am1": ([("src/llama-context.cpp", "llama-context.cpp.diff")], []),
 }
 
 
@@ -164,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1"] + (["gr1", "kg1", "kg5", "pk2"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

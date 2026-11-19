@@ -107,7 +107,7 @@ PK2_AUTO = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS") is None and os.environ.get
 # W4 (2026-11-19): on a CUDA GPU of compute capability 8.0 or newer, packed engines generate and tune IronMule's W4R
 # kernels for this GPU and GGUF (ironmule/w4_kernels.py, cached under IRONMULE_W4_CACHE) and hand them to the kg1 hook,
 # unless IRONMULE_KG_LIB names a library; measure_kg then keeps them only for the token counts where the step got
-# faster. "0" turns it off. The library repacks a matrix on first use, so CUDA graphs are off while it serves.
+# faster. "0" turns it off. The library repacks a matrix on its first call outside a CUDA graph capture.
 W4_AUTO = os.environ.get("IRONMULE_W4", "1") != "0"
 W4_CACHE = os.environ.get("IRONMULE_W4_CACHE") or str(Path.home() / ".cache" / "ironmule" / "w4")
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
@@ -126,6 +126,21 @@ def fa1_version() -> int:
         return int(lib.ironmule_fa1_version())
     except Exception:  # noqa: BLE001 - no library, no symbol: a stock build
         return 0
+
+
+def am1_function(L: Any) -> Any:
+    """AM1: llama.cpp's `ironmule_set_argmax_only` toggle in the loaded library (native/ggml_patches/am1), or None."""
+    import ctypes
+
+    if os.environ.get("IRONMULE_ARGMAX", "1") == "0":
+        return None
+    try:
+        folder = Path(L.llama_cpp._lib._name).parent if hasattr(L, "llama_cpp") else Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+        fn = ctypes.CDLL(str(next(folder.glob("libllama.so*")))).ironmule_set_argmax_only
+    except Exception:  # noqa: BLE001 - a build without AM1
+        return None
+    fn.argtypes, fn.restype = [ctypes.c_int], None
+    return fn
 
 
 def pk2_set_min_rows(rows: int) -> int | None:
@@ -519,6 +534,7 @@ class GgmlEngine:
                    kv_q8=kv_q8)
         self.steps = 0
         self._warm_up()
+        self._argmax_only = self._check_argmax() if self.gpu_layers else None
         self.context_build_s = time.perf_counter() - context_started
         self.kg: dict[str, Any] = {}
         if KG_LIB and os.environ.get("IRONMULE_KG4_SCOPE") == "low-width8":
@@ -569,6 +585,26 @@ class GgmlEngine:
         self._clear()
         return prices
 
+    def _check_argmax(self) -> Any:
+        """AM1 serves only where it returns the same tokens as the host argmax of the full logits."""
+        fn = am1_function(self.L)
+        if fn is None:
+            return None
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        rows = [(bos + j % 7, j, 0, j % 9 == 8) for j in range(48)]
+        try:
+            self._clear()
+            full = self._decode(rows)
+            self._clear()
+            self._argmax_only = fn
+            fast = self._decode(rows)
+        except Exception:  # noqa: BLE001 - keep the full logits
+            fast = None
+        finally:
+            self._argmax_only = None
+            self._clear()
+        return fn if fast == full else None
+
     def _attach_w4(self, gguf: str) -> dict[str, Any]:
         """W4: this GPU's tuned W4R library for this GGUF (built and measured once, then cached), set as the kg1 hook's
         library before the first native call. {} where it does not apply."""
@@ -586,7 +622,6 @@ class GgmlEngine:
             return {}
         lib, table = got
         os.environ["IRONMULE_KG_LIB"], os.environ["IRONMULE_W4_TABLE"] = str(lib), str(table)
-        os.environ.setdefault("GGML_CUDA_DISABLE_GRAPHS", "1")
         KG_LIB = str(lib)
         return {"lib": lib.name, "table": table.name}
 
@@ -949,6 +984,21 @@ class GgmlEngine:
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
             b.seq_id[i][0] = seq
+        am = getattr(self, "_argmax_only", None)
+        if am is not None:  # AM1: only each output row's argmax leaves the GPU
+            am(1)
+            try:
+                status = self.L.llama_decode(self.ctx, b)
+                if status == 1 and evict and getattr(self, "pool", None) is not None:
+                    with self._lock:
+                        while self.pool._evict(None):
+                            pass
+                    status = self.L.llama_decode(self.ctx, b)
+            finally:
+                am(0)
+            if status != 0:
+                raise RuntimeError("llama_decode failed")
+            return [int(self.L.llama_get_logits_ith(self.ctx, i)[0]) for i, row in enumerate(rows) if row[3]]
         status = self.L.llama_decode(self.ctx, b)
         if status == 1 and evict and getattr(self, "pool", None) is not None:  # SP1: no free cells; drop the cached sequences
             with self._lock:
@@ -1563,6 +1613,7 @@ class GgmlEngine:
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
                 **({"kernels": self.kg} if getattr(self, "kg", None) else {}),
                 **({"w4": self.w4} if getattr(self, "w4", None) else {}),
+                "argmax_on_device": getattr(self, "_argmax_only", None) is not None,
                 **({"kg4_scope": self.kg4_scope.status()} if self.kg4_scope is not None else {}),
                 **({"padding": {"to": {str(k): v for k, v in self.pad_to.items()}, "guesses": self.padded,
                                 "step_ms_by_tokens": {str(k): round(v * 1000, 2) for k, v in self.pad_prices.items()}}}

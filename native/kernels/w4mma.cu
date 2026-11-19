@@ -191,7 +191,7 @@ struct XCfg {
 // grid (row tiles, K splits). The block's warps split into tiles x KS parts; at every step the block stages the x
 // and 16-value sums of KS consecutive super-blocks into shared memory (cp.async, double buffered) and part p of every
 // tile multiplies super-block step + p, its weights streamed straight from the tile-order copy into registers.
-template <int TYPE, int WARPS, int KS, int NT>
+template <int TYPE, int WARPS, int KS, int NT, int DQ>
 __global__ void __launch_bounds__(WARPS * 32)
 w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
     float *__restrict__ out, int N, int K, int B, int sb_per_split) {
@@ -261,6 +261,37 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
                 sw[h][1] = (hv.w & 0x0F0F0F0Fu) | ((hv.y >> 2) & 0x30303030u);
                 mw[h][1] = ((hv.w >> 4) & 0x0F0F0F0Fu) | ((hv.z >> 2) & 0x30303030u);
             }
+            if constexpr (DQ) {
+                // dequantize once (fp16, q * S - m) and reuse the fragment for every 8-token tile
+                const half2 h1024 = __half2half2(__ushort_as_half(0x6400));
+#pragma unroll
+                for (int j = 0; j < 8; j++) {
+                    uint32_t a[2][4];
+#pragma unroll
+                    for (int h = 0; h < 2; h++) {
+                        const int sh = 8 * (j & 3);
+                        const half2 s2 = __float2half2_rn(dd[h] * (float)((sw[h][j >> 2] >> sh) & 0xFF));
+                        const half2 m2 = __float2half2_rn(-dm[h] * (float)((mw[h][j >> 2] >> sh) & 0xFF));
+                        const uint32_t wd = wget(Q, 2 * j + h);
+#pragma unroll
+                        for (int t = 0; t < 2; t++) {
+                            const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
+                            const uint32_t p0 = __byte_perm(v, 0x64u, 0x4140), p1 = __byte_perm(v, 0x64u, 0x4342);
+                            const half2 w0 = __hfma2(__hsub2(*reinterpret_cast<const half2 *>(&p0), h1024), s2, m2);
+                            const half2 w1 = __hfma2(__hsub2(*reinterpret_cast<const half2 *>(&p1), h1024), s2, m2);
+                            a[t][h] = h2_bits(w0);
+                            a[t][2 + h] = h2_bits(w1);
+                        }
+                    }
+#pragma unroll
+                    for (int nt = 0; nt < NT; nt++) {
+                        const uint4 bx = *reinterpret_cast<const uint4 *>(xb + (nt * 8 + g) * X::XROW + 32 * j + 8 * c);
+                        mma16816(acc[nt], a[0][0], a[0][1], a[0][2], a[0][3], bx.x, bx.y);
+                        mma16816(acc[nt], a[1][0], a[1][1], a[1][2], a[1][3], bx.z, bx.w);
+                    }
+                }
+                return;
+            }
 #pragma unroll
             for (int j = 0; j < 8; j++) {
                 float S[2], NB[2];
@@ -316,6 +347,25 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
                         S[t][h] = dd[h] * (float)(int8_t)((sword >> (8 * (si & 3))) & 0xFF);
                         NB[t][h] = -1056.f * S[t][h];
                     }
+                }
+                if constexpr (DQ) {
+                    const half2 h1056 = __float2half2_rn(1056.f);
+#pragma unroll
+                    for (int t = 0; t < 2; t++)
+#pragma unroll
+                        for (int h = 0; h < 2; h++) {
+                            const half2 s2 = __float2half2_rn(S[t][h]);
+                            a[t][h] = h2_bits(__hmul2(__hsub2(*reinterpret_cast<const half2 *>(&a[t][h]), h1056), s2));
+                            a[t][2 + h] = h2_bits(__hmul2(__hsub2(*reinterpret_cast<const half2 *>(&a[t][2 + h]), h1056), s2));
+                        }
+#pragma unroll
+                    for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+                        for (int t = 0; t < 2; t++) {
+                            const uint2 bx = *reinterpret_cast<const uint2 *>(xb + (nt * 8 + g) * X::XROW + 32 * j + 16 * t + 4 * c);
+                            mma16816(acc[nt], a[t][0], a[t][1], a[t][2], a[t][3], bx.x, bx.y);
+                        }
+                    continue;
                 }
 #pragma unroll
                 for (int nt = 0; nt < NT; nt++)
@@ -552,7 +602,7 @@ __global__ void reduce_split(const float *__restrict__ part, float *__restrict__
 typedef int (*launch_fn)(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int,
                          cudaStream_t);
 
-template <int TYPE, int WARPS, int KS, int NT>
+template <int TYPE, int WARPS, int KS, int NT, int DQ>
 int launch(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
            cudaStream_t s) {
     constexpr int TILES = WARPS / KS;
@@ -562,7 +612,7 @@ int launch(const uint8_t *wr, const half *xh, const float *xs, float *y, float *
     const int tiles = (N + 15) / 16;
     dim3 grid((tiles + TILES - 1) / TILES, splits);
     using X = XCfg<KS, NT>;
-    auto kern = w4r<TYPE, WARPS, KS, NT>;
+    auto kern = w4r<TYPE, WARPS, KS, NT, DQ>;
     static bool attr = false;
     if (!attr) {
         if (X::SMEM > 48 * 1024 &&
@@ -722,14 +772,18 @@ struct Variant {
     launch_fn fn;
 };
 
-#define V(T, W, S, N) Variant{T, W, S, N, launch<T, W, S, N>}
+#define V(T, W, S, N) Variant{T, W, S, N, launch<T, W, S, N, 0>}
+#define VD(T, W, S, N) Variant{T, W, S + 10, N, launch<T, W, S, N, 1>}
+#define VDN(T, W, S) VD(T, W, S, 1), VD(T, W, S, 2), VD(T, W, S, 3), VD(T, W, S, 4)
 #define VN(T, W, S) V(T, W, S, 1), V(T, W, S, 2), V(T, W, S, 3), V(T, W, S, 4)
 #define VT(T) VN(T, 4, 1), VN(T, 8, 1), VN(T, 4, 2), VN(T, 8, 2), VN(T, 16, 2), VN(T, 8, 4), VN(T, 16, 4), VN(T, 16, 1)
 #define VP(W, S, N, P, M) Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 1000 * M, N, launch_p<W, S, N, P, M>}
 #define VPN(W, S) VP(W, S, 1, 1, 1), VP(W, S, 2, 1, 1), VP(W, S, 1, 0, 1), VP(W, S, 2, 0, 1), VP(W, S, 1, 0, 2), \
                   VP(W, S, 2, 0, 2)
 #define VQ(W, S) Variant{TYPE_Q4_K, W, 5000 + S, 1, launch_q<W, S>}
-const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K), VPN(2, 1), VPN(4, 1), VPN(4, 2), VPN(8, 2), VPN(8, 4),
+const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
+                            VDN(TYPE_Q4_K, 4, 1), VDN(TYPE_Q4_K, 8, 1), VDN(TYPE_Q4_K, 8, 2), VDN(TYPE_Q4_K, 4, 2),
+                            VDN(TYPE_Q6_K, 4, 1), VDN(TYPE_Q6_K, 8, 1), VDN(TYPE_Q6_K, 8, 2), VDN(TYPE_Q6_K, 4, 2), VPN(2, 1), VPN(4, 1), VPN(4, 2), VPN(8, 2), VPN(8, 4),
                             VPN(4, 4), VPN(2, 2), VPN(8, 1), VQ(2, 4), VQ(4, 4), VQ(4, 3), VQ(8, 3), VQ(2, 6), VQ(4, 5),
                             VQ(1, 8), VQ(2, 8)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
@@ -871,11 +925,24 @@ int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64
     if ((type != TYPE_Q4_K && type != TYPE_Q6_K) || K % 256 != 0 || B < 1 || B > 32) return 1;
     if (!(((type == TYPE_Q6_K ? mask6 : mask4) >> (B - 1)) & 1u)) return 1;
     std::pair<int, int> pick;
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    cudaStreamIsCapturing(s, &capture);
+    int dev = 0;
+    cudaGetDevice(&dev);
     {
         std::lock_guard<std::mutex> guard(lock_);
         auto it = choice.find({type, (long)N, (long)K, (int)B});
         if (it == choice.end()) return 1;
         pick = it->second;
+        if (capture != cudaStreamCaptureStatusNone) {
+            // inside a CUDA graph capture nothing may be allocated or repacked: only what an earlier call prepared
+            const Variant &v = VARIANTS[pick.first];
+            const size_t rows = (size_t)v.nt * 8;
+            const size_t xbytes = (rows * K * sizeof(half) + 255) / 256 * 256 + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;
+            if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || scratch[dev].xcap < xbytes ||
+                (pick.second > 1 && scratch[dev].pcap < (size_t)pick.second * B * N * sizeof(float)))
+                return 1;
+        }
     }
     return im_w4_run(pick.first, w, x, y, N, K, B, pick.second, s);
 }
