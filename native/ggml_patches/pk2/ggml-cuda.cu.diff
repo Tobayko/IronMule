@@ -1,19 +1,32 @@
 55a56
 > #include <cstdlib>
-1188a1190,1197
+1188a1190,1210
+> // PK2: the row threshold; -1 until first read from IRONMULE_CUBLAS_MIN_ROWS. IronMule's engine may change it between
+> // native calls (ironmule_pk2_set_min_rows) after measuring both paths on this GPU.
+> static std::atomic<long> ironmule_pk2_rows{-1};
+> 
 > static long ironmule_pk2_min_rows() {
->     static const long rows = [] {
+>     long rows = ironmule_pk2_rows.load(std::memory_order_relaxed);
+>     if (rows < 0) {
 >         const char * v = std::getenv("IRONMULE_CUBLAS_MIN_ROWS");
->         return v ? std::atol(v) : 0L;
->     }();
+>         rows = v ? std::atol(v) : 0L;
+>         ironmule_pk2_rows.store(rows, std::memory_order_relaxed);
+>     }
 >     return rows;
 > }
 > 
-1271c1280
+> extern "C" GGML_BACKEND_API long ironmule_pk2_set_min_rows(long rows);
+> extern "C" GGML_BACKEND_API long ironmule_pk2_set_min_rows(long rows) {
+>     const long previous = ironmule_pk2_min_rows();
+>     ironmule_pk2_rows.store(rows < 0 ? 0 : rows, std::memory_order_relaxed);
+>     return previous;
+> }
+> 
+1271c1293
 <         if (GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA4(cc)) {
 ---
 >         if (GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA4(cc) || ironmule_pk2_min_rows() > 0) {
-2062a2072,2079
+2062a2085,2092
 >     }
 > 
 >     // PK2 (IronMule): prompt-sized matmuls of quantized weights through dequantization + cuBLAS (fp32 accumulation)
