@@ -8,6 +8,7 @@ The agent itself ships in `ironmule_product/`. Nothing here is imported by the p
 | `ag1_online.py` | The agent, unchanged, against a simulated server priced by a machine's fitted costs. Live traces, idle replays and qualification run on a simulated clock. `--prompts` adds real prompt texts with one limit for all (AG2). |
 | `rl2_headroom.py` | The hardware harness. It runs the product's own service with the agent attached, records the online phase, then compares the default, the fixed rule and the frozen agent on held-out traces. `--plan ag1 --profile NAME` picks a protocol, `--write-kernel` writes a Kaggle kernel, and `--analyse` judges a report. |
 | `ag4_routing.py` | AG4 step 2: the product's router between a single path and a stacked engine on one card, against each path alone, priced by a hardware measurement. |
+| `rl4_h9_replay.py` | Trains two dispatch checkpoints from zero, selects one on validation traffic, and evaluates both against the fixed arms, simple rules and the published checkpoint on unseen quiet, burst and spike traces. |
 | `rl4_agent.py` | RL4, the offline REINFORCE agent whose policy format the product's learned dispatch (LD1) and the agent share. |
 
 Their tests are in [tests/agent/](../tests/agent/). The tests run without a model or GPU, also in CI:
@@ -15,6 +16,101 @@ Their tests are in [tests/agent/](../tests/agent/). The tests run without a mode
 ```bash
 python -m pytest tests/agent
 ```
+
+## Replaying the H9 dispatch training
+
+Run these from the repository root. Each command trains two controllers from zero for 16,000 episodes per seed on one CPU core. They use simulated requests and the published timing coefficients for the two-T4 Qwen3-1.7B H9 pool.
+
+```sh
+python -m training.rl4_h9_replay --out rl4-replay.json
+python -m training.rl4_h9_replay --width-followup --out rl6-replay.json
+```
+
+Sixty validation traces per phase select one seed. Each frozen controller then runs on 128 unseen traces per phase, sharing the same arrivals with every baseline. The follow-up reads the first study's archived checkpoint, adds 16 trainable group-width weights, and uses a new test set. The objective adds mean time to first token and mean time to completion.
+
+The width controller selected a cap of two on every held-out decision with at least two requests waiting. During spikes this cut simulated cost by 6.01% against the first study's frozen controller, while mean time to first token rose from 8.32 to 11.15 simulated seconds. Against the best fixed policy in each phase, cost rose 0.29% in quiet traffic and fell 0.62% in bursts and 0.88% in spikes. Both studies saved their checkpoints for replay in the simulator. Hardware qualification would require fresh on-device measurements. [First study](../evidence/runtime/rl4-h9-holdout.json) · [Width follow-up](../evidence/runtime/rl6-h9-width-holdout.json)
+
+## Forecasting the next native workload
+
+Use the normal local GGML bindings and a SmolLM2-135M-Instruct Q4_K_M GGUF. The study opens the native engine on
+two CPU threads, checks that widths four and eight produce identical calibration output, and observes 864 real
+requests. Each set of eight arrives together. The three workloads have short prompts, longer distinct prompts or
+longer prompts with a shared session prefix. All have a three-token generation limit. The controller sees timings
+and token counts. Phase labels and copy targets stay in the study.
+
+```sh
+IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_GGML_THREADS=2 IRONMULE_GGML_PREFIX_REUSE=1 IRONMULE_PILOT=0 \
+  python training/ag10_replay_study.py --gguf /path/to/SmolLM2-135M-Instruct-Q4_K_M.gguf \
+  --state-dir ./new-ag10-state --output ./ag10-replay.json
+```
+
+The sampler forecast all 18 held-out blocks before they arrived. It found matching history for eight.
+Across four traffic measurements, mean absolute log₂ forecast error fell from 1.010 to 0.976 (3.33%).
+Short requests improved from 0.962 to 0.786 and distinct long prompts from 0.734 to 0.723. Follow-ups with
+shared prefixes worsened from 1.333 to 1.419. All 576 held-out first words passed the copy check. All requests
+ran at width four, providing 1,401 measured processing steps. The agent rebuilt to width eight after the last
+block. Measuring the serving effect of that switch requires subsequent traffic. [Per-block evidence and fitted weights](../evidence/runtime/smollm2-135m-cpu-dream-replay.json)
+
+### Serving the proposed width and testing its rollback
+
+The continuation read the exact 864-request checkpoint on the same CPU, verified the model, libraries, engine,
+controller and calibration outputs, and restored four slots through the normal restart guard for an unfinished
+trial. After 32 fresh requests with shared prefixes, the controller chose eight slots again. Three independent
+contexts received identical token IDs in groups of eight. Each block rotated the order of the adaptive arm,
+fixed four slots and fixed eight slots. Workload labels served only to score the results.
+
+| Period | Requests per arm | Adaptive tok/s · p95 TTFT | Fixed 4 tok/s · p95 TTFT | Fixed 8 tok/s · p95 TTFT |
+| :-- | --: | --: | --: | --: |
+| Two blocks actually served at eight slots | 64 | 32.21 · 1,323 ms | 93.11 · 229 ms | 68.05 · 306 ms |
+| Four subsequent phases, adaptive arm back at four slots | 384 | 22.72 · 1,900 ms | 21.93 · 2,028 ms | 21.92 · 1,920 ms |
+
+Rates divide total generated tokens by active wave time. The fresh adaptive context lost its cached prefixes on
+rebuild. Its two width switches added another 1.697 seconds outside active requests. All arms matched the complete
+outputs on both eight-slot trial blocks. After 94 measured updates at eight slots, the corrected latency model
+withdrew the trial. The next 384 requests rotated through short, document, cached follow-up, then short prompts.
+All arms copied the correct first word on 383 of 384. The adaptive and fixed-four outputs matched on every block.
+Fixed eight differed on one of twelve blocks, with the correct first words. The adaptive arm served those 384
+requests at the same width as fixed four. Its measured difference from fixed four does not establish a scheduling
+gain. The report includes request-level time to first token and output digests. [Continuation evidence](../evidence/runtime/smollm2-135m-cpu-dream-continuation.json)
+
+On the matching machine and runtime, replay the saved study state into a **new** directory. The archived state
+belongs to this experiment and includes only numeric traffic, fitted weights, decisions and hardware binding.
+
+```sh
+IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_GGML_THREADS=2 IRONMULE_GGML_PREFIX_REUSE=1 IRONMULE_PILOT=0 \
+  python training/ag10_replay_followup.py --gguf /path/to/SmolLM2-135M-Instruct-Q4_K_M.gguf \
+  --prior-report evidence/runtime/smollm2-135m-cpu-dream-replay.json \
+  --prior-state evidence/runtime/ag10-dream-checkpoint --state-dir ./new-ag10-continuation \
+  --output ./ag10-continuation.json
+```
+
+## Testing grouped prompt processing on recorded HTTP traffic
+
+The optional selector reads a single completed IronMule prefill HTTP study. The two eligible arms use the same
+GGUF and separate KV streams. One processes prompts individually, the other can group them in a native batch.
+
+```sh
+python -m training.prefill_selection prefill-http.json --output prefill-cross-validation.json
+```
+
+A fold holds out an entire server repeat, including its measured concurrency levels. The selector groups
+observations by device and model binding, active sequence layout, concurrency, output limit and the histogram
+of prompt lengths in powers of two. To select grouping, at least two other matching repeats must have run the
+two arms in both orders. Every such repeat must show actual native grouping, identical greedy output and stops,
+an informative baseline for each factual category, preservation of every correct answer, at least 3% more
+generated tokens per second and p95 time to first token no later than split processing.
+The held-out repeat records the selected action and its own measurements. A failed held-out prediction and a
+newly lost factual answer remain in the report. A repeated timed prompt across folds invalidates that workload.
+
+The producer can emit a hash of the loaded worker libraries, driver, device and visible execution settings.
+Historical reports with verified in-run GPU placement and missing worker hashes can support a descriptive
+comparison within their one run. A promising result calls for a new bound local holdout. This offline command
+reads no other engine's measurements and installs no serving rules.
+
+On the NVIDIA L40S, Qwen3-32B Q4_K_M completed one verified split-stream round at concurrency 1, 8 and 32.
+It generated 37.74, 113.52 and 161.13 tokens/s, with p95 times to first token of 0.240, 1.148 and 4.406 seconds.
+All 18 factual checks passed at each level. The grouped arm started with a different KV layout and produced zero
+comparable measurements. The recorded decision is insufficient evidence. [Verified cells and rejection](../evidence/runtime/qwen3-32b-l40s-prefill-selection.json)
 
 ## The workflow
 

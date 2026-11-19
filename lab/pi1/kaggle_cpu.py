@@ -3,7 +3,7 @@
 shipped Pilot beside 0, 1 (busy, and busy half of every 20 ms) and 2 foreign processes, then lab/pi1/ab_idle.py
 (the Pilot attached and detached in turn in one process). Writes /kaggle/working/pi1_cpu.json.
 Usage on Kaggle: the kernel runs this file with the commit in MG2_COMMIT."""
-import glob, json, os, subprocess, sys, time, urllib.request
+import json, os, subprocess, sys, time
 from pathlib import Path
 
 COMMIT = os.environ["MG2_COMMIT"]
@@ -32,6 +32,12 @@ def main():
     (pkg / "__init__.py").write_text("")
     for name in ("ggml_engine.py", "speculation.py", "ggml_agent.py", "pilot.py", "draft_model.py", "pilot_weights.npz"):
         (pkg / name).write_bytes((repo / "ironmule" / name).read_bytes())
+    binary_module = repo / "ironmule" / "ggml_binary.py"
+    if binary_module.is_file():
+        (pkg / binary_module.name).write_bytes(binary_module.read_bytes())
+    devices_module = repo / "ironmule_devices.py"
+    if devices_module.is_file():
+        (pkg.parent / devices_module.name).write_bytes(devices_module.read_bytes())
     lab = W / "run" / "lab" / "pi1"
     lab.mkdir(parents=True, exist_ok=True)
     for name in ("real.py", "ab_idle.py"):

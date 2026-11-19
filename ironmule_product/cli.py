@@ -252,7 +252,188 @@ def _ggml_agent_plan(width: dict[str, Any], root: Any, flash_only: bool = False)
                       if c["seqs"] == int(width["sequences"]) and c["settings"] == served), None)
     if len(configs) < 2 or incumbent is None:
         return None
-    return {"configs": configs, "incumbent": incumbent, "root": str(root)}
+    plan = {"configs": configs, "incumbent": incumbent, "root": str(root)}
+    if width.get("experience_probe"):
+        plan["experience_sha256"] = width["experience_probe"]["experience_sha256"]
+    return plan
+
+
+def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
+    # Qualification sets these inputs for its subprocesses. Keep the results on
+    # their worker; a later server in this process must see the caller's settings.
+    previous = {key: os.environ.get(key) for key in ("IRONMULE_KG_LIB", "IRONMULE_GGML_SEQS")}
+    try:
+        return _measure_ggml_options(args, spec, store, pinned=pinned)
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _qualify_ggml_kernels(snapshot, gguf, cache):
+    """Keep only a qualified kernel selection, including after the generated kernel fails."""
+    from ironmule.ggml_engine import gate
+    from ironmule.ggml_gate_diagnostics import sanitize
+
+    def qualify(mode):
+        result = gate(snapshot, gguf, cache=cache)
+        summary = {"kernel_mode": mode, "passes": result.get("passes") is True,
+                   "diagnostic": sanitize(result.get("diagnostic"))}
+        print(json.dumps({"ggml_gate": {**summary, "ratio": result.get("ratio"),
+                                       "interval": result.get("interval")}}), flush=True)
+        return result, summary
+
+    probe = os.environ.get("IRONMULE_KG5") == "1"
+    mode = "generated" if probe or os.environ.get("IRONMULE_KG_LIB") else "stock"
+    result, first = qualify(mode)
+    diagnostic = first["diagnostic"] or {}
+    # Tokenization, model mutation and the unmodified reference precede any candidate kernel. A
+    # separate explicitly requested KG5 experiment must continue to require its dispatch witness.
+    if (not first["passes"] and mode == "generated" and not probe
+            and diagnostic.get("stage") not in {"tokenize", "reference", "model_changed"}):
+        os.environ.pop("IRONMULE_KG_LIB", None)
+        result, stock = qualify("stock")
+        result = {**result, "kernel_fallback": {"attempts": [first, stock], "serving": "stock" if stock["passes"] else None}}
+    if result.get("passes") is not True:
+        diagnostic = sanitize(result.get("diagnostic")) or {}
+        raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
+                             f"({diagnostic.get('stage', 'gate')}: {diagnostic.get('code', 'unclassified')})")
+    return result
+
+
+def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
+    """Qualify the GGUF on the devices actually visible in this process."""
+    from ironmule.ggml_engine import available
+
+    from .backend import DENSE_STARTUP_TIMEOUT
+
+    reason = available()
+    if reason is not None:
+        raise InvalidRequest(f"--engine ggml: {reason}")
+    from ironmule.ggml_engine import cuda_kernel_device
+    from ironmule.ggml_engine import gpu_layers as ggml_gpu_layers
+
+    layers = ggml_gpu_layers()
+    if pinned and layers == 0:
+        raise InvalidRequest("--gpus needs GPU offload; IRONMULE_GGML_GPU_LAYERS=0 selects the CPU")
+    cuda = bool(layers and cuda_kernel_device())
+    if pinned and not cuda:
+        raise InvalidRequest("--gpus needs one visible GGML CUDA device per worker; select ROCm GPUs with ROCR_VISIBLE_DEVICES")
+    if os.environ.get("IRONMULE_KG_LIB") and layers and not cuda:
+        raise InvalidRequest("a generated CUDA kernel library needs exactly one GGML CUDA device")
+    generation = None
+    requested = bool(os.environ.get("IRONMULE_KG_LIB")) or os.environ.get("IRONMULE_KG", "1") != "0"
+    if cuda and requested:
+        from ironmule.ggml_binary import cuda_kg1_hook
+
+        hook = cuda_kg1_hook()
+        if hook is False:
+            # The mapped CUDA backend cannot consume this plugin. Qualify its real kernels directly,
+            # including when the parent environment supplied a plugin for a different CUDA build.
+            os.environ.pop("IRONMULE_KG_LIB", None)
+            generation = {"status": "skipped", "reason": "cuda_backend_has_no_kg1_hook"}
+    elif cuda:
+        generation = {"status": "disabled", "reason": "IRONMULE_KG=0"}
+    if generation is not None:
+        print(json.dumps({"ggml_kernel_generation": generation}), flush=True)
+    elif cuda and not os.environ.get("IRONMULE_KG_LIB"):
+        # KG1 (ST2, 2026-11-15): kernels generated and tuned for this GPU and model, once, then cached;
+        # the gate below runs with them, and the engine keeps them per token count where its step is
+        # faster. On a T4 one request 1.27x the engine without them (docs/LAB.md, KG2). IRONMULE_KG=0: off
+        try:
+            from ironmule.kernel_gen import ensure
+
+            library = ensure(str(Path(args.gguf).resolve()), Path(store.root) / "kernels",
+                             log=lambda line: None, gguf_revision=(spec.revision if args.model is None else None))
+            if library is not None:
+                os.environ["IRONMULE_KG_LIB"] = str(library)
+                print(json.dumps({"ggml_kernels": str(library)}), flush=True)
+        except Exception as exc:  # noqa: BLE001 - llama.cpp's own kernels serve without them
+            print(json.dumps({"ggml_kernels": None, "reason": f"{type(exc).__name__}: {exc}"[:300]}),
+                  flush=True)
+    checked = _qualify_ggml_kernels(spec.snapshot_path, args.gguf, Path(store.root) / "ggml-gate")
+    if generation is not None:
+        checked = {**checked, "kernel_generation": generation}
+    pooled = checked
+    checked = _ggml_streams(checked, bool(ggml_gpu_layers()))
+    if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine
+        from ironmule.ggml_engine import choose_sequences
+
+        # DM1: the draft model's weights (packed once more by the AMX kernels) and its few sequences
+        draft_bytes = (int(1.5 * os.path.getsize(args.draft_gguf)) + 2**30) if args.draft_gguf else 0
+        width = choose_sequences(args.gguf, checked.get("settings"), cache=Path(store.root) / "ggml-gate",
+                                 extra_bytes=draft_bytes, **({"experience_root": Path(store.root)}
+                                     if layers and args.agent == "on" else {}))
+        os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
+        checked = {**checked, "sequences": width}
+        if checked.get("streams_serving") and int(width["sequences"]) < STREAMS_MIN:
+            # KG3: one stream per request serves as many requests at once as the width; below this the
+            # shared pool (twice the width) serves more (a T4 with 8: 261 against 430 tok/s at 32 requests)
+            checked = {**pooled, "sequences": width}
+        if checked.get("streams_serving"):
+            print(json.dumps({"ggml_streams": {**checked["streams_serving"],
+                                               "sequences": int(width["sequences"])}}), flush=True)
+        shared = checked.get("shared") or {}
+        if (shared.get("passes") and os.environ.get("IRONMULE_GGML_SHARED", "1") != "0"
+                and not checked.get("streams_serving")):
+            from ironmule.ggml_engine import LLAMA_MAX_SEQ, fa1_version, gpu_layers
+
+            # SP1: one pool, prefixes shared; twice the requests at once. On a CPU through FA1u; on a GPU
+            # through llama.cpp's own flash attention, where PAD1 needs the one pool (MG2 v6 on a T4: 1.32-
+            # 1.40x llama-server at 8 requests, the same facts, 47-50 of 50 answers token for token)
+            if fa1_version() >= 3 or gpu_layers() > 0:
+                cap = int(os.environ.get("IRONMULE_GGML_SHARED_CAP") or min(LLAMA_MAX_SEQ // 2,
+                                                                          2 * int(width["sequences"])))
+                checked["shared_serving"] = {"settings": shared["settings"], "cap": cap,
+                                             "ratio": shared.get("ratio"),
+                                             "interval": shared.get("interval")}
+                print(json.dumps({"ggml_shared_pool": checked["shared_serving"]}), flush=True)
+        plan = (None if checked.get("streams_serving")  # KG3: the agent's KV switches would undo the streams
+                else _ggml_agent_plan(width, store.root, flash_only=bool(checked.get("shared_serving"))))
+        if plan is not None:  # AG10: the agent may switch among the measured widths while it serves
+            checked["agent"] = plan
+            os.environ["IRONMULE_GGML_SEQS"] = str(max(c["seqs"] for c in plan["configs"].values()))
+        if checked.get("shared_serving"):  # the service feeds up to the pool's running requests
+            os.environ["IRONMULE_GGML_SEQS"] = str(max(int(os.environ["IRONMULE_GGML_SEQS"]),
+                                                       checked["shared_serving"]["cap"]))
+        print(json.dumps({"ggml_sequences": {k: width.get(k) for k in ("sequences", "fitting", "rates",
+                                                                       "reason")}}), flush=True)
+    if args.draft_gguf:
+        checked = {**checked, "draft": {"gguf": str(Path(args.draft_gguf).resolve())}}
+    elif args.speculate != "off" and ggml_gpu_layers():
+        from ironmule.draft_model import suggest_draft
+
+        # DM2: on a GPU a draft model of the same family speeds up one or two users (SG1 v3 on a T4:
+        # 54.3 against 47.3 tok/s for Qwen3-4B); named only, never downloaded without the user's command
+        hint = suggest_draft(str(args.gguf))
+        if hint is not None:
+            print(json.dumps({"draft_model_suggestion": hint}), flush=True)
+    if os.environ.get("IRONMULE_PILOT_LEARN", "1" if args.agent == "on" else "0") == "1":
+        checked = {**checked, "pilot_state_root": str(store.root)}
+    if args.agent == "on":
+        checked = {**checked, "admission_state_root": str(store.root)}
+    # PI1: the worker loads the GGUF, measures this machine's step costs for the Pilot and, with a draft
+    # model, its draft calls before it is ready; on a 4-vCPU Xeon that took about 105 s of the default 120
+    return {"ggml_kernel_library": os.environ.get("IRONMULE_KG_LIB", ""),
+            "ggml_sequences": int(os.environ.get("IRONMULE_GGML_SEQS") or 0) or None,
+            "engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
+            "ggml_gate": checked, "startup_timeout": DENSE_STARTUP_TIMEOUT,
+            **({"speculate": True} if args.speculate != "off" else {})}
+
+
+def _pinned_ggml_options(device: str, args, spec: ModelSpec, store: ProductStore) -> dict:
+    """Return only this card's measured options; the driver's visibility is set before process startup."""
+    options = {k: getattr(args, k) for k in ("gguf", "draft_gguf", "speculate", "agent", "model")}
+    payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root)}
+    child = subprocess.run([sys.executable, "-m", "ironmule_product.pinned_ggml"],
+                           env={**os.environ, "CUDA_VISIBLE_DEVICES": device},
+                           input=json.dumps(payload, default=str), text=True, stdout=subprocess.PIPE)
+    if child.returncode:
+        raise InvalidRequest(f"GGUF qualification failed on CUDA device {device}")
+    return json.loads(child.stdout.strip().splitlines()[-1])
+
 
 def serve(argv: list[str]) -> int:
     parser = _parser("serve", "Serve a registered local model through the OpenAI-compatible API.")
@@ -379,7 +560,7 @@ def serve(argv: list[str]) -> int:
         parser.error("--dispatch-policy and --learning both decide groups; use one")
     if args.agent == "on" and (args.learning != "off" or args.dispatch_policy is not None):
         parser.error("--agent decides groups itself; use it without --learning and --dispatch-policy")
-    from .backend import DENSE_STARTUP_TIMEOUT, MLXWorkerClient
+    from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
     from .service import ProductService
@@ -441,95 +622,14 @@ def serve(argv: list[str]) -> int:
             # AG5: the stacked engine serves at the width the agent measured best on this card (None keeps 8).
             stacked_width = (agent_setup or {}).get("width") if args.engine in ("dense", "route") else None
 
-            ggml_options: dict[str, Any] = {}
-            if args.engine == "ggml":  # GG1: llama.cpp's kernels, served only behind the gate (owner, 2026-11-10)
-                from ironmule.ggml_engine import available, gate as ggml_gate
-
-                reason = available()
-                if reason is not None:
-                    raise InvalidRequest(f"--engine ggml: {reason}")
-                from ironmule.ggml_engine import gpu_layers as ggml_gpu_layers
-
-                if (ggml_gpu_layers() and not os.environ.get("IRONMULE_KG_LIB")
-                        and os.environ.get("IRONMULE_KG", "1") != "0"):
-                    # KG1 (ST2, 2026-11-15): kernels generated and tuned for this GPU and model, once, then cached;
-                    # the gate below runs with them, and the engine keeps them per token count where its step is
-                    # faster. On a T4 one request 1.27x the engine without them (docs/LAB.md, KG2). IRONMULE_KG=0: off
-                    try:
-                        from ironmule.kernel_gen import ensure
-
-                        library = ensure(str(Path(args.gguf).resolve()), Path(store.root) / "kernels",
-                                         log=lambda line: None)
-                        if library is not None:
-                            os.environ["IRONMULE_KG_LIB"] = str(library)
-                            print(json.dumps({"ggml_kernels": str(library)}), flush=True)
-                    except Exception as exc:  # noqa: BLE001 - llama.cpp's own kernels serve without them
-                        print(json.dumps({"ggml_kernels": None, "reason": f"{type(exc).__name__}: {exc}"[:300]}),
-                              flush=True)
-                checked = ggml_gate(spec.snapshot_path, args.gguf, cache=Path(store.root) / "ggml-gate")
-                print(json.dumps({"ggml_gate": {k: checked.get(k) for k in ("ratio", "interval", "passes", "reason")}}),
-                      flush=True)
-                if checked.get("passes") is not True:
-                    raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
-                                         f"({checked.get('reason') or checked.get('interval')})")
-                pooled = checked
-                checked = _ggml_streams(checked, bool(ggml_gpu_layers()))
-                if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine
-                    from ironmule.ggml_engine import choose_sequences
-
-                    # DM1: the draft model's weights (packed once more by the AMX kernels) and its few sequences
-                    draft_bytes = (int(1.5 * os.path.getsize(args.draft_gguf)) + 2**30) if args.draft_gguf else 0
-                    width = choose_sequences(args.gguf, checked.get("settings"), cache=Path(store.root) / "ggml-gate",
-                                             device=devices[0], extra_bytes=draft_bytes)
-                    os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
-                    checked = {**checked, "sequences": width}
-                    if checked.get("streams_serving") and int(width["sequences"]) < STREAMS_MIN:
-                        # KG3: one stream per request serves as many requests at once as the width; below this the
-                        # shared pool (twice the width) serves more (a T4 with 8: 261 against 430 tok/s at 32 requests)
-                        checked = {**pooled, "sequences": width}
-                    if checked.get("streams_serving"):
-                        print(json.dumps({"ggml_streams": {**checked["streams_serving"],
-                                                           "sequences": int(width["sequences"])}}), flush=True)
-                    shared = checked.get("shared") or {}
-                    if (shared.get("passes") and os.environ.get("IRONMULE_GGML_SHARED", "1") != "0"
-                            and not checked.get("streams_serving")):
-                        from ironmule.ggml_engine import LLAMA_MAX_SEQ, fa1_version, gpu_layers
-
-                        # SP1: one pool, prefixes shared; twice the requests at once. On a CPU through FA1u; on a GPU
-                        # through llama.cpp's own flash attention, where PAD1 needs the one pool (MG2 v6 on a T4: 1.32-
-                        # 1.40x llama-server at 8 requests, the same facts, 47-50 of 50 answers token for token)
-                        if fa1_version() >= 3 or gpu_layers() > 0:
-                            cap = int(os.environ.get("IRONMULE_GGML_SHARED_CAP") or min(LLAMA_MAX_SEQ // 2,
-                                                                                      2 * int(width["sequences"])))
-                            checked["shared_serving"] = {"settings": shared["settings"], "cap": cap,
-                                                         "ratio": shared.get("ratio"),
-                                                         "interval": shared.get("interval")}
-                            print(json.dumps({"ggml_shared_pool": checked["shared_serving"]}), flush=True)
-                    plan = (None if checked.get("streams_serving")  # KG3: the agent's KV switches would undo the streams
-                            else _ggml_agent_plan(width, store.root, flash_only=bool(checked.get("shared_serving"))))
-                    if plan is not None:  # AG10: the agent may switch among the measured widths while it serves
-                        checked["agent"] = plan
-                        os.environ["IRONMULE_GGML_SEQS"] = str(max(c["seqs"] for c in plan["configs"].values()))
-                    if checked.get("shared_serving"):  # the service feeds up to the pool's running requests
-                        os.environ["IRONMULE_GGML_SEQS"] = str(max(int(os.environ["IRONMULE_GGML_SEQS"]),
-                                                                   checked["shared_serving"]["cap"]))
-                    print(json.dumps({"ggml_sequences": {k: width.get(k) for k in ("sequences", "fitting", "rates",
-                                                                                   "reason")}}), flush=True)
-                if args.draft_gguf:
-                    checked = {**checked, "draft": {"gguf": str(Path(args.draft_gguf).resolve())}}
-                elif args.speculate != "off" and ggml_gpu_layers():
-                    from ironmule.draft_model import suggest_draft
-
-                    # DM2: on a GPU a draft model of the same family speeds up one or two users (SG1 v3 on a T4:
-                    # 54.3 against 47.3 tok/s for Qwen3-4B); named only, never downloaded without the user's command
-                    hint = suggest_draft(str(args.gguf))
-                    if hint is not None:
-                        print(json.dumps({"draft_model_suggestion": hint}), flush=True)
-                # PI1: the worker loads the GGUF, measures this machine's step costs for the Pilot and, with a draft
-                # model, its draft calls before it is ready; on a 4-vCPU Xeon that took about 105 s of the default 120
-                ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
-                                "ggml_gate": checked, "startup_timeout": DENSE_STARTUP_TIMEOUT,
-                                **({"speculate": True} if args.speculate != "off" else {})}
+            ggml_options: dict[str | None, dict] = {}
+            if args.engine == "ggml":
+                if devices == [None]:
+                    ggml_options[None] = _local_ggml_options(args, spec, store)
+                else:
+                    # A process can initialize CUDA only once: pin before importing the bindings or probing.
+                    for device in devices:
+                        ggml_options[device] = _pinned_ggml_options(device, args, spec, store)
 
             def make_backend(device=devices[0]):
                 # SP2: speculation on the stacked engine where asked. SP2-H (2026-11-10) did not pass its bound, so
@@ -538,7 +638,7 @@ def serve(argv: list[str]) -> int:
                 if args.engine == "ggml":
                     # MG2: with --gpus each worker sees one GPU and offloads every layer to it (data parallel)
                     return MLXWorkerClient(spec, thinking=not args.no_thinking, execution_variant="current_engine",
-                                           cuda_device=device, **ggml_options)
+                                           cuda_device=device, **ggml_options[device])
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        cpu_blas=None if args.cpu_blas == "stock" else args.cpu_blas,
@@ -611,7 +711,7 @@ def serve(argv: list[str]) -> int:
         elif spec is not None and args.agent == "on" and args.engine == "ggml":
             # AG10: the ggml engine batches continuously and reuses sequences; its own agent (in the worker) learns,
             # dreams and switches its width and attention; the group agent (AG1) would price the wrong engine
-            plan = (ggml_options.get("ggml_gate") or {}).get("agent")
+            plan = (ggml_options[devices[0]].get("ggml_gate") or {}).get("agent")
             print(json.dumps({"agent": {"serving": "the ggml engine's own agent (AG10)" if plan else
                                         "the ggml engine's measured width (SEQ1)",
                                         "configurations": sorted((plan or {}).get("configs", {}))}}), flush=True)

@@ -840,8 +840,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
     requests = command.get("requests")
     # SERVE4: the current-profile engine and the dense plan stream every grouped request's tokens as
     # they are read back; the historical throughput configurations keep their buffered completion.
-    live = (rendered_override is None
-            and engine_bridge.metadata().get("configuration") in STREAMED_BATCH_CONFIGURATIONS)
+    configuration = engine_bridge.metadata().get("configuration") if rendered_override is None else None
+    live = configuration in STREAMED_BATCH_CONFIGURATIONS
     if (not isinstance(batch_id, str) or not 1 <= len(batch_id) <= 256
             or command.get("variant") not in {"current_engine", "automatic"} or not isinstance(requests, list)
             or not (1 if live else 2) <= len(requests) <= 32):
@@ -935,13 +935,12 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
             with lock:
                 skipped = {row[0] for row in report if cancellations[row[0]].is_set()}
             active = [row for row in report if row[0] not in skipped]
-            # STAB3 (AG5-G run 6): each row's prefill takes a slot of the dense plan's pool, so a run never starts
-            # more rows than are free; the rest run right after it, in order. A run with no free slot is an error,
-            # never a loop that waits for one.
+            # The dense plan allocates immediately and must split an oversized initial group. GGUF
+            # queues every row in GgmlEngine.run and allocates only free sequences on each step.
             free = getattr(engine_bridge, "free_slots", lambda: None)()
-            if free is not None and len(active) > free:
-                if free < 1:
-                    raise RuntimeError("no free slot in the dense plan's pool at the start of a run")
+            if active and free is not None and free < 1:
+                raise RuntimeError("no free slot in the pool at the start of a run")
+            if configuration != "ggml" and free is not None and len(active) > free:
                 held = {row[0] for row in active[free:]}
                 leftovers.extend(row for row in report if row[0] in held)
                 report = [row for row in report if row[0] not in held]

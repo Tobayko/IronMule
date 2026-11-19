@@ -195,13 +195,19 @@ def test_an_already_measured_probe_is_not_paid_for_twice() -> None:
     assert "isinstance(readiness, Mapping)" in source
 
 
-def test_skipping_readiness_is_possible_and_is_not_the_default() -> None:
+@pytest.mark.parametrize(("options", "expected"), [([], True), (["--skip-readiness"], False)])
+def test_skipping_readiness_is_possible_and_is_not_the_default(monkeypatch, options, expected) -> None:
     import ironmule_cli
 
-    source = inspect.getsource(ironmule_cli._run_requalify)
-    assert "--skip-readiness" in source
-    assert inspect.signature(
-        requalification_module.requalify).parameters["readiness"].default is True
+    checks = []
+
+    def capture(model, *, state_path, readiness, on_progress):
+        checks.append(readiness)
+        return {"outcome": "NOT_READY"}
+
+    monkeypatch.setattr(requalification_module, "requalify", capture)
+    assert ironmule_cli.main(["requalify", "--json", *options]) == 0
+    assert checks == [expected]
 
 
 def test_not_ready_is_a_result_and_not_an_error() -> None:

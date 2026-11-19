@@ -2212,3 +2212,594 @@ whose reading came out 1.07 / 0.96; 4 beside a half-busy one read as 0.18 / 0.29
 against 9.4 for one request at the same 4 threads, within the runs' spread), and the same choice in both passes.
 Beside two busy processes (16-token answers, one block) seed 21 chose 2 threads: 5.04 / 26.0 tok/s for 1 / 8 requests
 (the defaults: 0.19 / 1.46 in the run of the weights before).
+
+### 2026-11-18 — Local Pilot thread-weight replay on Linux CPU
+
+One functional run used SmolLM2-135M-Instruct Q4_K_M, three sequences of 512 tokens and plain greedy decode on a
+shared Linux runner. The real low-load criterion excluded this runner (2.55 foreign cores at observation). For
+this smoke only, its load sensor was held at zero to exercise the probes. Starting from an 80-token filler
+context, 1, 2 and 3 threads each returned the same eight generated tokens. A separate 12-token request also
+matched before and after replay. The search comparison retained its baseline and installed no weight. Default-on
+use, live throughput and first-token latency still need representative A/B measurements under natural traffic.
+This was a functional check. The pass and rollback paths also have deterministic unit fixtures.
+
+### 2026-11-18 — AG10: a real HTTP server through two changes in prompt length
+
+Linux runner (AMD EPYC 9V74, cgroup quota 4 CPUs), SmolLM2-135M-Instruct Q4_K_M, model SHA-256
+`2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d`, patched CPU llama.cpp 4227c9b.
+Both servers used the same default numeric settings and an initial width of 8. Pilot, shared KV and speculation
+were off in both to isolate AG10. One warmup, then 48 requests each for short chats, document prompts, short chats
+again (mean prompt tokens 50, 1,085, 52). The output limit was 16. Synthetic record numbers varied; the eight
+capital questions repeated. Each 4.5 s gap between waves allowed the real AG10 idle loop to run. The throughput
+below counts reported output tokens per active wave second; p95 is time from HTTP request to first content.
+
+| Concurrent | Phase | Agent / fixed tok/s | Agent / fixed p95 first token (s) |
+| ---: | --- | ---: | ---: |
+| 8 | short | 85.56 / 59.75 | 0.67 / 1.22 |
+| 8 | documents | 4.72 / 3.33 | 15.75 / 21.62 |
+| 8 | short again | 88.27 / 57.01 | 0.61 / 1.11 |
+| 16 | short | 97.53 / 80.50 | 1.17 / 1.45 |
+| 16 | documents | 4.20 / 4.80 | 40.47 / 28.72 |
+| 16 | short again | 45.85 / 84.68 | 3.21 / 1.33 |
+
+At 8, the agent kept w8 in all 13 decisions. Another CPU job overlapped the fixed arm; the ratios do not measure
+a benefit from learning. At 16, fixed ran first, then agent with the same width calibration. The quality gate
+revision changed between these two startups and both chose the same default options. The run had one sample
+per arm. The agent served w8 through the first document wave, switched to w64 after request 65, and served two
+document waves and the first two returning short waves there. Its trial requires 64 further completions
+(`2 * WINDOW`) before it can judge a reversal. It reverted after request 129, and served the last short wave at
+w8. With 16-way traffic, warm-up included, that is the earliest possible evaluation of this trial. While the
+dream predicted a gain, the measured document and returning phases had lower throughput and higher p95 latency.
+A candidate for a future experiment is an earlier live regression check at a load change. The run does not isolate
+the cost of width alone; the normal agent and fixed serving paths also differ in admission capacity.
+
+At 16, all 144 paired streamed texts matched by SHA-256 (143/144 at 8). Neither arm returned bare city names.
+Checking the timed output hashes against the correct full-sentence answers verified 138/144 in every arm.
+Four separate replay samples confirmed the format, e.g. "The capital of France is Paris." At 16, all six
+remaining document answers were replayed and matched their recorded hashes. They described Austria without
+naming Vienna before reaching the token limit. These repeated questions do not establish general model quality.
+
+To repeat after exporting the bindings and library path printed by `tools/build_ggml.py`, use fresh result directories:
+
+```sh
+python lab/ag10/run_pair.py "$GGUF" run-8 --requests 48 --width 8 --lines 96 --idle 4.5
+python lab/ag10/run_pair.py "$GGUF" run-16 --requests 48 --width 16 --lines 96 --idle 4.5 \
+  --first fixed --gate-cache run-8/fixed-state/ggml-gate
+```
+
+## 2026-11-18 Historical MLX adapter trial and T4 preparation
+
+On Linux CPU, SmolLM2-135M-Instruct was expanded to dense float32 from the MLX 8-bit snapshot at revision
+`0f0d9b8218915bc34d401e1a340b8c049d300d5e`. With one OpenBLAS thread, four rank-four LoRA updates on
+synthetic examples and fusion took 3.81 seconds. Frozen challenger, incumbent and repeated incumbent each
+scored 12/18 on the fresh QG1 v3 challenge (seed 4314256273567495177): 4/6 arithmetic, 2/6 extraction and
+6/6 facts. The candidate failed the required improvement, so no revision was promoted and the later perplexity
+test was skipped. Earlier strict-format grading gave 0/18 on a different challenge; inspection found correct
+answers expressed as complete sentences. The v3 grading rule was revised after that observation. Other CPU tests
+overlapped the v3 run, so its measured answer latencies are unsuitable for a speed claim. The owner subsequently
+confirmed that learning applies to hardware execution. The independent QG1 checks now assess execution choices
+with a fixed language-model checkpoint.
+
+The experimental T4 attention kernel, its probe and the patched upstream translation unit compiled locally
+for SM75 with CUDA 12.6. Numerical execution on a physical T4, the complete step comparison and the HTTP
+comparison remain open. The [KG5 run package](../lab/kg5/README.md) caps a combined job at ten minutes of
+workload time and records intermediate results on rejection or timeout.
+
+
+### 2026-11-18 — From-scratch hardware model, two concurrent decodes
+
+On the same Linux CPU and SmolLM2-135M-Instruct Q4_K_M, two simultaneous requests produced nine observations
+in the same 64-token context band. The load sensor read approximately three foreign cores. This probe used its
+unmodified readings. Two paired eight-step decode probes with two sequences each produced 16 matching tokens per
+pair. One CPU thread took 0.858 and 0.756 of two threads' times. These were search observations from a shared
+runner: they created eleven coefficients from zero in the local model database. No serving weight was qualified by
+these two comparisons. The restart, learning from losses, hardware transfer of suggestions, local qualification and
+rollback paths also have deterministic tests across multiple concurrency and foreign-load regimes.
+
+### 2026-11-18 — Earlier AG10 withdrawal and recovery after a failed live switch
+
+Two further pairs used the HTTP transition protocol above on the same 4-vCPU EPYC runner and SmolLM2-135M GGUF.
+Each arm began at w8, with fresh agent state and the same cached width measurements. Each wave had 16 requests.
+The new withdrawal compares worker busy periods with similar prompt and output lengths, request counts and
+computed prompt tokens. One window must contain at least eight completions; worker first-token time starts at
+admission. The final guard also bins the median inter-arrival spacing. A slower candidate withdraws if it misses
+85 % of incumbent throughput or exceeds 125 % of its mean first-token time. Up to the last three matched windows
+per configuration are compared by median; these observations can withdraw or block a candidate, not qualify one.
+
+| Arm order and change | Phase | Agent / fixed output tok/s | Agent / fixed p95 HTTP first-token time (s) |
+| --- | --- | ---: | ---: |
+| Agent first, early withdrawal only | short | 93.67 / 73.98 | 1.25 / 1.51 |
+| | documents | 3.77 / 4.56 | 40.14 / 30.84 |
+| | short again | 15.19 / 75.54 | 12.17 / 1.48 |
+| Fixed first, early withdrawal and fresh-traffic recovery | short | 79.64 / 89.23 | 1.42 / 1.32 |
+| | documents | 3.68 / 4.23 | 42.13 / 32.97 |
+| | short again | 50.77 / 78.68 | 2.17 / 1.54 |
+
+In both pairs, the agent switched from w8 to w64 after 65 requests and reverted after 81 (16 new completions,
+previously 64). In the first pair the w64 document window delivered 0.729x the w8 window's worker throughput
+and 1.421x its mean worker first-token time. The old dream still proposed w32 after 97 requests and w64 after
+129. Both trials reverted after a single returning-chat wave, with a high cost to those waves.
+
+The final guard holds the recovered incumbent until at least 64 fresh completions in consecutive windows match the
+current request mix. The next trial must qualify on those fresh arrivals. The second pair saw a 0.684x worker
+throughput ratio and 1.268x worker first-token ratio on the w64 document trial. The remaining document wave stayed
+at w8, then the mix changed, restarting the evidence count. All three returning-chat waves stayed at w8 (16, 32, 48
+matching completions). Each pair had 143/144 identical streamed responses, and 138/144 correct factual answers on
+both arms. The quicker recovery and absence of further switches were observed in the real server. The final
+adaptive arm was slower end to end than the fixed arm in all three phases; the test has one sample per arm.
+
+A synthetic replay with two seeds and 12 windows per phase gave agent/fixed throughput ratios of
+1.000 / 1.195 / 0.897 and 1.000 / 1.177 / 0.858 for short/document/short traffic. This simulator supplies
+step costs and arrivals but no request-level completion timestamps. It exercises the existing dream decisions;
+the real withdrawal was checked above. Deterministic tests also cover a permanent move to singleton requests
+(64 new completions unlock a fresh dream), a continually alternating mix (512 new completions expire the hold),
+and an idle tick without new arrivals.
+
+### 2026-11-18 — Short repeated prompts on the preferred GGUF stream
+
+During a subsequent CPU test with SmolLM2-135M-Instruct Q4_K_M, a repeated 16-token prompt reused zero tokens
+from its preferred KV stream. The 64-token threshold for moving a request to a different stream was also being
+applied to the stream the scheduler had already chosen. After limiting that threshold to stream changes, the
+same request reused 15 prompt tokens and produced the same output as the fresh request. The HTTP timings above
+precede this change. Its end-to-end speed impact has not been measured.
+
+### 2026-11-18 — GGUF sequence widths on Runpod, including the cost of a load transition
+
+The [portable width experiment](../lab/portable_gpu/README.md) compares one and four sequence
+slots on the same GGUF with greedy decoding. Each workload has a separate calibration and
+holdout prompt set, two repetitions per width, alternating arm order, and cleared KV between
+batches. One or four requests arrive together. Throughput counts generated tokens over engine
+wall time. First-token latency is the median across requests, then the median across repetitions.
+The GPU must execute a device-local arithmetic graph and the loader must confirm every model
+layer was offloaded. A comparison qualifies only when both widths copy every expected first
+word and generate identical full token sequences. The six-token answer limit and synthetic
+copy task bound the scope of the results.
+
+| GPU, model and held-out workload | Width 1 output tok/s | Width 4 output tok/s | Width 1 first token | Width 4 first token |
+| --- | ---: | ---: | ---: | ---: |
+| A100 SXM 80 GB, SmolLM2-135M, four 32-token requests | 250.74 | 391.56 | 44.53 ms | 21.99 ms |
+| A100 SXM 80 GB, Qwen2.5-0.5B, four 256-token requests | 168.57 | 261.05 | 72.39 ms | 36.70 ms |
+| H100 80 GB, Qwen3-4B, four 32-token requests | 164.15 | 288.93 | 65.91 ms | 27.03 ms |
+| H100 80 GB, Qwen3-4B, four 1,024-token requests | 49.71 | 51.95 | 276.11 ms | 248.86 ms |
+
+On the H100, Qwen3-4B served a fresh short request, a burst of four 1,024-token requests,
+then another short request. The calibration rule selected widths 1, 4, 1. Each switch rebuilt
+the native context and warmed it while the new wave waited. Both trials returned identical,
+correct answers. The two fixed-width runs each took 551 ms. The two switching runs took
+650 and 648 ms. Median first-token latency on the returning short request rose from about
+11 ms to 63 ms. These measurements include reconfiguration at arrival. An idle server may
+absorb some rebuild time when the next request arrives later.
+
+The two arms use IronMule's own GGUF engine with the same pinned llama.cpp kernel build.
+These measurements quantify the effect of sequence width inside that engine. Stock HTTP
+serving and vLLM require their own end-to-end comparisons.
+
+A second H100 experiment exercised the controller itself, with measured context creation
+and release times on Qwen3-4B. The two policies received the same 47 calibration requests
+before 54 fresh requests per arm, including sustained concurrency after the document burst.
+The harness called the real idle decision between waves and charged the decision and any
+physical rebuild to arriving requests. This was a single ordered comparison.
+The original policy switched once and delivered 125.21 tokens/s with a median first-token
+latency of 188.86 ms. The cost-aware challenger stayed at width 1 and delivered 103.49
+tokens/s with 268.46 ms median first-token latency. Both policies produced the same token
+IDs and stop reasons and copied all 54 answers correctly. The challenger lost 17.35% in
+throughput on this trace. Its short-horizon estimate missed the subsequent sustained
+traffic. The original policy remains the serving default.
+
+**32B models.** The same experiment used two monolithic Q4_K_M files on the A100 SXM
+80 GB and RTX 6000 Ada 48 GB. Both models loaded all 65 layers
+on each tested device. The following rows are held-out medians for four simultaneous
+requests. First-token measurements follow the same per-request timing boundary.
+
+| Model, GPU | Input tokens per request | Width 1 → 4, output tok/s | Width 1 → 4, first token | Quality |
+| --- | ---: | ---: | ---: | --- |
+| Qwen3-32B, A100 SXM | 32 | 33.81 → 51.34 | 324.56 → 145.51 ms | Exact, correct |
+| Qwen3-32B, A100 SXM | 1,024 | 5.67 → 5.74 | 2,519.53 → 2,406.09 ms | Exact, correct |
+| Qwen3-32B, RTX 6000 Ada | 32 | 34.61 → 68.52 | 302.97 → 97.19 ms | Exact, correct |
+| Qwen3-32B, RTX 6000 Ada | 1,024 | 7.73 → 8.18 | 1,796.81 → 1,649.01 ms | Later tokens differed; excluded |
+| Qwen2.5-32B-Instruct, A100 SXM | 32 | 33.92 → 52.30 | 322.76 → 141.39 ms | Exact, correct |
+| Qwen2.5-32B-Instruct, A100 SXM | 1,024 | 5.90 → 6.06 | 2,420.54 → 2,281.51 ms | Exact, correct |
+| Qwen2.5-32B-Instruct, RTX 6000 Ada | 32 | 34.54 → 68.22 | 304.42 → 98.36 ms | Exact, correct |
+| Qwen2.5-32B-Instruct, RTX 6000 Ada | 1,024 | 8.04 → 8.62 | 1,721.66 → 1,560.91 ms | Exact, correct |
+
+All four calibrations selected width 4 for four short requests. Qwen3-32B on A100
+selected width 1 for four document requests. On RTX 6000 Ada, calibration selected 4
+for the same long shape but generated-token agreement failed on fresh targets. A device
+or model name alone would have missed that behavior.
+
+**Coverage and learning.** Twenty-one completed comparisons covered 20 GPU/GGUF combinations
+on A40, A100 SXM, H100, L40S, RTX 4090 and RTX 6000 Ada. The nine models ranged from
+SmolLM2-135M through Qwen2.5-32B-Instruct and Qwen3-32B. Repeated H100/Qwen3-4B
+measurements count as separate runs. Of 168 paired workload measurements, 83
+calibration pairs entered the fits, 81 holdout pairs passed quality and four pairs
+were rejected. For the GPU-type transfer test, 16 folds had both an eligible source
+GPU and target data. On 61 quality-matched target pairs the log-ratio mean absolute
+error was 0.068 for throughput and 0.099 for first-token latency. Predicting equal
+costs gave 0.224 and 0.326, respectively. Blind transfer selected the wider setting on
+three additional holdout cases whose outputs failed the quality gate. Local remeasurement
+remains part of the serving path.
+
+### 2026-11-18: GGUF chat template rendering on the CPU
+
+The HTTP chat path compiled its Jinja template on each request. Reusing a compiled template
+for the same model keeps request messages, template variables and output separate. Seven
+paired batches each rendered 24 distinct requests per arm, alternating which version went
+first. Each request produced the same rendered string in both versions. Median warm time
+per render fell from 11.400 to 0.024 ms for the Qwen3-32B template and from 1.568 to
+0.010 ms for SmolLM2-135M on the Linux cloud worker. These times cover prompt rendering
+alone. End-to-end throughput and time to first visible token are measured through the
+HTTP servers in the [comparison workflow](COMPARE.md).
+
+### 2026-11-18: Qwen3-0.6B on two EPYC vCPUs against upstream llama-server
+
+On two pinned virtual cores of an AMD EPYC 9V74 cloud worker, a frozen checkout
+(`1223ae5`) served Qwen3-0.6B Q4_K_M through the normal agent and a separate stock
+llama-server built from upstream `4227c9b`. All six starts verified the same GGUF,
+input token IDs and CPU placement. The timed workload combined short requests and
+document summaries with an eight-token output limit and 512 context tokens. A
+separate 18-question holdout at each load and repeat allowed up to 32 output tokens.
+Three paired repetitions at each load alternated which server went first.
+
+| Clients | IronMule output tok/s | llama-server output tok/s | IronMule p95 TTFT | llama-server p95 TTFT |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 4.67 | 3.69 | 2,954 ms | 3,962 ms |
+| 4 | 4.95 | 3.52 | 6,014 ms | 8,463 ms |
+
+The table gives the median of the three per-round measurements. IronMule delivered
+higher throughput in all six pairs. At one client, its p95 first-token time regressed
+22.4% in the first round. Across the 108 scored answers IronMule scored 13 and stock
+scored 10. At four clients in round two, IronMule missed one answer that stock got right.
+Some reference rounds scored zero in an entire category. The comparison therefore
+did not qualify. The hardware controller found no concurrent performance deficit
+requiring its local admission experiment. The initial gate took 1,302 seconds in a
+separate startup. Once cached, the complete six-server comparison took 297 seconds.
+[Redacted measurement and per-question scores](../evidence/comparison/qwen3-06b-cpu-frozen-20261118.json)
+
+### 2026-11-18: repeated GGUF verification during startup
+
+The GGUF serving path obtains a content revision, binds quality results to the file and
+binds batch-width results to the file. In one process it can reuse the SHA-256 of a
+large regular file while its device, inode, size, modification and change times agree.
+The initial scan checks the opened descriptor and the named file before accepting its
+digest. Each new process performs its own verification.
+
+Five alternating paired runs on the Linux cloud CPU read the 484,220,320-byte
+Qwen3-0.6B Q4_K_M GGUF from a warm OS file cache. Three consecutive identity checks
+took 1.044 s in the preceding implementation versus 0.360 s with one cold process-level
+verification followed by two lookups. Every check returned the pinned model SHA-256.
+This measurement covers file verification alone.
+
+### 2026-11-18: Qwen3-0.6B on NVIDIA L40S against llama.cpp and vLLM
+
+All three HTTP servers ran sequentially on the same 48 GB L40S with the same Q4_K_M
+GGUF and offline Hugging Face tokenizer. The stock binary was built from llama.cpp
+`4227c9b`. IronMule used upstream CUDA GGML kernels with its own agent and scheduler.
+vLLM 0.11.0 used its normal GGUF serving configuration. All nine server starts verified
+placement and the rendered token IDs. The 27 cells covered 1, 8 and 32 simultaneous
+clients, three rotated repetitions and a 32-token output limit. Values are medians
+of the three observations per engine and load.
+
+| Clients | IronMule tok/s | llama.cpp tok/s | vLLM tok/s | p95 first visible token, IronMule / llama.cpp / vLLM |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 376.1 | 371.6 | 314.4 | 20.2 / 18.0 / 45.7 ms |
+| 8 | 928.7 | 716.8 | 772.2 | 93.2 / 83.8 / 198.6 ms |
+| 32 | 1,247.6 | 1,123.7 | 1,285.1 | 392.4 / 329.3 / 566.0 ms |
+
+IronMule's throughput led at one and eight clients. vLLM led at 32. At 32 clients
+the total holdout questions answered correctly across rounds were 7/54 (IronMule),
+11/54 (llama.cpp) and 8/54 (vLLM). Some reference categories registered zero correct
+answers. Both competitor verdicts failed the acceptance criteria. The controller
+selected a local experiment targeting first-token latency at 32 clients, then
+deferred it because it could not reproduce the serving worker's native configuration.
+[Redacted per-cell measurements and verdicts](../evidence/comparison/qwen3-06b-l40s-20261118.json)
+
+### 2026-11-18: Qwen3-32B on NVIDIA L40S, identical GGUF
+
+The same physical L40S hosted each production HTTP server in turn. The models, token
+IDs, 2,048-token context, generation cap, request order within a cell and device
+placement were verified in each arm. Each concurrency was measured in three rotations.
+The default vLLM 0.11.0 GGUF backend was used. Each server produced 162 graded answers
+across the nine cells. Every answer was correct under this short-answer protocol.
+
+| Clients | IronMule output tok/s | llama.cpp output tok/s | vLLM GGUF output tok/s | p95 first visible token, IronMule / llama.cpp / vLLM |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 38.11 | 28.07 | 15.28 | 206 / 227 / 1,872 ms |
+| 8 | 112.32 | 67.96 | 25.30 | 1,016 / 1,107 / 8,168 ms |
+| 32 | 174.46 | 130.42 | 27.22 | 3,957 / 4,527 / 32,720 ms |
+
+Values are medians. In each of the nine individual cells against each reference,
+IronMule exceeded the 3% throughput margin, preserved request rate and quality and
+had no higher p95 time to first visible token. The controller found no verified
+concurrent deficit at these loads. The result applies to the bounded Q4_K_M GGUF
+protocol; AWQ serving uses a different artifact and kernel path.
+[Full report and per-question scores](../evidence/comparison/qwen3-32b-l40s-20261118.json)
+
+### 2026-11-18: Qwen3-0.6B on GeForce RTX 4090
+
+IronMule, stock llama.cpp `4227c9b` and vLLM 0.11.0 each served the same Q4_K_M
+file on one RTX 4090. Each server completed nine cells with verified device placement
+and rendered input IDs. The load and quality protocol matched the L40S small-model
+test. The table reports medians over the three repetitions.
+
+| Clients | IronMule output tok/s | llama.cpp output tok/s | vLLM GGUF output tok/s | p95 first visible token, IronMule / llama.cpp / vLLM |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 392.13 | 378.08 | 295.56 | 24.6 / 22.1 / 58.3 ms |
+| 8 | 907.21 | 660.76 | 733.68 | 109.4 / 86.6 / 220.4 ms |
+| 32 | 1,176.00 | 853.03 | 1,188.59 | 425.0 / 333.6 / 646.8 ms |
+
+IronMule answered 27/162 short questions correctly, stock llama.cpp 26/162, and
+vLLM 25/162. Some answers previously correct on the reference were lost, and some
+reference categories scored zero. The comparison missed the acceptance criteria
+against both reference servers. [Server measurements](../evidence/comparison/qwen3-06b-rtx4090-20261118.json)
+
+In a separate on-device replay, IronMule selected the first-token latency gap against
+llama.cpp at 32 clients and tested a 33-token prefill budget. Four alternating
+candidate/incumbent pairs produced identical completions, with 128/128 graded answers
+correct on both sides of this scheduling holdout. The candidate improved p95 first-token
+time by 11.7%, 8.7%, 15.7% and 2.5%. Its throughput gains were 6.7%, 6.8%, 9.5% and
+0.7%. The last pair missed the required 3% gain. IronMule recorded the trial and
+retained its previous setting. [Autonomous holdout](../evidence/comparison/qwen3-06b-rtx4090-holdout-20261118.json)
+
+### 2026-11-18: Qwen3-32B GGUF and native AWQ on one L40S
+
+This second test measured two independently deployable quantizations on one physical
+48 GB GPU. IronMule used Qwen3-32B Q4_K_M GGUF. vLLM 0.11.0 used the official
+Qwen3-32B-AWQ checkpoint and resolved AWQMarlin with float16. Both received identical
+rendered token IDs and followed the same performance and short-answer protocol.
+All nine verified pairs matched on output lengths and stop reasons. Each server solved
+162/162 graded short answers.
+
+| Clients | IronMule GGUF output tok/s | vLLM AWQ output tok/s | IronMule p95 first visible token | vLLM p95 first visible token |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 37.91 | 32.92 | 221 ms | 203 ms |
+| 8 | 107.36 | 143.24 | 1,056 ms | 905 ms |
+| 32 | 165.02 | 225.11 | 4,258 ms | 3,462 ms |
+
+Values are medians of three alternating repetitions. IronMule led in tokens/s at a single
+client. The native vLLM deployment led in tokens/s at 8 and 32 clients and had a lower
+median p95 time to first visible token at all three loads. The ratios describe complete
+deployment configurations, including differences in weight representation and kernels.
+This report is external evaluation data. [Per-round measurements and paired comparisons](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
+
+The distribution of first-token latency also matters. At 32 clients the median request
+received its first visible token in 0.95 s with IronMule and 2.33 s with vLLM AWQ.
+IronMule's p95 was 4.26 s and vLLM's was 3.46 s. All 32 answers finished in 6.21 s
+and 4.55 s respectively. Each figure is the median of three repetitions. IronMule's
+first-token latency deficit appeared in the slow end of the distribution. Distinguishing
+queuing, prompt processing and token generation requires timings inside the server.
+
+### 2026-11-18: own-traffic admission learning on an AMD EPYC CPU
+
+The production IronMule server at `268911b` served SmolLM2-135M Q4_K_M with
+`--agent on` on two CPU cores. The isolated product Python had no vLLM installation.
+Neither comparison server was available on its executable search path. Ten waves of
+four real HTTP requests produced 40/40 responses and 320 output tokens. From five
+recurring native workload observations the idle worker selected a prompt admission
+budget of 84 tokens. The driving client supplied requests and watched the service.
+
+Across four alternating, held-out pairs the candidate delivered 4.7%, 11.5%, 7.6%
+and 12.8% higher throughput with lower p95 first-token times in each pair. Both
+settings returned 16/16 correct copy answers. The third pair differed on its full
+output tokens or stop reasons, so IronMule retained the incumbent and recorded the
+attempt. The whole run took 61.7 seconds with the existing native qualification
+cache. [Product provenance, request counts, incumbent and candidate](../evidence/self-admission/smollm2-135m-cpu-20261118.json)
+
+### 2026-11-18: own-traffic admission learning on a GeForce RTX 4090
+
+The unmodified production server at `268911b` served Qwen3-0.6B Q4_K_M on an
+independently verified physical RTX 4090. The isolated interpreter and executable
+search path excluded vLLM and llama-server. Ten bursts of four HTTP requests
+produced 40 responses and 320 output tokens. The 64-sequence, 2,048-token context
+profile recorded nine own workload observations. The worker deferred the experiment.
+No candidate/incumbent pairs or new rules were recorded. This run captured GPU
+placement and the decision. The exact reason was absent from this first export.
+[RTX 4090, 2,048-token profile](../evidence/self-admission/qwen3-06b-rtx4090-deferred-20261118.json)
+
+### 2026-11-18: measuring standalone GGUF prompt processing
+
+IronMule can process a prompt in its own native call when it cannot share the current
+batch. The previous step observer timed the combined batch and missed those separate
+calls. This hid prompt-processing work from the controller's cost model. The observer
+now records each prompt chunk when it finishes. It also classifies placeholder rows
+between active GPU streams as decode work.
+
+On a two-thread AMD EPYC CPU, SmolLM2-135M Q4_K_M served short, long and short prompt
+waves at concurrency 8 and 32. The six waves totaled 120 requests. An independent hook
+counted 114 native decode calls in each run. The old observer recorded 18. The fixed
+observer recorded all 114, including the 96 standalone calls that processed 4,223
+prompt tokens. All 360 generated tokens and all stop reasons matched between revisions.
+The experiment verifies measurement coverage. Its timings apply to this CPU workload.
+[Paired measurements](../evidence/runtime/smollm2-prefill-observer-cpu.json) · [Reproduction script](../lab/portable_gpu/prefill_observer_probe.py)
+
+### 2026-11-18: Qwen3-32B prefill observations and controller decisions on an L40S
+
+Both engine revisions ran Qwen3-32B Q4_K_M on the same 48 GB NVIDIA L40S with all
+65 layers on CUDA. At 8 and 32 concurrent requests, an independent hook counted 114
+native calls across six waves. The previous observer recorded 18. The current observer
+recorded all 114, including 96 standalone calls that processed 4,223 prompt tokens.
+All 120 requests produced identical output tokens and stop reasons. An additional
+eight-request wave exercised gaps between GPU streams. Each of two affected calls
+had seven decode rows, including three placeholders that the old observer counted as
+prompt tokens. [GPU placement and call counts](../evidence/runtime/qwen3-32b-l40s-prefill-observer.json)
+
+On the same GPU, four fresh instances of the production width controller served two pairs
+of native replays in alternating revision order. Each instance learned from 48 warmup
+requests, then served 96 held-out copy tasks in short and document bursts. Both revisions
+used the same calibration of widths 8 and 32 measured on that GPU. The harness called
+the controller between waves and included that decision time in the receiving wave.
+Each wave allowed up to three output tokens. This measures a different workload from
+the 32-output-token HTTP server benchmark above.
+
+The additional observations increased the number of live samples per instance from
+108 to 240. In the final decision of each replay the controller estimated width 32 could
+deliver 3.17% and 4.18% higher throughput after the fix. The lower bounds of those
+estimates were 2.22% and 2.91%. Both fell below its 3% switching threshold, and every
+instance served at width 8 throughout. The previous revision delivered 33.760 output
+tokens/s over the held-out waves and the current revision 33.746. Each revision solved
+192/192 copy tasks, with identical output tokens and stops across the 12 paired waves.
+The controller fitted its cost parameters in memory during each replay. The measured
+controller probe is available at commit `2dce04c`.
+[Controller decisions and paired timings](../evidence/runtime/qwen3-32b-prefill-controller-l40s.json) · [Reproduction script](../lab/portable_gpu/controller_pair.py)
+
+### 2026-11-18: repeating the GPU tests with Qwen3-0.6B on an A40
+
+An NVIDIA A40 ran Qwen3-0.6B Q4_K_M with all 29 layers on CUDA. The same six waves
+again produced 114 native calls. The old observer saw 18 and the revised observer saw
+114. All 360 output tokens and stop reasons matched across the revisions. Both calls
+that bridged gaps between GPU streams counted all seven rows as decode work after the
+fix. [A40 placement and native call counts](../evidence/runtime/qwen3-06b-a40-prefill-observer.json)
+
+Each controller instance accumulated 240 live samples after the fix, up from 108. All
+four instances retained width 8. Before and after the fix, each revision solved all
+192 held-out copy tasks. Output tokens and stops matched in all 12 paired waves.
+Pooled throughput decreased from 195.56 to 192.49 output tokens/s (1.57%) on this
+workload. In the first paired repetition it went from 195.03 to 192.27 and in the
+second from 196.10 to 192.71. For the document bursts the median per-wave p95
+first-token time increased from 492.0 to 498.5 ms. These measurements cover two
+repetitions of a short-output workload. The model and the GPU both differ from the
+L40S experiment. [A40 controller decisions and paired timings](../evidence/runtime/qwen3-06b-prefill-controller-a40.json)
+
+### 2026-11-18: GGUF admission with a long answer and a waiting burst
+
+The HTTP scheduler used to start a new group after its 32nd lifetime member, even when
+31 members had already finished and the native engine had free sequences. IronMule now
+allows up to one additional group-width of waiting requests to run beside the last
+member. Only requests already waiting when the group drops to its last member qualify.
+The concurrent width stays at most 32. The group retains at most 32 requests' maximum
+output-token allowance (262,144 tokens). The worker also hands an oversized initial
+GGUF group to the native pending queue, which fills only available sequences.
+
+On an AMD EPYC CPU, the public HTTP test started one long answer and sent 31 requests
+with varying prompt lengths and output limits. After eight short answers finished it
+sent another seven. Fresh workers used the same SmolLM2-135M Q4_K_M, eight sequences,
+2,048-token context, two inference threads and checked standard GGUF settings. Each
+cell delivered 39 requests and 161 output tokens. Other jobs shared the host quota.
+
+| Fresh worker pair | Baseline / final tok/s | Baseline / final last-wave p95 first visible text | Last-wave requests finished before the long answer |
+| --- | --- | --- | --- |
+| Final then baseline | 44.89 / 46.51 | 1.905 / 1.716 s | 0 / 7 |
+| Baseline then final | 39.26 / 50.34 | 2.430 / 1.465 s | 0 / 7 |
+
+36 and 38 of the 39 response texts matched their paired baseline byte for byte.
+The prompts exercise timing and carry no semantic score. A separate late-arrival test
+waited for all 31 short HTTP responses before sending the seven. Both revisions put
+the seven in a new group, as intended. The long answers ended at different token
+counts in that pair. A worker-level test with 16 initial requests verified that all
+eight waiting rows finished before the long row in both candidate runs, against zero
+at baseline. All four worker runs generated 97 tokens over 57 steps. Their total
+wall times varied in both directions, and 15 of 16 token streams matched.
+
+An earlier unrestricted refill produced 53.76 and 60.10 tok/s against 72.42 and 73.74
+at baseline in an equal-token test with different cache histories. Waiting for the
+last member improved the early-burst trials, but doing so for newly arriving requests
+still lost throughput in both late-arrival trials on fresh workers. These observations
+led to the final backlog restriction. The measurements cover this CPU configuration.
+[All trials, source identities and group counts](../evidence/runtime/gguf-tail-refill-cpu.json) · [HTTP workload](../lab/ag10/http_refill.py) · [Worker workload](../lab/ag10/worker_refill.py)
+
+### Controller training, forecasts and a completed width trial
+
+Two REINFORCE runs each used 32,000 simulated training episodes. Both policies were
+evaluated on 384 held-out episodes. Increasing the scheduling head from 14 to 30
+weights reduced the learned policy's simulated spike cost by 6.01% and increased its
+mean time to first token from 8.32 to 11.15 seconds. The larger head remains experimental.
+[Dispatch policy](../evidence/runtime/rl4-h9-holdout.json) · [Width policy](../evidence/runtime/rl6-h9-width-holdout.json)
+
+On 576 held-out SmolLM2-135M CPU requests, conditioning the controller's dream on
+previous workload shapes reduced mean absolute log2 prediction error from 1.009692
+to 0.976098. In a follow-on live test the controller selected eight slots, served 64
+requests and reverted to four after 94 native step observations. Including the cost
+of switching, those two trial blocks ran at 32.21 output tokens/s. Fixed widths four
+and eight served them at 93.11 and 68.05. All arms answered all 64 copy requests
+correctly. On the subsequent 384 requests the controller retained width four. Each
+arm answered 383 correctly.
+[Workload, checkpoints and raw results](../training/README.md#serving-the-proposed-width-and-testing-its-rollback)
+
+### 2026-11-18: held-out tool-result conversations beside document jobs
+
+The paired Qwen3-32B deployment runner can now replay a small mixed trace after
+its standard timings. The trace starts two document extractions, then interleaves
+eight short lookups and four two-turn agent conversations when the first visible
+document output arrives. A second turn follows its actual first response and
+replays a canonical tool-call history with a user-role text envelope containing
+the tool result. Each deployment uses the same inputs regardless of what its
+first reply said. The harness grades the first command, the final returned
+value and the completed two-turn workflow. It also checks every document's
+ordered extraction and every short lookup.
+
+On a local 135M SmolLM2 GGUF with two CPU threads, the functional probe verified
+native prompt lengths and streamed all 18 responses in 7.25 s. All eight short
+lookups began while a document was running. None of the 18 responses met the
+strict output contract. One first turn produced the requested command followed
+by extra prose, and its second turn repeated the command rather than the route.
+The local run establishes client behavior and carries no GPU comparison.
+[Synthetic responses, stops, class timings and prompt digest](../evidence/runtime/heldout-mixed-smollm2-cpu.json) · [Paired and local invocation](../lab/portable_gpu/README.md)
+
+### Qwen3-32B HTTP latency under load on the L40S
+
+One new round served the same tokenized performance and factual requests as the
+earlier native vLLM AWQ deployment test. All verified IronMule cells used Q4_K_M
+and 32 separate KV streams. The vLLM values below come from the corresponding
+seed and round on an earlier L40S allocation. Each timed response generated 32
+tokens. Each load level also passed all 18 factual checks.
+
+| Concurrent clients | IronMule output tok/s | Earlier vLLM AWQ tok/s | IronMule / vLLM p95 first visible text (ms) | IronMule p95 queue / dispatch to first token (ms) |
+|---:|---:|---:|---:|---:|
+| 1 | 37.74 | 32.91 | 240 / 203 | 1 / 235 |
+| 8 | 113.52 | 143.29 | 1,148 / 905 | 10 / 1,128 |
+| 32 | 161.13 | 224.34 | 4,406 / 3,506 | 41 / 4,320 |
+
+The queue and worker percentiles describe separate distributions. At 32 clients,
+the worker's dispatch-to-first interval dominates the delay. The grouped-prompt
+deployment selected a shared KV pool during startup and produced zero verified
+grouped measurements. The shared-pool trial ended with a runtime error before
+it completed prompt verification. Neither arm qualified for selection.
+[Server timings and attempted configurations](../evidence/comparison/qwen3-32b-l40s-prefill-http.json) · [Verified IronMule cells](../evidence/runtime/qwen3-32b-l40s-prefill-selection.json) · [Archived matched requests and vLLM results](../evidence/comparison/qwen3-32b-l40s-native-awq-20261118.json)
+
+### Qwen3-32B CUDA kernels on a second L40S
+
+With all 65 layers on the GPU, three matched native-engine rounds at each width
+compared the stock kernel, the selected KG4 tensor-core layout and a cuBLAS
+path for large Q4_K/Q6_K prefill matrices. Each arm used the same pinned Q4_K_M
+weights. CUDA graphs were disabled so per-wave counters could confirm dispatch.
+The engine processed alternating short and document prompts with 32 output tokens.
+The native timings exclude HTTP transport and production scheduling.
+
+| Native path | 8 clients, median output tok/s | 32 clients, median output tok/s | Correct factual answers |
+|---|---:|---:|---:|
+| Stock | 94.04 | 168.28 | 18/18 |
+| KG4 | 106.54 | 165.60 | 18/18 |
+| Large-prompt cuBLAS | 76.80 | 121.46 | 18/18 |
+
+KG4 increased throughput by 13.38% at eight clients and reduced it by 1.59% at 32
+(medians of paired ratios). The predeclared rule for one global configuration
+required a gain at one width and no loss at the other. Both candidates therefore
+ended at the native screening stage. In a separate probe using the original CUDA
+wheel, two stock runs agreed. Grouped processing changed one of eight short
+continuations and three of the 32 mixed requests. All four cold 444-token prompts
+matched in an isolated run and shared a single 1,776-row native call.
+[Native timings, dispatch counts and quality results](../evidence/runtime/qwen3-32b-l40s-kernel-screen.json)
+
+### Follow-up for the Qwen3-32B L40S kernel
+
+The earlier native screen already enabled KG4 only for Q4_K matrix products with
+six, seven or eight input rows. Its local probe measured 41.36, 41.73 and
+42.16 ms for those steps, against 47.51, 55.56 and 56.41 ms on stock. A
+32-request wave still made 384 KG4 submissions at each of those three row
+counts. A typical eight-request wave made 384, 384 and 10,752, respectively.
+These counts motivated a separate test of the request load surrounding each
+matrix product. [Original native screen](../evidence/runtime/qwen3-32b-l40s-kernel-screen.json)
+
+The experimental selector remeasures those three row counts on the target L40S.
+It retains a row count only if its median step time improves by at least 3%.
+It enables the resulting mask while the current group has six to eight active
+and pending requests. If the group ever exceeds eight, stock kernels handle
+its remaining requests through the last straggler. A new group can reactivate
+the mask on the resident model. A change in the measured KV settings or
+sequence capacity also returns dispatch to stock. Q6_K stays on stock.
+
+The opt-in trial uses a pinned kernel and disabled CUDA graphs. Its native arms
+bracket the candidate with stock runs on held-out eight- and 32-request waves.
+The trial records native submissions, first-token latencies, answers and
+teacher-forced loss at each enabled width. A native pass unlocks the same
+bracketing comparison through the HTTP service, which checks the serving
+worker's own layer placement. [Native study](../lab/kg4/scoped_native.py) · [HTTP study](../lab/kg4/scoped_http.py)

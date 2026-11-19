@@ -47,14 +47,29 @@ class GgmlBridge:
             self._engine.close()
             raise
         self._tokenizer = tokenizer
+        self._gguf = gguf
         self._gguf_sha256 = file_sha256(gguf)
         self._gate = dict(gate) if gate else None
         self._speculate = speculate
+        if getattr(self._engine, "prefill_batch_long", False):
+            from ironmule.long_prefill_study import enable_worker
+            enable_worker(self._engine, tokenizer, self._gguf_sha256, self._gate)
         self._run_lock = threading.Lock()  # one run or one reconfiguration at a time
         self._last_run = time.monotonic()
         self._agent = None
         self._stop = threading.Event()
+        self._demand_lock = threading.Lock()
+        self._demand = 0
+        self._arrival_epoch = 0
+        self._admission = None
         self._start_agent()
+        self._bind_pilot_learning()
+        self._bind_admission_learning()
+        self._idle_thread = None
+        if (self._agent is not None or getattr(getattr(self._engine, "pilot", None), "learning", None) is not None
+                or self._admission is not None and self._admission.enabled):
+            self._idle_thread = threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True)
+            self._idle_thread.start()
 
     def _start_agent(self) -> None:
         """AG10: the agent learns, dreams and switches the engine's configuration among those the cli measured and the
@@ -70,26 +85,104 @@ class GgmlBridge:
             return
         binding = {"gguf": self._gguf_sha256, "machine": machine_key(), "engine": ENGINE_VERSION,
                    "gpu_layers": self._engine.gpu_layers}
-        self._agent = GgmlAgent(plan.get("root"), binding, configs, incumbent)
+        if "experience_sha256" in plan:
+            binding["width_experience"] = plan["experience_sha256"]
+        self._agent = GgmlAgent(plan.get("root"), binding, configs, incumbent,
+                                shared_cap=self._engine.cap if getattr(self._engine, "shared", False) else None,
+                                price_switches=False)
         serving = configs[self._agent.current]  # resumed: what this binding learned last time
         wanted = {k: bool(v) for k, v in (serving.get("settings") or {}).items() if v}
         if self._engine.seqs != int(serving["seqs"]) or wanted != {k: v for k, v in self._engine.settings.items() if v}:
             self._switch(self._agent.current)
         self._engine.observer = self._agent.observe_step
-        threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True).start()
+
+    def _bind_admission_learning(self):
+        root = (self._gate or {}).get("admission_state_root")
+        if root:
+            from pathlib import Path
+            from ironmule.compare_learning import digest, engine_binding
+            from .admission_learning import AdmissionLearning
+
+            # A configuration change invalidates the old rule, including when the new binding
+            # cannot be inspected. Optional learning never takes the serving engine offline.
+            self._engine.admission_budgets = {}
+            self._engine.admission_observer = None
+            self._experiment_binding = self._admission = None
+            try:
+                self._experiment_binding = engine_binding(self._engine, self._gguf_sha256)
+                self._admission = AdmissionLearning(Path(root), self._gguf, self._engine, self._experiment_binding,
+                                                   enabled=os.environ.get("IRONMULE_ADMISSION_LEARN", "1") != "0")
+                if os.environ.get("IRONMULE_PREFILL_STUDY") == "1":
+                    from ironmule.ggml_binary import identity
+                    from ironmule.ggml_engine import ggml_devices
+                    from ironmule_devices import runtime_binding
+
+                    native = identity().get("sha256")
+                    if native:
+                        machine = runtime_binding(ggml_devices(self._engine.L))
+                        # Only this opt-in diagnostic view omits the grouped-prefill toggle. The admission
+                        # learner retains its original, full binding and never consumes this study field.
+                        self._experiment_binding = {**self._experiment_binding,
+                            "study_native_runtime_sha256": digest([native, machine])}
+            except (OSError, ValueError, RuntimeError):
+                return
+
+    def _bind_pilot_learning(self) -> None:
+        engine = self._engine
+        pilot = getattr(engine, "pilot", None)
+        root = (self._gate or {}).get("pilot_state_root")
+        enabled = os.environ.get("IRONMULE_PILOT_LEARN", "1" if root is not None else "0") == "1"
+        if not enabled or pilot is None or engine.gpu_layers or pilot.cores < 2:
+            return
+        from pathlib import Path
+        from ironmule.ggml_engine import file_sha256
+        from ironmule.hw import STORE
+        from ironmule.pilot_learning import ThreadLearning
+
+        pilot.learning = ThreadLearning(engine, Path(root) if root else STORE, self._gguf_sha256,
+                                        file_sha256(str(pilot.weights_path)))
 
     def _switch(self, name: str) -> None:
         config = self._agent.configs[name]
         with self._run_lock:
+            started = time.perf_counter()
             self._engine.reconfigure(int(config["seqs"]), config.get("settings") or {})
-        self._agent.switched(name)
+            self._bind_pilot_learning()
+            self._bind_admission_learning()
+            elapsed = time.perf_counter() - started
+        self._agent.switched(name, seconds=elapsed if self._engine.gpu_layers else None)
 
     def _idle_loop(self) -> None:
         dreamt_at = -1  # dream again only after new traffic: a quiet server spends no CPU on it
         while not self._stop.wait(1.0):
             if self._run_lock.locked() or time.monotonic() - self._last_run < 3.0:
                 continue
-            if self._agent.requests == dreamt_at:
+            learning = getattr(getattr(self._engine, "pilot", None), "learning", None)
+            if learning is not None and self._run_lock.acquire(blocking=False):
+                try:
+                    prior_weights = dict(learning.weights)
+                    learning.idle(self._interrupted)
+                except Exception as exc:  # an unavailable probe cannot supply serving weights
+                    learning.weights.clear()
+                    learning.last = {"result": "replay failed", "error": type(exc).__name__}
+                finally:
+                    try:
+                        if learning.weights != prior_weights:
+                            self._bind_admission_learning()
+                    finally:
+                        self._run_lock.release()
+            admission = self._admission
+            if admission is not None and admission.enabled:
+                epoch = self._arrival_epoch
+                try:
+                    admission.idle(lambda: self._interrupted() or epoch != self._arrival_epoch)
+                except Exception as exc:  # idle tuning must not stop production serving
+                    admission.status = "deferred"
+                    admission.last = {"reason": "local trial unavailable", "error": type(exc).__name__}
+                    admission._publish()
+                if self._interrupted() or time.monotonic() - self._last_run < 3.0:
+                    continue
+            if self._agent is None or self._agent.requests == dreamt_at:
                 continue
             dreamt_at = self._agent.requests
             try:
@@ -98,6 +191,10 @@ class GgmlBridge:
                     self._switch(target)
             except Exception:  # noqa: BLE001 - the agent never stops the server; the incumbent keeps serving
                 self._agent.pending_switch = None
+
+    def _interrupted(self) -> bool:
+        with self._demand_lock:
+            return self._stop.is_set() or self._demand > 0
 
     @property
     def gguf_sha256(self) -> str:
@@ -115,6 +212,9 @@ class GgmlBridge:
         summary = self._engine.summary()
         return {"ggml_steps": summary["steps"], **({"speculation": summary["speculation"]}
                                                    if isinstance(summary["speculation"], dict) else {}),
+                **({"experiment_binding": self._experiment_binding} if getattr(self, "_experiment_binding", None) else {}),
+                **({"kg4_scope": summary["kg4_scope"]} if "kg4_scope" in summary else {}),
+                **({"prefill_batch": summary["prefill_batch"]} if "prefill_batch" in summary else {}),
                 **({"draft_model": summary["draft_model"]} if "draft_model" in summary else {}),
                 **({"pilot": summary["pilot"]} if "pilot" in summary else {}),
                 **({"ggml_agent": self._agent.status()} if self._agent is not None else {})}
@@ -158,16 +258,28 @@ class GgmlBridge:
                 arrived[id(fresh[-1])] = time.monotonic()
             return fresh
 
-        with self._run_lock:
-            try:
-                served = self._engine.run(jobs, admit=take if admit is not None else None)
-            finally:
-                self._last_run = time.monotonic()
+        demand = (getattr(getattr(self._engine, "pilot", None), "learning", None) is not None
+                  or getattr(getattr(self, "_admission", None), "enabled", False))
+        if demand:
+            with self._demand_lock:
+                self._demand += 1
+                self._arrival_epoch += 1
+        try:
+            with self._run_lock:
+                try:
+                    served = self._engine.run(jobs, admit=take if admit is not None else None)
+                finally:
+                    self._last_run = time.monotonic()
+        finally:
+            if demand:
+                with self._demand_lock:
+                    self._demand -= 1
         if self._agent is not None:  # the traffic memory: arrival, prompt and answer lengths, no text
             for job in served:
                 if job.reason != "cancelled":
                     self._agent.observe_request(arrived.get(id(job), time.monotonic()), len(job.ids),
-                                                max(1, len(job.tokens)), len(job.ids) - job.reused)
+                                                max(1, len(job.tokens)), len(job.ids) - job.reused,
+                                                first=job.first_ns / 1e9, finished=job.finished_ns / 1e9)
         reasons = {"eos": "stop", "length": "length", "cancelled": "cancelled"}
         results = []
         for job in served:
@@ -180,5 +292,11 @@ class GgmlBridge:
 
     def close(self) -> None:
         self._stop.set()
+        idle_thread = getattr(self, "_idle_thread", None)
+        if idle_thread is not None and idle_thread.is_alive():
+            idle_thread.join()
         with self._run_lock:
             self._engine.close()
+        admission = getattr(self, "_admission", None)
+        if admission is not None:
+            admission.path.unlink(missing_ok=True)

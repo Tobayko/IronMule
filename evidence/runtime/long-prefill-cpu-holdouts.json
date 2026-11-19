@@ -1,0 +1,620 @@
+{
+  "context": {
+    "effective_physical_microbatch": 512,
+    "flash_attention": true,
+    "sequences": 32,
+    "shared_kv": false,
+    "threads": 2,
+    "tokens_per_sequence": 2048
+  },
+  "performance_followup": {
+    "Qwen3-0.6B-Q4_K_M": {
+      "elapsed_budget_seconds": 480,
+      "finished_waves": 7,
+      "qualified": false,
+      "status": "incomplete"
+    },
+    "SmolLM2-135M-Instruct-Q4_K_M": {
+      "qualified": false,
+      "status": "cold_holdout_rejected"
+    }
+  },
+  "protocol": "ironmule.long-prefill.v1",
+  "protocol_sha256": "cad9127953c01a89f34b63cdaf111d954979fe10d558b87dcca68386b02e8d01",
+  "results": [
+    {
+      "calls": 6,
+      "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+      "model": "SmolLM2-135M-Instruct-Q4_K_M",
+      "passes": false,
+      "shapes": {
+        "2x444": {
+          "accuracy": {
+            "arithmetic": {
+              "candidate": 0,
+              "reference": 0,
+              "repeat": 0,
+              "total": 3
+            },
+            "extraction": {
+              "candidate": 1,
+              "reference": 1,
+              "repeat": 1,
+              "total": 3
+            },
+            "facts": {
+              "candidate": 1,
+              "reference": 1,
+              "repeat": 1,
+              "total": 2
+            }
+          },
+          "cases": [
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-extraction-0",
+              "prompt_sha256": "c081c740d2622628b32ab0b9be1af9842f049898a1802112467e1d323ef4c111",
+              "stop": "eos",
+              "tokens": 18
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-arithmetic-1",
+              "prompt_sha256": "fb3ee95add7cd9277989d0ae70914680afdf01a6791fb45d5f5158a0f1050c65",
+              "stop": "eos",
+              "tokens": 15
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-facts-2",
+              "prompt_sha256": "1979b90df0a30b4ffce7bae46560abf102f3ae656a2aa08d4320bf721cfe6bce",
+              "stop": "eos",
+              "tokens": 10
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-arithmetic-3",
+              "prompt_sha256": "d3f46a8bf03f28f9d0aeb6e175a12c42131b5e37cd3d6478c4aac66efb1848bd",
+              "stop": "eos",
+              "tokens": 15
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-facts-4",
+              "prompt_sha256": "bf285aebce6e77356318fb15b938d949acffa51a86d1cd94a9ce3c7ff214f8b9",
+              "stop": "eos",
+              "tokens": 9
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-extraction-5",
+              "prompt_sha256": "412357273fdee4dbef3708ca6b47d8036270200876a52e0068fb1cc8547a0ea9",
+              "stop": "eos",
+              "tokens": 17
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-arithmetic-6",
+              "prompt_sha256": "cc7397d477e7c748fd3c1a8288381aee5e568251625a033b1cb4d88f00935cf2",
+              "stop": "eos",
+              "tokens": 10
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-extraction-7",
+              "prompt_sha256": "a0f5ee8e8304d80b1129a066fe6939ab5b868bcb1aa267cfeb31dadfb9c2beab",
+              "stop": "eos",
+              "tokens": 14
+            }
+          ],
+          "passes": false,
+          "reasons": [
+            "uninformative_arithmetic"
+          ],
+          "witnesses": {
+            "candidate": [
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              },
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              },
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              },
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              }
+            ],
+            "reference": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ],
+            "repeat": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ]
+          }
+        },
+        "4x444": {
+          "accuracy": {
+            "arithmetic": {
+              "candidate": 0,
+              "reference": 0,
+              "repeat": 0,
+              "total": 3
+            },
+            "extraction": {
+              "candidate": 1,
+              "reference": 1,
+              "repeat": 1,
+              "total": 3
+            },
+            "facts": {
+              "candidate": 1,
+              "reference": 1,
+              "repeat": 1,
+              "total": 2
+            }
+          },
+          "cases": [
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-extraction-0",
+              "prompt_sha256": "3a36107c377694712cbff22a85e224b274ad70e21b2c2ef7bacbc0fcb985aaa5",
+              "stop": "eos",
+              "tokens": 14
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-arithmetic-1",
+              "prompt_sha256": "60d48b41796ab1717212657ef0beb843f83c28b4b662f37e8dd2b5567ee1b144",
+              "stop": "eos",
+              "tokens": 8
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-facts-2",
+              "prompt_sha256": "a7af3aca7d29bcdfc60efedd7e2b6de6470230e622513710b69b81c3cbb15f7c",
+              "stop": "eos",
+              "tokens": 9
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-arithmetic-3",
+              "prompt_sha256": "1d4da0376a92ac36bcc07357210ebf3bb97578bd865624aed0e05fbb7662307e",
+              "stop": "eos",
+              "tokens": 8
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-facts-4",
+              "prompt_sha256": "eea1c01d734b179f3c588ae98dcce0796432688eb504c8e74f675b11cf8e6276",
+              "stop": "eos",
+              "tokens": 10
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-extraction-5",
+              "prompt_sha256": "9c10700d1cc257f91bf8e145595c8fef6a23d7f9250f241b4bd189681bd07b40",
+              "stop": "eos",
+              "tokens": 17
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-arithmetic-6",
+              "prompt_sha256": "e536ab2e6947044333d59c6e8c38a3205fe0b0c3ef3564ef934bd72688ebc18c",
+              "stop": "eos",
+              "tokens": 9
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-extraction-7",
+              "prompt_sha256": "748d6b4dee1d4b1ea5fbfc4ca18a2bab9af7be2ae5763240b484d965fc5f55dc",
+              "stop": "eos",
+              "tokens": 17
+            }
+          ],
+          "passes": false,
+          "reasons": [
+            "uninformative_arithmetic"
+          ],
+          "witnesses": {
+            "candidate": [
+              {
+                "calls": 1,
+                "prompts": 4,
+                "rows": 1776
+              },
+              {
+                "calls": 1,
+                "prompts": 4,
+                "rows": 1776
+              }
+            ],
+            "reference": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ],
+            "repeat": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "calls": 6,
+      "gguf_sha256": "9acfc1e001311f34b4252001b626f2e466d592a42065f66571bff3790d4e1b14",
+      "model": "Qwen3-0.6B-Q4_K_M",
+      "passes": true,
+      "shapes": {
+        "2x444": {
+          "accuracy": {
+            "arithmetic": {
+              "candidate": 3,
+              "reference": 3,
+              "repeat": 3,
+              "total": 3
+            },
+            "extraction": {
+              "candidate": 3,
+              "reference": 3,
+              "repeat": 3,
+              "total": 3
+            },
+            "facts": {
+              "candidate": 1,
+              "reference": 1,
+              "repeat": 1,
+              "total": 2
+            }
+          },
+          "cases": [
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-extraction-0",
+              "prompt_sha256": "49465371bbe2a2a573f7815efa97b180efd2d0339c662043a1054e6bff921c07",
+              "stop": "eos",
+              "tokens": 4
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-arithmetic-1",
+              "prompt_sha256": "683801ae4e8333fd50746a6ce951d1b8615e41d3ec976705bb80a7eca3ec019b",
+              "stop": "eos",
+              "tokens": 10
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-facts-2",
+              "prompt_sha256": "20481d4f93baab688b5ab2087940c1d0e4aba6cec6796fba3e898eea05fb057a",
+              "stop": "eos",
+              "tokens": 4
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-arithmetic-3",
+              "prompt_sha256": "8899a322781b6539c140189ace26bff496ff5e88400c3284f4b8ec8419d139f6",
+              "stop": "eos",
+              "tokens": 10
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-facts-4",
+              "prompt_sha256": "88c5aef26d89c94453f8bcdc33fe89a19ef53ba250cec30dc6a5628fa75cfc7e",
+              "stop": "eos",
+              "tokens": 3
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-extraction-5",
+              "prompt_sha256": "3caeb2fc001c692c657a2d0052c2b19ec1000e24b2d7f07bc85086509365426d",
+              "stop": "eos",
+              "tokens": 4
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-arithmetic-6",
+              "prompt_sha256": "e18073ac8f1366a5dd720a1b2593c7188fee333afe8f8e3e3af21add822217c1",
+              "stop": "eos",
+              "tokens": 12
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-2-extraction-7",
+              "prompt_sha256": "f2cf57fba338915519bb0d6b73a88157c47113b5bdcf03811c7dee8c634fca22",
+              "stop": "eos",
+              "tokens": 4
+            }
+          ],
+          "passes": true,
+          "reasons": [],
+          "witnesses": {
+            "candidate": [
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              },
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              },
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              },
+              {
+                "calls": 1,
+                "prompts": 2,
+                "rows": 888
+              }
+            ],
+            "reference": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ],
+            "repeat": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ]
+          }
+        },
+        "4x444": {
+          "accuracy": {
+            "arithmetic": {
+              "candidate": 3,
+              "reference": 3,
+              "repeat": 3,
+              "total": 3
+            },
+            "extraction": {
+              "candidate": 2,
+              "reference": 2,
+              "repeat": 2,
+              "total": 3
+            },
+            "facts": {
+              "candidate": 1,
+              "reference": 1,
+              "repeat": 1,
+              "total": 2
+            }
+          },
+          "cases": [
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-extraction-0",
+              "prompt_sha256": "eaa76f4ec5ddde7cc32482494011419f63a5dff8ace1e121a12d33287d0ab70a",
+              "stop": "eos",
+              "tokens": 4
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-arithmetic-1",
+              "prompt_sha256": "9657623a5e1924f8cfdab9a27d98e477b77b46e332764d59359969aeec40b454",
+              "stop": "eos",
+              "tokens": 11
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-facts-2",
+              "prompt_sha256": "cd4e9000c3fe1ab3addce036b2d52ee828ee983389e9c5d0d62a596f2af7305c",
+              "stop": "eos",
+              "tokens": 3
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-arithmetic-3",
+              "prompt_sha256": "835b410f3fd0ece15e7996cf1622a391e4de8cc9d7f844f8c0dfac64a9b31bff",
+              "stop": "eos",
+              "tokens": 10
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-facts-4",
+              "prompt_sha256": "81590ae3ae900a18e31092899d2c25473ac23ac8f46a660e523aa8842b678174",
+              "stop": "eos",
+              "tokens": 14
+            },
+            {
+              "correct": false,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-extraction-5",
+              "prompt_sha256": "70daa4670487c2ac5040e97806c4164e7df3ac61b7ad96eed5fc5e98a53d3dae",
+              "stop": "eos",
+              "tokens": 4
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-arithmetic-6",
+              "prompt_sha256": "9aca82ecfe275a898be92bf2c7d47475c10d3bc953599b93d44b276f3f87fa37",
+              "stop": "eos",
+              "tokens": 12
+            },
+            {
+              "correct": true,
+              "identical_tokens_and_stops": true,
+              "key": "long-4-extraction-7",
+              "prompt_sha256": "626766bbafe1d484eaa49bcf1b5a55b137fa296884ddcfc0ac4c4d257d5fb714",
+              "stop": "eos",
+              "tokens": 8
+            }
+          ],
+          "passes": true,
+          "reasons": [],
+          "witnesses": {
+            "candidate": [
+              {
+                "calls": 1,
+                "prompts": 4,
+                "rows": 1776
+              },
+              {
+                "calls": 1,
+                "prompts": 4,
+                "rows": 1776
+              }
+            ],
+            "reference": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ],
+            "repeat": [
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              },
+              {
+                "calls": 0,
+                "prompts": 0,
+                "rows": 0
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "schema": "ironmule.long-prefill-cpu-holdouts.v1",
+  "scope": "native CPU fixture and grouped dispatch, without serving performance qualification"
+}

@@ -252,6 +252,9 @@ def static_facts() -> dict[str, Any]:
         facts["gpu_available"] = False
     if facts["system"] != "Darwin":
         facts.update(_linux_facts(facts["gpu_available"]))
+        if facts["gpu_available"]:
+            from ironmule_devices import runtime_binding
+            facts["accelerator_binding"] = runtime_binding(())
     return facts
 
 
@@ -338,6 +341,8 @@ def fingerprint(facts: dict[str, Any] | None = None) -> str:
     """Stable id for "this hardware plus this MLX". Changes -> retune."""
     facts = static_facts() if facts is None else facts
     keys = ("machine", "chip", "cpu_logical", "memory_bytes", "gpu_cores", "mlx")
+    if "accelerator_binding" in facts:
+        keys += ("accelerator_binding",)
     payload = json.dumps({k: facts.get(k) for k in keys}, sort_keys=True).encode()
     return hashlib.sha256(payload).hexdigest()[:16]
 

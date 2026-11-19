@@ -17,11 +17,13 @@ import ssl
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
 from .chat_page import CHAT_PAGE
 from .errors import InvalidRequest, ProductError
+from .live_page import LIVE_PAGE
 from .types import GenerationRequest, MAX_REQUEST_BYTES
 
 
@@ -235,7 +237,7 @@ class _ProductHTTPServer(ThreadingHTTPServer):
             self._worker_slots.release()
 
     def server_close(self) -> None:
-        if not self._service_closed:
+        if not self._service_closed and self.service is not None:
             self._service_closed = True
             try:
                 self.service.close()
@@ -304,8 +306,8 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def _send_chat_page(self) -> None:
-        encoded = CHAT_PAGE.encode("utf-8")
+    def _send_page(self, page: str) -> None:
+        encoded = page.encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
@@ -410,15 +412,21 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         except ProductError as error:
             self._send_error(error, close=True)
             return
-        if self._path() == "/":
-            # The page is static and holds no data; every call it makes still authenticates.
-            self._send_chat_page()
+        if self._path() in ("/", "/live", "/live/"):
+            # Both static shells authenticate every data request.
+            self._send_page(CHAT_PAGE if self._path() == "/" and self.server.service is not None else LIVE_PAGE)
             return
         if not self._authenticate():
             return
         path = self._path()
         try:
-            if path == "/health":
+            if path == "/v1/ironmule/live":
+                from .live_view import snapshot
+
+                self._send_json(HTTPStatus.OK, snapshot(self.server.service, self.server.progress))
+            elif self.server.service is None:
+                self._send_error(_HTTPProductError("unknown endpoint", HTTPStatus.NOT_FOUND, "not_found"))
+            elif path == "/health":
                 # Process liveness is distinct from backend readiness.
                 health = self.server.service.health()
                 if not isinstance(health, dict):
@@ -454,6 +462,9 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
             self._send_error(error, close=True)
             return
         if not self._authenticate():
+            return
+        if self.server.service is None:
+            self._send_error(_HTTPProductError("unknown endpoint", HTTPStatus.NOT_FOUND, "not_found"), close=True)
             return
         if self._path() == "/v1/ironmule/learning":
             self._learning_control()
@@ -689,6 +700,8 @@ def create_server(
     api_key: str | None = None,
     tls_cert: str | None = None,
     tls_key: str | None = None,
+    *,
+    progress: str | Path | None = None,
 ) -> ThreadingHTTPServer:
     """Create a local product HTTP server around an injected service.
 
@@ -718,7 +731,12 @@ def create_server(
     except ValueError:
         literal_host = None
     server_class = _ProductHTTPServerV6 if literal_host is not None and literal_host.version == 6 else _ProductHTTPServer
-    return server_class((host, port), service, api_key, tls_enabled=context is not None, tls_context=context)
+    from .live_view import progress_path
+
+    path = progress_path(service, progress)
+    server = server_class((host, port), service, api_key, tls_enabled=context is not None, tls_context=context)
+    server.progress = path
+    return server
 
 
 __all__ = ["create_server"]

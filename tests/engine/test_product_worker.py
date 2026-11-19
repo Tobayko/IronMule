@@ -1221,9 +1221,10 @@ def test_a_dense_run_never_starts_more_rows_than_the_pool_has_free_slots(monkeyp
 
     class Bridge:
         slots = 6
+        configuration = "dense_stacked"
 
         def metadata(self):
-            return {"configuration": "dense_stacked"}
+            return {"configuration": self.configuration}
 
         def eos_ids(self):
             return (0,)
@@ -1235,7 +1236,7 @@ def test_a_dense_run_never_starts_more_rows_than_the_pool_has_free_slots(monkeyp
             return self.slots
 
         def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
-            if len(ids) > self.free_slots():
+            if self.configuration == "dense_stacked" and len(ids) > self.free_slots():
                 raise RuntimeError("no free slot in the dense plan's pool")
             runs.append(len(ids))
             for emit in on_tokens:
@@ -1253,6 +1254,16 @@ def test_a_dense_run_never_starts_more_rows_than_the_pool_has_free_slots(monkeyp
     done = [event["request_id"] for event in sent if event["type"] == "done"]
     assert sorted(done) == [f"r{i}" for i in range(8)] and len(done) == 8, "each answered once"
     assert sent[-1]["type"] == "batch_done" and sent[-1]["request_ids"] == [f"r{i}" for i in range(8)]
+
+    # GGUF has its own bounded pending queue. It can admit each remaining row when a sequence
+    # frees, while the first long row is still decoding. All rows get exactly one terminal.
+    sent.clear()
+    runs.clear()
+    Bridge.configuration = "ggml"
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert runs == [8]
+    assert [e["request_id"] for e in sent if e["type"] == "done"] == [f"r{i}" for i in range(8)]
+    assert sent[-1]["request_ids"] == [f"r{i}" for i in range(8)]
 
     sent.clear()
     Bridge.slots = 0  # a pool with no free slot fails the batch by name instead of waiting for a slot

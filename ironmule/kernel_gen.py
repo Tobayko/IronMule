@@ -22,14 +22,17 @@ Needs `nvcc` (the CUDA toolkit llama.cpp was built with) on the machine; without
 from __future__ import annotations
 
 import ctypes
+import fcntl
 import glob
 import hashlib
 import itertools
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -1155,25 +1158,52 @@ def nvcc_path() -> str | None:
     return None
 
 
-def compute_capability() -> str | None:
+def _visible_cuda_devices() -> list[dict[str, Any]]:
+    """Query the CUDA driver in its logical device order (including CUDA_VISIBLE_DEVICES)."""
     try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"], capture_output=True,
-                             text=True, timeout=30).stdout.split()
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out[0].replace(".", "") if out else None
+        cuda = ctypes.CDLL("libcuda.so.1")
+        count = ctypes.c_int()
+        if cuda.cuInit(0) or cuda.cuDeviceGetCount(ctypes.byref(count)):
+            return []
+        devices = []
+        for ordinal in range(count.value):
+            dev, major, minor = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+            name = ctypes.create_string_buffer(256)
+            uuid = (ctypes.c_ubyte * 16)()
+            get_uuid = getattr(cuda, "cuDeviceGetUuid_v2", None) or cuda.cuDeviceGetUuid
+            if (cuda.cuDeviceGet(ctypes.byref(dev), ordinal) or get_uuid(ctypes.byref(uuid), dev)
+                    or cuda.cuDeviceGetName(name, len(name), dev)
+                    or cuda.cuDeviceComputeCapability(ctypes.byref(major), ctypes.byref(minor), dev)):
+                return []
+            devices.append({"uuid": bytes(uuid).hex(), "name": name.value.decode(errors="replace"),
+                            "cc": f"{major.value}{minor.value}"})
+        return devices
+    except (OSError, AttributeError):
+        return []
+
+
+def compute_capability() -> str | None:
+    devices = _visible_cuda_devices()
+    return devices[0]["cc"] if devices else None
 
 
 def fingerprint() -> dict[str, Any]:
-    try:
-        gpu = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
-                             capture_output=True, text=True, timeout=30).stdout.strip().splitlines()[0]
-    except (OSError, subprocess.SubprocessError, IndexError):
-        gpu = ""
+    devices = _visible_cuda_devices()
     nvcc = nvcc_path()
-    version = subprocess.run([nvcc, "--version"], capture_output=True, text=True).stdout.strip().splitlines()[-1] \
-        if nvcc else ""
-    return {"gpu": gpu, "cc": compute_capability(), "nvcc": version, "kg": KG_VERSION}
+
+    def version(command):
+        try:
+            return subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL, timeout=15).strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    try:
+        driver = Path("/proc/driver/nvidia/version").read_text().strip()
+    except OSError:
+        driver = version(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"])
+    return {"gpu": devices[0]["name"] if devices else "", "devices": devices,
+            "cc": devices[0]["cc"] if devices else None,
+            "driver": driver, "generator": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "nvcc": version([nvcc, "--version"]) if nvcc else "", "kg": KG_VERSION}
 
 
 def compile_cuda(source: str, out: Path, arch: str) -> None:
@@ -1181,12 +1211,16 @@ def compile_cuda(source: str, out: Path, arch: str) -> None:
     if nvcc is None:
         raise RuntimeError("no nvcc: KG1 needs the CUDA toolkit")
     out.parent.mkdir(parents=True, exist_ok=True)
-    src = out.with_suffix(".cu")
-    src.write_text(source)
-    done = subprocess.run([nvcc, "-O3", "-std=c++17", f"-arch=sm_{arch}", "-shared", "-Xcompiler", "-fPIC",
-                           "--cudart", "shared", "-o", str(out), str(src)], capture_output=True, text=True)
-    if done.returncode:
-        raise RuntimeError(f"nvcc failed: {done.stderr[-2000:]}")
+    with tempfile.TemporaryDirectory(dir=out.parent) as scratch:
+        src = Path(scratch) / "kernel.cu"
+        binary = Path(scratch) / "kernel.so"
+        src.write_text(source)
+        done = subprocess.run([nvcc, "-O3", "-std=c++17", f"-arch=sm_{arch}", "-shared", "-Xcompiler", "-fPIC",
+                               "--cudart", "shared", "-o", str(binary), str(src)], capture_output=True, text=True)
+        if done.returncode:
+            raise RuntimeError(f"nvcc failed: {done.stderr[-2000:]}")
+        src.replace(out.with_suffix(".cu"))
+        binary.replace(out)
 
 
 def q4k_tensors(gguf_path: str, bindings: str | None = None, kind: str = "Q4_K") -> dict[tuple[int, int], dict[str, Any]]:
@@ -1204,6 +1238,10 @@ def q4k_tensors(gguf_path: str, bindings: str | None = None, kind: str = "Q4_K")
         entry = shapes.setdefault(key, {"count": 0, "name": t.name, "data": t.data})
         entry["count"] += 1
     return shapes
+
+
+def _qualified_measurement(code: int, us: float, error: float, bound: float) -> bool:
+    return code == 0 and math.isfinite(us) and us > 0 and 0 <= error <= bound
 
 
 def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: int = 8, reps: int = 30,
@@ -1247,7 +1285,7 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                 row = {"K": K, "N": N, "B": B, "kind": "mma", "T": Tt, "R": R, "W": W, "KB": KB, "SK": SK,
                        "us": round(us.value, 2), "rel_err": err.value, "code": code}
                 measured.append(row)
-                if code == 0 and err.value <= bound and (B not in mma_best or us.value < mma_best[B]["us"]):
+                if _qualified_measurement(code, us.value, err.value, bound) and (B not in mma_best or us.value < mma_best[B]["us"]):
                     mma_best[B] = row
         for B in range(max(BATCHES) + 1, max(MMA_BATCHES) + 1):
             top = mma_best.get(-(-B // 8) * 8)
@@ -1264,7 +1302,7 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                 row = {"K": K, "N": N, "B": B, "L": L, "R": R, "W": W, "us": round(us.value, 2),
                        "rel_err": err.value, "code": code}
                 measured.append(row)
-                if code == 0 and err.value <= bound and (best is None or us.value < best["us"]):
+                if _qualified_measurement(code, us.value, err.value, bound) and (best is None or us.value < best["us"]):
                     best = row
             if B == 1:  # MQ1 (ST2): Q4_K repacked for warp streaming, float32 activations
                 for i, (Wm, Rm, Um) in enumerate(MQ_VARIANTS):
@@ -1274,7 +1312,7 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                     row = {"K": K, "N": N, "B": 1, "kind": "mq1", "W": Wm, "R": Rm, "U": Um, "us": round(us.value, 2),
                            "rel_err": err.value, "code": code}
                     measured.append(row)
-                    if code == 0 and err.value <= bound and (best is None or us.value < best["us"]):
+                    if _qualified_measurement(code, us.value, err.value, bound) and (best is None or us.value < best["us"]):
                         best = row
             top = mma_best.get(8)  # one tile of 8 tokens serves 1-8 at about the price measured at 8
             if top is not None and (best is None or top["us"] < best["us"]):
@@ -1299,7 +1337,7 @@ def tune(gguf_path: str, work: Path, *, reference_error: float = 6e-3, copies: i
                 row = {"K": K, "N": N, "B": B, "kind": "mma6", "type": TYPE_Q6_K, "T": Tt, "R": R, "W": W, "KB": KB,
                        "SK": SK, "us": round(us.value, 2), "rel_err": err.value, "code": code}
                 measured.append(row)
-                if code == 0 and err.value <= bound and (B not in best6 or us.value < best6[B]["us"]):
+                if _qualified_measurement(code, us.value, err.value, bound) and (B not in best6 or us.value < best6[B]["us"]):
                     best6[B] = row
         for B in range(1, max(MMA_BATCHES) + 1):  # one tile of 8 tokens serves 1-8 at about the price measured at 8
             top = best6.get(-(-B // 8) * 8)
@@ -1317,23 +1355,62 @@ def build(table: dict[str, Any], out: Path) -> Path:
     return out
 
 
-def ensure(gguf_path: str, cache: Path, log=print) -> Path | None:
-    """The library for this GPU, nvcc and model shapes, tuned and built once and reused after; None where it cannot be."""
-    if nvcc_path() is None or compute_capability() is None:
+def ensure(gguf_path: str, cache: Path, log=print, *, gguf_revision: str | None = None) -> Path | None:
+    """Reuse measured winners and numerical rejections for the same GPU, compiler and GGUF."""
+    from .ggml_engine import file_sha256
+
+    if nvcc_path() is None:
         return None
     fp = fingerprint()
-    shapes = sorted(q4k_tensors(gguf_path)) + sorted(q4k_tensors(gguf_path, kind="Q6_K"))
-    if not shapes:
+    devices = fp["devices"]
+    if not devices or not fp["driver"] or not fp["nvcc"] or int(fp["cc"]) < 75:
         return None
-    key = hashlib.sha256(json.dumps({"fp": fp, "shapes": shapes}, sort_keys=True).encode()).hexdigest()[:16]
-    out = cache / f"kg_{key}.so"
-    if out.exists():
-        return out
-    table = tune(gguf_path, cache, log=log)
-    (cache / f"kg_{key}.json").write_text(json.dumps(table, indent=1))
-    if not table["entries"]:
+    if len(devices) != 1:
+        log("KG: tuning requires one visible CUDA device per worker; using the backend kernels")
         return None
-    return build(table, out)
+    model = gguf_revision or ("sha256:" + file_sha256(gguf_path))
+    binding = {"schema": 1, "fingerprint": fp, "model_revision": model}
+    key = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()[:24]
+    device_key = hashlib.sha256(json.dumps(fp, sort_keys=True).encode()).hexdigest()[:24]
+    directory = cache / device_key
+    directory.mkdir(parents=True, exist_ok=True)
+    record, library = directory / f"{key}.json", directory / f"{key}.so"
+    # Concurrent servers on the same GPU should neither time competing tune runs nor see a partial library.
+    with (directory / ".lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            saved = json.loads(record.read_text())
+        except (FileNotFoundError, ValueError):
+            saved = {}
+        if isinstance(saved, dict) and saved.get("binding") == binding:
+            if saved.get("outcome") == "rejected":
+                return None
+            if (saved.get("outcome") == "built" and library.is_file()
+                    and saved.get("library_sha256") == file_sha256(str(library))):
+                return library
+        if not (q4k_tensors(gguf_path) or q4k_tensors(gguf_path, kind="Q6_K")):
+            return None
+        table = tune(gguf_path, directory, log=log)
+        if table["fingerprint"] != fp:
+            raise RuntimeError("CUDA device or toolchain changed during kernel measurement")
+        outcome = "incomplete"
+        with tempfile.TemporaryDirectory(dir=directory) as scratch:
+            stage = Path(scratch)
+            digest = None
+            if table["entries"]:
+                built = build(table, stage / "candidate.so")
+                digest = file_sha256(str(built))
+                built.replace(library)
+                outcome = "built"
+            elif table["measured"] and all(row["code"] == 0 and math.isfinite(row["rel_err"])
+                                          and row["rel_err"] > table["error_bound"] for row in table["measured"]):
+                # OOMs, failed launches and interrupted measurements can be retried on a later startup.
+                outcome = "rejected"
+            report = {**table, "binding": binding, "outcome": outcome, "library_sha256": digest}
+            summary = stage / "result.json"
+            summary.write_text(json.dumps(report))
+            summary.replace(record)
+        return library if outcome == "built" else None
 
 
 __all__ = ["BATCHES", "KG_VERSION", "MMA6_VARIANTS", "MMA_BATCHES", "MMA_VARIANTS", "build", "ensure", "fingerprint", "library_source", "q4k_tensors", "tune",

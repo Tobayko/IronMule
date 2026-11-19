@@ -1,0 +1,63 @@
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -55,6 +55,10 @@
+ #include <algorithm>
+ #include <array>
+ #include <atomic>
++#include <cstdlib>
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <unistd.h>
+ #include <charconv>
+ #include <cinttypes>
+ #include <condition_variable>
+@@ -2012,6 +2016,34 @@
+               src1->ne[1], ctx.stream()) == 0;
+ }
+
++static std::atomic<uint64_t> ironmule_large_prefill_cublas_dispatches{0};
++
++// An opt-in, per-process shared counter lets the HTTP benchmark observe dispatch in its worker.
++static uint64_t * ironmule_map_prefill_counter() {
++    const char * dir = std::getenv("IRONMULE_CUBLAS_COUNTER_DIR");
++    if (dir == nullptr || !*dir) return nullptr;
++    const std::string name = std::string(dir) + "/worker-" + std::to_string(getpid()) + ".bin";
++    const int fd = open(name.c_str(), O_CLOEXEC | O_RDWR | O_CREAT | O_EXCL, 0600);
++    if (fd < 0) return nullptr;
++    void * mapped = MAP_FAILED;
++    if (ftruncate(fd, sizeof(uint64_t)) == 0) {
++        mapped = mmap(nullptr, sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
++    }
++    close(fd);
++    return mapped == MAP_FAILED ? nullptr : static_cast<uint64_t *>(mapped);
++}
++
++static void ironmule_note_large_prefill() {
++    static uint64_t * const published = ironmule_map_prefill_counter();
++    ironmule_large_prefill_cublas_dispatches.fetch_add(1, std::memory_order_relaxed);
++    if (published) __atomic_fetch_add(published, uint64_t(1), __ATOMIC_RELAXED);
++}
++
++extern "C" GGML_BACKEND_API uint64_t ironmule_large_prefill_dispatch_count();
++extern "C" GGML_BACKEND_API uint64_t ironmule_large_prefill_dispatch_count() {
++    return ironmule_large_prefill_cublas_dispatches.load(std::memory_order_relaxed);
++}
++
+ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
+     const bool split = ggml_backend_buft_is_cuda_split(src0->buffer->buft);
+
+@@ -2085,6 +2117,14 @@
+     } else if (!split && use_mul_mat_vec_q) {
+         ggml_cuda_mul_mat_vec_q(ctx, src0, src1, nullptr, dst);
+     } else if (!split && use_mul_mat_q) {
++        // The experiment changes only dense, two-dimensional prompt-sized Q4_K/Q6_K matrices.
++        if ((src0->type == GGML_TYPE_Q4_K || src0->type == GGML_TYPE_Q6_K)
++                && src1->ne[1] >= 128 && src0->ne[2] == 1 && src0->ne[3] == 1
++                && src1->ne[2] == 1 && src1->ne[3] == 1) {
++            ironmule_note_large_prefill();
++            ggml_cuda_op_mul_mat(ctx, src0, src1, dst, ggml_cuda_op_mul_mat_cublas, nullptr);
++            return;
++        }
+         ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst);
+     } else if (!split && (use_batched_cublas_f16 || use_batched_cublas_bf16 || use_batched_cublas_f32)
+         && !ggml_is_transposed(src0) && !ggml_is_transposed(src1) && src1->ne[2]*src1->ne[3] > 1) {

@@ -1,0 +1,850 @@
+{
+  "schema": "ironmule.ag10.replay-study.v1",
+  "source_sha256": {
+    "training/ag10_replay_study.py": "006f7ea8aa13fd58075c747ab54768ef5810d5011ac0aee25cdd5d472fbb6e40",
+    "ironmule/ggml_agent.py": "2bce69136f7645236c3bc11666e3efebaf2f7fb7bde09f251ec3066b287f7b80",
+    "ironmule/ggml_engine.py": "cc6142f6e58578500a6b541a1994d2354f8ce5d2b02f903795fefbf4ce22f229"
+  },
+  "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "cpu_arch": "x86_64",
+  "threads": 2,
+  "seed": 728103,
+  "native_llama_sha256": "d19d38460897c211b36e0c21cdb76bbdb33f6c75b9ee6c373db16ed8ac47b1f0",
+  "context": 192,
+  "max_new_tokens": 3,
+  "width4_width8_calibration_exact": true,
+  "calibration_output_digests": {
+    "4": "c5f315f1c52276868eafa5cb2bd33261c2c1f63a2a35811a9c0bdbe36cd3db67",
+    "8": "c5f315f1c52276868eafa5cb2bd33261c2c1f63a2a35811a9c0bdbe36cd3db67"
+  },
+  "configs": [
+    "w4",
+    "w8"
+  ],
+  "features": [
+    "prompt_tokens",
+    "computed_prompt_tokens",
+    "generated_tokens",
+    "arrival_gap_s"
+  ],
+  "blocks": [
+    {
+      "block": 0,
+      "role": "calibration",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        31.9375,
+        3.0,
+        0.10595504132253418
+      ]
+    },
+    {
+      "block": 1,
+      "role": "calibration",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        31.96875,
+        3.0,
+        0.09918548148397671
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 2,
+      "role": "calibration",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        31.90625,
+        3.0,
+        0.07701882425810196
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 3,
+      "role": "calibration",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.84375,
+        3.0,
+        0.28044027038718455
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 4,
+      "role": "calibration",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.96875,
+        3.0,
+        0.2762714939033744
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 5,
+      "role": "calibration",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.96875,
+        3.0,
+        0.26680103229028324
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 6,
+      "role": "calibration",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        49.0625,
+        3.0,
+        0.1353850512581806
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 7,
+      "role": "calibration",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        2.5,
+        3.0,
+        0.018564250741966985
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 8,
+      "role": "calibration",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        2.5,
+        3.0,
+        0.020440572838725208
+      ],
+      "decision": "stay"
+    },
+    {
+      "block": 9,
+      "role": "holdout",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        31.9375,
+        3.0,
+        0.08243533638714355
+      ],
+      "forecast": {
+        "recent": [
+          102.6875,
+          74.57161458333333,
+          3.0,
+          0.23655644463153946
+        ],
+        "conditioned": [
+          102.6875,
+          74.57161458333333,
+          3.0,
+          0.23655644463153946
+        ]
+      },
+      "error": {
+        "recent": 1.089839340280192,
+        "conditioned": 1.089839340280192
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 10,
+      "role": "holdout",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        31.96875,
+        3.0,
+        0.07943066203241018
+      ],
+      "forecast": {
+        "recent": [
+          106.9375,
+          60.916015625,
+          3.0,
+          0.16834876501147933
+        ],
+        "conditioned": [
+          106.9375,
+          60.916015625,
+          3.0,
+          0.16834876501147933
+        ]
+      },
+      "error": {
+        "recent": 0.9232629151007422,
+        "conditioned": 0.9232629151007422
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 11,
+      "role": "holdout",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 5,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        31.875,
+        3.0,
+        0.07291606129048535
+      ],
+      "forecast": {
+        "recent": [
+          100.0625,
+          50.030598958333336,
+          3.0,
+          0.1460292749297635
+        ],
+        "conditioned": [
+          47.875,
+          35.300130208333336,
+          3.0,
+          0.10172900765275637
+        ]
+      },
+      "error": {
+        "recent": 0.8103062936680583,
+        "conditioned": 0.29612458311643847
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 12,
+      "role": "holdout",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 6,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.90625,
+        3.0,
+        0.2812880541934001
+      ],
+      "forecast": {
+        "recent": [
+          83.5625,
+          43.361979166666664,
+          3.0,
+          0.13128528683105548
+        ],
+        "conditioned": [
+          45.5,
+          34.638671875,
+          3.0,
+          0.10678846149253031
+        ]
+      },
+      "error": {
+        "recent": 0.8104307944941321,
+        "conditioned": 1.1789601272221408
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 13,
+      "role": "holdout",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.96875,
+        3.0,
+        0.26072557167748117
+      ],
+      "forecast": {
+        "recent": [
+          76.125,
+          46.955078125,
+          3.0,
+          0.1372249080186552
+        ],
+        "conditioned": [
+          76.125,
+          46.955078125,
+          3.0,
+          0.1372249080186552
+        ]
+      },
+      "error": {
+        "recent": 0.7726009715360866,
+        "conditioned": 0.7726009715360866
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 14,
+      "role": "holdout",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 5,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.96875,
+        3.0,
+        0.29798783145182123
+      ],
+      "forecast": {
+        "recent": [
+          96.1875,
+          47.704427083333336,
+          3.0,
+          0.1359485687442386
+        ],
+        "conditioned": [
+          119.4375,
+          116.416015625,
+          3.0,
+          0.2612091196914772
+        ]
+      },
+      "error": {
+        "recent": 0.7349694211029699,
+        "conditioned": 0.10596190784476434
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 15,
+      "role": "holdout",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 6,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        49.0625,
+        3.0,
+        0.15813721603227615
+      ],
+      "forecast": {
+        "recent": [
+          85.5,
+          40.822265625,
+          3.0,
+          0.1318055515586012
+        ],
+        "conditioned": [
+          121.1875,
+          120.12955729166667,
+          3.0,
+          0.2781466176248289
+        ]
+      },
+      "error": {
+        "recent": 0.27425348912423914,
+        "conditioned": 0.5409437189674484
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 16,
+      "role": "holdout",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        2.5,
+        3.0,
+        0.022760952064521507
+      ],
+      "forecast": {
+        "recent": [
+          88.8125,
+          58.409505208333336,
+          3.0,
+          0.17310686541759687
+        ],
+        "conditioned": [
+          88.8125,
+          58.409505208333336,
+          3.0,
+          0.17310686541759687
+        ]
+      },
+      "error": {
+        "recent": 1.8702395996750711,
+        "conditioned": 1.8702395996750711
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 17,
+      "role": "holdout",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        2.5,
+        3.0,
+        0.03939088732271733
+      ],
+      "forecast": {
+        "recent": [
+          87.125,
+          69.07942708333333,
+          3.0,
+          0.18472466012207486
+        ],
+        "conditioned": [
+          87.125,
+          69.07942708333333,
+          3.0,
+          0.18472466012207486
+        ]
+      },
+      "error": {
+        "recent": 1.7685939005807554,
+        "conditioned": 1.7685939005807554
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 18,
+      "role": "replay",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        31.875,
+        3.0,
+        0.08133393493546699
+      ],
+      "forecast": {
+        "recent": [
+          95.375,
+          66.42252604166667,
+          3.0,
+          0.20784420978686766
+        ],
+        "conditioned": [
+          95.375,
+          66.42252604166667,
+          3.0,
+          0.20784420978686766
+        ]
+      },
+      "error": {
+        "recent": 0.9813251947157255,
+        "conditioned": 0.9813251947157255
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 19,
+      "role": "replay",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        32.0,
+        3.0,
+        0.08017901074204166
+      ],
+      "forecast": {
+        "recent": [
+          95.4375,
+          63.785807291666664,
+          3.0,
+          0.17574266327288032
+        ],
+        "conditioned": [
+          95.4375,
+          63.785807291666664,
+          3.0,
+          0.17574266327288032
+        ]
+      },
+      "error": {
+        "recent": 0.9107029154827577,
+        "conditioned": 0.9107029154827577
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 20,
+      "role": "replay",
+      "phase": "short",
+      "serving": "w4",
+      "matched_prior_blocks": 8,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        32.0,
+        32.0,
+        3.0,
+        0.06805041751607449
+      ],
+      "forecast": {
+        "recent": [
+          107.875,
+          63.400390625,
+          3.0,
+          0.19991431419214536
+        ],
+        "conditioned": [
+          52.625,
+          42.975260416666664,
+          3.0,
+          0.13196079964406923
+        ]
+      },
+      "error": {
+        "recent": 1.0568991284700413,
+        "conditioned": 0.5149861839369352
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 21,
+      "role": "replay",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 9,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.96875,
+        3.0,
+        0.28004193919355935
+      ],
+      "forecast": {
+        "recent": [
+          102.75,
+          50.526692708333336,
+          3.0,
+          0.16590040894779542
+        ],
+        "conditioned": [
+          38.0,
+          33.526041666666664,
+          3.0,
+          0.0895871232323744
+        ]
+      },
+      "error": {
+        "recent": 0.5974218273269356,
+        "conditioned": 1.315124316293141
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 22,
+      "role": "replay",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        127.90625,
+        3.0,
+        0.31162394912920016
+      ],
+      "forecast": {
+        "recent": [
+          87.25,
+          52.711588541666664,
+          3.0,
+          0.15173563232312992
+        ],
+        "conditioned": [
+          87.25,
+          52.711588541666664,
+          3.0,
+          0.15173563232312992
+        ]
+      },
+      "error": {
+        "recent": 0.7110278575219194,
+        "conditioned": 0.7110278575219194
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 23,
+      "role": "replay",
+      "phase": "document",
+      "serving": "w4",
+      "matched_prior_blocks": 8,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        128.0,
+        3.0,
+        0.33651334893534846
+      ],
+      "forecast": {
+        "recent": [
+          92.4375,
+          47.559895833333336,
+          3.0,
+          0.14233180045868268
+        ],
+        "conditioned": [
+          114.125,
+          103.67838541666667,
+          3.0,
+          0.2297033395913929
+        ]
+      },
+      "error": {
+        "recent": 0.7776042882421251,
+        "conditioned": 0.25362076816731494
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 24,
+      "role": "replay",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 9,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        49.0625,
+        3.0,
+        0.16202335074194707
+      ],
+      "forecast": {
+        "recent": [
+          101.5,
+          63.039713541666664,
+          3.0,
+          0.18810361435014863
+        ],
+        "conditioned": [
+          124.375,
+          116.71875,
+          3.0,
+          0.2516905233518234
+        ]
+      },
+      "error": {
+        "recent": 0.22527049656872802,
+        "conditioned": 0.4767390464455982
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 25,
+      "role": "replay",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        2.5,
+        3.0,
+        0.024978267999916082
+      ],
+      "forecast": {
+        "recent": [
+          88.625,
+          68.517578125,
+          3.0,
+          0.23226675232934257
+        ],
+        "conditioned": [
+          88.625,
+          68.517578125,
+          3.0,
+          0.23226675232934257
+        ]
+      },
+      "error": {
+        "recent": 2.000988120540167,
+        "conditioned": 2.000988120540167
+      },
+      "decision": "stay"
+    },
+    {
+      "block": 26,
+      "role": "replay",
+      "phase": "followup",
+      "serving": "w4",
+      "matched_prior_blocks": 0,
+      "requests": 32,
+      "correct": 32,
+      "generated": 96,
+      "actual": [
+        128.0,
+        2.5,
+        3.0,
+        0.0223982610644476
+      ],
+      "forecast": {
+        "recent": [
+          89.5625,
+          56.721354166666664,
+          3.0,
+          0.1713434575300196
+        ],
+        "conditioned": [
+          89.5625,
+          56.721354166666664,
+          3.0,
+          0.1713434575300196
+        ]
+      },
+      "error": {
+        "recent": 1.8587192520813964,
+        "conditioned": 1.8587192520813964
+      },
+      "decision": "switch",
+      "switched_to": "w8"
+    }
+  ],
+  "holdout": {
+    "blocks": 18,
+    "requests": 576,
+    "correct": 576,
+    "conditioned_blocks": 8,
+    "mean_absolute_log2_error": {
+      "recent": 1.009691989250669,
+      "conditioned": 0.9760978177504774
+    }
+  },
+  "live_steps": {
+    "w4": 1401,
+    "w8": 0
+  },
+  "world_models": {
+    "w4": {
+      "theta": [
+        0.050944,
+        0.003516,
+        2.218747,
+        -0.094487
+      ],
+      "steps": 1536
+    },
+    "w8": {
+      "theta": [
+        0.00172,
+        0.005381,
+        2.63974,
+        0.003793
+      ],
+      "steps": 135
+    }
+  },
+  "elapsed_s": 183.98367180100468
+}

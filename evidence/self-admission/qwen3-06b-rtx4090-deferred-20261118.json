@@ -1,0 +1,104 @@
+{
+  "schema": "ironmule.self-traffic-proof.v1",
+  "status": "incomplete",
+  "phase": "finished",
+  "source_commit": "268911be9c85ac5556c80c2b1eaaa294fcb66550",
+  "retrieved_utc": "2026-11-18T16:01:21+00:00",
+  "scope": "Product-only GPU serving and live observation on one RTX 4090. The idle admission experiment was deferred before a measured pair was recorded.",
+  "model_sha256": "9acfc1e001311f34b4252001b626f2e466d592a42065f66571bff3790d4e1b14",
+  "model": {
+    "repo": "bartowski/Qwen_Qwen3-0.6B-GGUF",
+    "commit": "60b85c0e3d8fe0f6474f406922a26d12aca4550d",
+    "file": "Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+    "bytes": 484220320
+  },
+  "machine": {
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "provider": "cuda",
+    "driver_version": "595.112.07",
+    "gpu_memory_mib": 24564,
+    "gpu_layers": 999
+  },
+  "entrypoint": {
+    "argv": [
+      "python",
+      "-m",
+      "ironmule_cli",
+      "serve",
+      "--gguf",
+      "<GGUF>",
+      "--agent",
+      "on",
+      "--no-thinking",
+      "--state-dir",
+      "<new local state>",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "<ephemeral>"
+    ],
+    "route": "/v1/chat/completions",
+    "model_gate": {
+      "passes": true
+    },
+    "pilot_active": true,
+    "ggml_agent_active": true,
+    "serving_ready_at_end": true,
+    "rival_binaries_resolvable": {
+      "vllm": false,
+      "llama-server": false
+    },
+    "isolated_python_vllm_importable": false
+  },
+  "runtime": {
+    "implementation": "f7931ca3d2894d653e675e7695f7ec2ca39f027e0d6fc5df2201bbd969d4f194",
+    "engine_version": 5,
+    "threads": 18,
+    "seqs": 64,
+    "seq_ctx": 2048,
+    "max_rows": 16
+  },
+  "traffic": {
+    "expected_requests": 40,
+    "completed_requests": 40,
+    "completed_waves": 10,
+    "generation_tokens": 320,
+    "max_tokens": 8,
+    "concurrency": 4,
+    "failed_requests": 0,
+    "workload": "Each of ten waves sent two short and two long synthetic shipping records to the local chat API with greedy decoding."
+  },
+  "observations": 9,
+  "elapsed_seconds": 121.035,
+  "controller": {
+    "origin": "Completed concurrent requests from this server",
+    "trigger": "Production idle worker",
+    "incumbent_budget": null,
+    "candidate_budget": null,
+    "workload_key": null,
+    "holdout_seed": null,
+    "unit": "prompt tokens admitted together"
+  },
+  "selection": null,
+  "decision": "deferred",
+  "reasons": [],
+  "deferral_reason_recorded": false,
+  "policy_promoted": false,
+  "rules_in_serving_health": 0,
+  "holdout": [],
+  "completed_holdout_pairs": 0,
+  "placement_evidence": {
+    "only_visible_board_uuid_matches_worker": true,
+    "serving_device": "gpu",
+    "native_holdout_child_observed": false,
+    "matching_ledger_validated": false
+  },
+  "provenance": {
+    "product_package_sha256": "13cc1a97831e105488c768c490c9ad20c263655ee02955167dd4247e35b72493",
+    "package_manifest_entries": 158,
+    "driver_sha256": "9d4a669ebc63e7b5e207239fbdbff14c9e7be9930ea26260d3037e58a8478c81",
+    "placement_extractor_sha256": "7f95e018e8ac07f27637c362b835904f81ae02ecf263974f28124fb262e0b8a8",
+    "protected_raw_report_sha256": "082de167fa4477fdac27b3227c7ee29a24daf569ac55ce6c15fc5d356cdd4066",
+    "protected_placement_receipt_sha256": "5703aa82ddcab53280ac09978b1355f71d937063fc5251447dfc3d308b246199"
+  }
+}

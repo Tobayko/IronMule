@@ -16,10 +16,11 @@ from typing import Any, Iterator
 from .errors import (BackendUnavailable, EngineLimitExceeded, InvalidRequest, StateError,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .serving_policy import ServingLog, ServingPolicy, load_policy
+from .types import MAX_OUTPUT_TOKENS, GenerationRequest, ModelSpec
 
 STABILITY_LOG = "stability-log.jsonl"  # STAB1: admission, groups, ends, worker exits; bounded like the serving log
 MAX_RESTARTS, RESTART_WINDOW_S = 3, 600.0  # STAB1: a fourth worker loss within ten minutes stops recovery
-MAX_GROUP_MEMBERS = 32  # requests one group may serve over its life, its joiners included (the batch protocol's 32)
+MAX_GROUP_MEMBERS = 32  # initial requests per batch command
 RESTART_BACKOFF_S = (0.0, 5.0, 20.0)  # before the 1st, 2nd and 3rd attempt: device memory may free late
 # What a replacement must report as the first worker did; `engine` holds the tuned profile the learner is bound to.
 _IDENTITY_KEYS = ("model_id", "revision", "device", "execution_variant", "sources_sha256", "engine")
@@ -28,7 +29,6 @@ _IDENTITY_KEYS = ("model_id", "revision", "device", "execution_variant", "source
 def _identity_of(backend: Any) -> dict[str, Any]:
     payload = getattr(backend, "ready_payload", None) or {}
     return {key: payload.get(key) for key in _IDENTITY_KEYS}
-from .types import GenerationRequest, ModelSpec
 
 
 def _set_replay_phase(state: dict, phase: str) -> bool:
@@ -158,6 +158,7 @@ class ProductService:
         self._closed = threading.Event()
         self._active: set[str] = set()
         self._completed = self._failed = self._cancelled = 0
+        self._live_samples: deque[dict] = deque(maxlen=32)
         self._last_batch_size: int | None = None
         self._batch_count = 0
         self._joined = 0  # requests that joined a running group (SERVE8, the dense plan's slot reuse)
@@ -215,6 +216,33 @@ class ProductService:
             if getattr(self.backend, "ggml_gate", None) is not None:  # GG1: the gate the engine passed at its start
                 result["ggml"] = {"gate": {k: self.backend.ggml_gate.get(k) for k in ("ratio", "interval", "passes")},
                                   "answers": "may differ from the MLX plans, within the gate"}
+                if self.backend.ggml_gate.get("diagnostic"):
+                    from ironmule.ggml_gate_diagnostics import sanitize
+
+                    diagnostic = sanitize(self.backend.ggml_gate["diagnostic"])
+                    if diagnostic:
+                        result["ggml"]["gate"]["diagnostic"] = diagnostic
+                streams = self.backend.ggml_gate.get("streams")
+                if isinstance(streams, dict):
+                    from ironmule.ggml_gate_diagnostics import sanitize
+
+                    check = {"passes": streams.get("passes") is True}
+                    grouped = streams.get("prefill_batch")
+                    if isinstance(grouped, dict):
+                        check["grouped_greedy_match"] = grouped.get("matches") is True
+                        count = grouped.get("calls")
+                        if type(count) is int and count >= 0:
+                            check["grouped_calls"] = count
+                    diagnostic = sanitize(streams.get("diagnostic"))
+                    if diagnostic:
+                        check["diagnostic"] = diagnostic
+                    result["ggml"]["stream_qualification"] = check
+                fallback = self.backend.ggml_gate.get("kernel_fallback")
+                if fallback:
+                    result["ggml"]["kernel_fallback"] = fallback
+                generation = self.backend.ggml_gate.get("kernel_generation")
+                if generation:
+                    result["ggml"]["kernel_generation"] = generation
                 width = self.backend.ggml_gate.get("sequences")
                 if isinstance(width, dict):  # SEQ1: the width the engine chose on this machine, and why
                     result["ggml"]["sequences"] = {k: width.get(k) for k in ("sequences", "fitting", "rates", "reason")}
@@ -228,8 +256,23 @@ class ProductService:
                 if isinstance(drafting, dict):  # DM1: the draft model's calibration, costs and what it brought
                     result["ggml"]["draft_model"] = dict(drafting)
                 agent = getattr(self.backend, "ggml_agent_status", None)
+                comparison = getattr(self.backend, "ggml_experiment_binding", None)
+                admission = getattr(self.backend, "admission_learning_status", None)
+                if admission:
+                    result["ggml"]["admission_learning"] = admission
+                if comparison:
+                    result["ggml"]["experiment_binding"] = dict(comparison)
                 if isinstance(agent, dict):  # AG10: what the engine's agent serves, its models and its last decisions
                     result["ggml"]["agent"] = dict(agent)
+                kg4 = getattr(self.backend, "ggml_kg4_scope", None)
+                if kg4 is not None:
+                    result["ggml"]["kg4_scope"] = dict(kg4)
+                placement = getattr(self.backend, "ggml_kg4_placement", None)
+                if placement is not None:
+                    result["ggml"]["kg4_placement"] = dict(placement)
+                prefill = getattr(self.backend, "ggml_prefill_status", None)
+                if prefill is not None:
+                    result["ggml"]["prefill_batch"] = dict(prefill)
             if getattr(self.backend, "speculate", False) is True:  # SP2: asked for; what serves and what it learned
                 engine = (getattr(self.backend, "ready_payload", None) or {}).get("engine") or {}
                 dense = engine.get("dense_plan") or engine.get("ggml") or {}  # GG1: the ggml engine says it there
@@ -257,6 +300,11 @@ class ProductService:
             result["knobs"] = {"source": engine.get("profile_source"), "values": engine["selected_knobs"],
                                "class_a": class_a_knobs(engine["selected_knobs"]) is not None}
         return result
+
+    def live_samples(self) -> list[dict]:
+        """Recent completed real requests, limited to timings and counts."""
+        with self._lock:
+            return [sample.copy() for sample in self._live_samples]
 
     def accepting(self) -> bool:
         """HW1: whether `stream` would admit a request now (open, and a worker ready or being replaced)."""
@@ -747,12 +795,25 @@ class ProductService:
                 self.learning.ended(session.request.request_id, session.end_ns)
             except Exception:  # noqa: BLE001 - a learner error must not stop the scheduler (STAB1)
                 self._learning_fault()
+        elapsed = (session.end_ns - session.submitted_ns) / 1e9
+        first_seconds = (session.first_ns - session.submitted_ns) / 1e9 if session.first_ns is not None else None
+        dispatch = session.dispatched_ns
+        queue_seconds = (dispatch - session.submitted_ns) / 1e9 if dispatch is not None else None
         self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
                   error=session.error, tokens=session.tokens,
-                  queue_s=None if session.dispatched_ns is None else (session.dispatched_ns - session.submitted_ns) / 1e9,
-                  first_s=None if session.first_ns is None else (session.first_ns - session.submitted_ns) / 1e9,
-                  total_s=(session.end_ns - session.submitted_ns) / 1e9)
+                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed)
         with self._lock:
+            if session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
+                self._live_samples.append({
+                    "at": time.time(), "completion_tokens": session.tokens,
+                    "tokens_per_second": session.tokens / elapsed,
+                    "ttft_ms": first_seconds * 1000 if first_seconds is not None else None,
+                    "prompt_tokens": session.prompt_tokens,
+                    "queue_ms": queue_seconds * 1000 if queue_seconds is not None else None,
+                    "dispatch_to_first_ms": (session.first_ns - dispatch) / 1e6
+                    if dispatch is not None and session.first_ns is not None else None,
+                    "first_to_end_ms": (session.end_ns - session.first_ns) / 1e6 if session.first_ns is not None else None,
+                })
             self._sessions.pop(session.request.request_id, None)
             self._active.discard(session.request.request_id)
         self._pending.task_done()
@@ -1335,6 +1396,14 @@ class ProductService:
         # engine counts members over the group's life, as measured (SERVE8, RL6, LD1-V).
         reuses = getattr(self.backend, "reuses_slots", False) is True
 
+        capacity = self._batch_capacity()
+        # GGUF can refill freed sequences while a long answer continues. Bound retained request
+        # records to one extra wave and retained token frames to the original 32-request maximum.
+        refill = reuses and getattr(self.backend, "engine_configuration", None) == "ggml"
+        lifetime = MAX_GROUP_MEMBERS + (capacity if refill else 0)
+        tail_started_ns = None
+        token_budget = MAX_GROUP_MEMBERS * MAX_OUTPUT_TOKENS - sum(item.request.max_tokens for item in live)
+
         def consume(item: _Session) -> None:
             queues.setdefault(item.request.request_id, queue.Queue())
             consumer = threading.Thread(target=self._deliver, name="ironmule-batch-stream", daemon=True,
@@ -1345,14 +1414,18 @@ class ProductService:
         def joins() -> list[tuple[GenerationRequest, threading.Event]]:
             """SERVE8: requests waiting now join the running group while fewer than its capacity
             stream at once; the backend's metadata gate decides as for a new group."""
+            nonlocal token_budget
             taken = []
             # RSI4: a learned policy may queue newcomers instead. SERVE8 killed joining for grouped batch-1, where
             # every joiner slows every step; the dense plan's freed slot costs a newcomer about 3 ms a step (KB1-2)
             # and filling it is the point, so a slot-reusing backend always takes newcomers.
             if not self.policy.join and not reuses:
                 return taken
-            while ((len(members) - len(finished) if reuses else len(members)) < self._batch_capacity()
-                   and len(members) < MAX_GROUP_MEMBERS):  # members over the group's life, as before STAB1
+            while ((len(members) - len(finished) if reuses else len(members)) < capacity
+                   and len(members) < lifetime):
+                overflow = len(members) >= MAX_GROUP_MEMBERS
+                if overflow and tail_started_ns is None:
+                    break
                 with self._lock:
                     item = self._carry.popleft() if self._carry else None
                 if item is None:
@@ -1360,12 +1433,15 @@ class ProductService:
                         item = self._pending.get_nowait()
                     except queue.Empty:
                         break
-                if item.cancelled.is_set() or not self.backend.can_batch_requests([live[0].request, item.request]):
+                if ((overflow and item.submitted_ns > tail_started_ns)
+                        or item.cancelled.is_set() or item.request.max_tokens > token_budget
+                        or not self.backend.can_batch_requests([live[0].request, item.request])):
                     with self._lock:
                         self._carry.appendleft(item)  # keeps its place; the scheduler serves it next
                     break
                 item.dispatched_ns = time.monotonic_ns()
-                item.joined, item.width = True, len(members) + 1
+                token_budget -= item.request.max_tokens
+                item.joined, item.width = True, len(members) + 1 - (len(finished) if reuses else 0)
                 item.group = live[0].group
                 self.note("join", id=item.request.request_id, group=item.group)
                 with self._lock:
@@ -1378,6 +1454,7 @@ class ProductService:
             return taken
 
         def deliver(request_id: str, event: dict[str, Any]) -> None:
+            nonlocal tail_started_ns
             if request_id in unheard:
                 consume(unheard.pop(request_id))
             queues[request_id].put(event)
@@ -1385,6 +1462,11 @@ class ProductService:
             if event.get("type") in ("done", "rejected"):
                 queues[request_id].put(None)
                 finished.add(request_id)
+                # Only clear an existing backlog once the first wave has drained to a straggler.
+                # Prefilling new arrivals at that point cost throughput on mixed-length CPU traffic.
+                if (refill and tail_started_ns is None and len(members) >= MAX_GROUP_MEMBERS
+                        and len(members) - len(finished) == 1):
+                    tail_started_ns = time.monotonic_ns()
                 # STAB4: when the group stops counting it as open, before any join that takes its place; its
                 # `end` is written only when the whole group ends.
                 self.note("member_done", id=request_id, group=live[0].group)

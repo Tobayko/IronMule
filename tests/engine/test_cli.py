@@ -143,7 +143,7 @@ def test_help_lists_only_implemented_cli_commands(capsys):
     assert cli.main(["--help"]) == 0
     output = capsys.readouterr().out
     usage = set(re.search(r"usage: ironmule \{([^}]+)\}", output).group(1).split("|"))
-    described = set(re.findall(r"^  (\w+)\s{2,}\S", output, flags=re.MULTILINE))
+    described = set(re.findall(r"^  ([\w-]+)\s{2,}\S", output, flags=re.MULTILINE))
     assert usage == described, f"usage and description disagree: {usage ^ described}"
     # Every listed name must appear as a literal inside `_dispatch`, which is the only
     # place a command becomes reachable. Read from the AST rather than by grepping text,

@@ -1,0 +1,293 @@
+{
+  "schema": "ironmule.self-traffic-proof.v1",
+  "status": "complete",
+  "phase": "finished",
+  "completed_utc": "2026-11-18T15:24:22+00:00",
+  "scope": "One local CPU and one quantized model. The measured change limits the number of prompt tokens admitted together by the native GGML runtime.",
+  "source_commit": "268911be9c85ac5556c80c2b1eaaa294fcb66550",
+  "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "model": {
+    "repo": "bartowski/SmolLM2-135M-Instruct-GGUF",
+    "commit": "09816acd5d99df7be770d85ea30822623dab342c",
+    "file": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "bytes": 105454432,
+    "served_id": "gguf/SmolLM2-135M-Instruct-Q4_K_M"
+  },
+  "machine": {
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "provider": "cpu",
+    "threads": 2,
+    "cpu_affinity": [
+      0,
+      1
+    ],
+    "gpu_layers": 0,
+    "cgroup_cpu_max": "400000 100000"
+  },
+  "entrypoint": {
+    "argv": [
+      "python",
+      "-m",
+      "ironmule_cli",
+      "serve",
+      "--gguf",
+      "<GGUF>",
+      "--agent",
+      "on",
+      "--no-thinking",
+      "--state-dir",
+      "<new local state>",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "<ephemeral>"
+    ],
+    "route": "/v1/chat/completions",
+    "model_gate": {
+      "interval": [
+        1.0,
+        1.0
+      ],
+      "passes": true,
+      "ratio": 1.0
+    },
+    "pilot_active": true,
+    "ggml_serving_configuration": "w8",
+    "serving_ready_after_holdout": true,
+    "rival_binaries_resolvable": {
+      "vllm": false,
+      "llama-server": false
+    },
+    "isolated_python_vllm_importable": false,
+    "network_access": "Client and HTTP server communicated over loopback with HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1.",
+    "state_seed": "A fresh product state imported only the previously qualified model gate and its measured native width cache.",
+    "qualification_cache_entries": [
+      "fd272879a693d091d053575f.json",
+      "width-55c304c645cca630431935d2.json"
+    ]
+  },
+  "runtime": {
+    "implementation": "f7931ca3d2894d653e675e7695f7ec2ca39f027e0d6fc5df2201bbd969d4f194",
+    "engine_version": 5,
+    "seq_ctx": 512,
+    "seqs": 8,
+    "max_rows": 16,
+    "shared": false,
+    "speculate": true,
+    "settings": {
+      "flash_attn": false,
+      "kv_f32": false,
+      "kv_unified": false
+    },
+    "prefix_reuse": true,
+    "pilot": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "prompt_budget": 0
+  },
+  "product_file_sha256": {
+    "ironmule/compare_learning.py": "ded7416ba16b54183892a0d04f515333eeb0451f61f7f222dbbbf03cb8f5a5e9",
+    "ironmule/ggml_engine.py": "57dd84f7808cca3fd6b368366baac8ca9a4d5afb6bd48764769986abf36429d6",
+    "ironmule/pilot.py": "0e9fd82788171d9080afe16f7aa3e406c4045ee6e9976d6e46aa5b76e26fbef3",
+    "ironmule/pilot_learning.py": "81bc22cf544e7ea860e028f66bf9e4d0f359c040b5e422f2b1e0b32aeacd5f48",
+    "ironmule/speculation.py": "8a66177a0c530c3cf0560de607fb70ec2d33ebb27b85fbff791d6c00d9cd9ee8",
+    "ironmule_product/admission_learning.py": "5410c559ff639655b573face3f19604811f212bebe1490e85141451059207f8f",
+    "ironmule_product/cli.py": "2ff92c6fc48e9d2e6f169d9f5efe8fe29ce88256ebe0c21db3dd1d3480430334",
+    "ironmule_product/ggml_bridge.py": "12ce6987d6977b11b06ddb17fcaf506eee71a4ca3b26552533731b367e0b6289",
+    "ironmule_product/worker.py": "260bb8006d8059a134aa8ff8c2873ddbb13547ce06e5096a61b1aef59fec9888"
+  },
+  "traffic": {
+    "expected_requests": 40,
+    "completed_requests": 40,
+    "completed_waves": 10,
+    "generation_tokens": 320,
+    "max_tokens": 8,
+    "concurrency": 4,
+    "failed_requests": 0,
+    "sampled_prompt_tokens": [
+      84,
+      85,
+      237,
+      238
+    ],
+    "workload": "Ten waves of four simultaneous, nonstreaming, greedy chat requests. Two short and two long synthetic shipping records per wave asked which details were checked. Each wave waited for all four responses.",
+    "wall_seconds_per_wave": [
+      1.543,
+      1.341,
+      1.246,
+      1.221,
+      1.433,
+      1.034,
+      0.982,
+      1.407,
+      1.41,
+      1.316
+    ]
+  },
+  "elapsed_seconds": 61.663,
+  "observations": 5,
+  "selection": {
+    "focus": "admission",
+    "samples": 5,
+    "concurrency": 4,
+    "prompt_lengths": [
+      84,
+      85,
+      237,
+      238
+    ],
+    "max_tokens": 8,
+    "tokens_per_second": 23.07651070633344,
+    "ttft_p95_ms": 1195.156369
+  },
+  "controller": {
+    "origin": "Completed concurrent requests from this server",
+    "trigger": "Production idle worker",
+    "incumbent_budget": 0,
+    "candidate_budget": 84,
+    "unit": "prompt tokens admitted together",
+    "workload_key": "5,5,14,14/8",
+    "holdout_seed": "16428760660457293919",
+    "protocol": "Four native incumbent/candidate pairs alternated order. Each pair used new seeded copy tasks with prompt lengths and completion limits from the selected cohort. The native engine first-token timer starts at submission of each group.",
+    "promotion_rule": "Require at least 3% more tokens/s in every pair, median and p95 first-token latency no worse, every copy answer correct and identical full output token IDs and stop reasons."
+  },
+  "decision": "retained_incumbent",
+  "reasons": [
+    "quality"
+  ],
+  "policy_promoted": false,
+  "rules_in_serving_health": 0,
+  "holdout": [
+    {
+      "candidate": {
+        "budget_applied": 1,
+        "correct": 4,
+        "execution_shape": "2f2f3261d4a7b44c2b34489d70dfdce6a5314a935b6d7bc1fcf5fffccbe4651b",
+        "median_ttft_ms": 687.030094,
+        "output_digest": "6228cfb40f2a017e6f29a42fbec2c37a34bb171a5c93e200bc4777cc21ed539e",
+        "p95_ttft_ms": 1422.217249,
+        "requests": 4,
+        "tokens_per_second": 20.910099713881422
+      },
+      "incumbent": {
+        "budget_applied": 0,
+        "correct": 4,
+        "execution_shape": "8c07c6bb0762e3ad3fe9a4c6cedb6102ef9c64b52854f89d131b6cefe1c633d7",
+        "median_ttft_ms": 867.9507619999999,
+        "output_digest": "6228cfb40f2a017e6f29a42fbec2c37a34bb171a5c93e200bc4777cc21ed539e",
+        "p95_ttft_ms": 1439.585691,
+        "requests": 4,
+        "tokens_per_second": 19.96870044737733
+      },
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidate_over_incumbent": {
+        "tokens_per_second": 1.047144,
+        "median_ttft_ms": 0.791554,
+        "p95_ttft_ms": 0.987935
+      },
+      "same_output_ids_and_stops": true
+    },
+    {
+      "candidate": {
+        "budget_applied": 1,
+        "correct": 4,
+        "execution_shape": "173c92d76c708c7eda47807a1be7ec550616a8523e28e66b7363994649d96770",
+        "median_ttft_ms": 547.6453225,
+        "output_digest": "5c8c2a04c4296925f2538c9b5094a2e88c5e73e66d4f4ebd4e1d5fc38b41748e",
+        "p95_ttft_ms": 1277.91216,
+        "requests": 4,
+        "tokens_per_second": 22.78765497961594
+      },
+      "incumbent": {
+        "budget_applied": 0,
+        "correct": 4,
+        "execution_shape": "8c07c6bb0762e3ad3fe9a4c6cedb6102ef9c64b52854f89d131b6cefe1c633d7",
+        "median_ttft_ms": 931.7274605,
+        "output_digest": "5c8c2a04c4296925f2538c9b5094a2e88c5e73e66d4f4ebd4e1d5fc38b41748e",
+        "p95_ttft_ms": 1455.410265,
+        "requests": 4,
+        "tokens_per_second": 20.442355712678907
+      },
+      "order": [
+        "candidate",
+        "incumbent"
+      ],
+      "candidate_over_incumbent": {
+        "tokens_per_second": 1.114727,
+        "median_ttft_ms": 0.587774,
+        "p95_ttft_ms": 0.878043
+      },
+      "same_output_ids_and_stops": true
+    },
+    {
+      "candidate": {
+        "budget_applied": 1,
+        "correct": 4,
+        "execution_shape": "2b4a84735cb0fa27f51af736d23584b7c1fdd8bd5e6c0383559c0bfc22e143ed",
+        "median_ttft_ms": 521.4383725,
+        "output_digest": "63d369d5e13d27f72630452eb9b80d401a331b728140583cb0427ab65ed96b6a",
+        "p95_ttft_ms": 1197.021206,
+        "requests": 4,
+        "tokens_per_second": 22.88590663291168
+      },
+      "incumbent": {
+        "budget_applied": 0,
+        "correct": 4,
+        "execution_shape": "a4fd5d9f78af7a02fe3ebae1175aa4735eb084a9359e7871a6df89a9888ed5c8",
+        "median_ttft_ms": 686.9963785,
+        "output_digest": "cbb0d3cf9eaa382f3711c15570ced97139969ac84f1ddc566c675d07feca758f",
+        "p95_ttft_ms": 1344.868914,
+        "requests": 4,
+        "tokens_per_second": 21.260223803279956
+      },
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidate_over_incumbent": {
+        "tokens_per_second": 1.076466,
+        "median_ttft_ms": 0.759012,
+        "p95_ttft_ms": 0.890065
+      },
+      "same_output_ids_and_stops": false
+    },
+    {
+      "candidate": {
+        "budget_applied": 1,
+        "correct": 4,
+        "execution_shape": "c798a771404746041cf153074a45d0f07954d38ad4e34c0c9f0b17a6977f9745",
+        "median_ttft_ms": 538.669957,
+        "output_digest": "a623b247c3c6da5c091d3af2f8a153b1b44544be7b64eb4f374c7abb7fbcb259",
+        "p95_ttft_ms": 1236.974941,
+        "requests": 4,
+        "tokens_per_second": 23.712038204100878
+      },
+      "incumbent": {
+        "budget_applied": 0,
+        "correct": 4,
+        "execution_shape": "abc442d37c2fb5a02961083664bfdc2eb58e33316ddcff9ce8e26256a998811d",
+        "median_ttft_ms": 713.9436555,
+        "output_digest": "a623b247c3c6da5c091d3af2f8a153b1b44544be7b64eb4f374c7abb7fbcb259",
+        "p95_ttft_ms": 1308.782948,
+        "requests": 4,
+        "tokens_per_second": 21.026303037107347
+      },
+      "order": [
+        "candidate",
+        "incumbent"
+      ],
+      "candidate_over_incumbent": {
+        "tokens_per_second": 1.127732,
+        "median_ttft_ms": 0.754499,
+        "p95_ttft_ms": 0.945134
+      },
+      "same_output_ids_and_stops": true
+    }
+  ],
+  "correct_copy_answers": {
+    "incumbent": 16,
+    "candidate": 16
+  },
+  "copy_questions_per_arm": 16
+}

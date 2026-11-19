@@ -2,10 +2,10 @@
 
   <img src="docs/assets/ironmule-badge.jpg" alt="IronMule logo" width="190">
 
-  <h1>IronMule</h1>
+  <a id="ironmule"></a>
+  <h1>IronMule · Local LLM inference server</h1>
 
-  <p><strong>An AI chat server for the computer you already have, steered by a small trained AI of its own.<br>
-  Up to 3x the tokens per second of llama.cpp and Ollama on the same CPU and model, and still fast when the machine is busy.</strong></p>
+  <p><strong>Serve GGUF and MLX models through an OpenAI-compatible chat API. IronMule's own learned scheduler adapts inference to the hardware and the requests arriving on it.</strong></p>
 
   <p>
     <a href="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml"><img src="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -17,39 +17,104 @@
     <img src="https://img.shields.io/badge/Pilot-open_weights-8b5cf6" alt="Pilot: open weights">
   </p>
 
-  <p>
-    <a href="#quick-start"><strong>Quick start</strong></a> ·
-    <a href="#the-pilot"><strong>The Pilot</strong></a> ·
-    <a href="#how-much-faster"><strong>Numbers</strong></a> ·
-    <a href="docs/BENCHMARKS.md"><strong>All benchmarks</strong></a> ·
-    <a href="docs/HTTP.md"><strong>HTTP API</strong></a> ·
-    <a href="docs/LIMITS.md"><strong>Limits</strong></a>
-  </p>
-
 </div>
 
----
+[Quick start](#quick-start) · [Hardware support](#hardware-support) · [Benchmarks](#how-much-faster) · [How the Pilot learns](#the-pilot) · [HTTP API](docs/HTTP.md)
 
 ## What is IronMule?
 
-**Imagine a kitchen.** The language model is the cook. Many guests order at once, and the kitchen has only so many
-hands, stoves and fridges. A good head waiter decides who gets served next, how many plates go out together, and how
-many helpers are in the kitchen right now, so nobody waits long. If somebody else is using half the kitchen, the
-waiter notices and plans around it.
+IronMule is a self-hosted LLM server for local chat, streaming and concurrent requests. Its GGUF engine combines llama.cpp with IronMule's scheduler and kernels. The **Pilot** is a small neural network trained from scratch to make hardware decisions, including how many threads to use when another program starts competing for the CPU. The language model's weights stay fixed.
 
-**IronMule is that kitchen, and its head waiter is the Pilot**: a small neural network (about 22,000 numbers) that
-looks at your machine and the people asking, and decides again before every step of the language model how that step
-runs, in about a fifth of a millisecond. It decides how the work is done, not what the model knows: on a CPU every
-answer stays token for token the same, on a GPU a few change in wording and none in a checked fact.
+If you're looking for a **llama.cpp alternative** for serving GGUF on a shared CPU, start with the Xeon test below. IronMule produced **87.5 output tokens/s** across 32 simultaneous requests, compared with **28.9** for llama-server on the same Qwen3-4B file. If you're evaluating a **vLLM alternative** for a single NVIDIA GPU, the Tesla T4 results tell a different story. At 32 requests vLLM with AWQ produced **861 tokens/s** and IronMule with GGUF produced **627** in separate runs. Both use the Qwen3-4B model family with different four-bit formats. [Benchmark conditions and results](#how-much-faster)
 
-For developers: IronMule is a local, OpenAI-compatible LLM server. It serves GGUF models through llama.cpp's kernels
-plus its own (continuous batching, a shared prefix cache, AVX-512 and AMX attention kernels, a draft model) and MLX
-models on Apple Silicon and NVIDIA GPUs. Qwen 3, Gemma 3, Llama 3 and Mistral run on it. Everything stays on your
-machine.
+## Quick start
+
+### Serve a GGUF on Linux CPU
+
+Use Python 3.10 or newer, a C/C++ toolchain, CMake, Git and `patch`. These commands set up a server from a checkout using Python 3.12. Have a GGUF with a chat template available locally.
+
+```bash
+git clone https://github.com/Tobayko/IronMule.git
+cd IronMule
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[cpu]'
+ironmule setup --mode server
+python tools/build_ggml.py
+```
+
+Run the two `export` commands printed by the build in this shell, then start the server with the path to your model. This example uses Qwen3-4B.
+
+```bash
+ironmule serve --gguf /path/to/Qwen3-4B-Q8_0.gguf --agent on
+```
+
+The first start measures the machine and checks the inference configuration. Open `http://127.0.0.1:8080` for the chat interface. From a second shell, list the available model and send a streaming chat request. The model ID consists of `gguf/` and the filename without its extension.
+
+```bash
+curl -sS http://127.0.0.1:8080/v1/models
+
+curl -N http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gguf/Qwen3-4B-Q8_0","messages":[{"role":"user","content":"What is continuous batching?"}],"stream":true}'
+```
+
+### Run an MLX model
+
+On Apple Silicon or Linux with an NVIDIA GPU, install the CLI and start the local chat interface.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tobayko/IronMule/main/install.sh | sh
+ironmule start
+```
+
+To choose and serve an MLX model explicitly, install from source with `python -m pip install -e .` on Apple Silicon or `python -m pip install -e '.[cuda]'` on supported NVIDIA hardware. Then register a model and serve it locally.
+
+```bash
+ironmule doctor
+ironmule setup --mode server
+ironmule models add mlx-community/gemma-3-1b-it-4bit --download
+ironmule serve --model mlx-community/gemma-3-1b-it-4bit
+```
+
+See the HTTP documentation for supported OpenAI-compatible routes, authentication and TLS. [HTTP API](docs/HTTP.md)
+
+## Hardware support
+
+| Hardware | Execution path and evidence |
+| --- | --- |
+| Linux x86-64 CPU | GGUF through llama.cpp with IronMule scheduling and optional CPU kernels. Published tests include Intel Xeon and an AMD EPYC HTTP workload. MLX also offers a Linux CPU build. |
+| NVIDIA GPU | GGUF via the CUDA build of llama.cpp, or MLX with its CUDA backend. HTTP comparisons include Tesla T4, NVIDIA L40S and GeForce RTX 4090. |
+| Apple Silicon | MLX with Metal. Published results include the M1 Max. Current CI runs on Linux. |
+| AMD Radeon GPU | Experimental ROCm/HIP build for GGUF. With the ROCm toolkit, `python tools/build_ggml.py --rocm` detects the architecture. To select a target explicitly, use e.g. `--rocm gfx1100`. After exporting the library paths, `ironmule doctor --ggml rocm` checks device execution. Radeon serving and throughput still need a hardware run. |
+| Google TPU | Research probes measured matrix operations on a TPU v5e. An experimental JAX tool can calibrate a decode loop with synthetic weights. Full checkpoint inference through the HTTP server remains open. [TPU calibration](docs/TPU.md) |
+
+Tested model families include Qwen 3, Gemma 3, Llama 3 and Mistral. Backend, model format, precision and hardware all matter when comparing results. [Runtime](docs/RUNTIME.md) · [Limits](docs/LIMITS.md) · [Hardware measurements](docs/BENCHMARKS.md)
 
 ## How much faster?
 
-**Same 4-vCPU Intel Xeon, same model (Qwen3-4B Q8_0), same questions, one run per engine (2026-11-13/14):**
+To compare on your own GPU, `ironmule compare` serves the same GGUF through IronMule,
+stock llama-server and vLLM. It checks the input tokens, sends short and document
+requests and measures output tokens/s, first-token latency and answer quality at each
+concurrency. `ironmule compare-watch` repeats comparisons on a dedicated host within
+a time allowance. The production controller chooses its own trials from local workload
+measurements and tests each candidate against its own serving configuration. A CPU run
+with SmolLM2 served 40 requests and selected an admission budget autonomously in an
+isolated serving environment with the model and IronMule dependencies. Both settings solved 16/16 copy
+tasks. One full output differed, so the worker kept its original setting.
+[Self-directed trial](docs/LAB.md#2026-11-18-own-traffic-admission-learning-on-an-amd-epyc-cpu)
+[Run the comparison](docs/COMPARE.md)
+
+During inference, open `/live` on your IronMule server to see active and queued requests,
+recent first-token times and controller decisions. The **Benchmarks** tab shows the
+current engine, load and measured results. To watch a separate comparison file, run
+`python -m ironmule_product.live_view --progress ./comparison.json --port 8787`
+and open `http://127.0.0.1:8787/live#benchmarks`.
+
+
+### CPU serving against llama.cpp and Ollama
+
+The following results use the same 4-vCPU Intel Xeon, Qwen3-4B Q8_0 GGUF and questions through each server's HTTP API. The runs took place on November 13–14, 2026, once per engine. Aggregate throughput counts generated tokens across all clients. Time to first token measures the wait before a user starts seeing an answer.
 
 | What happens | IronMule | llama.cpp server | Ollama | LM Studio |
 | :-- | --: | --: | --: | --: |
@@ -59,15 +124,17 @@ machine.
 | 16 people in long conversations (tokens per second) | **47.8** | 13.0 | -- | -- |
 | Fact check, 50 questions (right answers) | 49 | 49 | 49 | 49 |
 
-Ollama ran with 16 parallel slots (its 32-slot setting ran out of memory on this machine; with its default it made
-7.8 tokens per second). Every engine got the same answers right: the speed costs no quality. The llama.cpp server ran
-with 32 slots, as 32 people need; it pays for every slot in each step, so with fewer people a server sized to them does
-better than these rows show: 27.3 and 40.9 tokens per second for 8 and 16 people, against IronMule's 50.4 and 71.3
-(CMP1 in [docs/LAB.md](docs/LAB.md)).
+IronMule, llama-server, Ollama and LM Studio each answered 49 of the 50 fact questions correctly. The burst comparison used 32 llama-server slots. At 8 and 16 clients, sizing llama-server to each burst produced 27.3 and 40.9 tok/s, compared with IronMule's 50.4 and 71.3. Ollama used 16 parallel slots after its 32-slot configuration ran out of memory. [Lab notes, CMP1](docs/LAB.md#2026-11-13-cmp1-ironmule-against-llamacpp-ollama-and-lm-studio-on-this-cpu-same-gguf)
 
-**A busy server.** Real servers are rarely alone: a backup, a build or another program keeps some cores busy.
-llama.cpp-based servers then use every core anyway, and their threads keep waiting for the one that was pushed
-aside. The Pilot sees the foreign load and gives up exactly those cores:
+A separate three-round test used Qwen3-0.6B Q4_K_M on two AMD EPYC virtual cores.
+With four concurrent clients the medians were **4.95 vs 3.52 output tokens/s** for
+IronMule and stock llama-server. IronMule had higher throughput in all six pairs,
+but one pair regressed in first-token latency and one lost a previously correct
+answer. It did not meet the comparison's overall acceptance criteria.
+[Measured loads, latency and answer scores](docs/LAB.md#2026-11-18-qwen3-06b-on-two-epyc-vcpus-against-upstream-llama-server)
+
+<details>
+<summary>CPU performance when other programs compete for cores</summary>
 
 | Busy foreign processes on the 4 cores | llama.cpp server, 1 user | IronMule, 1 user | llama.cpp server, 8 users | IronMule, 8 users |
 | :-- | --: | --: | --: | --: |
@@ -75,19 +142,55 @@ aside. The Pilot sees the foreign load and gives up exactly those cores:
 | one | 0.24 tok/s | **7.07 tok/s** (29x) | 1.41 tok/s | **46.2 tok/s** (33x) |
 | two | 0.13 tok/s | **5.46 tok/s** (42x) | 0.68 tok/s | **35.2 tok/s** (52x) |
 
-With one busy program the llama.cpp server took 23 s to the first word for one user and 54 s for eight; IronMule
-took 0.3 s. The Pilot chose 4, 3 and 2 threads (measured with its first weights; the current ones choose the same), and the answers are token for token the same at every thread count
-(checked at 4, 3, 2 and 1 threads). Same machine and model, through each server's HTTP API, one run each; IronMule's
-collective speculation (SP4) was off so that only the Pilot made the difference ([docs/LAB.md](docs/LAB.md), PI1).
-A program that is busy only half the time already costs a llama.cpp-style engine 40 to 50 % of its speed; the Pilot
-gives up one core there too and keeps the speed (1.4x the engine's defaults, see [The Pilot](#the-pilot)).
+With one competing process, time to first token was 23 s for llama-server at one client and 54 s at eight. IronMule measured 0.3 s. The original Pilot chose four, three and two threads at the three load levels. Greedy output was identical at four, three, two and one threads on the checked inputs. The tests used one run per configuration with collective speculation disabled. [Lab notes, PI1 and PI2](docs/LAB.md)
+
+</details>
+
+### Same-GGUF serving on NVIDIA L40S
+
+With Qwen3-32B Q4_K_M and **32 concurrent requests** on a 48 GB L40S, IronMule
+delivered **174.5 output tokens/s**, stock llama-server **130.4**, and vLLM 0.11.0
+serving the identical GGUF **27.2**. Their median per-round p95 first-token times
+were 3.96, 4.53 and 32.72 seconds. All three produced 162/162 correct short answers
+across the three loads and three repetitions. IronMule met the predeclared acceptance
+criteria against both reference servers in every measured pair.
+[32B protocol, all loads and scored answers](docs/LAB.md#2026-11-18-qwen3-32b-on-nvidia-l40s-identical-gguf)
+
+On the same L40S running Qwen3-0.6B Q4_K_M, IronMule served **929 output tokens/s**
+at eight concurrent clients. Stock llama-server delivered **717** and vLLM 0.11.0
+delivered **772**. At 32 clients vLLM led with **1,285**, followed by IronMule at
+**1,248** and llama-server at **1,124**. These are medians of three repetitions with
+identical tokenized requests. IronMule missed the overall latency and quality criteria.
+[Full results and holdout scores](docs/LAB.md#2026-11-18-qwen3-06b-on-nvidia-l40s-against-llamacpp-and-vllm)
+
+A second three-server run on an RTX 4090 found the same load-dependent result for Qwen3-0.6B. IronMule led at eight clients with 907 output tokens/s. At 32 clients vLLM led with 1,189 to IronMule’s 1,176. An earlier lab experiment used the measured first-token gap to trigger a scheduling trial. IronMule kept the incumbent after four held-out pairs. [RTX 4090 measurements and learning decision](docs/LAB.md#2026-11-18-qwen3-06b-on-geforce-rtx-4090)
+
+### Single-GPU inference against vLLM
+
+A separate matched deployment test on a 48 GB L40S used Qwen3-32B Q4_K_M in IronMule
+and the official Qwen3-32B-AWQ checkpoint in vLLM 0.11.0, which selected AWQMarlin.
+With one client, median output throughput was **37.9 vs 32.9 tok/s**. At eight clients
+it was **107.4 vs 143.2**, and at 32 clients **165.0 vs 225.1**. Both servers solved
+162/162 short holdouts. vLLM's median p95 time to first visible token was lower at
+each load. All nine paired rounds matched on input tokens, output lengths and stop
+reasons. [Full deployment comparison](docs/LAB.md#2026-11-18-qwen3-32b-gguf-and-native-awq-on-one-l40s)
+
+On one Tesla T4, the IronMule KG4 engine and vLLM served Qwen3-4B. The table reports aggregate output tokens per second. IronMule used Q4_K_M GGUF, and vLLM used the AWQ model. The values come from separate benchmark sessions on this GPU type. A matched run through both current HTTP servers would be needed for a new end-to-end comparison.
+
+| Concurrent requests | IronMule GGUF (KG4) | vLLM AWQ (MG2 v6) |
+| ---: | ---: | ---: |
+| 1 | 56.3 | 63.7 |
+| 8 | 310.4 | 419.2 |
+| 32 | 626.9 | 860.5 |
+
+At eight clients the generated CUDA kernels raised IronMule's own throughput from 249.2 to 310.4 tok/s. At 32 clients the change was smaller, from 602.2 to 626.9. Both versions answered 49 of 50 fact questions correctly. vLLM led at all three concurrency levels. [IronMule KG4 results](docs/LAB.md#2026-11-17-kg4-where-a-gpu-step-of-8-32-requests-goes-and-a-q4_k-tensor-core-kernel-for-1-32-tokens) · [vLLM MG2 v6 results](docs/LAB.md#2026-11-15-mg2-v6-the-shared-pools-padded-answers-on-a-gpu)
+
+An experimental T4 kernel targets grouped-query attention at 32 concurrent streams and 1,024 KV rows. Its benchmark first checks the CUDA calculation, then requires at least a 10% shorter decode step before testing the HTTP server, factual answers and first-token latency. A speedup from this kernel has yet to be measured on a T4. [KG5 benchmark](lab/kg5/README.md)
 
 <details>
-<summary>NVIDIA GPUs (GGUF engine, Kaggle Tesla T4, first numbers)</summary>
+<summary>GGUF results across four model families on one and two Tesla T4 GPUs</summary>
 
-Two Tesla T4s on Kaggle, the same Q4_K_M GGUFs, 128 tokens per answer, tokens per second for all requests together
-(MG2 v5, 2026-11-14, one run of 3 blocks each; v6 repeated it within a few per cent). The IronMule rows use its shared memory pool and PAD1, which fills a
-step with checked guesses up to a size CUDA computes faster:
+This earlier comparison used identical Q4_K_M GGUF files in each engine and 128 tokens per answer. MG2 v5 ran three blocks per configuration, and v6 repeated the measurements within a few percent. The IronMule configuration used a shared KV pool and padded decode batches.
 
 | | Qwen3-4B | Gemma 3 4B | Mistral 7B | Llama 3.1 8B |
 | :-- | --: | --: | --: | --: |
@@ -96,28 +199,7 @@ step with checked guesses up to a size CUDA computes faster:
 | 32 requests, one engine per GPU: llama.cpp server | 786.0 | 713.2 | 614.1 | 544.1 |
 | 32 requests, one engine per GPU: IronMule | **1026.9** | **1007.3** | **679.1** | **633.2** |
 
-Answers: the same facts right as through llama.cpp on every model (47 to 49 of 50), and 47 to 50 of 50 answers token
-for token the same as without the guesses (MG2 v6).
-
-Since KG3 the server on a GPU gives every request its own KV cache instead of the shared pool: in the pool llama.cpp's
-attention read every request's cells for every token. On a T4 with Qwen3-4B that is 1.78x the pool's tokens per second
-at 32 requests (89.6 against 50.4 with ~420-token prompts; 546 against 343 with short ones), 1.28x at 20, 1.21x for 8
-short requests, and 1.54x with documents among arriving chats, where the first word comes after 2.1 s instead of 6.5 s;
-the same facts right ([docs/LAB.md](docs/LAB.md), KG3). Through `ironmule serve` itself on that T4: 518 against 422
-tokens per second at 32 requests (1.23x), 238 against 260 at 8 (0.92x), one request the same. The table above was
-measured with the pool.
-
-One person on one GPU: IronMule writes its own GPU kernels for the 4-bit weights. On first start it generates a few
-hundred variants, checks and times each on your GPU with your model, and keeps the fastest (KG2 in
-[docs/LAB.md](docs/LAB.md)). On a T4 with Qwen3-4B that makes 57.0 tokens per second for one person against 46.6 for
-the llama.cpp server (1.22x), and 153 against 103 at four people, with the same facts right. Since KG4 those kernels
-also use the GPU's tensor cores for up to 32 people at once: on a T4 with Qwen3-4B 310 against 249 tokens per second
-for 8 (1.25x) and 627 against 602 for 32 (1.04x) against the same engine without them, the same facts right. A small draft model of the
-same family (`--draft-gguf`) helps too: on a T4 with Qwen3-4B 54.1 against 44.1 tokens per second for one person
-(1.23x) and 48.8 against 40.9 when new people come one after another (1.19x), the same facts right (DM2); on a GPU
-`ironmule serve` names the draft model that fits and the command to fetch it, and fetches nothing itself. Not yet better:
-vLLM with the 4-bit AWQ model is ahead on one GPU (63.7, 419 and 861 tokens per second at 1, 8 and 32 requests on
-Qwen3-4B).
+Every engine comparison above is in aggregate tok/s. Each model answered the same 47 to 49 facts correctly as llama.cpp in its corresponding run. An additional HTTP test on Qwen3 changed the GPU KV layout from a shared pool to a stream per request. With 32 clients throughput rose from 422 to 518 tok/s. At eight clients it fell from 260 to 238. [Lab notes, MG2 and KG3](docs/LAB.md)
 
 </details>
 
@@ -132,124 +214,50 @@ On MLX, IronMule's exact mode returns the same tokens as stock MLX, checked toke
 | Gemma 3 4B | **1.27× · +27%** | 1.05× · +5% | **1.91× · +91%** |
 | Gemma 3 12B | **1.11× · +11%** | 1.03× · +3% | **2.04× · +104%** |
 
-Each device against its own stock MLX reference. The float32 column changes the arithmetic, must pass a perplexity
-gate, and is never switched on by itself. Six more model families, native kernels and server batching:
+Each device is compared with stock MLX on that device. The float32 column uses different arithmetic and requires a quality check. Results for six more model families, native kernels and server batching are in
 [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 </details>
 
 ## The Pilot
 
-The Pilot is IronMule's decision model, trained from scratch for this one job. On every engine step it reads
-20 numbers: how many cores this server may use and how many of them other programs keep busy, what a step costs on
-this machine (measured at startup), how many requests run and wait, how long their prompts and contexts are, and how
-the last step went. It then picks four things for the next step:
+IronMule trains its own inference scheduler. The Pilot reads 20 features, including available CPU cores, competing load, measured step costs, active and waiting requests, prompt lengths and recent step times. Two hidden layers of 128 units and four output heads select the thread count, batch cap, prompt budget and use of a draft model. A decision took approximately 0.17–0.19 ms inside the measured Xeon server and 0.11 ms beside a T4.
 
-1. **how many CPU threads** the step uses,
-2. **how many requests** run together,
-3. **how many prompt tokens** may join a step (new guests against those already eating),
-4. **whether the draft model** may guess ahead.
+The published CPU and GPU versions began with random weights, learned from a short teacher warm-up, and trained with reinforcement learning (PPO) on simulated servers. These “dreams” replay workloads against measured hardware costs. For the shipped CPU Pilot, two T4s simulated 8,192 servers at once during a 47-minute training run. The trained weights and inference code are public. The full training simulator and recipe are private. [CPU weights](ironmule/pilot_weights.npz) · [GPU weights](ironmule/pilot_weights_gpu.npz) · [Pilot implementation](ironmule/pilot.py)
 
-The Pilot itself always runs on the CPU: it is small enough to need no graphics card. It steers the model on a CPU
-and, since PI3, on a GPU too. On a graphics card the threads no longer matter, but the third choice does: when a long
-document arrives together with short questions, the Pilot lets the short ones start first instead of making everyone
-wait while the document is read. On a Kaggle T4 that halves the wait for the first word, at the same speed of answers.
-The Pilot has two sets of weights for this, one for CPUs and one for GPUs ([docs/LAB.md](docs/LAB.md), PI3).
+**Learning on the serving machine.** Start a Linux CPU server with `ironmule serve --gguf MODEL.gguf --agent on`. During idle periods the agent can replay recent traffic. A local cost model starts at zero, learns from faster runs, slower runs and token mismatches, and adds weights as it encounters new hardware and workload features. It ranks thread counts to test for one to four concurrent requests. Before a new setting can serve, repeated trials on the same machine must reproduce the tokens and improve decode time. After a restart, the agent checks the setting again when matching traffic returns. Set `IRONMULE_PILOT_LEARN=0` to disable local thread learning. [Operating guide](docs/AGENT.md) · [Two-request CPU experiment](docs/LAB.md#2026-11-18--from-scratch-hardware-model-two-concurrent-decodes)
 
-| | |
-| :-- | :-- |
-| Size | 20 inputs, two layers of 128, four output heads: about 22,000 weights (88 KB) |
-| Decision time | about 0.17-0.19 ms per step in the running server on the 4-vCPU Xeon (0.39 ms before it kept `/proc` open), about 0.11 ms beside a T4 (no CPU load to read there); in a tight loop the whole decision takes about 15 microseconds |
-| Training | from scratch (random start, no earlier model), by reinforcement learning (PPO) in a dreamed world built from measured costs, with randomised machines, models, traffic and foreign load, after a short warm start from a teacher: 47 minutes on two Kaggle T4 GPUs (8,192 dreamed servers at once, 200 rounds). The dream copies what the real machine does, down to a detail found on it: when IronMule leaves a core free, the server's own background services run there and look like a busy program; the Pilot learned that this is no reason to give up a core |
-| In the dream | 240 s of dreamed serving on 1,024 random machines: 9.5 % more tokens than the engine's defaults and 74 % less waiting, and slightly ahead of the best hand rule ("threads = free cores") |
-| On the real machine | threads follow the load: 4, 3 and 2 with no, one and two busy foreign processes, and 3 when a program keeps one core half busy. One busy program: 7.38 and 28.9 tokens per second for 1 and 8 users, against 1.59 and 6.65 with the defaults (4.6x and 4.3x); two: 5.56 and 20.7 against 0.29 and 1.75 (19x and 12x); half-busy: 7.64 and 28.2 against 5.90 and 23.1 (1.3x and 1.2x); idle as fast as the defaults (10.1 and 36.0 against 10.1 and 36.2). Mean of two rounds, 64-token answers ([docs/LAB.md](docs/LAB.md), PI2). On a second, older CPU it never saw (a Kaggle Xeon with 2 cores and hyper-threads) it is 3.1x the defaults for one user beside one busy program (4.25 against 1.36 tokens per second) and 4.8x beside two (2.75 against 0.57), equal when idle |
-| On a GPU | Kaggle T4, Qwen3-4B Q4_K_M, GPU weights trained from scratch in 41 minutes on two T4 in a dream built from the T4's measured costs. Requests arriving one after another, 30 % of them a 1,364-token document: the first word after 5.2 s on average instead of 11.8 s (median 1.35 s instead of 13.3 s), 80.3 against 75.4 tokens per second. 8 and 32 requests at once: the same speed (206.5 against 205.9 and 486.7 against 490.0 tokens per second), the first word sooner (0.15 against 0.17 s and 0.43 against 0.62 s). Short chats only: within the card's own spread (228.5 against 238.6 tokens per second, first word 0.83 against 0.68 s on average). 49 of 50 facts right with and without it. With a draft model attached one person gets 1.23x the tokens per second (54.1 against 44.1), new people one after another 1.19x (DM2) |
-| Answers | on a CPU unchanged, token for token (checked at 4, 3, 2 and 1 threads). On a GPU its choices change how many rows a step computes, and CUDA's multi-row kernels round differently: with the draft model on or off, 48 to 49 of 50 fact answers were token for token the same and the same 49 facts right (DM2 in [docs/LAB.md](docs/LAB.md)) |
-| Safety | without weights, with inputs outside what it was trained on, or with `IRONMULE_PILOT=0`, the engine keeps its own defaults |
+**What happened when the traffic changed?** On a four-vCPU AMD EPYC, 16 clients switched from short chats to long documents and back. The agent predicted that widening the batch from 8 to 64 slots would help. Live throughput fell, and the updated controller reverted after 16 completions. It kept the recovered setting through all three returning chat waves. Those chats reached 50.77 output tok/s with the agent and 78.68 with the fixed setting. Each arm answered 138 of 144 factual requests correctly. This was one run per arm. [Workload, timings and earlier attempts](docs/LAB.md#2026-11-18--earlier-ag10-withdrawal-and-recovery-after-a-failed-live-switch)
 
-The weights are open ([ironmule/pilot_weights.npz](ironmule/pilot_weights.npz)), and so is the code that runs them
-([ironmule/pilot.py](ironmule/pilot.py)). The training world and recipe are not published. `GET /health` shows under
-`ggml.pilot` what it decided, the foreign load it saw and how long its decisions took.
+A later SmolLM2-135M CPU run tested whether the controller could act on its own
+workload forecasts. It selected eight slots, served 64 requests and returned to
+four after observing the higher cost. On 576 held-out requests, matching previous
+traffic by workload reduced the controller's forecast error by 3.33%.
+[Measurements and saved controller state](training/README.md#serving-the-proposed-width-and-testing-its-rollback)
 
-Beyond the Pilot, the IronMule agent (`--agent on`) picks the engine configuration itself and only serves what it
-measured faster on your machine; see [docs/AGENT.md](docs/AGENT.md).
-
-## Quick start
-
-On a Linux machine with only a CPU, serve a GGUF with the Pilot:
-
-```bash
-git clone https://github.com/Tobayko/IronMule.git
-cd IronMule
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[cpu]"
-python tools/build_ggml.py
-```
-
-`build_ggml.py` builds llama.cpp with IronMule's kernels and prints two `export` lines; run them. Then serve any
-GGUF you have. It brings its own tokenizer and chat template, so nothing else needs downloading:
-
-```bash
-ironmule serve --gguf Qwen3-4B-Q8_0.gguf --agent on
-```
-
-On the first start IronMule checks the GGUF's quality on this machine and measures its step costs for the Pilot. The
-model answers as `gguf/` and the file name without `.gguf` (`/v1/models` lists it).
-
-The server listens on `http://127.0.0.1:8080`. Open it in a browser, or call its chat API:
-
-```bash
-curl http://127.0.0.1:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "gguf/Qwen3-4B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
-```
-
-On an Apple Silicon Mac or with an NVIDIA GPU (MLX path), one line installs and starts a chat:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Tobayko/IronMule/main/install.sh | sh
-ironmule start
-```
-
-From source there: `pip install -e .` (Mac) or `pip install -e ".[cuda]"` (NVIDIA), then
-`ironmule doctor`, `ironmule models add mlx-community/gemma-3-1b-it-4bit --download` and
-`ironmule serve --model mlx-community/gemma-3-1b-it-4bit`. Add `"stream": true` for streamed tokens; routes, auth and
-TLS are in [docs/HTTP.md](docs/HTTP.md). From Python:
-
-```python
-import ironmule
-
-runtime = ironmule.Runtime.load(model_id="mlx-community/gemma-3-4b-it-4bit")
-print(runtime.generate("Explain unified memory in two short sentences.", max_tokens=96).text)
-```
+The local answer-quality lab measures grounded responses, false refusals and completed
+tool calls. In one Qwen3-0.6B test, passing an actual first lookup result to the next
+tool completed 12 of 12 two-step tasks. The model-driven reference completed zero.
+Both workflows answered all 12 supported lookups correctly. These results apply to
+the structured lookup application and its tested schema.
+[Tasks, model outputs and tool traces](lab/answer_quality/README.md)
 
 ## Where the speed comes from
 
-- **Many guests, one pot.** Requests that run together share each step (continuous batching), so 32 people cost
-  little more than a few.
-- **Shared beginnings.** When requests start with the same system prompt or conversation, it is computed once and
-  shared from one memory pool (SP1).
-- **Own attention kernels.** AVX-512 and Intel AMX flash attention (FA1, FA1x): a decode step at 16 x 1,024 tokens
-  2.69x faster than llama.cpp's own.
-- **A small model that guesses ahead.** With one or two users a draft model proposes tokens the big model checks in
-  one step (DM1): 13.7 to 22.2 tokens per second for one user.
-- **The Pilot**, so all of this keeps working when the machine is shared.
+- **Continuous batching** lets arriving requests join a decode batch while earlier requests are still generating.
+- **KV cache reuse** shares work on common prefixes. Per-request KV streams can reduce GPU attention work when many independent chats are active.
+- **Hardware-specific kernels** include AVX-512 and Intel AMX CPU paths, plus generated CUDA kernels for quantized GGUF matrix multiplication. IronMule times candidates on the target device.
+- **Speculative decoding** lets a smaller model propose tokens for the target model to verify. On a T4, adding a draft model raised single-client Qwen3-4B throughput from 44.1 to 54.1 tok/s in the DM2 test.
 
-Every path that could change an answer must pass a quality gate first (perplexity within 0.5 % of llama.cpp's
-default, and a fact check against a reference engine), and `/health` names the path that serves.
+See `GET /health` for the active engine and Pilot status. [Engine and Pilot](docs/AGENT.md) · [Experiments](docs/LAB.md)
 
 ## Can I trust the numbers?
 
-- **Measured, not guessed.** Each number names its machine, model and comparison; one run per engine unless stated.
-  Details, setups and caveats: [docs/LAB.md](docs/LAB.md) (CMP1, PI1, FA1, DM1) and
-  [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
-- **Correct before fast.** A path that gets facts wrong is out, whatever its speed.
-- **Check it yourself.** The MLX numbers live in [`evidence/`](evidence/) and tests pin the published numbers to them:
+To reproduce a comparison, record the model and quantization, hardware, concurrency, prompt and output lengths, and whether the measurement covers a kernel, a decode step or a complete HTTP request. Use the same request trace for both servers. Check throughput alongside time to first token and answer quality. The lab directory includes the HTTP comparison harnesses. The MLX benchmark tests also check published figures against committed evidence. [HTTP comparison harness](lab/cmp/bench.py) · [Benchmark methodology and results](docs/BENCHMARKS.md) · [Evidence](evidence/)
 
 ```bash
-pip install -e ".[dev,figures]"
-python -m pytest tests/claims               # every published number matches its evidence
-ironmule benchmark                          # measure your own machine
+python -m pip install -e '.[dev,figures]'
+python -m pytest tests/claims
 ```
 
 ## What is in this repository

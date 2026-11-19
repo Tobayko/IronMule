@@ -1,4 +1,8 @@
-10a11,53
+9a10,55
+> #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && !defined(_WIN32)
+> #include "kg5_dispatch.cuh"
+> #endif
+> 
 > #include <dlfcn.h>
 > 
 > // KG5 (IronMule): the generated kernel library (IRONMULE_KG_LIB, the one the kg1 hook loads) takes the decode attention
@@ -41,8 +45,10 @@
 >     return fn((const float *) Q->data, K->data, V->data, mask->data, (float *) dst->data, qne, qnb, kne, knb, vnb, mne,
 >               mnb, scale, ctx.stream()) == 0;
 > }
-> 
-278a322,324
+279a326,331
+> #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && !defined(_WIN32)
+>     if (kg5_try(ctx, dst, cc)) return;
+> #endif
 >     if (ironmule_kg_flash_attn(ctx, dst)) {
 >         return;  // KG5
 >     }

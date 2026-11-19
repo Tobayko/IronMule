@@ -604,7 +604,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--minutes", type=float, default=12.0)
     parser.add_argument("--report", action="store_true",
                         help="print what the planner learned and the held-out replay; measures nothing")
+    parser.add_argument("--import-gpu-report", type=Path, metavar="REPORT",
+                        help="import a measured GGUF GPU width comparison or paired switch-controller experiment")
+    parser.add_argument("--state-dir", type=Path, default=None, help="state directory for imported GPU reports")
     args = parser.parse_args(argv)
+    if args.import_gpu_report is not None:
+        from ironmule_product.errors import StateError
+        from ironmule_product.state import ProductStore
+        from .gpu_experience import import_report
+        try:
+            print(json.dumps(import_report(args.import_gpu_report, ProductStore(args.state_dir).root)))
+        except (ValueError, OSError, StateError) as exc:
+            parser.error(str(exc))
+        return 0
+    if args.state_dir is not None:
+        parser.error("--state-dir requires --import-gpu-report")
     from . import knowledge
     from .hw import probe
     device_class = knowledge.device_class(probe())

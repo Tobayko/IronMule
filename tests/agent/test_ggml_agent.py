@@ -201,3 +201,217 @@ def test_a_configuration_that_never_served_does_not_dream_its_prefill_free(tmp_p
         agent.observe_step(0, 6000, 0, 3.3 * 6 * math.exp(rng.gauss(0, 0.03)))
         t += 10.0
     assert agent.idle() is None and agent.history[-1]["action"] == "stay"
+
+
+def record_busy_window(agent, *, prompt, step, count=16):
+    start = (agent._last_arrival or 0.0) + 10
+    for i in range(count):
+        arrival = start + i * 0.001
+        agent.observe_request(arrival, prompt, 8, first=arrival + step, finished=arrival + 4 * step)
+
+
+def test_a_real_regression_with_matching_traffic_withdraws_a_trial_early(tmp_path):
+    agent = make_agent(tmp_path, heavy(47))
+    assert agent.idle() is None
+    record_busy_window(agent, prompt=1024, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    agent.switched("w32-kv8")
+    record_busy_window(agent, prompt=1018, step=0.3)
+    assert agent.idle() == "w16"  # 16 requests after switching rather than the old 64
+    assert agent.history[-1]["observed"]["rate_ratio"] < 0.5
+    scope = agent.history[-1]["observed"]["scope"]
+    assert agent.idle() == "w16"  # the engine was busy at the previous reconfiguration attempt
+    agent.switched("w16")
+    again = GgmlAgent(tmp_path, {"machine": "test"}, agent.configs, "w16")
+    assert again._observed_regression(scope, "w32-kv8", "w16")
+    assert not again._observed_regression(scope, "w16", "w32-kv8")
+    assert not again.rejected  # other workloads remain eligible
+
+
+def test_trial_cannot_regress_on_unmatched_or_untimed_traffic(tmp_path):
+    agent = make_agent(tmp_path, heavy(47))
+    assert agent.idle() is None
+    record_busy_window(agent, prompt=50, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    agent.switched("w32-kv8")
+    record_busy_window(agent, prompt=1024, step=0.5)
+    assert agent.idle() is None and agent.trial is not None
+    for i in range(16):
+        agent.observe_request(agent._last_arrival + 0.1, 50, 8)  # old or synthetic caller
+    assert agent.idle() is None and agent.trial is not None
+    assert len(agent.observations) == 2
+
+
+def test_rollback_waits_for_a_new_consistent_trace_before_further_exploration(tmp_path, monkeypatch):
+    import ironmule.ggml_agent as module
+
+    agent = make_agent(tmp_path, heavy(47))
+    assert agent.idle() is None
+    record_busy_window(agent, prompt=1024, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    agent.switched("w32-kv8")
+    record_busy_window(agent, prompt=1024, step=0.3)
+    assert agent.idle() == "w16"
+    # A restart between deciding to revert and physically switching restores the qualified incumbent.
+    agent = GgmlAgent(tmp_path, {"machine": "test"}, agent.configs, "w16")
+    assert agent.current == "w16" and agent.recovery["matching"] == 0
+    seen = []
+    def consistent(_configs, _prices, _current, memory, _rng):
+        seen.append([m[1] for m in memory])
+        return {"candidates": {"w32-kv8": {"low": 0.10, "ttft_ratio": 0.90}}}
+    monkeypatch.setattr(module, "dream", consistent)
+    for prompt in [1024, 50, 50, 50]:
+        record_busy_window(agent, prompt=prompt, step=0.1)
+        assert agent.idle() is None and not seen
+    record_busy_window(agent, prompt=50, step=0.1)
+    assert agent.idle() == "w32-kv8"
+    assert seen == [[50] * 64]  # prior documents cannot qualify a switch under the new chat traffic
+
+
+def test_low_volume_after_rollback_supplies_fresh_arrivals_to_the_dream(tmp_path, monkeypatch):
+    import ironmule.ggml_agent as module
+
+    agent = make_agent(tmp_path, [])
+    agent.recovery = {"serving": "w16", "since": 0, "scope": None, "matching": 0}
+    agent.requests = 48
+    agent.memory.extend(heavy(48))  # existing pre-recovery experience
+    agent.recovery["since"] = agent.requests
+    seen = []
+    def fresh(_configs, _prices, _current, memory, _rng):
+        seen.append(len(memory))
+        return {"candidates": {}}
+    monkeypatch.setattr(module, "dream", fresh)
+    for i in range(64):
+        agent.observe_request(1 + i * 10, 20 + i, 8)
+        assert agent.idle() is None
+    assert seen == [64]
+    history = list(agent.history)
+    assert agent.idle() is None and agent.history == history
+    assert not agent.observations  # quiet traffic cannot directly promote or withdraw a configuration
+
+
+def test_continually_changing_load_eventually_leaves_recovery_without_old_evidence(tmp_path, monkeypatch):
+    import ironmule.ggml_agent as module
+
+    agent = make_agent(tmp_path, heavy(80))
+    agent.idle()
+    agent.trial = agent.pending_switch = None
+    agent.recovery = {"serving": agent.current, "since": agent.requests, "scope": None, "matching": 0}
+    seen = []
+    def fresh(_configs, _prices, _current, memory, _rng):
+        seen.append(len(memory))
+        return {"candidates": {}}
+    monkeypatch.setattr(module, "dream", fresh)
+    for i in range(module.RETRY_AFTER // 16):
+        record_busy_window(agent, prompt=40 if i % 2 else 1200, step=0.1)
+        agent.idle()
+    assert seen == [module.RETRY_AFTER]
+    assert agent.recovery is None
+
+
+def test_gpu_burst_must_repay_actual_rebuilds_within_the_observed_window(tmp_path):
+    # Four requests can run faster side by side after widening. Restoring the
+    # incumbent consumes that saving for a small burst; 32 requests repay it.
+    configs = {
+        "one": {"seqs": 1, "step_one": .01, "step_full": .01, "context_build_s": .109, "context_release_s": .001},
+        "four": {"seqs": 4, "step_one": .01, "step_full": .01, "context_build_s": .009, "context_release_s": .001},
+    }
+    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one", price_switches=True)
+    for batch in range(12):
+        for _ in range(4):
+            agent.observe_request(1, 8, 3)
+        assert agent.idle() is None
+    forecast = agent.history[-1]["dream"]
+    assert forecast["window_requests"] == 4
+    assert math.isclose(forecast["switch_costs_s"]["four"]["enter"], .01)
+    assert math.isclose(forecast["switch_costs_s"]["four"]["return"], .11)
+    assert forecast["candidates"]["four"]["low"] < 0
+    for _ in range(32):
+        agent.observe_request(1, 8, 3)
+    assert agent.idle() == "four"
+    agent.switched("four", seconds=.08)
+    restored = GgmlAgent(tmp_path, agent.binding, configs, "one", price_switches=True)
+    assert restored.current == "one"  # restore the incumbent after an unconfirmed trial
+    assert restored._switch_cost("one", "four") == .08
+    assert math.isclose(restored._switch_cost("four", "one"), .11)
+    pooled = GgmlAgent(tmp_path, agent.binding, configs, "one", shared_cap=16, price_switches=True)
+    assert pooled.requests == restored.requests
+    assert pooled._switch_cost("one", "four") is None
+    assert pooled._switch_cost("four", "one") is None
+
+
+def test_gpu_existing_unpriced_plans_retain_their_dream_and_unknown_costs(tmp_path):
+    configs = {"one": {"seqs": 1, "step_one": .01, "step_full": .01},
+               "four": {"seqs": 4, "step_one": .01, "step_full": .01}}
+    agent = GgmlAgent(tmp_path, {"machine": "gpu", "gpu_layers": 999}, configs, "one", price_switches=True)
+    for _ in range(48):
+        agent.observe_request(1, 8, 3)
+    assert agent.idle() == "four"
+    forecast = agent.history[-1]["dream"]
+    assert forecast["switch_costs_s"]["four"] == {"enter": None, "return": None}
+    assert forecast["window_requests"] == 32
+    agent.switched("four", seconds=0)
+    assert agent._switch_cost("one", "four") is None
+    agent.switched("one", seconds=.04)
+    assert agent._switch_cost("four", "one") == .04
+    assert agent._switch_cost("one", "four") is None
+
+def test_product_gpu_uses_the_standard_window_with_measured_rebuild_costs(tmp_path):
+    from types import SimpleNamespace
+
+    from ironmule_product.ggml_bridge import GgmlBridge
+
+    configs = {name: {"seqs": width, "step_one": .01, "step_full": .01,
+                      "context_build_s": 10.0, "context_release_s": 1.0}
+               for name, width in (("one", 1), ("four", 4))}
+    bridge = GgmlBridge.__new__(GgmlBridge)
+    bridge._engine = SimpleNamespace(gpu_layers=999, seqs=1, settings={})
+    bridge._gguf_sha256 = "a" * 64
+    bridge._gate = {"agent": {"configs": configs, "incumbent": "one", "root": str(tmp_path)}}
+    bridge._start_agent()
+    agent = bridge._agent
+    assert agent.status()["price_switches"] is False
+    for batch in range(12):
+        for _ in range(4):
+            agent.observe_request(1, 8, 3)
+        decision = agent.idle()
+    assert decision == "four"
+    forecast = agent.history[-1]["dream"]
+    assert forecast["window_requests"] == 32 and "switch_costs_s" not in forecast
+    agent.switched("four", seconds=.25)
+    restored = GgmlAgent(tmp_path, agent.binding, configs, "one")
+    assert restored.switch_seconds == {"one": {"four": .25}}
+    challenger = GgmlAgent(tmp_path, agent.binding, configs, "one", price_switches=True)
+    assert challenger.path != agent.path and challenger.requests == 0
+
+
+def test_prior_blocks_match_computed_work_and_require_a_repeated_current_mix():
+    from ironmule.ggml_agent import matching_windows
+
+    size = 8
+    document = [(0.2, 256, 12, 256)] * size
+    followup = [(0.2, 256, 12, 8)] * size
+    # Equal prompt lengths and arrivals, but most of the follow-up prefix is in the KV cache.
+    history = followup * 3 + document + followup
+    assert matching_windows(history, size) == []
+    assert matching_windows(history + followup, size) == [5 * size, 4 * size, 2 * size, size, 0]
+    assert matching_windows(followup * 8, size) == []  # stationary traffic uses the original sampler
+    assert matching_windows(document + followup * 2, size) == []  # too few distinct recorded blocks
+    assert matching_windows(history + document * 2, size) == []  # two new document blocks alone are insufficient
+
+
+def test_dream_sampler_keeps_broad_replay_and_observes_legacy_checkpoint_rows():
+    from ironmule.ggml_agent import matching_windows, windows, workload_profile
+
+    size = 8
+    quiet = [(1.0, 12, 1)] * size
+    busy = [(0.002, 180, 32)] * size
+    history = quiet * 4 + busy * 5 + quiet * 2
+    matched = matching_windows(history, size)
+    assert matched
+    assert workload_profile(quiet) == (12, 12, 1, 1.0)
+    sampled = windows(history, random.Random(31), count=160, size=size, matched=matched)
+    recent = windows(history, random.Random(31), count=160, size=size)
+    quiet_fraction = lambda rows: sum(all(job[1] == 12 for job in window) for window in rows) / len(rows)
+    assert quiet_fraction(recent) < quiet_fraction(sampled) < 1
+    assert len(sampled) == 160 and all(len(window) == size for window in sampled)

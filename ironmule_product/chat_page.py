@@ -65,6 +65,7 @@ button:disabled { opacity: .45; cursor: default; }
   <span class="brand">Iron<i>Mule</i></span>
   <span class="chip" id="model">connecting</span>
   <span class="chip" id="engine"></span>
+  <a class="chip" style="color:var(--accent)" href="/live">Live monitor</a>
   <div class="meter" title="completion tokens per second, from sending the message to its last token (prompt processing included)">
     <canvas id="spark" width="280" height="68"></canvas>
     <div class="readout"><output id="speed">--</output><span id="speedlabel">tok/s</span></div>

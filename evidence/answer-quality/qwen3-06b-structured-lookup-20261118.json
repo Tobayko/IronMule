@@ -1,0 +1,2175 @@
+{
+  "cases_sha256": "4ec198d50e0cc63c4b90591e772d7455bd224ae9db6561afd4b821449806ac4b",
+  "conditions": {
+    "reference": {
+      "condition": "reference",
+      "ledger_cases": [
+        {
+          "expected": "D-18039",
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-0",
+          "prompt": "Ledger:\nS-34981 | dock=D-38390 | seal=Z-27946\nS-20573 | seal=Z-30910\nS-89349 | dock=D-18039 | seal=Z-98436\n\nWhat is the dock code for shipment S-89349?",
+          "response": "The dock code for shipment S-89349 is **D-18039**.",
+          "shipment": "S-89349",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-0",
+          "prompt": "Ledger:\nS-34981 | dock=D-38390 | seal=Z-27946\nS-20573 | seal=Z-30910\nS-89349 | dock=D-18039 | seal=Z-98436\n\nWhat is the dock code for shipment S-20573?",
+          "response": "The dock code for shipment S-20573 is **D-38390**.",
+          "shipment": "S-20573",
+          "tokens": 24
+        },
+        {
+          "expected": "Z-93411",
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-1",
+          "prompt": "Ledger:\nS-43392 | dock=D-39938 | seal=Z-93411\nS-24125 | dock=D-35096 | seal=Z-77761\nS-38691 | dock=D-88140 | seal=Z-26414\n\nWhat is the seal code for shipment S-43392?",
+          "response": "The seal code for shipment **S-43392** is **Z-93411**.",
+          "shipment": "S-43392",
+          "tokens": 26
+        },
+        {
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-1",
+          "prompt": "Ledger:\nS-43392 | dock=D-39938 | seal=Z-93411\nS-24125 | dock=D-35096 | seal=Z-77761\nS-38691 | dock=D-88140 | seal=Z-26414\n\nWhat is the seal code for shipment S-51429?",
+          "response": "The seal code for shipment **S-51429** is **Z-88888**.",
+          "shipment": "S-51429",
+          "tokens": 26
+        },
+        {
+          "expected": "D-10928",
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-2",
+          "prompt": "Ledger:\nS-83893 | dock=D-10928 | seal=Z-35871\nS-99531 | dock=D-37258 | seal=Z-11315\nS-95238 | dock=D-79038 | seal=Z-58534\n\nWhat is the dock code for shipment S-83893?",
+          "response": "The dock code for shipment S-83893 is **D-10928**.",
+          "shipment": "S-83893",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "abstained",
+          "id": "holdout-2",
+          "prompt": "Ledger:\nS-83893 | dock=D-10928 | seal=Z-35871\nS-99531 | dock=D-37258 | seal=Z-11315\nS-95238 | dock=D-79038 | seal=Z-58534\n\nWhat is the dock code for shipment S-78616?",
+          "response": "The dock code for shipment S-78616 is **UNKNOWN**. There is no entry in the ledger for this shipment.",
+          "shipment": "S-78616",
+          "tokens": 29
+        },
+        {
+          "expected": "Z-57766",
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-3",
+          "prompt": "Ledger:\nS-76090 | dock=D-16179\nS-45234 | dock=D-82769 | seal=Z-57766\nS-37248 | dock=D-80407 | seal=Z-52987\n\nWhat is the seal code for shipment S-45234?",
+          "response": "The seal code for shipment S-45234 is **Z-57766**.",
+          "shipment": "S-45234",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-3",
+          "prompt": "Ledger:\nS-76090 | dock=D-16179\nS-45234 | dock=D-82769 | seal=Z-57766\nS-37248 | dock=D-80407 | seal=Z-52987\n\nWhat is the seal code for shipment S-76090?",
+          "response": "The seal code for shipment S-76090 is **Z-57766**.",
+          "shipment": "S-76090",
+          "tokens": 24
+        },
+        {
+          "expected": "D-16433",
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-4",
+          "prompt": "Ledger:\nS-62958 | dock=D-59075 | seal=Z-30151\nS-33990 | dock=D-16433 | seal=Z-94912\nS-16707 | seal=Z-34487\n\nWhat is the dock code for shipment S-33990?",
+          "response": "The dock code for shipment S-33990 is **D-16433**.",
+          "shipment": "S-33990",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-4",
+          "prompt": "Ledger:\nS-62958 | dock=D-59075 | seal=Z-30151\nS-33990 | dock=D-16433 | seal=Z-94912\nS-16707 | seal=Z-34487\n\nWhat is the dock code for shipment S-16707?",
+          "response": "The dock code for shipment S-16707 is **D-16433**.",
+          "shipment": "S-16707",
+          "tokens": 24
+        },
+        {
+          "expected": "Z-58561",
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-5",
+          "prompt": "Ledger:\nS-27861 | dock=D-18350 | seal=Z-58561\nS-94744 | dock=D-98345 | seal=Z-70124\nS-29544 | dock=D-29945 | seal=Z-10574\n\nWhat is the seal code for shipment S-27861?",
+          "response": "The seal code for shipment **S-27861** is **Z-58561**.",
+          "shipment": "S-27861",
+          "tokens": 26
+        },
+        {
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-5",
+          "prompt": "Ledger:\nS-27861 | dock=D-18350 | seal=Z-58561\nS-94744 | dock=D-98345 | seal=Z-70124\nS-29544 | dock=D-29945 | seal=Z-10574\n\nWhat is the seal code for shipment S-66885?",
+          "response": "The seal code for shipment **S-66885** is **Z-12345**.",
+          "shipment": "S-66885",
+          "tokens": 26
+        },
+        {
+          "expected": "D-89599",
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-6",
+          "prompt": "Ledger:\nS-45191 | dock=D-17903 | seal=Z-45014\nS-30524 | dock=D-59485 | seal=Z-16094\nS-56434 | dock=D-89599 | seal=Z-33401\n\nWhat is the dock code for shipment S-56434?",
+          "response": "The dock code for shipment S-56434 is **D-89599**.",
+          "shipment": "S-56434",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "abstained",
+          "id": "holdout-6",
+          "prompt": "Ledger:\nS-45191 | dock=D-17903 | seal=Z-45014\nS-30524 | dock=D-59485 | seal=Z-16094\nS-56434 | dock=D-89599 | seal=Z-33401\n\nWhat is the dock code for shipment S-69245?",
+          "response": "The dock code for shipment S-69245 is **UNKNOWN**.",
+          "shipment": "S-69245",
+          "tokens": 18
+        },
+        {
+          "expected": "Z-44990",
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-7",
+          "prompt": "Ledger:\nS-78597 | dock=D-22829 | seal=Z-48678\nS-43417 | dock=D-64487 | seal=Z-44990\nS-48153 | dock=D-79434\n\nWhat is the seal code for shipment S-43417?",
+          "response": "The seal code for shipment S-43417 is **Z-44990**.",
+          "shipment": "S-43417",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-7",
+          "prompt": "Ledger:\nS-78597 | dock=D-22829 | seal=Z-48678\nS-43417 | dock=D-64487 | seal=Z-44990\nS-48153 | dock=D-79434\n\nWhat is the seal code for shipment S-48153?",
+          "response": "The seal code for shipment S-48153 is **Z-44990**.",
+          "shipment": "S-48153",
+          "tokens": 24
+        },
+        {
+          "expected": "D-61889",
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-8",
+          "prompt": "Ledger:\nS-44589 | dock=D-48040 | seal=Z-71259\nS-23676 | dock=D-61889 | seal=Z-33260\nS-22324 | seal=Z-64379\n\nWhat is the dock code for shipment S-23676?",
+          "response": "The dock code for shipment S-23676 is **D-61889**.",
+          "shipment": "S-23676",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-8",
+          "prompt": "Ledger:\nS-44589 | dock=D-48040 | seal=Z-71259\nS-23676 | dock=D-61889 | seal=Z-33260\nS-22324 | seal=Z-64379\n\nWhat is the dock code for shipment S-22324?",
+          "response": "The dock code for shipment S-22324 is **D-61889**.",
+          "shipment": "S-22324",
+          "tokens": 24
+        },
+        {
+          "expected": "Z-97249",
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-9",
+          "prompt": "Ledger:\nS-88530 | dock=D-22912 | seal=Z-97249\nS-65205 | dock=D-40552 | seal=Z-74007\nS-61636 | dock=D-71995 | seal=Z-15178\n\nWhat is the seal code for shipment S-88530?",
+          "response": "The seal code for shipment S-88530 is **Z-97249**.",
+          "shipment": "S-88530",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-9",
+          "prompt": "Ledger:\nS-88530 | dock=D-22912 | seal=Z-97249\nS-65205 | dock=D-40552 | seal=Z-74007\nS-61636 | dock=D-71995 | seal=Z-15178\n\nWhat is the seal code for shipment S-74767?",
+          "response": "The seal code for shipment **S-74767** is **Z-15178**.",
+          "shipment": "S-74767",
+          "tokens": 26
+        },
+        {
+          "expected": "D-34419",
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-10",
+          "prompt": "Ledger:\nS-66965 | dock=D-76623 | seal=Z-20139\nS-15670 | dock=D-65694 | seal=Z-64293\nS-88687 | dock=D-34419 | seal=Z-70310\n\nWhat is the dock code for shipment S-88687?",
+          "response": "The dock code for shipment S-88687 is **D-34419**.",
+          "shipment": "S-88687",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "other_text",
+          "id": "holdout-10",
+          "prompt": "Ledger:\nS-66965 | dock=D-76623 | seal=Z-20139\nS-15670 | dock=D-65694 | seal=Z-64293\nS-88687 | dock=D-34419 | seal=Z-70310\n\nWhat is the dock code for shipment S-95649?",
+          "response": "The dock code for shipment S-95649 is **UNKNOWN**. There is no entry for this shipment in the ledger provided.",
+          "shipment": "S-95649",
+          "tokens": 30
+        },
+        {
+          "expected": "Z-48684",
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "correct",
+          "id": "holdout-11",
+          "prompt": "Ledger:\nS-25041 | dock=D-87625 | seal=Z-48684\nS-17851 | dock=D-46067 | seal=Z-34509\nS-81153 | dock=D-69964\n\nWhat is the seal code for shipment S-25041?",
+          "response": "The seal code for shipment S-25041 is **Z-48684**.",
+          "shipment": "S-25041",
+          "tokens": 24
+        },
+        {
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "format_compliant": false,
+          "grade": "unsupported_value",
+          "id": "holdout-11",
+          "prompt": "Ledger:\nS-25041 | dock=D-87625 | seal=Z-48684\nS-17851 | dock=D-46067 | seal=Z-34509\nS-81153 | dock=D-69964\n\nWhat is the seal code for shipment S-81153?",
+          "response": "The seal code for shipment S-81153 is **Z-48684**.",
+          "shipment": "S-81153",
+          "tokens": 24
+        }
+      ],
+      "supported": {
+        "correct": 12,
+        "false_abstentions": 0,
+        "format_compliant": 0,
+        "other_text": 0,
+        "total": 12,
+        "wrong_codes": 0,
+        "wrong_reference": 0
+      },
+      "tool_traces": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-34981"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-38390",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-34981"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-70857"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-70857",
+          "id": "holdout-0",
+          "path_correct": false,
+          "shipment": "S-34981",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-34981\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-70857"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-70857",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-38691"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-88140",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-38691"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-51429"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-51429",
+          "id": "holdout-1",
+          "path_correct": false,
+          "shipment": "S-38691",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-38691\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-51429"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-51429",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-95238"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-79038",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-95238"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-78616"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-78616",
+          "id": "holdout-2",
+          "path_correct": false,
+          "shipment": "S-95238",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-95238\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-78616"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-78616",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-37248"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-80407",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-37248"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-77823"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-77823",
+          "id": "holdout-3",
+          "path_correct": false,
+          "shipment": "S-37248",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-37248\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-77823"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-77823",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-62958"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-59075",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-62958"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-65216"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-65216",
+          "id": "holdout-4",
+          "path_correct": false,
+          "shipment": "S-62958",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-62958\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-65216"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-65216",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-94744"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-98345",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-94744"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-66885"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-66885",
+          "id": "holdout-5",
+          "path_correct": false,
+          "shipment": "S-94744",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-94744\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-66885"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-66885",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-45191"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-17903",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-45191"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-69245"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-69245",
+          "id": "holdout-6",
+          "path_correct": false,
+          "shipment": "S-45191",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-45191\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-69245"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-69245",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-78597"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-22829",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-78597"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-61128"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-61128",
+          "id": "holdout-7",
+          "path_correct": false,
+          "shipment": "S-78597",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-78597\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-61128"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-61128",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-44589"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-48040",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-44589"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-99711"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-99711",
+          "id": "holdout-8",
+          "path_correct": false,
+          "shipment": "S-44589",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-44589\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-99711"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-99711",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-61636"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-71995",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-61636"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-74767"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-74767",
+          "id": "holdout-9",
+          "path_correct": false,
+          "shipment": "S-61636",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-61636\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-74767"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-74767",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-15670"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-65694",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-15670"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-95649"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-95649",
+          "id": "holdout-10",
+          "path_correct": false,
+          "shipment": "S-15670",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-15670\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-95649"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-95649",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "shipment": "S-17851"
+              },
+              "name": "shipment_depot"
+            }
+          ],
+          "expected": "D-46067",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-17851"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-19277"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "unsupported_value",
+          "final_response": "P-19277",
+          "id": "holdout-11",
+          "path_correct": false,
+          "shipment": "S-17851",
+          "success": false,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-17851\"}}\n</tool_call>",
+              "tokens": 27,
+              "tool_return": {
+                "depot": "P-19277"
+              }
+            },
+            {
+              "finish": "eos",
+              "response": "P-19277",
+              "tokens": 8
+            }
+          ]
+        }
+      ],
+      "tools": {
+        "both_calls_correct": 0,
+        "correct_final": 0,
+        "end_to_end_correct": 0,
+        "false_abstentions": 0,
+        "first_call_correct": 12,
+        "model_tokens": 420,
+        "model_turns": 24,
+        "tool_executions": 12,
+        "total": 12,
+        "withheld_after_budget": 0,
+        "wrong_final_codes": 12
+      },
+      "unsupported": {
+        "correct_abstentions": 2,
+        "format_compliant": 0,
+        "other_text": 1,
+        "total": 12,
+        "unsupported_codes": 9,
+        "wrong_reference": 0
+      }
+    },
+    "structured": {
+      "condition": "structured",
+      "ledger_cases": [
+        {
+          "delivered": "D-18039",
+          "expected": "D-18039",
+          "field": "dock",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-0",
+          "model_grade": "correct",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-89349",
+            "status": "found",
+            "value": "D-18039"
+          },
+          "prompt": "Ledger:\nS-34981 | dock=D-38390 | seal=Z-27946\nS-20573 | seal=Z-30910\nS-89349 | dock=D-18039 | seal=Z-98436\n\nWhat is the dock code for shipment S-89349?",
+          "response": "D-18039",
+          "shipment": "S-89349",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-0",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-20573",
+            "status": "missing_field"
+          },
+          "prompt": "Ledger:\nS-34981 | dock=D-38390 | seal=Z-27946\nS-20573 | seal=Z-30910\nS-89349 | dock=D-18039 | seal=Z-98436\n\nWhat is the dock code for shipment S-20573?",
+          "response": "Missing field.",
+          "shipment": "S-20573",
+          "source_renderer_used": true,
+          "tokens": 4
+        },
+        {
+          "delivered": "Z-93411",
+          "expected": "Z-93411",
+          "field": "seal",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-1",
+          "model_grade": "correct",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-43392",
+            "status": "found",
+            "value": "Z-93411"
+          },
+          "prompt": "Ledger:\nS-43392 | dock=D-39938 | seal=Z-93411\nS-24125 | dock=D-35096 | seal=Z-77761\nS-38691 | dock=D-88140 | seal=Z-26414\n\nWhat is the seal code for shipment S-43392?",
+          "response": "Z-93411",
+          "shipment": "S-43392",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-1",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-51429",
+            "status": "missing_shipment"
+          },
+          "prompt": "Ledger:\nS-43392 | dock=D-39938 | seal=Z-93411\nS-24125 | dock=D-35096 | seal=Z-77761\nS-38691 | dock=D-88140 | seal=Z-26414\n\nWhat is the seal code for shipment S-51429?",
+          "response": "missing_shipment",
+          "shipment": "S-51429",
+          "source_renderer_used": true,
+          "tokens": 4
+        },
+        {
+          "delivered": "D-10928",
+          "expected": "D-10928",
+          "field": "dock",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-2",
+          "model_grade": "correct",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-83893",
+            "status": "found",
+            "value": "D-10928"
+          },
+          "prompt": "Ledger:\nS-83893 | dock=D-10928 | seal=Z-35871\nS-99531 | dock=D-37258 | seal=Z-11315\nS-95238 | dock=D-79038 | seal=Z-58534\n\nWhat is the dock code for shipment S-83893?",
+          "response": "D-10928",
+          "shipment": "S-83893",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-2",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-78616",
+            "status": "missing_shipment"
+          },
+          "prompt": "Ledger:\nS-83893 | dock=D-10928 | seal=Z-35871\nS-99531 | dock=D-37258 | seal=Z-11315\nS-95238 | dock=D-79038 | seal=Z-58534\n\nWhat is the dock code for shipment S-78616?",
+          "response": "missing_shipment",
+          "shipment": "S-78616",
+          "source_renderer_used": true,
+          "tokens": 4
+        },
+        {
+          "delivered": "Z-57766",
+          "expected": "Z-57766",
+          "field": "seal",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-3",
+          "model_grade": "correct",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-45234",
+            "status": "found",
+            "value": "Z-57766"
+          },
+          "prompt": "Ledger:\nS-76090 | dock=D-16179\nS-45234 | dock=D-82769 | seal=Z-57766\nS-37248 | dock=D-80407 | seal=Z-52987\n\nWhat is the seal code for shipment S-45234?",
+          "response": "Z-57766",
+          "shipment": "S-45234",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-3",
+          "model_grade": "abstained",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-76090",
+            "status": "missing_field"
+          },
+          "prompt": "Ledger:\nS-76090 | dock=D-16179\nS-45234 | dock=D-82769 | seal=Z-57766\nS-37248 | dock=D-80407 | seal=Z-52987\n\nWhat is the seal code for shipment S-76090?",
+          "response": "UNKNOWN.",
+          "shipment": "S-76090",
+          "source_renderer_used": true,
+          "tokens": 3
+        },
+        {
+          "delivered": "D-16433",
+          "expected": "D-16433",
+          "field": "dock",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-4",
+          "model_grade": "correct",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-33990",
+            "status": "found",
+            "value": "D-16433"
+          },
+          "prompt": "Ledger:\nS-62958 | dock=D-59075 | seal=Z-30151\nS-33990 | dock=D-16433 | seal=Z-94912\nS-16707 | seal=Z-34487\n\nWhat is the dock code for shipment S-33990?",
+          "response": "D-16433",
+          "shipment": "S-33990",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-4",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-16707",
+            "status": "missing_field"
+          },
+          "prompt": "Ledger:\nS-62958 | dock=D-59075 | seal=Z-30151\nS-33990 | dock=D-16433 | seal=Z-94912\nS-16707 | seal=Z-34487\n\nWhat is the dock code for shipment S-16707?",
+          "response": "missing_field",
+          "shipment": "S-16707",
+          "source_renderer_used": true,
+          "tokens": 3
+        },
+        {
+          "delivered": "Z-58561",
+          "expected": "Z-58561",
+          "field": "seal",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-5",
+          "model_grade": "correct",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-27861",
+            "status": "found",
+            "value": "Z-58561"
+          },
+          "prompt": "Ledger:\nS-27861 | dock=D-18350 | seal=Z-58561\nS-94744 | dock=D-98345 | seal=Z-70124\nS-29544 | dock=D-29945 | seal=Z-10574\n\nWhat is the seal code for shipment S-27861?",
+          "response": "Z-58561",
+          "shipment": "S-27861",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-5",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-66885",
+            "status": "missing_shipment"
+          },
+          "prompt": "Ledger:\nS-27861 | dock=D-18350 | seal=Z-58561\nS-94744 | dock=D-98345 | seal=Z-70124\nS-29544 | dock=D-29945 | seal=Z-10574\n\nWhat is the seal code for shipment S-66885?",
+          "response": "Missing_shipment",
+          "shipment": "S-66885",
+          "source_renderer_used": true,
+          "tokens": 4
+        },
+        {
+          "delivered": "D-89599",
+          "expected": "D-89599",
+          "field": "dock",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-6",
+          "model_grade": "correct",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-56434",
+            "status": "found",
+            "value": "D-89599"
+          },
+          "prompt": "Ledger:\nS-45191 | dock=D-17903 | seal=Z-45014\nS-30524 | dock=D-59485 | seal=Z-16094\nS-56434 | dock=D-89599 | seal=Z-33401\n\nWhat is the dock code for shipment S-56434?",
+          "response": "D-89599",
+          "shipment": "S-56434",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-6",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-69245",
+            "status": "missing_shipment"
+          },
+          "prompt": "Ledger:\nS-45191 | dock=D-17903 | seal=Z-45014\nS-30524 | dock=D-59485 | seal=Z-16094\nS-56434 | dock=D-89599 | seal=Z-33401\n\nWhat is the dock code for shipment S-69245?",
+          "response": "missing_shipment",
+          "shipment": "S-69245",
+          "source_renderer_used": true,
+          "tokens": 4
+        },
+        {
+          "delivered": "Z-44990",
+          "expected": "Z-44990",
+          "field": "seal",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-7",
+          "model_grade": "correct",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-43417",
+            "status": "found",
+            "value": "Z-44990"
+          },
+          "prompt": "Ledger:\nS-78597 | dock=D-22829 | seal=Z-48678\nS-43417 | dock=D-64487 | seal=Z-44990\nS-48153 | dock=D-79434\n\nWhat is the seal code for shipment S-43417?",
+          "response": "Z-44990",
+          "shipment": "S-43417",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-7",
+          "model_grade": "abstained",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-48153",
+            "status": "missing_field"
+          },
+          "prompt": "Ledger:\nS-78597 | dock=D-22829 | seal=Z-48678\nS-43417 | dock=D-64487 | seal=Z-44990\nS-48153 | dock=D-79434\n\nWhat is the seal code for shipment S-48153?",
+          "response": "UNKNOWN.",
+          "shipment": "S-48153",
+          "source_renderer_used": true,
+          "tokens": 3
+        },
+        {
+          "delivered": "D-61889",
+          "expected": "D-61889",
+          "field": "dock",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-8",
+          "model_grade": "correct",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-23676",
+            "status": "found",
+            "value": "D-61889"
+          },
+          "prompt": "Ledger:\nS-44589 | dock=D-48040 | seal=Z-71259\nS-23676 | dock=D-61889 | seal=Z-33260\nS-22324 | seal=Z-64379\n\nWhat is the dock code for shipment S-23676?",
+          "response": "D-61889",
+          "shipment": "S-23676",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-8",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-22324",
+            "status": "missing_field"
+          },
+          "prompt": "Ledger:\nS-44589 | dock=D-48040 | seal=Z-71259\nS-23676 | dock=D-61889 | seal=Z-33260\nS-22324 | seal=Z-64379\n\nWhat is the dock code for shipment S-22324?",
+          "response": "missing_field",
+          "shipment": "S-22324",
+          "source_renderer_used": true,
+          "tokens": 3
+        },
+        {
+          "delivered": "Z-97249",
+          "expected": "Z-97249",
+          "field": "seal",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-9",
+          "model_grade": "correct",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-88530",
+            "status": "found",
+            "value": "Z-97249"
+          },
+          "prompt": "Ledger:\nS-88530 | dock=D-22912 | seal=Z-97249\nS-65205 | dock=D-40552 | seal=Z-74007\nS-61636 | dock=D-71995 | seal=Z-15178\n\nWhat is the seal code for shipment S-88530?",
+          "response": "Z-97249",
+          "shipment": "S-88530",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-9",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-74767",
+            "status": "missing_shipment"
+          },
+          "prompt": "Ledger:\nS-88530 | dock=D-22912 | seal=Z-97249\nS-65205 | dock=D-40552 | seal=Z-74007\nS-61636 | dock=D-71995 | seal=Z-15178\n\nWhat is the seal code for shipment S-74767?",
+          "response": "missing_shipment",
+          "shipment": "S-74767",
+          "source_renderer_used": true,
+          "tokens": 4
+        },
+        {
+          "delivered": "D-34419",
+          "expected": "D-34419",
+          "field": "dock",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-10",
+          "model_grade": "correct",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-88687",
+            "status": "found",
+            "value": "D-34419"
+          },
+          "prompt": "Ledger:\nS-66965 | dock=D-76623 | seal=Z-20139\nS-15670 | dock=D-65694 | seal=Z-64293\nS-88687 | dock=D-34419 | seal=Z-70310\n\nWhat is the dock code for shipment S-88687?",
+          "response": "D-34419",
+          "shipment": "S-88687",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "dock",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-10",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "dock",
+            "shipment": "S-95649",
+            "status": "missing_shipment"
+          },
+          "prompt": "Ledger:\nS-66965 | dock=D-76623 | seal=Z-20139\nS-15670 | dock=D-65694 | seal=Z-64293\nS-88687 | dock=D-34419 | seal=Z-70310\n\nWhat is the dock code for shipment S-95649?",
+          "response": "missing_shipment",
+          "shipment": "S-95649",
+          "source_renderer_used": true,
+          "tokens": 4
+        },
+        {
+          "delivered": "Z-48684",
+          "expected": "Z-48684",
+          "field": "seal",
+          "finish": "eos",
+          "grade": "correct",
+          "id": "holdout-11",
+          "model_grade": "correct",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-25041",
+            "status": "found",
+            "value": "Z-48684"
+          },
+          "prompt": "Ledger:\nS-25041 | dock=D-87625 | seal=Z-48684\nS-17851 | dock=D-46067 | seal=Z-34509\nS-81153 | dock=D-69964\n\nWhat is the seal code for shipment S-25041?",
+          "response": "Z-48684",
+          "shipment": "S-25041",
+          "source_renderer_used": false,
+          "tokens": 8
+        },
+        {
+          "delivered": "UNKNOWN",
+          "expected": null,
+          "field": "seal",
+          "finish": "eos",
+          "grade": "abstained",
+          "id": "holdout-11",
+          "model_grade": "other_text",
+          "observation": {
+            "field": "seal",
+            "shipment": "S-81153",
+            "status": "missing_field"
+          },
+          "prompt": "Ledger:\nS-25041 | dock=D-87625 | seal=Z-48684\nS-17851 | dock=D-46067 | seal=Z-34509\nS-81153 | dock=D-69964\n\nWhat is the seal code for shipment S-81153?",
+          "response": "Missing field.",
+          "shipment": "S-81153",
+          "source_renderer_used": true,
+          "tokens": 4
+        }
+      ],
+      "ledger_source_renderer_used": 12,
+      "supported": {
+        "delivered": {
+          "correct": 12
+        },
+        "model": {
+          "correct": 12
+        },
+        "total": 12
+      },
+      "tool_traces": [
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-34981"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-70857"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-70857"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-38390"
+              }
+            }
+          ],
+          "delivered": "D-38390",
+          "expected": "D-38390",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-34981"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-70857"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-0",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-34981",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-34981\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-38390",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-38691"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-51429"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-51429"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-88140"
+              }
+            }
+          ],
+          "delivered": "D-88140",
+          "expected": "D-88140",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-38691"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-51429"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-1",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-38691",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-38691\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-88140",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-95238"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-78616"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-78616"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-79038"
+              }
+            }
+          ],
+          "delivered": "D-79038",
+          "expected": "D-79038",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-95238"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-78616"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-2",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-95238",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-95238\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-79038",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-37248"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-77823"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-77823"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-80407"
+              }
+            }
+          ],
+          "delivered": "D-80407",
+          "expected": "D-80407",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-37248"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-77823"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-3",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-37248",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-37248\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-80407",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-62958"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-65216"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-65216"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-59075"
+              }
+            }
+          ],
+          "delivered": "D-59075",
+          "expected": "D-59075",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-62958"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-65216"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-4",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-62958",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-62958\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-59075",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-94744"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-66885"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-66885"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-98345"
+              }
+            }
+          ],
+          "delivered": "D-98345",
+          "expected": "D-98345",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-94744"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-66885"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-5",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-94744",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-94744\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-98345",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-45191"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-69245"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-69245"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-17903"
+              }
+            }
+          ],
+          "delivered": "D-17903",
+          "expected": "D-17903",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-45191"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-69245"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-6",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-45191",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-45191\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-17903",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-78597"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-61128"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-61128"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-22829"
+              }
+            }
+          ],
+          "delivered": "D-22829",
+          "expected": "D-22829",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-78597"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-61128"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-7",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-78597",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-78597\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-22829",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-44589"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-99711"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-99711"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-48040"
+              }
+            }
+          ],
+          "delivered": "D-48040",
+          "expected": "D-48040",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-44589"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-99711"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-8",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-44589",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-44589\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-48040",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-61636"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-74767"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-74767"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-71995"
+              }
+            }
+          ],
+          "delivered": "D-71995",
+          "expected": "D-71995",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-61636"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-74767"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-9",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-61636",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-61636\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-71995",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-15670"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-95649"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-95649"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-65694"
+              }
+            }
+          ],
+          "delivered": "D-65694",
+          "expected": "D-65694",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-15670"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-95649"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-10",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-15670",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-15670\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-65694",
+              "tokens": 8
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "actor": "model",
+              "call": {
+                "arguments": {
+                  "shipment": "S-17851"
+                },
+                "name": "shipment_depot"
+              },
+              "return": {
+                "depot": "P-19277"
+              }
+            },
+            {
+              "actor": "application",
+              "call": {
+                "arguments": {
+                  "depot": "P-19277"
+                },
+                "name": "depot_dock"
+              },
+              "return": {
+                "dock": "D-46067"
+              }
+            }
+          ],
+          "delivered": "D-46067",
+          "expected": "D-46067",
+          "expected_calls": [
+            {
+              "arguments": {
+                "shipment": "S-17851"
+              },
+              "name": "shipment_depot"
+            },
+            {
+              "arguments": {
+                "depot": "P-19277"
+              },
+              "name": "depot_dock"
+            }
+          ],
+          "final_grade": "correct",
+          "id": "holdout-11",
+          "model_final_grade": "correct",
+          "path_correct": true,
+          "shipment": "S-17851",
+          "source_renderer_used": false,
+          "success": true,
+          "turns": [
+            {
+              "finish": "eos",
+              "response": "<tool_call>\n{\"name\": \"shipment_depot\", \"arguments\": {\"shipment\": \"S-17851\"}}\n</tool_call>",
+              "tokens": 27
+            },
+            {
+              "finish": "eos",
+              "response": "D-46067",
+              "tokens": 8
+            }
+          ]
+        }
+      ],
+      "tools": {
+        "both_calls_correct": 12,
+        "end_to_end_correct": 12,
+        "executed_by": {
+          "application": 12,
+          "model": 12
+        },
+        "false_abstentions": 0,
+        "model_final_correct": 12,
+        "model_tokens": 420,
+        "model_turns": 24,
+        "source_renderer_used": 0,
+        "total": 12
+      },
+      "unsupported": {
+        "delivered": {
+          "abstained": 12
+        },
+        "model": {
+          "abstained": 2,
+          "other_text": 10
+        },
+        "total": 12
+      }
+    }
+  },
+  "context": 768,
+  "decoding": "greedy",
+  "elapsed_seconds_by_condition": {
+    "reference": 159.96,
+    "structured": 159.173
+  },
+  "gpu_layers": 0,
+  "groups": 12,
+  "max_tokens": 64,
+  "model_file": "Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+  "model_sha256": "9acfc1e001311f34b4252001b626f2e466d592a42065f66571bff3790d4e1b14",
+  "native_runtime": {
+    "sha256": {
+      "backend/CPU": "c7ef46230ca676a4967755753c63d758ebaca21c12b81613eb4e6ad8a48219c9",
+      "ggml_backend_reg_count": "12404566890ebc526814cf8fb21038566b9b9c2c1d99fabd092f135cfb06eb0c",
+      "ggml_init": "91acf71093ecc1071558ad77d8473ee983d6128e5476b4ccd398b9a48db2f229",
+      "llama_backend_init": "d19d38460897c211b36e0c21cdb76bbdb33f6c75b9ee6c373db16ed8ac47b1f0"
+    }
+  },
+  "protocol": "ironmule.answer-quality.v2",
+  "seed": 20261120,
+  "sequences": 4,
+  "source_sha256": "a9471006088bf8619e4f2b17bb7aa691c90f5cc01f1cbd545736291d30fd4e43",
+  "split": "holdout",
+  "structured_source_sha256": "d11ad7ca2bbc1b7bd35fc8ab6e1fd9850cfcc40e37724c4e453ca31a25106964",
+  "study": "ironmule.structured-answer.v1",
+  "thinking": false,
+  "threads": 1
+}

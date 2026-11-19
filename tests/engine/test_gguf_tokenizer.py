@@ -53,6 +53,26 @@ def test_the_template_renders_as_hugging_face_renders_it():
         render(template, [{"role": "bad", "content": ""}], add_generation_prompt=False, bos_token="")
 
 
+def test_compiled_template_keeps_concurrent_request_variables_separate(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from jinja2.sandbox import ImmutableSandboxedEnvironment
+
+    template = "{{ messages[0].content }}{{ suffix }}"
+    assert render(template, [{"content": "warm"}], suffix="!") == "warm!"
+
+    def unexpected_compilation(*_args):
+        pytest.fail("a warm template was compiled again")
+
+    monkeypatch.setattr(ImmutableSandboxedEnvironment, "from_string", unexpected_compilation)
+
+    def request(index):
+        return render(template, [{"content": str(index)}], suffix=f"-{index}")
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert list(pool.map(request, range(16))) == [f"{i}-{i}" for i in range(16)]
+
+
 def test_a_gguf_answers_to_its_file_name_and_names_itself(tmp_path: Path):
     gguf = tmp_path / "Qwen3-4B-Q8_0.gguf"
     gguf.write_bytes(b"GGUF")
@@ -92,3 +112,37 @@ def test_the_gguf_tokenizer_gives_the_engines_ids_and_its_own_end_tokens():
     finally:
         engine.close()
         tokenizer.close()
+
+
+def test_large_gguf_revision_reuses_verified_bytes_and_detects_replacement(tmp_path, monkeypatch):
+    import builtins
+    import hashlib
+    import os
+
+    from ironmule.ggml_engine import file_sha256
+    from ironmule.gguf_tokenizer import gguf_revision
+
+    weights = tmp_path / "model.gguf"
+    original = b"a" * (1 << 20)
+    weights.write_bytes(original)
+    old_time = weights.stat().st_mtime_ns
+    opens = []
+    normal_open = builtins.open
+
+    def observed(path, *args, **kwargs):
+        if path == str(weights):
+            opens.append(path)
+        return normal_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", observed)
+    expected = hashlib.sha256(original).hexdigest()
+    assert gguf_revision(str(weights)) == f"sha256:{expected}"
+    assert file_sha256(str(weights)) == expected
+    assert len(opens) == 1
+    replacement = tmp_path / "new.gguf"
+    changed = b"b" * len(original)
+    replacement.write_bytes(changed)
+    os.utime(replacement, ns=(old_time, old_time))
+    replacement.replace(weights)
+    assert file_sha256(str(weights)) == hashlib.sha256(changed).hexdigest()
+    assert len(opens) == 2

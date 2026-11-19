@@ -74,7 +74,8 @@ class MLXWorkerClient:
                  cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None,
                  dense_width: int | None = None, cpu_blas: str | None = None,
                  cpu_threads: int | None = None, speculate: bool = False, ggml_gguf: str | None = None,
-                 ggml_gate: dict[str, Any] | None = None) -> None:
+                 ggml_gate: dict[str, Any] | None = None, ggml_kernel_library: str | None = None,
+                 ggml_sequences: int | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
@@ -89,11 +90,18 @@ class MLXWorkerClient:
             raise ValueError("the ggml configuration needs ggml_gguf, and ggml_gguf needs the ggml configuration")
         if ggml_gguf is not None and (not isinstance(ggml_gate, dict) or ggml_gate.get("passes") is not True):
             raise ValueError("the ggml engine serves only after its quality gate passed (GG1)")
+        if ggml_sequences is not None and (type(ggml_sequences) is not int or ggml_sequences < 1):
+            raise ValueError("ggml_sequences must be a positive integer")
+        self.ggml_sequences = ggml_sequences
+        self.ggml_kernel_library = ggml_kernel_library
         self.ggml_gguf, self.ggml_gate = ggml_gguf, ggml_gate
         self.speculation_status: dict[str, Any] | None = None  # SP2: the policy's last summary a request reported
         self.pilot_status: dict[str, Any] | None = None  # PI1: the Pilot, as its last request saw it
         self.draft_model_status: dict[str, Any] | None = None  # DM1: the draft model, as its last request saw it
         self.ggml_agent_status: dict[str, Any] | None = None  # AG10: the ggml engine's agent, as its last request saw it
+        self.ggml_kg4_scope: dict[str, Any] | None = None
+        self.ggml_kg4_placement: dict[str, Any] | None = None
+        self.ggml_prefill_status: dict[str, Any] | None = None
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
         if cuda_device is not None and (not isinstance(cuda_device, str)
@@ -199,6 +207,15 @@ class MLXWorkerClient:
         return None if payload is None else payload.get("device")
 
     @property
+    def admission_learning_status(self):
+        root = (self.ggml_gate or {}).get("admission_state_root")
+        process = self._process
+        if root and process is not None and process.poll() is None:
+            from .admission_learning import live_status
+            return live_status(root, process.pid)
+        return None
+
+    @property
     def ready_payload(self) -> dict[str, Any] | None:
         """A copy of the worker's validated ready event; it holds no request data."""
         payload = self._ready_payload
@@ -215,7 +232,7 @@ class MLXWorkerClient:
             return min(STREAM_GROUP_REQUESTS, self.dense_width or STREAM_GROUP_REQUESTS)
         if self.execution_variant == "current_engine" and self.engine_configuration == "ggml":
             # GG1: the ggml engine's sequences (8; SEQ1: the count the engine chose, or IRONMULE_GGML_SEQS)
-            return int(os.environ.get("IRONMULE_GGML_SEQS") or 0) or STREAM_GROUP_REQUESTS
+            return self.ggml_sequences or int(os.environ.get("IRONMULE_GGML_SEQS") or 0) or STREAM_GROUP_REQUESTS
         if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
             return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
@@ -263,15 +280,32 @@ class MLXWorkerClient:
             return False
         return True
 
-    def _drain_stderr(self, stream: Any) -> None:
+    def _drain_stderr(self, stream: Any, placement_worker: Any = None) -> None:
+        # The initial model loader reports physical layer placement on fd 2. In the lab, bind
+        # that line to the actual serving process. Keep partial lines bounded across pipe reads.
+        tail = b""
+        read = getattr(stream, "read1", stream.read) if placement_worker is not None else stream.read
         try:
             while True:
-                chunk = stream.read(8192)
+                chunk = read(8192)
                 if not chunk:
                     return
                 with self._stderr_lock:  # keep the newest bytes: a final error is what explains an exit
                     self._stderr_buffer.extend(chunk)
                     del self._stderr_buffer[:-MAX_STDERR_BYTES]
+                    if (placement_worker is not None and placement_worker is self._process
+                            and self._ready_payload is None and self.ggml_kg4_placement is None):
+                        data = tail + chunk
+                        found = re.search(rb"(?m)^load_tensors: offloaded ([0-9]{1,4})/([0-9]{1,4}) layers to GPU\r?\n", data)
+                        if found:
+                            offloaded, total = map(int, found.groups())
+                            if 0 <= offloaded <= total and total > 0:
+                                self.ggml_kg4_placement = {"worker_pid": placement_worker.pid,
+                                                           "offloaded_layers": [offloaded, total]}
+                        # Preserve the line-start boundary when a long partial line is truncated.
+                        tail = data[data.rfind(b"\n") + 1:]
+                        if len(tail) > 128:
+                            tail = b" " + tail[-128:]
         except (OSError, ValueError):
             return
 
@@ -480,6 +514,10 @@ class MLXWorkerClient:
             })
             if self.cuda_device is not None:
                 environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device
+            if self.ggml_kernel_library is not None:
+                environment["IRONMULE_KG_LIB"] = self.ggml_kernel_library
+            if self.ggml_sequences is not None:
+                environment["IRONMULE_GGML_SEQS"] = str(self.ggml_sequences)
             if self.cpu_blas is not None:
                 from ironmule import cpu_blas
 
@@ -525,7 +563,10 @@ class MLXWorkerClient:
                 raise BackendUnavailable("backend worker could not start") from exc
             assert self._process.stderr is not None
             self._stdout_buffer.clear()
-            self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(self._process.stderr,), daemon=True)
+            placement_worker = (self._process if self.engine_configuration == "ggml"
+                                and environment.get("IRONMULE_KG4_PLACEMENT") == "1" else None)
+            self._stderr_thread = threading.Thread(target=self._drain_stderr,
+                                                  args=(self._process.stderr, placement_worker), daemon=True)
             self._stderr_thread.start()
             startup_deadline = (
                 None
@@ -618,6 +659,8 @@ class MLXWorkerClient:
         self._usable = False
         process, self._process = self._process, None
         self._ready_payload = None
+        with self._stderr_lock:
+            self.ggml_kg4_placement = None
         self._stdout_buffer.clear()
         if process is None:
             return
@@ -880,6 +923,12 @@ class MLXWorkerClient:
                             self.draft_model_status = engine["draft_model"]  # DM1: shown under /health
                         if isinstance(engine, dict) and isinstance(engine.get("ggml_agent"), dict):
                             self.ggml_agent_status = engine["ggml_agent"]  # AG10: shown under /health
+                        if isinstance(engine, dict) and isinstance(engine.get("kg4_scope"), dict):
+                            self.ggml_kg4_scope = engine["kg4_scope"]
+                        if isinstance(engine, dict) and isinstance(engine.get("prefill_batch"), dict):
+                            self.ggml_prefill_status = engine["prefill_batch"]
+                        if isinstance(engine, dict) and isinstance(engine.get("experiment_binding"), dict):
+                            self.ggml_experiment_binding = engine["experiment_binding"]
                         digest = event.get("prompt_ids_sha256")
                         if (finish not in {"stop", "length", "cancelled"} or type(prompt) is not int or prompt < 0
                                 or type(completion) is not int or not token_counts[request_id] <= completion <= request.max_tokens
