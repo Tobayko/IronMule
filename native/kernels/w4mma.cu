@@ -1297,7 +1297,12 @@ const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
                             VQ(1, 8), VQ(2, 8), VQF(2, 4), VQF(4, 4), VQF(4, 3), VQF(2, 6), VQF(1, 8), VQF(2, 8),
                             VPF(2, 1, 1, 1), VPF(4, 1, 1, 1), VPF(4, 2, 1, 1), VPF(8, 2, 1, 1), VPF(2, 1, 1, 0),
                             VPF(4, 1, 1, 0), VPF(4, 2, 1, 0), VPF(2, 1, 2, 1), VPF(4, 1, 2, 1), VPF(4, 2, 2, 0),
-                            VWN(2), VWN(4), VW6N(2), VW6N(4), VEN(2), VEN(4)};
+                            VWN(2), VWN(4), VW6N(2), VW6N(4), VEN(2), VEN(4),
+                            // few output rows (5120): K split inside the block, one tile per 4-16 warps, no reduce kernel
+                            VW(4, 4, 2, 1), VW(8, 8, 2, 1), VW(16, 8, 2, 1), VW(16, 16, 2, 1),
+                            VW(4, 4, 4, 1), VW(8, 8, 4, 1), VW(16, 8, 4, 1), VW(16, 16, 4, 1), VW(8, 4, 4, 1),
+                            VW6(4, 4, 2, 1), VW6(8, 8, 2, 1), VW6(16, 16, 2, 1),
+                            VW6(4, 4, 4, 1), VW6(8, 8, 4, 1), VW6(16, 16, 4, 1), VW6(8, 4, 4, 1)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {
