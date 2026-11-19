@@ -343,10 +343,26 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
         # the gate below runs with them, and the engine keeps them per token count where its step is
         # faster. On a T4 one request 1.27x the engine without them (docs/LAB.md, KG2). IRONMULE_KG=0: off
         try:
-            from ironmule.kernel_gen import ensure
+            from ironmule.kernel_gen import compute_capability, ensure
 
-            library = ensure(str(Path(args.gguf).resolve()), Path(store.root) / "kernels",
-                             log=lambda line: None, gguf_revision=(spec.revision if args.model is None else None))
+            library = None
+            if os.environ.get("IRONMULE_W4", "1") != "0" and int(compute_capability() or 0) >= 80:
+                # W4 (2026-11-19): on Ampere and newer, IronMule's tile-order tensor-core kernels, tuned on this
+                # GPU for this GGUF; with them prompts are packed into one native call (PK1) whose prompt matmuls
+                # the engine may route through cuBLAS (PK2), in micro-batches of up to 8192 rows
+                from ironmule.w4_kernels import ensure as ensure_w4
+
+                got = ensure_w4(str(Path(args.gguf).resolve()), Path(store.root) / "kernels" / "w4",
+                                log=lambda *a, **k: None)
+                if got is not None:
+                    library = got[0]
+                    os.environ["IRONMULE_W4_TABLE"] = str(got[1])
+                    os.environ.setdefault("GGML_CUDA_DISABLE_GRAPHS", "1")  # repacking on first use
+                    os.environ.setdefault("IRONMULE_GGML_PACK", "1")
+                    os.environ.setdefault("IRONMULE_GGML_UBATCH", "8192")
+            if library is None:
+                library = ensure(str(Path(args.gguf).resolve()), Path(store.root) / "kernels",
+                                 log=lambda line: None, gguf_revision=(spec.revision if args.model is None else None))
             if library is not None:
                 os.environ["IRONMULE_KG_LIB"] = str(library)
                 print(json.dumps({"ggml_kernels": str(library)}), flush=True)

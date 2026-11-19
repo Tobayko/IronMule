@@ -82,9 +82,10 @@ __global__ void repack_q4k(const uint8_t *__restrict__ src, uint8_t *__restrict_
             words[2 * j + h] = wd;
         }
     }
-    uint32_t *qw = reinterpret_cast<uint32_t *>(out + lane * 64);
 #pragma unroll
-    for (int i = 0; i < 16; i++) qw[i] = words[i];
+    for (int i = 0; i < 4; i++)  // interleaved: piece i of every lane is contiguous (conflict-free 16-byte reads)
+        *reinterpret_cast<uint4 *>(out + (i * 32 + lane) * 16) =
+            make_uint4(words[4 * i], words[4 * i + 1], words[4 * i + 2], words[4 * i + 3]);
     if (lane < 16) {
         const int row = tile * 16 + lane;
         uint4 hd = make_uint4(0, 0, 0, 0);
@@ -231,7 +232,7 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
         const uint8_t *p = base + (size_t)sb * TB;
         if constexpr (TYPE == TYPE_Q4_K) {
 #pragma unroll
-            for (int i = 0; i < 4; i++) q[i] = ldg_stream(p + lane * 64 + 16 * i);
+            for (int i = 0; i < 4; i++) q[i] = ldg_stream(p + (i * 32 + lane) * 16);
             hd[0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 16));
             hd[1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16));
         } else {
@@ -394,27 +395,30 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 
 
 // v7 (Q4_K, 1-16 tokens): no shared memory and no barriers; every warp prefetches, one super-block ahead and into
-// registers, its weights, its tokens' x fragments and their 32-value sums, so no load sits in the arithmetic's path
-template <int WARPS, int KS, int NT, int PX>
+// registers, the weights of its MT 16-row tiles (and with PX its tokens' x fragments and their 32-value sums), so no
+// load sits in the arithmetic's path; each x fragment serves all MT tiles
+template <int WARPS, int KS, int NT, int PX, int MT>
 __global__ void __launch_bounds__(WARPS * 32)
 w4p(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
     float *__restrict__ out, int N, int K, int B, int sb_per_split) {
     constexpr int TILES = WARPS / KS;
-    __shared__ float red[KS > 1 ? WARPS : 1][KS > 1 ? NT * 4 * 32 : 1];
+    __shared__ float red[KS > 1 ? WARPS : 1][KS > 1 ? MT * NT * 4 * 32 : 1];
     const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
     const int nb = K / 256, rows8 = NT * 8;
-    const int tile = blockIdx.x * TILES + warp / KS, part = warp % KS;
+    const int tile0 = (blockIdx.x * TILES + warp / KS) * MT, part = warp % KS;
     const int sb0 = blockIdx.y * sb_per_split, sb1 = min(nb, sb0 + sb_per_split);
-    const bool live = tile * 16 < N;
-    const uint8_t *base = wr + (size_t)tile * nb * T4;
+    const bool live = tile0 * 16 < N;
+    const int tiles = (N + 15) / 16;
     const float *xs32 = xs + (size_t)(K / 16) * rows8;
-    float acc[NT][4];
+    float acc[MT][NT][4];
 #pragma unroll
-    for (int nt = 0; nt < NT; nt++)
+    for (int m = 0; m < MT; m++)
 #pragma unroll
-        for (int i = 0; i < 4; i++) acc[nt][i] = 0.f;
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) acc[m][nt][i] = 0.f;
     struct XB { uint4 x[NT][8]; float2 s[NT][8]; };
-    struct Buf { uint4 q[4], h[2]; XB xb[PX ? 1 : 0 + 1]; int sb; };
+    struct Buf { uint4 q[MT][4], h[MT][2]; XB xb[1]; int sb; };
     auto fetch_x = [&](int sb, XB &b) {
 #pragma unroll
         for (int nt = 0; nt < NT; nt++) {
@@ -429,56 +433,67 @@ w4p(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
     };
     auto fetch = [&](int sb, Buf &b) {
         b.sb = sb;
-        const uint8_t *p = base + (size_t)sb * T4;
 #pragma unroll
-        for (int i = 0; i < 4; i++) b.q[i] = ldg_stream(p + lane * 64 + 16 * i);
-        b.h[0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 16));
-        b.h[1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16));
+        for (int m = 0; m < MT; m++) {
+            const int t = min(tile0 + m, tiles - 1);
+            const uint8_t *p = wr + ((size_t)t * nb + sb) * T4;
+#pragma unroll
+            for (int i = 0; i < 4; i++) b.q[m][i] = ldg_stream(p + (i * 32 + lane) * 16);
+            b.h[m][0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 16));
+            b.h[m][1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16));
+        }
         if constexpr (PX) fetch_x(sb, b.xb[0]);
     };
     auto compute = [&](const Buf &b) {
         XB local;
         if constexpr (!PX) fetch_x(b.sb, local);
         const XB &X = PX ? b.xb[0] : local;
-        float dd[2], dm[2];
-        uint32_t sw[2][2], mw[2][2];
+        float dd[MT][2], dm[MT][2];
+        uint32_t sw[MT][2][2], mw[MT][2][2];
 #pragma unroll
-        for (int h = 0; h < 2; h++) {
-            const uint4 hv = b.h[h];
-            dd[h] = __half2float(__ushort_as_half((unsigned short)(hv.x & 0xFFFF)));
-            dm[h] = __half2float(__ushort_as_half((unsigned short)(hv.x >> 16)));
-            sw[h][0] = hv.y & 0x3F3F3F3Fu;
-            mw[h][0] = hv.z & 0x3F3F3F3Fu;
-            sw[h][1] = (hv.w & 0x0F0F0F0Fu) | ((hv.y >> 2) & 0x30303030u);
-            mw[h][1] = ((hv.w >> 4) & 0x0F0F0F0Fu) | ((hv.z >> 2) & 0x30303030u);
-        }
-#pragma unroll
-        for (int j = 0; j < 8; j++) {
-            float S[2], NB[2];
-            uint32_t a[2][4];
+        for (int m = 0; m < MT; m++)
 #pragma unroll
             for (int h = 0; h < 2; h++) {
-                const int sh = 8 * (j & 3);
-                S[h] = dd[h] * (float)((sw[h][j >> 2] >> sh) & 0xFF);
-                NB[h] = -fmaf(1024.f, S[h], dm[h] * (float)((mw[h][j >> 2] >> sh) & 0xFF));
-                const uint32_t wd = wget(b.q, 2 * j + h);
-                const uint32_t v0 = wd & 0x0F0F0F0Fu, v1 = (wd >> 4) & 0x0F0F0F0Fu;
-                a[0][h] = __byte_perm(v0, 0x64u, 0x4140);
-                a[0][2 + h] = __byte_perm(v0, 0x64u, 0x4342);
-                a[1][h] = __byte_perm(v1, 0x64u, 0x4140);
-                a[1][2 + h] = __byte_perm(v1, 0x64u, 0x4342);
+                const uint4 hv = b.h[m][h];
+                dd[m][h] = __half2float(__ushort_as_half((unsigned short)(hv.x & 0xFFFF)));
+                dm[m][h] = __half2float(__ushort_as_half((unsigned short)(hv.x >> 16)));
+                sw[m][h][0] = hv.y & 0x3F3F3F3Fu;
+                mw[m][h][0] = hv.z & 0x3F3F3F3Fu;
+                sw[m][h][1] = (hv.w & 0x0F0F0F0Fu) | ((hv.y >> 2) & 0x30303030u);
+                mw[m][h][1] = ((hv.w >> 4) & 0x0F0F0F0Fu) | ((hv.z >> 2) & 0x30303030u);
             }
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            float S[MT][2], NB[MT][2];
+            uint32_t a[MT][2][4];
+#pragma unroll
+            for (int m = 0; m < MT; m++)
+#pragma unroll
+                for (int h = 0; h < 2; h++) {
+                    const int sh = 8 * (j & 3);
+                    S[m][h] = dd[m][h] * (float)((sw[m][h][j >> 2] >> sh) & 0xFF);
+                    NB[m][h] = -fmaf(1024.f, S[m][h], dm[m][h] * (float)((mw[m][h][j >> 2] >> sh) & 0xFF));
+                    const uint32_t wd = wget(b.q[m], 2 * j + h);
+                    const uint32_t v0 = wd & 0x0F0F0F0Fu, v1 = (wd >> 4) & 0x0F0F0F0Fu;
+                    a[m][0][h] = __byte_perm(v0, 0x64u, 0x4140);
+                    a[m][0][2 + h] = __byte_perm(v0, 0x64u, 0x4342);
+                    a[m][1][h] = __byte_perm(v1, 0x64u, 0x4140);
+                    a[m][1][2 + h] = __byte_perm(v1, 0x64u, 0x4342);
+                }
 #pragma unroll
             for (int nt = 0; nt < NT; nt++) {
                 const uint4 bx = X.x[nt][j];
                 const float2 sv = X.s[nt][j];
-                float tmp[4] = {0.f, 0.f, 0.f, 0.f};
-                mma16816(tmp, a[0][0], a[0][1], a[0][2], a[0][3], bx.x, bx.y);
-                mma16816(tmp, a[1][0], a[1][1], a[1][2], a[1][3], bx.z, bx.w);
-                acc[nt][0] = fmaf(S[0], tmp[0], fmaf(NB[0], sv.x, acc[nt][0]));
-                acc[nt][1] = fmaf(S[0], tmp[1], fmaf(NB[0], sv.y, acc[nt][1]));
-                acc[nt][2] = fmaf(S[1], tmp[2], fmaf(NB[1], sv.x, acc[nt][2]));
-                acc[nt][3] = fmaf(S[1], tmp[3], fmaf(NB[1], sv.y, acc[nt][3]));
+#pragma unroll
+                for (int m = 0; m < MT; m++) {
+                    float tmp[4] = {0.f, 0.f, 0.f, 0.f};
+                    mma16816(tmp, a[m][0][0], a[m][0][1], a[m][0][2], a[m][0][3], bx.x, bx.y);
+                    mma16816(tmp, a[m][1][0], a[m][1][1], a[m][1][2], a[m][1][3], bx.z, bx.w);
+                    acc[m][nt][0] = fmaf(S[m][0], tmp[0], fmaf(NB[m][0], sv.x, acc[m][nt][0]));
+                    acc[m][nt][1] = fmaf(S[m][0], tmp[1], fmaf(NB[m][0], sv.y, acc[m][nt][1]));
+                    acc[m][nt][2] = fmaf(S[m][1], tmp[2], fmaf(NB[m][1], sv.x, acc[m][nt][2]));
+                    acc[m][nt][3] = fmaf(S[m][1], tmp[3], fmaf(NB[m][1], sv.y, acc[m][nt][3]));
+                }
             }
         }
     };
@@ -496,28 +511,34 @@ w4p(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
     }
     if constexpr (KS > 1) {
 #pragma unroll
-        for (int nt = 0; nt < NT; nt++)
+        for (int m = 0; m < MT; m++)
 #pragma unroll
-            for (int i = 0; i < 4; i++) red[warp][(nt * 4 + i) * 32 + lane] = acc[nt][i];
+            for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+                for (int i = 0; i < 4; i++) red[warp][((m * NT + nt) * 4 + i) * 32 + lane] = acc[m][nt][i];
         __syncthreads();
         if (part != 0) return;
 #pragma unroll
-        for (int nt = 0; nt < NT; nt++)
+        for (int m = 0; m < MT; m++)
 #pragma unroll
-            for (int i = 0; i < 4; i++)
+            for (int nt = 0; nt < NT; nt++)
 #pragma unroll
-                for (int p = 1; p < KS; p++) acc[nt][i] += red[warp + p][(nt * 4 + i) * 32 + lane];
+                for (int i = 0; i < 4; i++)
+#pragma unroll
+                    for (int p = 1; p < KS; p++) acc[m][nt][i] += red[warp + p][((m * NT + nt) * 4 + i) * 32 + lane];
     }
     if (!live) return;
     float *o = out + (size_t)blockIdx.y * B * N;
 #pragma unroll
-    for (int nt = 0; nt < NT; nt++)
+    for (int m = 0; m < MT; m++)
 #pragma unroll
-        for (int i = 0; i < 4; i++) {
-            const int row = tile * 16 + g + 8 * (i / 2);
-            const int tok = nt * 8 + 2 * c + (i % 2);
-            if (row < N && tok < B) o[(size_t)tok * N + row] = acc[nt][i];
-        }
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) {
+                const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
+                const int tok = nt * 8 + 2 * c + (i % 2);
+                if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
+            }
 }
 
 __global__ void reduce_split(const float *__restrict__ part, float *__restrict__ y, size_t n, int splits) {
@@ -557,15 +578,138 @@ int launch(const uint8_t *wr, const half *xh, const float *xs, float *y, float *
     return cudaGetLastError() == cudaSuccess ? 0 : 3;
 }
 
-template <int WARPS, int KS, int NT, int PX>
+template <int WARPS, int KS, int NT, int PX, int MT>
 int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
              cudaStream_t s) {
     constexpr int TILES = WARPS / KS;
     const int nb = K / 256;
     const int per = (nb + ksplit - 1) / ksplit;
     const int splits = (nb + per - 1) / per;
-    dim3 grid(((N + 15) / 16 + TILES - 1) / TILES, splits);
-    w4p<WARPS, KS, NT, PX><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+    dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
+    w4p<WARPS, KS, NT, PX, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+    if (splits > 1) {
+        const size_t n = (size_t)B * N;
+        reduce_split<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(part, y, n, splits);
+    }
+    return cudaGetLastError() == cudaSuccess ? 0 : 3;
+}
+
+
+// v8 (Q4_K, 1-8 tokens): each warp streams its tile's super-blocks with cp.async into its own shared-memory ring of
+// STAGES super-blocks (2304 contiguous bytes each), so about three super-blocks per warp are in flight while it
+// computes; registers hold only the current super-block and the x fragments, which leaves room for more warps
+template <int WARPS, int STAGES>
+__global__ void __launch_bounds__(WARPS * 32)
+w4q(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
+    float *__restrict__ out, int N, int K, int B, int sb_per_split) {
+    extern __shared__ __align__(16) uint8_t smem[];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
+    const int nb = K / 256, rows8 = 8;
+    const int tile = blockIdx.x * WARPS + warp;
+    const int sb0 = blockIdx.y * sb_per_split, sb1 = min(nb, sb0 + sb_per_split);
+    if (tile * 16 >= N) return;
+    const uint8_t *base = wr + (size_t)tile * nb * T4;
+    const float *xs32 = xs + (size_t)(K / 16) * rows8;
+    uint8_t *ring = smem + warp * STAGES * T4;
+    const int ns = sb1 - sb0;
+    auto issue = [&](int k) {
+        const uint8_t *src = base + (size_t)(sb0 + k) * T4;
+        uint8_t *dst = ring + (k % STAGES) * T4;
+#pragma unroll
+        for (int i = 0; i < 5; i++) {
+            const int piece = lane + 32 * i;
+            if (piece < T4 / 16) cp_async16(dst + piece * 16, src + piece * 16);
+        }
+    };
+    float acc[4] = {0.f, 0.f, 0.f, 0.f};
+#pragma unroll
+    for (int k = 0; k < STAGES - 1; k++) {
+        if (k < ns) issue(k);
+        cp_commit();
+    }
+    for (int k = 0; k < ns; k++) {
+        const int sb = sb0 + k;
+        uint4 xv[8];  // x first: its latency overlaps the wait for the weights
+        float2 sv[8];
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            xv[j] = g < B ? __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)g * K + (size_t)sb * 256 + 32 * j + 8 * c))
+                          : make_uint4(0, 0, 0, 0);
+            sv[j] = __ldg(reinterpret_cast<const float2 *>(xs32 + ((size_t)sb * 8 + j) * rows8 + 2 * c));
+        }
+        cp_wait<STAGES - 2>();
+        __syncwarp();
+        if (k + STAGES - 1 < ns) issue(k + STAGES - 1);
+        cp_commit();
+        const uint8_t *p = ring + (k % STAGES) * T4;
+        uint4 q[4];
+#pragma unroll
+        for (int i = 0; i < 4; i++) q[i] = *reinterpret_cast<const uint4 *>(p + (i * 32 + lane) * 16);
+        const uint4 h0 = *reinterpret_cast<const uint4 *>(p + 2048 + g * 16);
+        const uint4 h1 = *reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16);
+        float dd[2], dm[2];
+        uint32_t sw[2][2], mw[2][2];
+        const uint4 hd[2] = {h0, h1};
+#pragma unroll
+        for (int h = 0; h < 2; h++) {
+            dd[h] = __half2float(__ushort_as_half((unsigned short)(hd[h].x & 0xFFFF)));
+            dm[h] = __half2float(__ushort_as_half((unsigned short)(hd[h].x >> 16)));
+            sw[h][0] = hd[h].y & 0x3F3F3F3Fu;
+            mw[h][0] = hd[h].z & 0x3F3F3F3Fu;
+            sw[h][1] = (hd[h].w & 0x0F0F0F0Fu) | ((hd[h].y >> 2) & 0x30303030u);
+            mw[h][1] = ((hd[h].w >> 4) & 0x0F0F0F0Fu) | ((hd[h].z >> 2) & 0x30303030u);
+        }
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            float S[2], NB[2];
+            uint32_t a[2][4];
+#pragma unroll
+            for (int h = 0; h < 2; h++) {
+                const int sh = 8 * (j & 3);
+                S[h] = dd[h] * (float)((sw[h][j >> 2] >> sh) & 0xFF);
+                NB[h] = -fmaf(1024.f, S[h], dm[h] * (float)((mw[h][j >> 2] >> sh) & 0xFF));
+                const uint32_t wd = wget(q, 2 * j + h);
+                const uint32_t v0 = wd & 0x0F0F0F0Fu, v1 = (wd >> 4) & 0x0F0F0F0Fu;
+                a[0][h] = __byte_perm(v0, 0x64u, 0x4140);
+                a[0][2 + h] = __byte_perm(v0, 0x64u, 0x4342);
+                a[1][h] = __byte_perm(v1, 0x64u, 0x4140);
+                a[1][2 + h] = __byte_perm(v1, 0x64u, 0x4342);
+            }
+            float tmp[4] = {0.f, 0.f, 0.f, 0.f};
+            mma16816(tmp, a[0][0], a[0][1], a[0][2], a[0][3], xv[j].x, xv[j].y);
+            mma16816(tmp, a[1][0], a[1][1], a[1][2], a[1][3], xv[j].z, xv[j].w);
+            acc[0] = fmaf(S[0], tmp[0], fmaf(NB[0], sv[j].x, acc[0]));
+            acc[1] = fmaf(S[0], tmp[1], fmaf(NB[0], sv[j].y, acc[1]));
+            acc[2] = fmaf(S[1], tmp[2], fmaf(NB[1], sv[j].x, acc[2]));
+            acc[3] = fmaf(S[1], tmp[3], fmaf(NB[1], sv[j].y, acc[3]));
+        }
+    }
+    cp_wait<0>();
+    float *o = out + (size_t)blockIdx.y * B * N;
+#pragma unroll
+    for (int i = 0; i < 4; i++) {
+        const int row = tile * 16 + g + 8 * (i / 2);
+        const int tok = 2 * c + (i % 2);
+        if (row < N && tok < B) o[(size_t)tok * N + row] = acc[i];
+    }
+}
+
+template <int WARPS, int STAGES>
+int launch_q(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
+             cudaStream_t s) {
+    const int nb = K / 256;
+    const int per = (nb + ksplit - 1) / ksplit;
+    const int splits = (nb + per - 1) / per;
+    const int smem = WARPS * STAGES * T4;
+    auto kern = w4q<WARPS, STAGES>;
+    static bool attr = false;
+    if (!attr) {
+        if (smem > 48 * 1024 && cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, smem) != cudaSuccess)
+            return 2;
+        attr = true;
+    }
+    dim3 grid(((N + 15) / 16 + WARPS - 1) / WARPS, splits);
+    kern<<<grid, WARPS * 32, smem, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
     if (splits > 1) {
         const size_t n = (size_t)B * N;
         reduce_split<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(part, y, n, splits);
@@ -581,10 +725,13 @@ struct Variant {
 #define V(T, W, S, N) Variant{T, W, S, N, launch<T, W, S, N>}
 #define VN(T, W, S) V(T, W, S, 1), V(T, W, S, 2), V(T, W, S, 3), V(T, W, S, 4)
 #define VT(T) VN(T, 4, 1), VN(T, 8, 1), VN(T, 4, 2), VN(T, 8, 2), VN(T, 16, 2), VN(T, 8, 4), VN(T, 16, 4), VN(T, 16, 1)
-#define VP(W, S, N, P) Variant{TYPE_Q4_K, W, S + 100 * (1 + P), N, launch_p<W, S, N, P>}
-#define VPN(W, S) VP(W, S, 1, 1), VP(W, S, 2, 1), VP(W, S, 1, 0), VP(W, S, 2, 0)
+#define VP(W, S, N, P, M) Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 1000 * M, N, launch_p<W, S, N, P, M>}
+#define VPN(W, S) VP(W, S, 1, 1, 1), VP(W, S, 2, 1, 1), VP(W, S, 1, 0, 1), VP(W, S, 2, 0, 1), VP(W, S, 1, 0, 2), \
+                  VP(W, S, 2, 0, 2)
+#define VQ(W, S) Variant{TYPE_Q4_K, W, 5000 + S, 1, launch_q<W, S>}
 const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K), VPN(2, 1), VPN(4, 1), VPN(4, 2), VPN(8, 2), VPN(8, 4),
-                            VPN(4, 4), VPN(2, 2), VPN(8, 1)};
+                            VPN(4, 4), VPN(2, 2), VPN(8, 1), VQ(2, 4), VQ(4, 4), VQ(4, 3), VQ(8, 3), VQ(2, 6), VQ(4, 5),
+                            VQ(1, 8), VQ(2, 8)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {

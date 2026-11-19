@@ -619,7 +619,9 @@ class GgmlEngine:
                     pk2_set_min_rows(t)
                     times[t].append(burst())
             med = {t: sorted(v)[len(v) // 2] for t, v in times.items()}
-            best = min(thresholds, key=lambda t: med[t])
+            # the smallest threshold within 2 % of the fastest: a single prompt of a few hundred rows gains too
+            fastest = min(med[t] for t in thresholds)
+            best = min(t for t in thresholds if med[t] <= 1.02 * fastest)
             chosen, reason = 0, "llama.cpp's kernels were as fast"
             if med[best] <= 0.95 * med[0]:
                 chunk = ids[:min(len(ids), max(513, best + 65), self.seq_ctx - 1)]
