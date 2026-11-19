@@ -2777,3 +2777,53 @@ The trial records native submissions, first-token latencies, answers and
 teacher-forced loss at each enabled width. A native pass unlocks the same
 bracketing comparison through the HTTP service, which checks the serving
 worker's own layer placement. [Native study](../lab/kg4/scoped_native.py) · [HTTP study](../lab/kg4/scoped_http.py)
+
+### 2026-11-19: Qwen3-32B on an A100 SXM4 80 GB against vLLM AWQ (PK1, PK2, W4R)
+
+Machine: RunPod secure cloud, one NVIDIA A100-SXM4-80GB (driver 595.112, CUDA 12.8 toolkit), 16 vCPU.
+Model: Qwen3-32B Q4_K_M GGUF (pinned, 19.76 GB) for IronMule; Qwen3-32B-AWQ (pinned) for vLLM 0.11.0, which
+resolved `awq_marlin`, float16, chunked prefill 2048, CUDA graphs. Workload: `compare.performance_prompts`
+(half 33-token, half 444-token prompts), 32 output tokens, greedy; 8 requests one after another at 1 client,
+8 at once at 8 clients, 32 at once at 32 clients; two repeats (`lab/pk1/http_bench.py`).
+
+vLLM AWQ over HTTP: 51.8 / 182.6 / 271.8 tok/s at 1 / 8 / 32 clients, p95 first token 208 / 873 / 3,045 ms,
+18/18 facts at every width ([results](../lab/pk1/results/a100-vllm-awq.jsonl)).
+
+Where IronMule lost (CUPTI kernel traces through `lab/pk1/profile_engine.py`; ncu counters are locked in the
+container): stock llama.cpp `4227c9b` on this GPU prefills at 1,150-1,230 tok/s (MMQ) and decodes 23.5 / 76.6 /
+61 ms per step at 1 / 8 / 32 sequences, about 0.3-0.8 TB/s of the 1.6 TB/s a plain read stream reaches here.
+
+What was changed, all in the engine and chosen on the machine:
+- PK1, packed prefill: every prompt that starts in a step goes into one native call in ascending sequence order,
+  so llama.cpp splits it into few rectangular micro-batches; micro-batch up to 8192 rows (`IRONMULE_GGML_UBATCH`).
+- PK2 (`native/ggml_patches/pk2`): prompt matmuls from a row threshold on through dequantization + cuBLAS with
+  fp32 accumulation. The engine times MMQ against cuBLAS on a packed burst at start and keeps the faster threshold
+  if the teacher-forced likelihood stays within 1.005: on this A100 2.05-2.26x a burst, likelihood ratio 1.0007.
+  Prefill 2,618 tok/s at 2048-row micro-batches, 2,953 at 8192 (the per-micro-batch Q4_K dequantization fell from
+  430 to 112 ms of 2.4 s); the cuBLAS GEMMs themselves run at 253 TFLOPS.
+- W4R (`native/kernels/w4mma.cu`, `ironmule/w4_kernels.py`): IronMule's own decode kernels for Q4_K/Q6_K x 1-32
+  tokens on tensor cores. The weights are repacked once into mma-fragment tile order (a warp reads 2 KB contiguous per
+  super-block, lane pieces interleaved), the tensor cores multiply 1024 + q exactly and scale and minimum are applied
+  per 32 weights in fp32. Every variant is checked against a float64 decode of the format (relative error 2e-4) and
+  timed on the model's own matrices; the engine keeps the library per token count where its step is faster.
+  The way there, measured on the 25600x5120 gate matrix (74 MB, 46 us at the read ceiling): GGUF row-major tiles
+  through shared memory 73-102 us at one token; the same with x loads removed 52 us, which showed the activation loads
+  (not the arithmetic, not the mma) were the cost; tile-order repacking with register prefetch 59 us; interleaved
+  pieces and a per-warp cp.async ring 55.7 / 57 / 123 us at 1 / 8 / 32 tokens, against 62.6 / 70.5 / 139 us for the
+  KG kernels and about 46 us for a perfect read.
+
+Engine-level (`lab/pk1/engine_bench.py`, same prompts, no HTTP), tok/s at 1 / 8 / 32:
+
+| Arm | 1 | 8 | 32 | decode ms/step at 8 / 32 |
+| --- | ---: | ---: | ---: | ---: |
+| default engine (no packing) | 35.0 | 90.1 | 111.0 | 34 / 63 |
+| PK1 + PK2, micro-batch 8192 | 37.7 | 124.3 | 215.0 | 47 / 64 |
+| + KG library | 55.6 | 143.4 | 229.1 | 32 / 57 |
+| + W4R library | 52.6 | 146.7 | 229.3 | 31 / 56 |
+
+The 1-client figures move with the prompts (n-gram speculation accepts more on some): 42-68 tok/s across repeats.
+Read: prefill is now faster than vLLM's (2.7 s against about 3.0 s for the 32-request burst); decode steps are not
+(31 against about 17 ms at 8 sequences, 56 against about 23 ms at 32). IronMule is behind vLLM AWQ by about 20 %
+at 8 and 16 % at 32 clients and level at 1 client on this GPU. What follows: the decode step, where the remaining
+cost is the kernels at 8-32 tokens (0.5-1.3 TB/s), small per-layer ops and launch gaps without CUDA graphs, and the
+19 MB logits copy per 32-row step (2.3 ms).

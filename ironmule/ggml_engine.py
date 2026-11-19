@@ -573,7 +573,8 @@ class GgmlEngine:
         """W4: this GPU's tuned W4R library for this GGUF (built and measured once, then cached), set as the kg1 hook's
         library before the first native call. {} where it does not apply."""
         global KG_LIB
-        if not (W4_AUTO and PACK and self.gpu_layers and not KG_LIB and cuda_kernel_device(self.L)):
+        if not (W4_AUTO and PACK and self.gpu_layers and not KG_LIB and "IRONMULE_KG_LIB" not in os.environ
+                and cuda_kernel_device(self.L)):
             return {}
         try:
             from .w4_kernels import ensure
@@ -2236,7 +2237,9 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         stage = "tokenize" if code == GATE_IDS else "tuning" if code == TUNE_CHILD else "reference" if stock else "candidate"
         if model_identity() != original:
             return None, diag.make("model_changed", "model_changed")
-        child_env = {**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0", "IRONMULE_GGML_PREFILL_BATCH": "0"} if stock else env
+        child_env = ({**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0", "IRONMULE_GGML_PREFILL_BATCH": "0",
+                      "IRONMULE_W4": "0", "IRONMULE_GGML_PACK": "0", "IRONMULE_GGML_UBATCH": "0",
+                      "IRONMULE_CUBLAS_MIN_ROWS": "0"} if stock else env)
         if shape and code == GATE_CANDIDATE:
             # Admit all 32 near-1k prompts on the first step. Width and context are fixed in the measuring child.
             child_env = {**child_env, "IRONMULE_PILOT": "0", "IRONMULE_GGML_PROMPT_BUDGET": str(32 * 1024)}
