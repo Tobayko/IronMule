@@ -1,0 +1,24 @@
+55a56
+> #include <cstdlib>
+1188a1190,1197
+> static long ironmule_pk2_min_rows() {
+>     static const long rows = [] {
+>         const char * v = std::getenv("IRONMULE_CUBLAS_MIN_ROWS");
+>         return v ? std::atol(v) : 0L;
+>     }();
+>     return rows;
+> }
+> 
+1271c1280
+<         if (GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA4(cc)) {
+---
+>         if (GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA4(cc) || ironmule_pk2_min_rows() > 0) {
+2062a2072,2079
+>     }
+> 
+>     // PK2 (IronMule): prompt-sized matmuls of quantized weights through dequantization + cuBLAS (fp32 accumulation)
+>     // from IRONMULE_CUBLAS_MIN_ROWS rows of src1 on; 0 or unset keeps llama.cpp's choice.
+>     if (!split && use_mul_mat_q && ironmule_pk2_min_rows() > 0 && src1->ne[1] >= ironmule_pk2_min_rows()
+>             && src0->ne[2] == 1 && src0->ne[3] == 1 && src1->ne[2] == 1 && src1->ne[3] == 1) {
+>         use_mul_mat_q = false;
+>         use_mul_mat_vec_q = false;
