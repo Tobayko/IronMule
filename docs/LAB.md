@@ -2890,3 +2890,57 @@ of the burst had come in). Against vLLM AWQ: level-to-ahead at one client (-3 % 
 prefill takes about 3.0 s through the service against 2.7 s in the engine; the cause is not yet located.
 [HTTP results](../lab/pk1/results/a100-ironmule-http-pod2.jsonl) · [W4R tuning](../lab/pk1/results/a100-w4-tuning-pod2.json)
 Next: the 0.3 s service-path prefill gap, then decode steps at 8 rows (25.7 ms against vLLM's about 17).
+
+### 2026-11-19, third A100 session: server intervals, v9 kernels for 9-32 tokens, token writer thread
+Machine: RunPod A100 SXM4 80 GB (secure cloud), same software stack and Qwen3-32B Q4_K_M GGUF as the second session;
+compared against that session's vLLM 0.11.0 AWQ numbers (vLLM was not reinstalled on this pod).
+
+- The server now records each request's queue, dispatch-to-first-token and first-to-end intervals
+  (`lab/pk1/http_bench.py` reads them from `/v1/ironmule/live`). They locate the earlier "server prefill gap": all 32
+  requests of a burst land in **one** packed prefill (first-token times within 10 ms of each other), and that prefill
+  takes 2.8-3.0 s, about what vLLM needs for the same 7,632 prompt tokens (its last first token comes at 3.0 s).
+  The remaining gap is the decode step: about 40 ms per 32-row step in the server against vLLM's 23-26 ms.
+- Backend client (`ironmule_product/backend.py`): requests that join a running group are forwarded every 2 ms instead
+  of on the 50 ms cancel tick while the worker is silent. The intervals showed no split burst on this workload, so
+  this is a latency guard, not a measured gain.
+- FP fused-activation variants (no prep kernel, 1-8 tokens) lost in tuning (e.g. 69 against 55 us at one token for
+  the 5120x25600 matrix); the tuner never picks them.
+- Kernel profile (CUPTI, engine, 16 decode steps): at 32 rows 25.2 of 34.3 ms kernel time per step are W4R matmuls,
+  2.0 ms prep_x, 0.9 ms reduce_split, 2.6 ms attention; at 8 rows 15.7 ms matmul and 6 ms of small kernels; the GPU
+  is idle 2.5-3 ms per step (graph build, readback, Python).
+- W4R v9 (`w4d`, `w4d6` in `native/kernels/w4mma.cu`): v7's barrier-free register prefetch with dequantize-once
+  arithmetic, one or two 16-row tiles per warp, x fragments through L1 one sub-block ahead, and the sub-block scales
+  and minimums formed in half2 arithmetic (1024 + s trick, exact, one rounding as before) instead of int-to-float
+  conversions. Tuned on the pod, us per call, old best -> v9:
+
+| Matrix (K x N, Q4_K) | 16 tokens | 32 tokens |
+| --- | ---: | ---: |
+| 5120 x 25600 (gate, up) | 74.5 -> 59.0 | 94.8 -> 78.6 |
+| 25600 x 5120 (down) | 79.7 -> 70.8 | 108.4 -> 99.7 |
+| 5120 x 8192 (q) | 35.4 -> 32.8 | 46.7 -> 44.7 |
+| 8192 x 5120 (o) | 32.2 -> 30.6 | 46.9 -> 40.9 |
+
+  Q6_K v9 barely helps (output matrix at 32 tokens 565 -> 547 us; down 93 -> 92 at 16, none at 32).
+- Token events of a grouped run are encoded and flushed by a writer thread in the worker (`_emit_soon`); every other
+  event drains it first, so the protocol order is unchanged.
+
+Production server over HTTP (`ironmule serve --agent on`, same settings as the second session; gate ratio 0.994;
+startup width measurement 876 -> 929 tok/s at 32 sequences, 566 -> 611 at 16), three repeats:
+
+| Clients | before (repeat 0 / 1) | v9 + writer (repeat 0 / 1 / 2) | vLLM AWQ (2nd pod) | facts |
+| ---: | ---: | ---: | ---: | --- |
+| 1 | 50.8 / 86.9 | 50.5 / 86.8 / 88.8 | 52.0 | 18/18 |
+| 8 | 148.8 / 138.6 | 148.5 / 153.9 / 155.0 | 184 | 18/18 |
+| 32 | 232.2 / 235.1 | 247.4 / 247.2 / 247.5 | 274 | 18/18, 18/18, 17/18 |
+
+The 17/18 is a grader format miss, not a wrong fact: on that seed the model answers "33 * 6" with "200 - 2 = 198 ...
+**198**" instead of the number alone, identically at 1, 8 and 32 clients (the one-token path is unchanged), so the
+new kernels do not cause it. Against vLLM: -10 % at 32 clients (was -13 %), -16 % at 8, level-to-ahead at one client
+by prompt. [before](../lab/pk1/results/a100-ironmule-http-pod3-before.jsonl) ·
+[v9 without half2 scales](../lab/pk1/results/a100-ironmule-http-pod3-w4d.jsonl) ·
+[v9](../lab/pk1/results/a100-ironmule-http-pod3-w4d-h2.jsonl). Pod time 1.18 h, 2.59 USD; total RunPod spend of this
+work 14.74 of the 20 USD the owner allowed.
+Next: decode steps. At 32 rows the matmuls alone (about 23 ms) are near vLLM's whole step; v9 reaches about 0.95 TB/s
+at 32 tokens against 1.3 TB/s at one token. Then the per-step small kernels (prep_x deduplicated for q/k/v and
+gate/up, which needs a per-graph epoch from llama.cpp to be safe; reduce_split folded into the kernel; rms_norm) and
+the 2.5-3 ms the GPU waits per step.
