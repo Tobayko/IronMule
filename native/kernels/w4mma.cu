@@ -137,11 +137,15 @@ __global__ void repack_q6k(const uint8_t *__restrict__ src, uint8_t *__restrict_
             lo[2 * j + h] = wd;
         }
     }
-    uint32_t *qw = reinterpret_cast<uint32_t *>(out + lane * 96);
+    // interleaved like Q4_K: piece i (4 words) of every lane is contiguous across the warp
+    uint32_t all[24];
 #pragma unroll
-    for (int i = 0; i < 16; i++) qw[i] = lo[i];
+    for (int i = 0; i < 16; i++) all[i] = lo[i];
 #pragma unroll
-    for (int j = 0; j < 8; j++) qw[16 + j] = hw[j];
+    for (int j = 0; j < 8; j++) all[16 + j] = hw[j];
+#pragma unroll
+    for (int i = 0; i < 6; i++)
+        *reinterpret_cast<uint4 *>(out + (i * 32 + lane) * 16) = make_uint4(all[4 * i], all[4 * i + 1], all[4 * i + 2], all[4 * i + 3]);
     if (lane < 16) {
         const int row = tile * 16 + lane;
         uint8_t hd[32] = {0};
@@ -240,7 +244,7 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
             hd[1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16));
         } else {
 #pragma unroll
-            for (int i = 0; i < 6; i++) q[i] = ldg_stream(p + lane * 96 + 16 * i);
+            for (int i = 0; i < 6; i++) q[i] = ldg_stream(p + (i * 32 + lane) * 16);
 #pragma unroll
             for (int h = 0; h < 2; h++) {
                 hd[2 * h] = __ldg(reinterpret_cast<const uint4 *>(p + 3072 + (g + 8 * h) * 32));
