@@ -38,13 +38,65 @@ END_OF_TURN = ("<end_of_turn>", "<|eot_id|>", "<|im_end|>", "<|end|>")
 _PROTOCOL_OUT = sys.stdout
 
 
-def _emit(value: dict[str, Any]) -> None:
+def _write(value: dict[str, Any]) -> None:
     encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     if len(encoded.encode("utf-8")) > MAX_LINE:
         # This message itself is bounded and contains no request text.
         encoded = json.dumps({"type": "error", "code": "protocol_error", "message": "event too large"}, separators=(",", ":"))
     _PROTOCOL_OUT.write(encoded + "\n")
     _PROTOCOL_OUT.flush()
+
+
+# PK1-S: a grouped run's token events are encoded and written by one writer thread, so the engine's next step does
+# not wait for 32 encodes and flushes (a measured A100 server step at 32 rows took 40 ms, the engine's own 37). Every
+# other event is written by its caller after the writer drained, so the protocol's order is unchanged.
+_SOON: queue.Queue[dict[str, Any]] | None = None
+_SOON_ERROR: list[BaseException] = []
+_SOON_LOCK = threading.Lock()
+
+
+def _drain() -> None:
+    if _SOON is not None:
+        _SOON.join()
+    if _SOON_ERROR:
+        raise _SOON_ERROR[0]
+
+
+def _writer() -> None:
+    while True:
+        value = _SOON.get()
+        try:
+            if not _SOON_ERROR:
+                _write(value)
+        except BaseException as exc:  # noqa: BLE001 - raised by the next event's caller
+            _SOON_ERROR.append(exc)
+        finally:
+            _SOON.task_done()
+
+
+def _emit(value: dict[str, Any]) -> None:
+    _drain()
+    _write(value)
+
+
+_DIRECT_EMIT = _emit
+
+
+def _emit_soon(value: dict[str, Any]) -> None:
+    """A token event, written in order by the writer thread (directly when `_emit` is replaced, as tests do)."""
+    global _SOON
+    if _emit is not _DIRECT_EMIT:
+        _emit(value)
+        return
+    if _SOON_ERROR:
+        raise _SOON_ERROR[0]
+    if _SOON is None:
+        with _SOON_LOCK:
+            if _SOON is None:
+                fresh: queue.Queue[dict[str, Any]] = queue.Queue()
+                _SOON = fresh
+                threading.Thread(target=_writer, name="ironmule-token-writer", daemon=True).start()
+    _SOON.put(value)
 
 
 def _working_set_bytes(mx: Any) -> Any:
@@ -785,8 +837,8 @@ class _BatchStream:
                 self._release()  # its last token: the detokenizer serves the next admitted stream
                 text += self.tail
                 self.tail = ""
-            _emit({"type": "token", "batch_id": self.batch_id, "request_id": self.request_id, "text": text,
-                   "token_id": token, "prompt_tokens": self.prompt_tokens, "completion_tokens": self.sent + 1})
+            _emit_soon({"type": "token", "batch_id": self.batch_id, "request_id": self.request_id, "text": text,
+                        "token_id": token, "prompt_tokens": self.prompt_tokens, "completion_tokens": self.sent + 1})
             self.sent += 1
             if last and self.terminal is not None:
                 finish = "stop" if token in self.eos else "length"
@@ -1479,4 +1531,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        code = main()
+    finally:
+        if _SOON is not None:  # token events still queued go out before the worker exits
+            _SOON.join()
+    raise SystemExit(code)
