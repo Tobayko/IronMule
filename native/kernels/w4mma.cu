@@ -42,6 +42,29 @@ __device__ __forceinline__ void mma16816(float (&c)[4], uint32_t a0, uint32_t a1
 __device__ __forceinline__ uint32_t h2_bits(half2 v) { return *reinterpret_cast<uint32_t *>(&v); }
 __device__ __forceinline__ half2 bits_h2(uint32_t u) { return *reinterpret_cast<half2 *>(&u); }
 
+// FP: a lane's 8 activations of token n at k (float, straight from llama.cpp), as 4 half2 (saturated), and the sums of
+// the 32 rounded values of sub-block j for tokens 2c and 2c + 1 of the 8-token tile (shuffled across the warp; every
+// lane must call this)
+__device__ __forceinline__ void fused_x(const float *__restrict__ x, int K, int B, int n, size_t k, int c,
+                                        uint4 &hx, float2 &sv) {
+    float4 a = make_float4(0.f, 0.f, 0.f, 0.f), b = a;
+    if (n < B) {
+        a = __ldg(reinterpret_cast<const float4 *>(x + (size_t)n * K + k));
+        b = __ldg(reinterpret_cast<const float4 *>(x + (size_t)n * K + k + 4));
+    }
+    auto sat = [](float v) { return fminf(fmaxf(v, -65000.f), 65000.f); };
+    const half2 h0 = __floats2half2_rn(sat(a.x), sat(a.y)), h1 = __floats2half2_rn(sat(a.z), sat(a.w));
+    const half2 h2 = __floats2half2_rn(sat(b.x), sat(b.y)), h3 = __floats2half2_rn(sat(b.z), sat(b.w));
+    hx = make_uint4(*reinterpret_cast<const uint32_t *>(&h0), *reinterpret_cast<const uint32_t *>(&h1),
+                    *reinterpret_cast<const uint32_t *>(&h2), *reinterpret_cast<const uint32_t *>(&h3));
+    const float2 f0 = __half22float2(h0), f1 = __half22float2(h1), f2 = __half22float2(h2), f3 = __half22float2(h3);
+    float t = ((f0.x + f0.y) + (f1.x + f1.y)) + ((f2.x + f2.y) + (f3.x + f3.y));
+    t += __shfl_xor_sync(0xffffffffu, t, 1);
+    t += __shfl_xor_sync(0xffffffffu, t, 2);  // token n's sum over the 4 lanes of its quad
+    sv.x = __shfl_sync(0xffffffffu, t, (2 * c) * 4);
+    sv.y = __shfl_sync(0xffffffffu, t, (2 * c + 1) * 4);
+}
+
 // word i of a register array of uint4 (i a compile-time constant after unrolling: stays in registers)
 template <int NQ>
 __device__ __forceinline__ uint32_t wget(const uint4 (&q)[NQ], int i) {
@@ -454,7 +477,7 @@ w4r(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 // v7 (Q4_K, 1-16 tokens): no shared memory and no barriers; every warp prefetches, one super-block ahead and into
 // registers, the weights of its MT 16-row tiles (and with PX its tokens' x fragments and their 32-value sums), so no
 // load sits in the arithmetic's path; each x fragment serves all MT tiles
-template <int WARPS, int KS, int NT, int PX, int MT>
+template <int WARPS, int KS, int NT, int PX, int MT, int FP>
 __global__ void __launch_bounds__(WARPS * 32)
 w4p(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
     float *__restrict__ out, int N, int K, int B, int sb_per_split) {
@@ -477,6 +500,14 @@ w4p(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
     struct XB { uint4 x[NT][8]; float2 s[NT][8]; };
     struct Buf { uint4 q[MT][4], h[MT][2]; XB xb[1]; int sb; };
     auto fetch_x = [&](int sb, XB &b) {
+        if constexpr (FP) {  // xs carries llama.cpp's float activations; no prep kernel ran
+#pragma unroll
+            for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+                for (int j = 0; j < 8; j++)
+                    fused_x(xs, K, B, nt * 8 + g, (size_t)sb * 256 + 32 * j + 8 * c, c, b.x[nt][j], b.s[nt][j]);
+            return;
+        }
 #pragma unroll
         for (int nt = 0; nt < NT; nt++) {
             const int n = nt * 8 + g;
@@ -635,7 +666,7 @@ int launch(const uint8_t *wr, const half *xh, const float *xs, float *y, float *
     return cudaGetLastError() == cudaSuccess ? 0 : 3;
 }
 
-template <int WARPS, int KS, int NT, int PX, int MT>
+template <int WARPS, int KS, int NT, int PX, int MT, int FP>
 int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
              cudaStream_t s) {
     constexpr int TILES = WARPS / KS;
@@ -643,7 +674,7 @@ int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     const int per = (nb + ksplit - 1) / ksplit;
     const int splits = (nb + per - 1) / per;
     dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
-    w4p<WARPS, KS, NT, PX, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+    w4p<WARPS, KS, NT, PX, MT, FP><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
     if (splits > 1) {
         const size_t n = (size_t)B * N;
         reduce_split<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(part, y, n, splits);
@@ -655,7 +686,7 @@ int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 // v8 (Q4_K, 1-8 tokens): each warp streams its tile's super-blocks with cp.async into its own shared-memory ring of
 // STAGES super-blocks (2304 contiguous bytes each), so about three super-blocks per warp are in flight while it
 // computes; registers hold only the current super-block and the x fragments, which leaves room for more warps
-template <int WARPS, int STAGES>
+template <int WARPS, int STAGES, int FP>
 __global__ void __launch_bounds__(WARPS * 32)
 w4q(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
     float *__restrict__ out, int N, int K, int B, int sb_per_split) {
@@ -690,9 +721,13 @@ w4q(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
         float2 sv[8];
 #pragma unroll
         for (int j = 0; j < 8; j++) {
-            xv[j] = g < B ? __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)g * K + (size_t)sb * 256 + 32 * j + 8 * c))
-                          : make_uint4(0, 0, 0, 0);
-            sv[j] = __ldg(reinterpret_cast<const float2 *>(xs32 + ((size_t)sb * 8 + j) * rows8 + 2 * c));
+            if constexpr (FP) {
+                fused_x(xs, K, B, g, (size_t)sb * 256 + 32 * j + 8 * c, c, xv[j], sv[j]);
+            } else {
+                xv[j] = g < B ? __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)g * K + (size_t)sb * 256 + 32 * j + 8 * c))
+                              : make_uint4(0, 0, 0, 0);
+                sv[j] = __ldg(reinterpret_cast<const float2 *>(xs32 + ((size_t)sb * 8 + j) * rows8 + 2 * c));
+            }
         }
         cp_wait<STAGES - 2>();
         __syncwarp();
@@ -751,14 +786,14 @@ w4q(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
     }
 }
 
-template <int WARPS, int STAGES>
+template <int WARPS, int STAGES, int FP>
 int launch_q(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
              cudaStream_t s) {
     const int nb = K / 256;
     const int per = (nb + ksplit - 1) / ksplit;
     const int splits = (nb + per - 1) / per;
     const int smem = WARPS * STAGES * T4;
-    auto kern = w4q<WARPS, STAGES>;
+    auto kern = w4q<WARPS, STAGES, FP>;
     static bool attr = false;
     if (!attr) {
         if (smem > 48 * 1024 && cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, smem) != cudaSuccess)
@@ -777,6 +812,7 @@ int launch_q(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 struct Variant {
     int type, warps, ks, nt;
     launch_fn fn;
+    int fp = 0;  // 1: the kernel converts llama.cpp's float activations itself (no prep kernel)
 };
 
 #define V(T, W, S, N) Variant{T, W, S, N, launch<T, W, S, N, 0>}
@@ -784,15 +820,19 @@ struct Variant {
 #define VDN(T, W, S) VD(T, W, S, 1), VD(T, W, S, 2), VD(T, W, S, 3), VD(T, W, S, 4)
 #define VN(T, W, S) V(T, W, S, 1), V(T, W, S, 2), V(T, W, S, 3), V(T, W, S, 4)
 #define VT(T) VN(T, 4, 1), VN(T, 8, 1), VN(T, 4, 2), VN(T, 8, 2), VN(T, 16, 2), VN(T, 8, 4), VN(T, 16, 4), VN(T, 16, 1)
-#define VP(W, S, N, P, M) Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 1000 * M, N, launch_p<W, S, N, P, M>}
+#define VP(W, S, N, P, M) Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 1000 * M, N, launch_p<W, S, N, P, M, 0>}
+#define VPF(W, S, N, P) Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 20000, N, launch_p<W, S, N, P, 1, 1>, 1}
 #define VPN(W, S) VP(W, S, 1, 1, 1), VP(W, S, 2, 1, 1), VP(W, S, 1, 0, 1), VP(W, S, 2, 0, 1), VP(W, S, 1, 0, 2), \
                   VP(W, S, 2, 0, 2)
-#define VQ(W, S) Variant{TYPE_Q4_K, W, 5000 + S, 1, launch_q<W, S>}
+#define VQ(W, S) Variant{TYPE_Q4_K, W, 5000 + S, 1, launch_q<W, S, 0>}
+#define VQF(W, S) Variant{TYPE_Q4_K, W, 25000 + S, 1, launch_q<W, S, 1>, 1}
 const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
                             VDN(TYPE_Q4_K, 4, 1), VDN(TYPE_Q4_K, 8, 1), VDN(TYPE_Q4_K, 8, 2), VDN(TYPE_Q4_K, 4, 2),
                             VDN(TYPE_Q6_K, 4, 1), VDN(TYPE_Q6_K, 8, 1), VDN(TYPE_Q6_K, 8, 2), VDN(TYPE_Q6_K, 4, 2), VPN(2, 1), VPN(4, 1), VPN(4, 2), VPN(8, 2), VPN(8, 4),
                             VPN(4, 4), VPN(2, 2), VPN(8, 1), VQ(2, 4), VQ(4, 4), VQ(4, 3), VQ(8, 3), VQ(2, 6), VQ(4, 5),
-                            VQ(1, 8), VQ(2, 8)};
+                            VQ(1, 8), VQ(2, 8), VQF(2, 4), VQF(4, 4), VQF(4, 3), VQF(2, 6), VQF(1, 8), VQF(2, 8),
+                            VPF(2, 1, 1, 1), VPF(4, 1, 1, 1), VPF(4, 2, 1, 1), VPF(8, 2, 1, 1), VPF(2, 1, 1, 0),
+                            VPF(4, 1, 1, 0), VPF(4, 2, 1, 0), VPF(2, 1, 2, 1), VPF(4, 1, 2, 1), VPF(4, 2, 2, 0)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {
@@ -847,6 +887,13 @@ uint8_t *repack(int dev, int type, const void *w, long N, long K, cudaStream_t s
 
 int run_repacked(const Variant &v, const uint8_t *wr, const float *x, float *y, long N, long K, long B, int ksplit,
                  int dev, cudaStream_t s) {
+    if (v.fp) {  // the kernel reads x itself
+        if (ksplit > 1) {
+            std::lock_guard<std::mutex> guard(lock_);
+            if (grow((void **)&scratch[dev].part, &scratch[dev].pcap, (size_t)ksplit * B * N * sizeof(float))) return 1;
+        }
+        return v.fn(wr, nullptr, x, y, scratch[dev].part, (int)N, (int)K, (int)B, ksplit, s);
+    }
     const int rows = v.nt * 8;
     const size_t xbytes = ((size_t)rows * K * sizeof(half) + 255) / 256 * 256;
     {
@@ -946,7 +993,7 @@ int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64
             const Variant &v = VARIANTS[pick.first];
             const size_t rows = (size_t)v.nt * 8;
             const size_t xbytes = (rows * K * sizeof(half) + 255) / 256 * 256 + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;
-            if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || scratch[dev].xcap < xbytes ||
+            if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || (!v.fp && scratch[dev].xcap < xbytes) ||
                 (pick.second > 1 && scratch[dev].pcap < (size_t)pick.second * B * N * sizeof(float)))
                 return 1;
         }

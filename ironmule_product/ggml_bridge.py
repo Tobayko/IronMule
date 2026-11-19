@@ -217,6 +217,7 @@ class GgmlBridge:
                 **({"prefill_batch": summary["prefill_batch"]} if "prefill_batch" in summary else {}),
                 **({"draft_model": summary["draft_model"]} if "draft_model" in summary else {}),
                 **({"pilot": summary["pilot"]} if "pilot" in summary else {}),
+                **{k: summary[k] for k in ("pack", "kernels", "w4", "argmax_on_device") if k in summary},
                 **({"ggml_agent": self._agent.status()} if self._agent is not None else {})}
 
     def eos_ids(self) -> tuple[int, ...]:

@@ -42,6 +42,17 @@ def main():
                    "ttft_p50_ms": round(m["ttft_median_ms"], 1), "ttft_p95_ms": round(m["ttft_p95_ms"], 1),
                    "tokens": m["completion_tokens"], "prompt_tokens": sum(m["performance_prompt_tokens"]),
                    "texts": hashlib.sha256(json.dumps([r["text"] for r in rows]).encode()).hexdigest()[:16]}
+            if a.engine == "ironmule":  # the server's own intervals for this wave: queue, dispatch to first token
+                try:
+                    import urllib.request
+                    live = json.load(urllib.request.urlopen(a.url + "/v1/ironmule/live", timeout=10))["runtime"]
+                    recent = sorted(live["samples"], key=lambda s: s["at"])[-len(rows):]
+                    for key in ("queue_ms", "dispatch_to_first_ms", "first_to_end_ms"):
+                        vals = sorted(s[key] for s in recent if s.get(key) is not None)
+                        if vals:
+                            out[key] = [round(vals[len(vals) // 2], 1), round(vals[-1], 1)]
+                except Exception as exc:  # noqa: BLE001 - the timing record is optional
+                    out["live_error"] = type(exc).__name__
             if a.quality:
                 qs = cases(seed)
                 qrows, _ = compare.batch(a.engine, server, [c.prompt for c in qs], width, MAX_TOKENS, deadline)
