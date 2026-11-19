@@ -2,7 +2,7 @@
 > #include <algorithm>
 > #include <atomic>
 > #include <vector>
-18a22,61
+18a22,65
 > // AM1 (IronMule): with ironmule_set_argmax_only(1) a decode copies, for every output row, only the index of its
 > // largest logit (computed on the backend that holds the logits, by ggml_argmax) instead of the whole row; the index
 > // is written as a float into the row's first element. Callers that need probabilities leave it off (the default).
@@ -27,8 +27,12 @@
 >     ggml_init_params params = { 8 * ggml_tensor_overhead() + ggml_graph_overhead_custom(8, false), nullptr, true };
 >     ggml_context * ctx = ggml_init(params);
 >     if (ctx == nullptr) return false;
->     ggml_tensor * view = ggml_view_2d(ctx, t_logits, n_vocab, n_outputs, t_logits->nb[1], 0);
->     ggml_tensor * am = ggml_argmax(ctx, view);
+>     // a leaf over the logits' memory: a view would pull the whole model graph into this one
+>     ggml_tensor * leaf = ggml_new_tensor_2d(ctx, t_logits->type, n_vocab, n_outputs);
+>     leaf->buffer = t_logits->buffer;
+>     leaf->data = t_logits->data;
+>     if (leaf->buffer == nullptr || leaf->data == nullptr) { ggml_free(ctx); return false; }
+>     ggml_tensor * am = ggml_argmax(ctx, leaf);
 >     am->buffer = buf;
 >     am->data = ggml_backend_buffer_get_base(buf);
 >     ggml_cgraph * gf = ggml_new_graph_custom(ctx, 8, false);
@@ -43,7 +47,7 @@
 >     return ok;
 > }
 > 
-1132c1175,1178
+1132c1179,1182
 <                 ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
 ---
 >                 if (!(ironmule_argmax_flag.load() && ggml_is_contiguous(t_logits) &&
