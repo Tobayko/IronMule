@@ -2843,3 +2843,33 @@ IronMule is level or ahead at one client (speculation decides by prompt: -14 % a
 [IronMule results](../lab/pk1/results/a100-ironmule-w4-http.jsonl) · [W4R tuning record](../lab/pk1/results/a100-w4-tuning.json)
 Pod time 4.5 h, 9.92 USD. Next: decode steps at 8-32 rows (kernels at 1.3 TB/s for 1-8 tokens and 0.5 TB/s at 32,
 capture-safe W4R so CUDA graphs can stay on, an on-GPU argmax instead of the 19 MB logits copy).
+
+### 2026-11-19, second A100 session: dequant-once W4R, interleaved Q6_K, AM1, graphs kept on
+
+Same model, workload and harness; a second A100-SXM4-80GB (RunPod secure, US-KS-2). vLLM 0.11.0 AWQ on this pod:
+52.0 / 183.9 / 273.7 tok/s at 1 / 8 / 32 clients (18/18 facts), within 0.7 % of the first pod
+([results](../lab/pk1/results/a100-vllm-awq-pod2.jsonl)).
+
+Changes since the first session:
+- W4R variants that dequantize each weight once to fp16 (q x S - m) and reuse it for all 8-token tiles, instead of
+  scaling per tile in fp32; at 32 tokens the 25600x5120 gate matrix went from 123 to 93.5 us.
+- Q6_K tiles interleaved like Q4_K: the Q6_K down matrix 82 / 86 / 122 us at 1 / 8 / 32 tokens (was 93 / 94 / 165).
+- W4R is capture-safe (inside a CUDA graph capture it serves only matrices it has already repacked), so CUDA graphs
+  stay on for one-row steps.
+- AM1 (`native/ggml_patches/am1`): greedy steps copy only each output row's argmax from the GPU, computed by
+  `ggml_argmax` over the logits' memory, instead of 600 KB per row; checked against the host argmax at start.
+- GR2 (`native/ggml_patches/gr2`, opt-in): CUDA graphs for multi-row decode steps. Same tokens, no measurable gain
+  (38.6 against 38.8 ms per 32-row step); left off.
+- A draft model (Qwen3-0.6B Q4_K_M, DM1 widened to 8 sequences) lost everywhere (104 against 157 tok/s at 8 clients)
+  and stays off.
+
+Engine-level, tok/s at 1 / 8 / 32 (two repeats), decode ms per step at 8 / 32:
+
+| Arm | 1 | 8 | 32 | decode 8 / 32 |
+| --- | ---: | ---: | ---: | ---: |
+| first session's W4R | 42.4 / 62.8 | 144.6 / 148.8 | 230.1 / 228.5 | 31 / 56 |
+| dequant-once + AM1 + graphs on | 48.6 / 79.5 | 155.9 / 161.7 | 258.2 / 258.0 | 26 / 40 |
+| + interleaved Q6_K | 46.6 / 80.0 | 157.0 / 163.0 | 261.9 / 261.7 | 25.7 / 38.6 |
+
+[Engine arms](../lab/pk1/results/a100-engine-arms-pod2.jsonl). Against vLLM on this pod: -10 % / +54 % at one client
+(prompt-dependent speculation), -13 % at 8, -4 % at 32 clients.
