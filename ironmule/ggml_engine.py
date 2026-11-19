@@ -104,6 +104,12 @@ UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
 # IRONMULE_CUBLAS_MIN_ROWS fixes the threshold instead (0 = never), IRONMULE_PK2=0 skips the measurement.
 PK2_AUTO = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS") is None and os.environ.get("IRONMULE_PK2", "1") != "0"
+# W4 (2026-11-19): on a CUDA GPU of compute capability 8.0 or newer, packed engines generate and tune IronMule's W4R
+# kernels for this GPU and GGUF (ironmule/w4_kernels.py, cached under IRONMULE_W4_CACHE) and hand them to the kg1 hook,
+# unless IRONMULE_KG_LIB names a library; measure_kg then keeps them only for the token counts where the step got
+# faster. "0" turns it off. The library repacks a matrix on first use, so CUDA graphs are off while it serves.
+W4_AUTO = os.environ.get("IRONMULE_W4", "1") != "0"
+W4_CACHE = os.environ.get("IRONMULE_W4_CACHE") or str(Path.home() / ".cache" / "ironmule" / "w4")
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
@@ -487,6 +493,7 @@ class GgmlEngine:
         L.llama_backend_init()
         self._owns_model = model is None  # SEQ1: a width measurement opens several contexts on one loaded model
         self.gpu_layers = gpu_layers(L)  # the same for a context opened on an already loaded model (SEQ1)
+        self.w4 = self._attach_w4(gguf) if model is None else {}
         self.prefill_batch = self.gpu_layers > 0 and os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1"
         # The long-only mode is dormant until this worker verifies its own measured receipt and holdout.
         self.prefill_batch_long = (bool(self.gpu_layers) and os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444"
@@ -561,6 +568,26 @@ class GgmlEngine:
             prices[t] = sorted(times[1:])[len(times[1:]) // 2]
         self._clear()
         return prices
+
+    def _attach_w4(self, gguf: str) -> dict[str, Any]:
+        """W4: this GPU's tuned W4R library for this GGUF (built and measured once, then cached), set as the kg1 hook's
+        library before the first native call. {} where it does not apply."""
+        global KG_LIB
+        if not (W4_AUTO and PACK and self.gpu_layers and not KG_LIB and cuda_kernel_device(self.L)):
+            return {}
+        try:
+            from .w4_kernels import ensure
+
+            got = ensure(str(gguf), Path(W4_CACHE), log=lambda *a, **k: None)
+        except Exception as exc:  # noqa: BLE001 - a failed build or measurement leaves llama.cpp's kernels serving
+            return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+        if got is None:
+            return {}
+        lib, table = got
+        os.environ["IRONMULE_KG_LIB"], os.environ["IRONMULE_W4_TABLE"] = str(lib), str(table)
+        os.environ.setdefault("GGML_CUDA_DISABLE_GRAPHS", "1")
+        KG_LIB = str(lib)
+        return {"lib": lib.name, "table": table.name}
 
     def measure_pk2(self, thresholds: Sequence[int] = (256, 512, 1024), repeats: int = 3) -> dict[str, Any]:
         """PK2: time one packed prompt burst (eight 444-token prompts on eight KV streams, as a busy step carries) with
@@ -1532,6 +1559,7 @@ class GgmlEngine:
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
                 **({"kernels": self.kg} if getattr(self, "kg", None) else {}),
+                **({"w4": self.w4} if getattr(self, "w4", None) else {}),
                 **({"kg4_scope": self.kg4_scope.status()} if self.kg4_scope is not None else {}),
                 **({"padding": {"to": {str(k): v for k, v in self.pad_to.items()}, "guesses": self.padded,
                                 "step_ms_by_tokens": {str(k): round(v * 1000, 2) for k, v in self.pad_prices.items()}}}

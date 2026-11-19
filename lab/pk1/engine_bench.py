@@ -66,7 +66,8 @@ def main():
     a = p.parse_args()
     started = time.monotonic()
     engine = GgmlEngine(a.gguf, seqs=a.seqs, seq_ctx=a.seq_ctx, flash_attn=True,
-                        speculate=os.environ.get("PK1_SPEC", "1") != "0")
+                        speculate=os.environ.get("PK1_SPEC", "1") != "0",
+                        draft_gguf=os.environ.get("PK1_DRAFT") or None)
     steps = []
     engine.observer = lambda rows, prompt, kv, seconds: steps.append((rows, prompt, seconds))
     print(json.dumps({"label": a.label, "load_s": round(time.monotonic() - started, 1),
@@ -87,7 +88,7 @@ def main():
                        prefill_calls=len(prefill), prefill_s=round(sum(s[2] for s in prefill), 3))
             print(json.dumps(row), flush=True)
     print(json.dumps({"label": a.label, "summary": {k: v for k, v in engine.summary().items()
-                                                    if k in ("pack", "prefill_batch", "kernels", "pilot")}}), flush=True)
+                                                    if k in ("pack", "prefill_batch", "kernels", "pilot", "draft_model")}}), flush=True)
     engine.close()
 
 
