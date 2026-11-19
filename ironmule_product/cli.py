@@ -357,7 +357,6 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
                 if got is not None:
                     library = got[0]
                     os.environ["IRONMULE_W4_TABLE"] = str(got[1])
-                    os.environ.setdefault("GGML_CUDA_DISABLE_GRAPHS", "1")  # repacking on first use
                     os.environ.setdefault("IRONMULE_GGML_PACK", "1")
                     os.environ.setdefault("IRONMULE_GGML_UBATCH", "8192")
             if library is None:
