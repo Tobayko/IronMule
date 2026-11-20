@@ -3076,3 +3076,31 @@ cp.async pipeline, in-kernel reduction) or Q4_K converted once into Marlin's lay
 quality gate; (2) fused norm, residual, activation and RoPE kernels and a full CUDA graph for multi-row decode steps
 (about 8-9 ms of IronMule's step against about 2.8 ms); (3) decode attention over one KV stream per sequence (2.6 ms
 against 1.5 ms). IronMule's prefill path stays. Pod time 0.23 h, 0.50 USD; total 20.73 of 25 USD.
+
+### 2026-11-20: correction to the vLLM study, and MQ1 (Marlin on Q4_K) measured
+Correction: the vLLM steps read above as "32 rows" (1,160 kernels, 12.0 ms of Marlin) ran Marlin's eight-row variant
+(`m_block_size_8`), so they were steps of at most eight rows. In the fresh-seed trace the 32-row decode steps are the
+7,680 calls of `Marlin<256, 2, 16, 4>` (30 steps x 64 layers x 4 fused matmuls): 491 ms, **16.4 ms of 4-bit GEMM per
+32-row step**, plus about 0.8 ms for the fp16 output matrix and about 2.5-3 ms for everything else. vLLM's 32-row step is
+thus about 20 ms against IronMule's about 35 ms: the GEMMs differ by about 3-4 ms (AWQ carries about 12 % fewer bytes
+than Q4_K_M), everything else by about 12 ms (fused norm, residual and activation kernels, a full CUDA graph, attention).
+The fusion and graph work (point 2) is the larger lever, not the matmul.
+
+MQ1 (`native/kernels/mq1`, commit 4a10665): vLLM's Marlin kernel, vendored unchanged apart from its torch includes,
+as one more W4R tuner variant. Q4_K is converted once on the GPU into u4 values (exact), fp16 scales and fp16 float
+zero points per 32-weight group (Marlin's HQQ path, group 32 instantiated by IronMule), then Marlin's repack. Correct
+everywhere (relative error 8.3e-4 to 9.3e-4 against float64, bound 4e-3), but slower than W4R on every Q4_K shape of
+Qwen3-32B on the A100 except one tie, best microseconds per call:
+
+| shape (K x N) | 1 token W4R / MQ1 | 8 tokens | 16 tokens | 32 tokens |
+| --- | ---: | ---: | ---: | ---: |
+| 5120 x 25600 (gate, up) | 55.1 / 63.4 | 64.4 / 75.2 | 77.1 / 92.2 | 90.3 / 95.7 |
+| 25600 x 5120 (down) | 59.0 / 64.1 | 70.7 / 72.3 | 79.3 / 82.1 | 105.0 / 104.0 |
+| 8192 x 5120 (o) | 25.2 / 29.2 | 30.9 / 35.7 | 34.3 / 39.3 | 45.8 / 53.9 |
+| 5120 x 8192 (q) | 26.9 / 28.9 | 31.8 / 35.7 | 38.7 / 39.4 | 48.1 / 48.4 |
+| 5120 x 1024 (k, v) | 10.8 / 27.3 | 11.8 / 27.5 | 15.5 / 37.6 | 20.9 / 88.2 |
+
+Q4_K's per-32 scale and minimum add about 24 % of metadata to Marlin's weight stream (AWQ: one scale and zero per 128),
+and MQ1 adds an fp32 -> fp16 and an fp16 -> fp32 conversion kernel per call. MQ1 stays as a tuner variant (it is only
+chosen where measured faster and within the bound); it is not a step towards vLLM's decode on Q4_K_M.
+[MQ1 tuning](../lab/pk1/results/a100-mq1-tuning.json). Pod time 0.17 h, 0.36 USD; total 21.10 of 25 USD.
