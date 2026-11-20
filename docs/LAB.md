@@ -3044,3 +3044,35 @@ Facts 18/18 in all nine runs. At 32 clients: first token 3.10-3.19 -> 3.00-3.03 
 +4.6 % throughput on this pod. Across pods the 32-client numbers stay at 245-250 tok/s: this pod's baseline was lower.
 Open: the server's packed prefill takes 2.74 s against 2.58 s for the same rows in the engine profile (both with PK3);
 the cause is not located. Pod time 1.04 h, 2.27 USD; total 20.23 of 25 USD.
+
+### 2026-11-20, maintainer study: where vLLM's 32-client advantage comes from
+Owner's note: the maintainers may study vLLM to find IronMule's bottlenecks; the agent (AG1 controller, Pilot) does not
+see any of this and decides only from its own observations. vLLM 0.11.0, the same Qwen3-32B AWQ, A100 SXM4 80 GB,
+same launch as before (`--max-model-len 2048 --max-num-seqs 32`), recorded with vLLM's torch profiler over one 32-client
+wave of the same HTTP client. vLLM on this pod: 51.7 / 181.6 / 268.6 tok/s at 1 / 8 / 32 clients.
+Its log: awq_marlin kernels, chunked prefill with max_num_batched_tokens=2048, FlashAttention backend, torch.compile
+(Triton fusions), CUDA graphs PIECEWISE for mixed prefill-decode steps and FULL for decode steps. Prefix caching is on
+by default: a wave repeating an earlier seed was mostly served from cache (1.56 s of kernels), so the analysis below uses a
+fresh seed; the benchmark's prompts share only the chat template and a few words within a wave.
+- Whole fresh wave: about 3.67 s of kernels for 7,632 prompt tokens plus 32 x 32 answers, about what IronMule's GPU
+  does for the same wave (2.58 s prefill + 31 x 35 ms decode). The prefill GEMMs alone are slower in vLLM (Marlin at
+  large batch, 2.63 s) than IronMule's PK2 cuBLAS path (1.92 s GEMM + 0.26 s conversion and dequantisation).
+- The difference is the decode step at 32 rows (median of 34 steps; IronMule from its own profiles):
+
+| per decode step | vLLM, 1 row | vLLM, 32 rows | IronMule, 32 rows |
+| --- | ---: | ---: | ---: |
+| weight GEMMs (4-bit, + fp16 output matrix) | 11.6 + 0.9 ms | 12.0 + 0.9 ms | about 19-21 ms (W4R) |
+| attention (+ KV write) | 1.2 ms | 1.5 ms | about 2.6 ms |
+| norms, activation, residual, RoPE | about 1.1 ms (fused Triton) | about 1.3 ms | about 6-7 ms incl. prep_x, reduce_split |
+| GPU idle inside the step | about 0 (full CUDA graph) | about 0 | about 3 ms |
+| total | 15.2 ms | 16.3 ms | about 35 ms |
+
+  Marlin reads AWQ's 4.25-bit weights at about 1.35-1.4 TB/s and costs the same at 32 rows as at one; W4R reads Q4_K_M's
+  4.85 bits at about 1.3 TB/s at one row but slows to about 0.95 TB/s at 32 (one-row IronMule decode is faster than
+  vLLM's: about 11.6 against 15.2 ms).
+Consequences for the work (maintainer side): (1) a 32-row matmul that keeps one-row speed, either a Marlin-style Q4_K
+kernel (weights shuffled for lop3 dequantisation, activations shared through shared memory per block, a multi-stage
+cp.async pipeline, in-kernel reduction) or Q4_K converted once into Marlin's layout with float zero points behind the
+quality gate; (2) fused norm, residual, activation and RoPE kernels and a full CUDA graph for multi-row decode steps
+(about 8-9 ms of IronMule's step against about 2.8 ms); (3) decode attention over one KV stream per sequence (2.6 ms
+against 1.5 ms). IronMule's prefill path stays. Pod time 0.23 h, 0.50 USD; total 20.73 of 25 USD.
