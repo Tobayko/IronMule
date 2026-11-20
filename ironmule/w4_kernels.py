@@ -86,10 +86,20 @@ def build(out: Path, arch: str | None = None) -> Path:
     arch = arch or compute_capability()
     if arch is None or int(arch) < 80:
         raise RuntimeError("W4MMA needs an Ampere or newer NVIDIA GPU (sm_80+)")
-    lib = out / f"w4mma_sm{arch}_v{VERSION}_{hashlib.sha256(SOURCE.read_bytes()).hexdigest()[:12]}.so"
+    lib = out / f"w4mma_sm{arch}_v{VERSION}_{source_digest()[:12]}.so"
     if not lib.exists():
-        compile_cuda(SOURCE.read_text(), lib, arch)
+        compile_cuda(SOURCE.read_text(), lib, arch, include=SOURCE.parent)
     return lib
+
+
+def source_digest() -> str:
+    """The kernel source and the MQ1 headers it includes (native/kernels/mq1)."""
+    h = hashlib.sha256(SOURCE.read_bytes())
+    for path in sorted((SOURCE.parent / "mq1").rglob("*")):
+        if path.is_file() and path.suffix in (".h", ".cuh", ".hpp"):
+            h.update(path.relative_to(SOURCE.parent).as_posix().encode())
+            h.update(path.read_bytes())
+    return h.hexdigest()
 
 
 def _lib(path: Path):
@@ -193,7 +203,7 @@ def ensure(gguf: str, cache: Path, log=print) -> tuple[Path, Path] | None:
         return None
     fp = fingerprint()
     key = hashlib.sha256(json.dumps({"fp": fp, "gguf": file_sha256(gguf), "v": VERSION,
-                                     "src": hashlib.sha256(SOURCE.read_bytes()).hexdigest()},
+                                     "src": source_digest()},
                                     sort_keys=True).encode()).hexdigest()[:24]
     cache.mkdir(parents=True, exist_ok=True)
     lib = build(cache, arch)

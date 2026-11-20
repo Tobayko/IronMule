@@ -23,6 +23,9 @@
 #include <mutex>
 #include <string>
 #include <tuple>
+#include <vector>
+
+#include "mq1/mq1.cuh"  // MQ1: vLLM's Marlin for Q4_K (native/kernels/mq1)
 
 namespace {
 
@@ -1544,8 +1547,14 @@ int launch_q(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 struct Variant {
     int type, warps, ks, nt;
     launch_fn fn;
-    int fp = 0;  // 1: the kernel converts llama.cpp's float activations itself (no prep kernel)
+    int fp = 0;   // 1: the kernel converts llama.cpp's float activations itself (no prep kernel)
+    int mq1 = 0;  // 1: MQ1 (Marlin) on its own copy of the weights, not the tile-order copy
 };
+
+int mq1_stub(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) {
+    return 1;
+}
+#define VMQ(N) Variant{TYPE_Q4_K, 8, 60000, N, mq1_stub, 0, 1}
 
 #define V(T, W, S, N) Variant{T, W, S, N, launch<T, W, S, N, 0>}
 #define VD(T, W, S, N) Variant{T, W, S + 10, N, launch<T, W, S, N, 1>}
@@ -1588,7 +1597,8 @@ const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
                             VE(2, 3, 4, 4), VE(4, 2, 2, 4),
                             VF(4, 4, 1), VF(8, 4, 1), VF(16, 4, 1), VF(4, 4, 2), VF(8, 4, 2), VF(2, 4, 2),
                             VF(4, 2, 1), VF(8, 2, 1), VF(4, 2, 2), VF(8, 2, 2),
-                            VF6(4, 4, 1), VF6(8, 4, 1), VF6(2, 4, 1), VF6(4, 4, 2), VF6(4, 2, 1), VF6(8, 2, 1)};
+                            VF6(4, 4, 1), VF6(8, 4, 1), VF6(2, 4, 1), VF6(4, 4, 2), VF6(4, 2, 1), VF6(8, 2, 1),
+                            VMQ(1), VMQ(2), VMQ(3), VMQ(4)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {
@@ -1709,6 +1719,29 @@ void im_w4_variant(int i, int *out) {
 }
 
 // y[B][N] = w[N][K] (GGUF blocks at w; repacked once) x[B][K]^T with variant i: 0 on success
+// MQ1: Marlin's copy of a Q4_K matrix, made the first time outside a CUDA graph capture
+static std::map<std::pair<int, const void *>, mq1::Prepared> mq1_prepared;
+static mq1::Scratch mq1_scratch[16];
+
+static int mq1_serve(int dev, const void *w, const float *x, float *y, long N, long K, long B, int ksplit, cudaStream_t s) {
+    if (ksplit != 1) return 1;
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    cudaStreamIsCapturing(s, &capture);
+    const bool capturing = capture != cudaStreamCaptureStatusNone;
+    mq1::Prepared p;
+    {
+        std::lock_guard<std::mutex> guard(lock_);
+        auto it = mq1_prepared.find({dev, w});
+        if (it == mq1_prepared.end()) {
+            if (capturing || mq1::prepare(w, N, K, dev, s, p) != 0) return 4;
+            mq1_prepared[{dev, w}] = p;
+        } else {
+            p = it->second;
+        }
+    }
+    return mq1::run(p, x, y, (int)B, dev, s, mq1_scratch[dev], capturing);
+}
+
 int im_w4_run(int i, const void *w, const float *x, float *y, long N, long K, long B, int ksplit, cudaStream_t s) {
     if (i < 0 || i >= NV || K % 256 != 0 || B < 1 || B > 32 || ksplit < 1) return 1;
     const Variant &v = VARIANTS[i];
@@ -1716,6 +1749,7 @@ int im_w4_run(int i, const void *w, const float *x, float *y, long N, long K, lo
     int dev = 0;
     cudaGetDevice(&dev);
     if (dev < 0 || dev >= 16) return 1;
+    if (v.mq1) return mq1_serve(dev, w, x, y, N, K, B, ksplit, s);
     uint8_t *wr = repack(dev, v.type, w, N, K, s);
     if (wr == nullptr) return 4;
     return run_repacked(v, wr, x, y, N, K, B, ksplit, dev, s);
@@ -1778,14 +1812,62 @@ int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64
         if (capture != cudaStreamCaptureStatusNone) {
             // inside a CUDA graph capture nothing may be allocated or repacked: only what an earlier call prepared
             const Variant &v = VARIANTS[pick.first];
-            const size_t rows = (size_t)v.nt * 8;
-            const size_t xbytes = (rows * K * sizeof(half) + 255) / 256 * 256 + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;
-            if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || (!v.fp && scratch[dev].xcap < xbytes) ||
-                (pick.second > 1 && scratch[dev].pcap < (size_t)pick.second * B * N * sizeof(float)))
-                return 1;
+            if (v.mq1) {  // MQ1 checks its own copy here and its scratch in mq1::run
+                if (dev < 0 || dev >= 16 || mq1_prepared.find({dev, w}) == mq1_prepared.end()) return 1;
+            } else {
+                const size_t rows = (size_t)v.nt * 8;
+                const size_t xbytes = (rows * K * sizeof(half) + 255) / 256 * 256 + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;
+                if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || (!v.fp && scratch[dev].xcap < xbytes) ||
+                    (pick.second > 1 && scratch[dev].pcap < (size_t)pick.second * B * N * sizeof(float)))
+                    return 1;
+            }
         }
     }
     return im_w4_run(pick.first, w, x, y, N, K, B, pick.second, s);
+}
+
+// MQ1's measurement: the same protocol as the W4R variants below, over `copies` Marlin copies of w
+static int mq1_bench(const void *w_host, size_t wbytes, long N, long K, const float *x_host, long B, int ksplit, int copies,
+              int reps, double *us, float *y_host) {
+    if (ksplit != 1 || N % 64 != 0) return 1;
+    int dev = 0;
+    cudaGetDevice(&dev);
+    cudaGetLastError();
+    uint8_t *w = nullptr;
+    float *x = nullptr, *y = nullptr;
+    if (cudaMalloc(&w, wbytes) != cudaSuccess) return 10;
+    if (cudaMalloc(&x, sizeof(float) * B * K) != cudaSuccess || cudaMalloc(&y, sizeof(float) * B * N) != cudaSuccess) {
+        cudaFree(w); cudaFree(x); return 11;
+    }
+    cudaMemcpy(w, w_host, wbytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(x, x_host, sizeof(float) * B * K, cudaMemcpyHostToDevice);
+    std::vector<mq1::Prepared> ps(copies);
+    int rc = 0;
+    for (int c = 0; c < copies && rc == 0; c++) rc = mq1::prepare(w, N, K, dev, 0, ps[c]) ? 14 : 0;
+    mq1::Scratch sc;
+    if (rc == 0) rc = mq1::run(ps[0], x, y, (int)B, dev, 0, sc, false);
+    if (rc == 0 && cudaDeviceSynchronize() != cudaSuccess) rc = 12;
+    if (rc == 0) cudaMemcpy(y_host, y, sizeof(float) * B * N, cudaMemcpyDeviceToHost);
+    cudaEvent_t e0, e1;
+    cudaEventCreate(&e0);
+    cudaEventCreate(&e1);
+    float total = 0.f;
+    if (rc == 0) {
+        for (int r = 0; r < 3; r++) rc |= mq1::run(ps[r % copies], x, y, (int)B, dev, 0, sc, false);
+        cudaEventRecord(e0, 0);
+        for (int r = 0; rc == 0 && r < reps; r++) rc |= mq1::run(ps[r % copies], x, y, (int)B, dev, 0, sc, false);
+        cudaEventRecord(e1, 0);
+        cudaEventSynchronize(e1);
+        cudaEventElapsedTime(&total, e0, e1);
+    }
+    if (rc == 0 && cudaGetLastError() != cudaSuccess) rc = 13;
+    if (rc == 0) *us = 1000.0 * total / reps;
+    cudaEventDestroy(e0);
+    cudaEventDestroy(e1);
+    for (auto &p : ps) mq1::release(p);
+    cudaFree(sc.a); cudaFree(sc.c); cudaFree(sc.c_tmp); cudaFree(sc.locks);
+    cudaFree(w); cudaFree(x); cudaFree(y);
+    return rc;
 }
 
 // Tuning: time variant i over `copies` repacked copies of w (beyond the L2 cache), `reps` back-to-back calls between
@@ -1795,6 +1877,7 @@ int im_w4_bench(int i, const void *w_host, size_t wbytes, long N, long K, const 
     if (i < 0 || i >= NV) return 1;
     const Variant &v = VARIANTS[i];
     if ((B + 7) / 8 != v.nt) return 1;
+    if (v.mq1) return mq1_bench(w_host, wbytes, N, K, x_host, B, ksplit, copies, reps, us, y_host);
     uint8_t *w = nullptr, *wr = nullptr;
     float *x = nullptr, *y = nullptr;
     const size_t rb = repacked_bytes(v.type, N, K);

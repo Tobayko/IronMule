@@ -957,7 +957,7 @@ def fingerprint() -> dict[str, Any]:
             "nvcc": version([nvcc, "--version"]) if nvcc else "", "kg": KG_VERSION}
 
 
-def compile_cuda(source: str, out: Path, arch: str) -> None:
+def compile_cuda(source: str, out: Path, arch: str, include: Path | None = None) -> None:
     nvcc = nvcc_path()
     if nvcc is None:
         raise RuntimeError("no nvcc: KG1 needs the CUDA toolkit")
@@ -966,8 +966,9 @@ def compile_cuda(source: str, out: Path, arch: str) -> None:
         src = Path(scratch) / "kernel.cu"
         binary = Path(scratch) / "kernel.so"
         src.write_text(source)
+        extra = ["-I", str(include)] if include is not None else []  # MQ1: the vendored headers next to the source
         done = subprocess.run([nvcc, "-O3", "-std=c++17", f"-arch=sm_{arch}", "-shared", "-Xcompiler", "-fPIC",
-                               "--cudart", "shared", "-o", str(binary), str(src)], capture_output=True, text=True)
+                               "--cudart", "shared", *extra, "-o", str(binary), str(src)], capture_output=True, text=True)
         if done.returncode:
             raise RuntimeError(f"nvcc failed: {done.stderr[-2000:]}")
         src.replace(out.with_suffix(".cu"))
