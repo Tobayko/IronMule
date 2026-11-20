@@ -3012,3 +3012,35 @@ session). The HTTP throughput did not move: with 32-token answers about 73 % of 
 prefill (first tokens at 2.96-3.06 s here against 2.90-2.93 s in the third session, a different pod), so the decode
 gain (about 90 ms per wave) is the size of the prefill's pod-to-pod spread. GR2 again made no measurable difference.
 Pod time 0.52 h, 1.14 USD; total 17.96 of 20 USD.
+
+### 2026-11-20, seventh A100 session: the prefill, a split burst (PK1-B) and shared fp16 activations (PK3)
+Owner raised the RunPod budget by 5 USD (25 in total). With 32-token answers the 32-client wave is about 73 % prefill,
+so the prefill came first.
+- Engine prefill profile (32 prompts x 240 tokens = 7,680 rows, one packed call, PK2 cuBLAS): 2.56 s of kernels;
+  GEMMs 1,922 ms (about 249 TFLOPS, 80 % of the A100's fp16 peak), fp32 -> fp16 activation conversion 194 ms,
+  Q4_K/Q6_K dequantisation 113 ms, SwiGLU, norms, add, RoPE, attention and KV writes about 330 ms, GPU idle 5 ms.
+  Without PK2 (llama.cpp's MMQ kernels) the same prefill takes 6.0 s.
+- A one-line timing log per packed prefill call inside the running server (pod-only, not committed) showed why the
+  server's first tokens came at about 3.0-3.1 s: a 32-request burst was split, `rows=474 prompts=2 s=0.358` followed by
+  `rows=7155 prompts=30 s=2.565 since_run=0.463`. The HTTP burst reached the engine over about 50 ms and the 4 ms quiet
+  gap of the gathering window closed after the first two prompts.
+- PK1-B (`ironmule/ggml_engine.py`): once the window holds two requests it waits for a 25 ms gap, up to 150 ms
+  (`IRONMULE_GGML_GATHER_BURST_*`); a single request still starts after 4 ms. Afterwards every 32-request wave was one
+  call (`rows=7608 prompts=32`, started 28 ms into the run); one-client first tokens unchanged (290 ms).
+- PK3 (`native/ggml_patches/pk3`, applied after gr2): a graph epoch; within one graph the cuBLAS matmuls that read the
+  same src1 node share one fp16 copy, and the W4R library learns each src1 node (`ironmule_kg_src_node`) and skips
+  prep_x for q/k/v and gate/up. Keys include the node, so another tensor at a reused address never matches (a pure
+  address key would be unsafe for models whose o projection has the hidden size as input). Conversions in the
+  7,680-row prefill 445 -> 254 calls, 194 -> 145 ms; the whole prefill 2.595 -> 2.576 s.
+Same pod, same client, prompts and seeds; before = the code of the sixth session:
+
+| Clients | before (r0 / r1) | PK1-B + PK3 (r0 / r1 / r2) | vLLM AWQ |
+| ---: | ---: | ---: | ---: |
+| 1 | - | 51.3 / 86.9 / 91.1 | 52.0 |
+| 8 | - | 147.2 / 150.3 / 150.0 | 184 |
+| 32 | 237.3 / 235.0 | 245.7 / 246.4 / 248.4 | 274 |
+
+Facts 18/18 in all nine runs. At 32 clients: first token 3.10-3.19 -> 3.00-3.03 s, first-to-end 1,170 -> 1,090 ms,
++4.6 % throughput on this pod. Across pods the 32-client numbers stay at 245-250 tok/s: this pod's baseline was lower.
+Open: the server's packed prefill takes 2.74 s against 2.58 s for the same rows in the engine profile (both with PK3);
+the cause is not located. Pod time 1.04 h, 2.27 USD; total 20.23 of 25 USD.
