@@ -27,7 +27,7 @@ from pathlib import Path
 STATE = Path(os.environ.get("RP_STATE", Path.home() / ".cache/ironmule/rp.json"))
 AGENT = Path(__file__).with_name("agent.py")
 IMAGE = "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
-BUDGET = float(os.environ.get("RP_BUDGET", 20.0))
+BUDGET = float(os.environ.get("RP_BUDGET", 25.0))  # owner: 20 USD, then 5 more (2026-11-20)
 
 
 def load():

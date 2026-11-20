@@ -1641,6 +1641,24 @@ uint8_t *repack(int dev, int type, const void *w, long N, long K, cudaStream_t s
     return dst;
 }
 
+// PK3: the src1 node and graph epoch of the matmul llama.cpp offers next (0 / nullptr without the hook)
+const void *cur_node = nullptr;
+unsigned long long cur_epoch = 0;
+struct Prepared {
+    const void *node = nullptr;
+    unsigned long long epoch = 0;
+    const float *x = nullptr;
+    long B = 0, K = 0;
+    int rows = 0;
+    cudaStream_t s = nullptr;
+    const void *buf = nullptr;  // the scratch it lies in (a grown scratch is a new buffer)
+    bool operator==(const Prepared &o) const {
+        return node == o.node && epoch == o.epoch && x == o.x && B == o.B && K == o.K && rows == o.rows && s == o.s &&
+               buf == o.buf;
+    }
+};
+Prepared prepared[16];
+
 int run_repacked(const Variant &v, const uint8_t *wr, const float *x, float *y, long N, long K, long B, int ksplit,
                  int dev, cudaStream_t s) {
     if (v.fp) {  // the kernel reads x itself
@@ -1660,14 +1678,27 @@ int run_repacked(const Variant &v, const uint8_t *wr, const float *x, float *y, 
     }
     half *xh = reinterpret_cast<half *>(scratch[dev].x);
     float *xs = reinterpret_cast<float *>(scratch[dev].x + xbytes);
-    const int warps = rows * (int)(K / 32);
-    prep_x<<<(warps + 7) / 8, 256, 0, s>>>(x, xh, xs, (int)B, (int)K, rows);
+    // PK3: q, k and v (gate and up) read the same src1 node; within one graph its prepared copy is still in the scratch
+    // when nothing else was prepared since. The key is llama.cpp's src1 node and graph epoch (ironmule_kg_src_node), x,
+    // B, K and the row count, so another tensor at a reused address never matches.
+    const Prepared want{cur_node, cur_epoch, x, B, K, rows, s, scratch[dev].x};
+    if (cur_node == nullptr || !(want == prepared[dev])) {
+        const int warps = rows * (int)(K / 32);
+        prep_x<<<(warps + 7) / 8, 256, 0, s>>>(x, xh, xs, (int)B, (int)K, rows);
+        prepared[dev] = want;
+    }
     return v.fn(wr, xh, xs, y, scratch[dev].part, (int)N, (int)K, (int)B, ksplit, s);
 }
 
 }  // namespace
 
 extern "C" {
+
+// PK3: llama.cpp (patch pk3) names the src1 node and graph epoch of the matmul it offers next
+void ironmule_kg_src_node(const void *node, unsigned long long epoch) {
+    cur_node = node;
+    cur_epoch = epoch;
+}
 
 int im_w4_variant_count() { return NV; }
 

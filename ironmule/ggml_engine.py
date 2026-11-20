@@ -103,6 +103,12 @@ PACK_TOKENS = int(os.environ.get("IRONMULE_GGML_PACK_TOKENS", 8192))
 # burst that reaches the server over a few milliseconds is prefilled in one call instead of one prompt first
 GATHER_S = float(os.environ.get("IRONMULE_GGML_GATHER_MS", 20)) / 1000
 GATHER_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_QUIET_MS", 4)) / 1000
+# PK1-B (2026-11-20): once a second request arrives in that window, the arrivals are a burst; the window then waits for
+# a longer quiet gap, up to a longer limit. A served A100 burst of 32 HTTP requests reached the engine over about 50 ms:
+# with the 4 ms gap two prompts were prefilled first (0.36 s) and the other 30 waited behind them (about 12 % of the
+# burst's wall time). A single request still starts after the short gap.
+GATHER_BURST_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MS", 150)) / 1000
+GATHER_BURST_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_QUIET_MS", 25)) / 1000
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # PK2 (2026-11-19): with packing on a CUDA build that has the PK2 patch, the engine measures at its start whether prompt
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
@@ -1271,7 +1277,10 @@ class GgmlEngine:
                             and (more or arrived == 0)):
                         # PK1: gather the rest of a burst before the first packed prefill
                         started_wait = last = time.monotonic()
-                        while time.monotonic() - started_wait < GATHER_S and room():
+                        limit, quiet = GATHER_S, GATHER_QUIET_S
+                        if len(pending) > 1:  # PK1-B: the window opened on a burst
+                            limit, quiet = max(limit, GATHER_BURST_S), max(quiet, GATHER_BURST_QUIET_S)
+                        while time.monotonic() - started_wait < limit and room():
                             got = admit(room())
                             now = time.monotonic()
                             if got:
@@ -1279,7 +1288,9 @@ class GgmlEngine:
                                 pending.extend(got)
                                 arrived += len(got)
                                 last = now
-                            elif now - last >= GATHER_QUIET_S:
+                                if len(pending) > 1:  # PK1-B: a burst; wait for the rest of it
+                                    limit, quiet = max(limit, GATHER_BURST_S), max(quiet, GATHER_BURST_QUIET_S)
+                            elif now - last >= quiet:
                                 break
                             else:
                                 time.sleep(0.0005)

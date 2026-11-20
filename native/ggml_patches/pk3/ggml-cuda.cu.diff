@@ -1,0 +1,70 @@
+1210a1211,1232
+> // PK3 (IronMule): a graph epoch, counted at every graph compute. Within one graph, the next cuBLAS matmul that reads the
+> // same src1 tensor node (q, k and v; gate and up) reuses its fp16 copy instead of converting it again; the key is the
+> // node, its data, its size and the epoch, so another tensor at a reused address or a later graph never matches.
+> // IRONMULE_PK3=0 turns it off.
+> static std::atomic<unsigned long long> ironmule_graph_epoch{0};
+> struct ironmule_f16_copy {
+>     const void * node = nullptr;
+>     const void * data = nullptr;
+>     size_t ne = 0;
+>     unsigned long long epoch = ~0ull;
+>     half * buf = nullptr;
+>     size_t cap = 0;
+> };
+> static ironmule_f16_copy ironmule_pk3_copy[GGML_CUDA_MAX_DEVICES];
+> static bool ironmule_pk3_on() {
+>     static const bool on = [] {
+>         const char * v = std::getenv("IRONMULE_PK3");
+>         return v == nullptr || std::atoi(v) != 0;
+>     }();
+>     return on;
+> }
+> 
+1282c1304,1329
+<         if (src1->type != GGML_TYPE_F16) {
+---
+>         const half * src1_kept = nullptr;  // PK3
+>         if (src1->type != GGML_TYPE_F16 && ironmule_pk3_on() && ironmule_pk2_min_rows() > 0) {
+>             cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+>             CUDA_CHECK(cudaStreamIsCapturing(stream, &capture));
+>             if (capture == cudaStreamCaptureStatusNone) {
+>                 ironmule_f16_copy & c = ironmule_pk3_copy[id];
+>                 const size_t ne = src1_ncols*ne10;
+>                 const unsigned long long epoch = ironmule_graph_epoch.load(std::memory_order_relaxed);
+>                 if (c.node != (const void *) src1 || c.data != (const void *) src1_ddf_i || c.ne != ne || c.epoch != epoch) {
+>                     if (c.cap < ne) {
+>                         if (c.buf != nullptr) {
+>                             CUDA_CHECK(cudaStreamSynchronize(stream));
+>                             CUDA_CHECK(cudaFree(c.buf));
+>                         }
+>                         CUDA_CHECK(cudaMalloc((void **) &c.buf, ne*sizeof(half)));
+>                         c.cap = ne;
+>                     }
+>                     const to_fp16_cuda_t to_fp16_cuda = ggml_get_to_fp16_cuda(src1->type);
+>                     GGML_ASSERT(to_fp16_cuda != nullptr);
+>                     to_fp16_cuda(src1_ddf_i, c.buf, ne, stream);
+>                     c.node = src1; c.data = src1_ddf_i; c.ne = ne; c.epoch = epoch;
+>                 }
+>                 src1_kept = c.buf;
+>             }
+>         }
+>         if (src1->type != GGML_TYPE_F16 && src1_kept == nullptr) {
+1289c1336,1337
+<         const half * src1_ptr = src1->type == GGML_TYPE_F16 ? (const half *) src1_ddf_i : src1_as_f16.get();
+---
+>         const half * src1_ptr = src1->type == GGML_TYPE_F16 ? (const half *) src1_ddf_i
+>                               : src1_kept != nullptr ? src1_kept : src1_as_f16.get();
+2032a2081,2090
+>     // PK3: the library may keep work keyed on the src1 node within one graph (ironmule_kg_src_node, optional)
+>     typedef void (*ironmule_kg_node_fn)(const void * node, unsigned long long epoch);
+>     static const ironmule_kg_node_fn node_fn = [] {
+>         const char * path = getenv("IRONMULE_KG_LIB");
+>         void * handle = (path && *path) ? dlopen(path, RTLD_NOW | RTLD_LOCAL) : nullptr;
+>         return handle ? (ironmule_kg_node_fn) dlsym(handle, "ironmule_kg_src_node") : (ironmule_kg_node_fn) nullptr;
+>     }();
+>     if (node_fn != nullptr) {
+>         node_fn(src1, ironmule_graph_epoch.load(std::memory_order_relaxed));
+>     }
+3015a3074
+>     ironmule_graph_epoch.fetch_add(1, std::memory_order_relaxed);  // PK3
