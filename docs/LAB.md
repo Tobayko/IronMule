@@ -3182,3 +3182,28 @@ percent of machine difference. Comparisons against vLLM are to be made on the sa
 [IronMule PK4 on](../lab/pk1/results/a100-ironmule-http-pod12-pk4on.jsonl) ·
 [off](../lab/pk1/results/a100-ironmule-http-pod12-pk4off.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod12.jsonl).
 Pod time 0.92 h, 2.01 USD; total 28.15 of 35 USD.
+
+### 2026-11-22, A100: where a decode step's time goes, by width
+Another RunPod A100 SXM4 80 GB pod, Qwen3-32B Q4_K_M, engine with the served settings (PK4, FU1, graphs up to 32
+rows), the pod's own W4R tuning. Decode step wall time without a profiler (median of 40 steps, context 240):
+18.8 / 20.8 / 23.6 / 30.8 ms at 1 / 8 / 16 / 32 rows. Kernel span of a step (CUPTI): 18.8 / 20.6 / 21.8 / 28.4 ms
+with 0.07-0.13 ms of gaps inside, so with GR3 the GPU idles only before the graph launch (input setup, about 0.3 ms at
+one row and 0.8 ms at 32) and after the last kernel (readback and Python, 0.1-0.7 ms): about 2.3 ms per 32-row step,
+almost nothing at one row. Reading all argmax rows of a step in one call instead of one per row changed the step by
+at most 0.2 ms and was not kept. Kernels per step:
+
+| per step | 1 row | 32 rows |
+| --- | ---: | ---: |
+| W4R matmuls (449 calls) | 14.45 ms | 21.08 ms |
+| flash attention + fixup (+ KV max) | 1.33 ms | 2.50 ms |
+| prep_x and reduce_split (321 / 481 calls) | 0.76 ms | 1.95 ms |
+| FU1 add + norm + mul (128 calls) | 0.92 ms | 0.96 ms |
+| q/k norm, RoPE, KV write, SwiGLU | 1.18 ms | 1.78 ms |
+| total | 18.7 ms | 28.4 ms |
+
+The matmuls read the weights at about 1.37 TB/s at one row (vLLM's Marlin on AWQ: about 1.35-1.4) but at about 0.94
+TB/s at 32 rows (Marlin about 1.2). The Q6_K matrices of Q4_K_M (half the down and v projections, the output matrix)
+cost about 0.7 ms of a 32-row step against Q4_K, so requantising them would not close the gap. What follows: the
+32-row matmul is the lever for +10 % over vLLM (about 6 ms per step at Marlin's 32-row efficiency); then the small
+kernels (about 7 ms against vLLM's 2.5-3) and the 2.3 ms of host time around the graph.
+[W4R tuning of this pod](../lab/pk1/results/a100-w4-tuning-pod13.log). Pod time 0.4 h, 0.88 USD; total 29.03 of 35 USD.
