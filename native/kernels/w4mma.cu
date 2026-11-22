@@ -1723,8 +1723,15 @@ void im_w4_variant(int i, int *out) {
 static std::map<std::pair<int, const void *>, mq1::Prepared> mq1_prepared;
 static mq1::Scratch mq1_scratch[16];
 
+// MQ1 is opt-in (IRONMULE_MQ1=1): on Qwen3-32B Q4_K_M it never beat W4R beyond noise, and its weight copies beside
+// W4R's pushed the quality gate's tuning child out of an A100's 80 GB (2026-11-22)
+static bool mq1_enabled() {
+    static const bool on = getenv("IRONMULE_MQ1") != nullptr && atoi(getenv("IRONMULE_MQ1")) != 0;
+    return on;
+}
+
 static int mq1_serve(int dev, const void *w, const float *x, float *y, long N, long K, long B, int ksplit, cudaStream_t s) {
-    if (ksplit != 1) return 1;
+    if (ksplit != 1 || !mq1_enabled()) return 1;
     cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
     cudaStreamIsCapturing(s, &capture);
     const bool capturing = capture != cudaStreamCaptureStatusNone;
@@ -1829,7 +1836,7 @@ int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64
 // MQ1's measurement: the same protocol as the W4R variants below, over `copies` Marlin copies of w
 static int mq1_bench(const void *w_host, size_t wbytes, long N, long K, const float *x_host, long B, int ksplit, int copies,
               int reps, double *us, float *y_host) {
-    if (ksplit != 1 || N % 64 != 0) return 1;
+    if (ksplit != 1 || N % 64 != 0 || !mq1_enabled()) return 1;
     int dev = 0;
     cudaGetDevice(&dev);
     cudaGetLastError();

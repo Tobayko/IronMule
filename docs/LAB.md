@@ -3104,3 +3104,32 @@ Q4_K's per-32 scale and minimum add about 24 % of metadata to Marlin's weight st
 and MQ1 adds an fp32 -> fp16 and an fp16 -> fp32 conversion kernel per call. MQ1 stays as a tuner variant (it is only
 chosen where measured faster and within the bound); it is not a step towards vLLM's decode on Q4_K_M.
 [MQ1 tuning](../lab/pk1/results/a100-mq1-tuning.json). Pod time 0.17 h, 0.36 USD; total 21.10 of 25 USD.
+
+### 2026-11-22, A100: why the GPU idled 3.8 ms per decode step, and GR3
+Host-side split of a 32-row decode step (engine, A100, Qwen3-32B, W4R table of the pod): Python around the call
+0.1 ms; `llama_decode` 33.6 ms and synchronous; GPU kernel time 30.0 ms. llama.cpp's graph reuse is active (turning it
+off costs 0.9 ms). Per step 1,895 `cudaLaunchKernel` calls (12.3 ms of host time under the profiler) and no CUDA graph,
+even with GR2 at 32 rows: a diagnostic build showed that llama.cpp switched CUDA graphs off for the context's whole life
+during the engine's warm-up (a 1-node and a 2,246-node graph alternated, four consecutive "updates"), before the first
+served step, so one-row steps had no graphs either. Once graphs were kept, the first capture of a new graph recorded
+llama.cpp's MMQ kernels (55.8 ms per 32-row step), because the W4R library may not allocate inside a capture.
+GR3 (`native/ggml_patches/gr3`, after pk3; `IRONMULE_GR3=0` restores llama.cpp): graphs of fewer than 8 nodes stay out
+of CUDA graphs, too many consecutive updates pause graphs for 32 calls instead of disabling them, and a changed graph
+runs once uncaptured before it is captured (then with the W4R kernels). Decode step, wall time with the profiler on:
+
+| rows | GR3 off | GR3 on (graphs up to 32 rows) |
+| ---: | ---: | ---: |
+| 32 | 33.9 ms | 33.0 ms (1 graph launch instead of 1,895 kernel launches) |
+| 8 | 23.3 ms | 23.1 ms |
+| 1 | 22.5 ms | 21.8 ms |
+
+Without the profiler the engine ran 785 32-row steps in 25 s (31.8 ms per step). About 3.5 ms per 32-row step remain
+between wall time and GPU time with graphs on; that host time is not located (py-spy cannot attach in the container).
+Quality gate: the gate's tuning child (`autotune`, several contexts in one process) ran out of the A100's 80 GB with
+MQ1's extra weight copies (the pod's table had chosen MQ1 for three shapes on noise-level ties); without them it passed
+with GR3 on and one-row graphs. MQ1 is now opt-in (`IRONMULE_MQ1=1`). Graphs up to 32 rows (`IRONMULE_CUDA_GRAPHS_ROWS=32`)
+were not validated through the gate: the one served run with them failed the gate's tuning with out_of_memory, but that
+server had re-tuned its own table with the pod's older library that still offered MQ1, so the cause is not separated;
+they stay opt-in and no HTTP numbers exist for GR3. Pod time 1.27 h, 2.78 USD; total 23.87 of 25 USD.
+Next: the server A/B for GR3 (one-row graphs by default, 32-row graphs opt-in) on a fresh pod with the opt-in MQ1;
+then point 2's fusions (add + RMS norm + mul, RoPE + KV write, prep_x into the norm) and the remaining host time.
