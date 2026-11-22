@@ -19,7 +19,7 @@
 - [COMMUNITY_BENCHMARKS.md](COMMUNITY_BENCHMARKS.md) — how to submit a benchmark from your own machine.
 - [D2_IMPLEMENTATION.md](D2_IMPLEMENTATION.md) — the exact model-identity implementation, as built.
 - [PROJECT_STATUS.md](PROJECT_STATUS.md) — status numbers pinned by `tests/claims/test_documented_claims.py`.
-- [assets/](assets/) — figures and video the docs above embed.
+- [assets/](assets/) — figures the docs above embed.
 - [releases/](releases/) — dated release notes.
 
 ## Qualification specifications

@@ -5,7 +5,9 @@
   <a id="ironmule"></a>
   <h1>IronMule · Local LLM inference server</h1>
 
-  <p><strong>Serve GGUF and MLX models through an OpenAI-compatible chat API. IronMule's own learned scheduler adapts inference to the hardware and the requests arriving on it.</strong></p>
+  <p><strong>A 4-bit GGUF just tied vLLM's AWQ-Marlin on an A100 at 32 concurrent users. Your local inference server called. It wants its GPU back.</strong></p>
+
+  <p>IronMule serves GGUF on NVIDIA CUDA GPUs and CPUs, and MLX models on Apple Silicon (Metal), with its own CUDA kernels and a learned scheduler.</p>
 
   <p>
     <a href="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml"><img src="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -13,7 +15,7 @@
     <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Apache_2.0-facc15" alt="License: Apache 2.0"></a>
     <img src="https://img.shields.io/badge/CPU-llama.cpp_kernels_%2B_own-0ea5e9" alt="CPU: llama.cpp kernels plus IronMule's own">
     <img src="https://img.shields.io/badge/Apple_Silicon-Metal-ff9100" alt="Apple Silicon, Metal">
-    <img src="https://img.shields.io/badge/NVIDIA-CUDA-76b900" alt="NVIDIA CUDA">
+    <img src="https://img.shields.io/badge/NVIDIA-CUDA_kernels-76b900" alt="NVIDIA CUDA kernels">
     <img src="https://img.shields.io/badge/Pilot-open_weights-8b5cf6" alt="Pilot: open weights">
   </p>
 
@@ -23,9 +25,17 @@
 
 ## What is IronMule?
 
-IronMule is a self-hosted LLM server for local chat, streaming and concurrent requests. Its GGUF engine combines llama.cpp with IronMule's scheduler and kernels. The **Pilot** is a small neural network trained from scratch to make hardware decisions, including how many threads to use when another program starts competing for the CPU. The language model's weights stay fixed.
+Stop renting a cloud to serve your own model. IronMule is a self-hosted LLM server with its own CUDA kernels on NVIDIA GPUs and its own scheduler on every machine it runs on. It answers through an OpenAI-compatible chat API with streaming and concurrent requests.
 
-If you're looking for a **llama.cpp alternative** for serving GGUF on a shared CPU, start with the Xeon test below. IronMule produced **87.5 output tokens/s** across 32 simultaneous requests, compared with **28.9** for llama-server on the same Qwen3-4B file. If you're evaluating a **vLLM alternative** for a single NVIDIA GPU, the Tesla T4 results tell a different story. At 32 requests vLLM with AWQ produced **861 tokens/s** and IronMule with GGUF produced **627** in separate runs. Both use the Qwen3-4B model family with different four-bit formats. [Benchmark conditions and results](#how-much-faster)
+On one A100 it now serves Qwen3-32B from a Q4_K_M GGUF and ties vLLM's AWQ-Marlin at 32 concurrent users. At one and eight clients the picture differs, as the table shows. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
+
+| Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, repeat 1 / 2) | vLLM 0.11.0, AWQ-Marlin (tok/s) |
+| ---: | ---: | ---: |
+| 1 | 53.1 / 91.2 | 52.0 |
+| 8 | 158.8 / 160.9 | 184 |
+| 32 | 268.1 / 280.6 (mean 274.3) | 274 |
+
+[Benchmark conditions and results](#how-much-faster)
 
 ## Quick start
 
@@ -84,7 +94,7 @@ See the HTTP documentation for supported OpenAI-compatible routes, authenticatio
 | Hardware | Execution path and evidence |
 | --- | --- |
 | Linux x86-64 CPU | GGUF through llama.cpp with IronMule scheduling and optional CPU kernels. Published tests include Intel Xeon and an AMD EPYC HTTP workload. MLX also offers a Linux CPU build. |
-| NVIDIA GPU | GGUF via the CUDA build of llama.cpp, or MLX with its CUDA backend. HTTP comparisons include Tesla T4, NVIDIA L40S and GeForce RTX 4090. |
+| NVIDIA GPU | GGUF through llama.cpp's CUDA build plus IronMule's own CUDA work (tensor-core 4-bit matmul kernels tuned on the GPU itself, packed prompt prefill through cuBLAS, CUDA graphs for multi-request decode steps, and a fused residual+RMS-norm kernel), or MLX with its CUDA backend. HTTP comparisons include NVIDIA A100, L40S, GeForce RTX 4090 and Tesla T4. |
 | Apple Silicon | MLX with Metal. Published results include the M1 Max. Current CI runs on Linux. |
 | AMD Radeon GPU | Experimental ROCm/HIP build for GGUF. With the ROCm toolkit, `python tools/build_ggml.py --rocm` detects the architecture. To select a target explicitly, use e.g. `--rocm gfx1100`. After exporting the library paths, `ironmule doctor --ggml rocm` checks device execution. Radeon serving and throughput still need a hardware run. |
 | Google TPU | Research probes measured matrix operations on a TPU v5e. An experimental JAX tool can calibrate a decode loop with synthetic weights. Full checkpoint inference through the HTTP server remains open. [TPU calibration](docs/TPU.md) |
@@ -92,6 +102,25 @@ See the HTTP documentation for supported OpenAI-compatible routes, authenticatio
 Tested model families include Qwen 3, Gemma 3, Llama 3 and Mistral. Backend, model format, precision and hardware all matter when comparing results. [Runtime](docs/RUNTIME.md) · [Limits](docs/LIMITS.md) · [Hardware measurements](docs/BENCHMARKS.md)
 
 ## How much faster?
+
+### Qwen3-32B on one A100 against vLLM
+
+On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`. vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin. Both servers used the same HTTP client, prompts and seeds, with 32-token answers and two repeats each.
+
+| Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, repeat 1 / 2) | vLLM 0.11.0, AWQ-Marlin (tok/s) |
+| ---: | ---: | ---: |
+| 1 | 53.1 / 91.2 | 52.0 |
+| 8 | 158.8 / 160.9 | 184 |
+| 32 | 268.1 / 280.6 (mean 274.3) | 274 |
+
+- Both servers answered 18/18 factual check questions correctly at every load.
+- IronMule passed its own perplexity quality gate on this machine (ratio 0.9935).
+- At 32 clients IronMule is level with vLLM: the best run is +2.4%, and the mean is 274.3 against 274.
+- At one client IronMule is level to well ahead, depending on the prompt.
+- At 8 clients vLLM still leads by about 13%.
+- IronMule is not faster than vLLM in general. Next target: +10% over vLLM.
+
+The vLLM numbers come from an earlier session on the same GPU type. [A100 measurements](docs/LAB.md#2026-11-22-a100-gr3-served-fu1-32-row-cuda-graphs-through-the-gate----level-with-vllm-at-32-clients)
 
 To compare on your own GPU, `ironmule compare` serves the same GGUF through IronMule,
 stock llama-server and vLLM. It checks the input tokens, sends short and document
