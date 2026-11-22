@@ -1,0 +1,108 @@
+2938c2938
+<         const float * mul, const int ncols, const int mul_ncols, const float eps) {
+---
+>         const float * mul, const int ncols, const int mul_ncols, const float eps, half * dst16 = nullptr) {
+2944a2945,2947
+>     if (dst16 != nullptr) {
+>         dst16 += (int64_t) row*ncols;
+>     }
+2968c2971,3035
+<         dst[col] = scale * sum[col] * mul[col % mul_ncols];
+---
+>         const float v = scale * sum[col] * mul[col % mul_ncols];
+>         dst[col] = v;
+>         if (dst16 != nullptr) {
+>             dst16[col] = __float2half(v);  // PK4: the conversion the cuBLAS path would run next
+>         }
+>     }
+> }
+> 
+> // PK4 (IronMule): when the next matmul on `node` will take the cuBLAS path (a prompt step of at least the PK2 row
+> // threshold), its producer writes the fp16 copy itself into PK3's slot under PK3's key (node, data, size, graph epoch),
+> // so the matmul finds it and no conversion kernel runs. The values are __float2half of the same floats the
+> // conversion would read. Outside CUDA graph capture only; IRONMULE_PK4=0 turns it off.
+> static half * ironmule_pk4_slot(const ggml_tensor * node, int64_t nrows, size_t ne, cudaStream_t stream) {
+>     static const bool on = getenv("IRONMULE_PK4") == nullptr || atoi(getenv("IRONMULE_PK4")) != 0;
+>     if (!on || !ironmule_pk3_on() || ironmule_pk2_min_rows() <= 0 || nrows < ironmule_pk2_min_rows()) {
+>         return nullptr;
+>     }
+>     cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+>     CUDA_CHECK(cudaStreamIsCapturing(stream, &capture));
+>     if (capture != cudaStreamCaptureStatusNone) {
+>         return nullptr;
+>     }
+>     ironmule_f16_copy & c = ironmule_pk3_copy[ggml_cuda_get_device()];
+>     if (c.cap < ne) {
+>         if (c.buf != nullptr) {
+>             CUDA_CHECK(cudaStreamSynchronize(stream));
+>             CUDA_CHECK(cudaFree(c.buf));
+>         }
+>         CUDA_CHECK(cudaMalloc((void **) &c.buf, ne*sizeof(half)));
+>         c.cap = ne;
+>     }
+>     c.node = node; c.data = node->data; c.ne = ne;
+>     c.epoch = ironmule_graph_epoch.load(std::memory_order_relaxed);
+>     return c.buf;
+> }
+> 
+> // PK4: SWIGLU (two inputs or one split tensor) with its fp16 copy, in llama.cpp's arithmetic (op_silu, then * g)
+> static __global__ void ironmule_swiglu_f32(const float * x, const float * g, float * dst, half * dst16, const int64_t k,
+>         const int64_t n, const int64_t o0, const int64_t o1) {
+>     const int64_t i = int64_t(blockDim.x)*blockIdx.x + threadIdx.x;
+>     if (i >= k) {
+>         return;
+>     }
+>     const int64_t j0 = (i / n) * o0 + (i % n);
+>     const int64_t j1 = o0 == o1 ? j0 : (i / n) * o1 + (i % n);
+>     const float xv = x[j0];
+>     const float v = (xv / (1.0f + expf(-xv))) * g[j1];
+>     dst[i] = v;
+>     dst16[i] = __float2half(v);
+> }
+> 
+> static bool ironmule_pk4_swiglu(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+>     if (dst->op != GGML_OP_GLU || ggml_get_glu_op(dst) != GGML_GLU_OP_SWIGLU || dst->type != GGML_TYPE_F32) {
+>         return false;
+>     }
+>     const ggml_tensor * src0 = dst->src[0];
+>     const ggml_tensor * src1 = dst->src[1];
+>     if (src0->type != GGML_TYPE_F32 || (src1 && src1->type != GGML_TYPE_F32) || !ggml_is_contiguous_1(src0) ||
+>         src0->nb[0] != sizeof(float) || !ggml_is_contiguous(dst) || (src1 && (!ggml_is_contiguous_1(src1) ||
+>         src1->nb[0] != sizeof(float)))) {
+>         return false;
+>     }
+>     const int64_t nc = src1 ? src0->ne[0] : src0->ne[0] / 2;
+>     if (dst->ne[0] != nc || ggml_nrows(dst) != ggml_nrows(src0)) {
+>         return false;
+2969a3037,3053
+>     cudaStream_t stream = ctx.stream();
+>     half * dst16 = ironmule_pk4_slot(dst, ggml_nrows(dst), (size_t) ggml_nelements(dst), stream);
+>     if (dst16 == nullptr) {
+>         return false;
+>     }
+>     const int32_t swapped = ((const int32_t *) dst->op_params)[1];
+>     const float * x = (const float *) src0->data;
+>     const float * g = src1 ? (const float *) src1->data : (const float *) src0->data;
+>     if (!src1) {
+>         x += swapped ? nc : 0;
+>         g += swapped ? 0 : nc;
+>     }
+>     const int64_t k = ggml_nelements(dst);
+>     const int64_t o0 = src0->nb[1] / sizeof(float), o1 = (src1 ? src1->nb[1] : src0->nb[1]) / sizeof(float);
+>     const int64_t blocks = (k + CUDA_GLU_BLOCK_SIZE - 1) / CUDA_GLU_BLOCK_SIZE;
+>     ironmule_swiglu_f32<<<blocks, CUDA_GLU_BLOCK_SIZE, 0, stream>>>(x, g, (float *) dst->data, dst16, k, nc, o0, o1);
+>     return true;
+3010a3095
+>     half * dst16 = ironmule_pk4_slot(mul, nrows, (size_t) ncols * nrows, stream);  // PK4
+3014c3099
+<             (const float *) w->data, ncols, (int) w->ne[0], eps);
+---
+>             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16);
+3018c3103
+<             (const float *) w->data, ncols, (int) w->ne[0], eps);
+---
+>             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16);
+3104a3190,3192
+>                         continue;
+>                     }
+>                     if (ironmule_pk4_swiglu(*cuda_ctx, node)) {  // PK4

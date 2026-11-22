@@ -8,7 +8,6 @@ import math
 import os
 import re
 import shutil
-import statistics
 import sys
 import time
 from contextlib import ExitStack
