@@ -359,6 +359,9 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
                     os.environ["IRONMULE_W4_TABLE"] = str(got[1])
                     os.environ.setdefault("IRONMULE_GGML_PACK", "1")
                     os.environ.setdefault("IRONMULE_GGML_UBATCH", "8192")
+                    # GR3 (2026-11-22): with CUDA graphs kept through warm-up, decode steps of up to 32 rows run as one
+                    # graph launch (A100, Qwen3-32B: 33.9 -> 33.0 ms at 32 rows, 22.5 -> 21.8 ms at one)
+                    os.environ.setdefault("IRONMULE_CUDA_GRAPHS_ROWS", "32")
             if library is None:
                 library = ensure(str(Path(args.gguf).resolve()), Path(store.root) / "kernels",
                                  log=lambda line: None, gguf_revision=(spec.revision if args.model is None else None))

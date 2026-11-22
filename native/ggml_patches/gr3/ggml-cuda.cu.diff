@@ -1,0 +1,46 @@
+2866a2867,2870
+> // GR3: whether the last is_cuda_graph_update_required saw a changed graph (size or node properties), as opposed
+> // to an unchanged graph without a CUDA graph instance yet
+> static bool ironmule_graph_changed = true;
+> 
+2869a2874
+>     ironmule_graph_changed = false;
+2877a2883
+>         ironmule_graph_changed = true;
+2889a2896
+>             ironmule_graph_changed = true;
+3111a3119,3142
+>     // GR3 (IronMule): a graph of a few nodes (llama.cpp's own small helper graphs) neither uses CUDA graphs nor
+>     // replaces the stored decode graph; too many consecutive updates pause CUDA graphs for 32 calls instead of
+>     // disabling them for the context's life (an engine's warm-up alternated a 1-node and a 2,246-node graph and
+>     // switched them off before the first served step); and a changed graph runs once without capture before it is
+>     // captured, so that kernels which prepare buffers on first use (IronMule's W4R library may not allocate inside a
+>     // capture) are captured, not llama.cpp's fallback. IRONMULE_GR3=0 restores llama.cpp's behaviour.
+>     static const bool ironmule_gr3 = getenv("IRONMULE_GR3") == nullptr || atoi(getenv("IRONMULE_GR3")) != 0;
+>     static int ironmule_gr3_pause = 0;
+>     if (ironmule_gr3) {
+>         if (cgraph->n_nodes < 8) {
+>             use_cuda_graph = false;
+>         } else if (cuda_ctx->cuda_graph->disable_due_to_too_many_updates) {
+>             cuda_ctx->cuda_graph->disable_due_to_too_many_updates = false;
+>             cuda_ctx->cuda_graph->number_consecutive_updates = 0;
+>             ironmule_gr3_pause = 32;
+>             use_cuda_graph = !disable_cuda_graphs_due_to_env && !cuda_ctx->cuda_graph->disable_due_to_gpu_arch
+>                              && !cuda_ctx->cuda_graph->disable_due_to_failed_graph_capture;
+>         }
+>         if (ironmule_gr3_pause > 0 && cgraph->n_nodes >= 8) {
+>             ironmule_gr3_pause--;
+>             use_cuda_graph = false;
+>         }
+>     }
+> 
+3115a3147,3155
+>         static bool ironmule_gr3_recapture = false;
+>         if (ironmule_gr3 && use_cuda_graph && cuda_graph_update_required && ironmule_graph_changed) {
+>             use_cuda_graph = false;  // GR3: first sight of this graph: run it uncaptured, capture it next time
+>             cuda_graph_update_required = false;
+>             ironmule_gr3_recapture = true;  // the stored instance (if any) belongs to another graph
+>         } else if (ironmule_gr3 && use_cuda_graph && ironmule_gr3_recapture) {
+>             cuda_graph_update_required = true;  // the same graph again: capture it now
+>             ironmule_gr3_recapture = false;
+>         }
