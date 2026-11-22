@@ -697,8 +697,8 @@ int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 // arithmetic of w4r's DQ path (fp16 weights q * S - m, so the tensor cores accumulate straight into the result and no
 // 32-value sums are read). Each x fragment, read through L1 one sub-block ahead, serves all MT tiles: at 32 tokens a
 // one-tile warp reads 7 bytes of x per weight byte, an MT-tile warp 7 / MT.
-template <int WARPS, int KS, int NT, int MT>
-__global__ void __launch_bounds__(WARPS * 32)
+template <int WARPS, int KS, int NT, int MT, int MINB = 1>  // MINB: blocks per SM the compiler must fit (registers)
+__global__ void __launch_bounds__(WARPS * 32, MINB)
 w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
     float *__restrict__ out, int N, int K, int B, int sb_per_split) {
     constexpr int TILES = WARPS / KS;
@@ -1398,7 +1398,7 @@ w4d6(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *_
             }
 }
 
-template <int TYPE, int WARPS, int KS, int NT, int MT>
+template <int TYPE, int WARPS, int KS, int NT, int MT, int MINB = 1>
 int launch_d(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
              cudaStream_t s) {
     constexpr int TILES = WARPS / KS;
@@ -1407,7 +1407,7 @@ int launch_d(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     const int splits = (nb + per - 1) / per;
     dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
     if constexpr (TYPE == TYPE_Q4_K)
-        w4d<WARPS, KS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+        w4d<WARPS, KS, NT, MT, MINB><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
     else
         w4d6<WARPS, KS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
     if (splits > 1) {
@@ -1573,6 +1573,8 @@ int mq1_stub(const uint8_t *, const half *, const float *, float *, float *, int
                VE(2, 4, N, 2), VE(4, 2, N, 2)
 #define VF(W, N, M) Variant{TYPE_Q4_K, W, 50000 + 100 * M, N, launch_f<TYPE_Q4_K, W, N, M>}
 #define VF6(W, N, M) Variant{TYPE_Q6_K, W, 50000 + 100 * M, N, launch_f<TYPE_Q6_K, W, N, M>}
+// v9 with a minimum of B blocks per SM: fewer registers, more warps to hide the dequantize -> mma chains (2026-11-22)
+#define VWB(W, S, N, M, B) Variant{TYPE_Q4_K, W, 70000 + 100 * M + 10 * B + S, N, launch_d<TYPE_Q4_K, W, S, N, M, B>}
 #define VW6(W, S, N, M) Variant{TYPE_Q6_K, W, 30000 + 100 * M + S, N, launch_d<TYPE_Q6_K, W, S, N, M>}
 #define VW6N(N) VW6(4, 1, N, 1), VW6(8, 1, N, 1), VW6(8, 2, N, 1), VW6(8, 4, N, 1), VW6(2, 1, N, 2), VW6(4, 1, N, 2), \
                 VW6(4, 2, N, 2), VW6(8, 4, N, 2)
@@ -1598,7 +1600,9 @@ const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
                             VF(4, 4, 1), VF(8, 4, 1), VF(16, 4, 1), VF(4, 4, 2), VF(8, 4, 2), VF(2, 4, 2),
                             VF(4, 2, 1), VF(8, 2, 1), VF(4, 2, 2), VF(8, 2, 2),
                             VF6(4, 4, 1), VF6(8, 4, 1), VF6(2, 4, 1), VF6(4, 4, 2), VF6(4, 2, 1), VF6(8, 2, 1),
-                            VMQ(1), VMQ(2), VMQ(3), VMQ(4)};
+                            VMQ(1), VMQ(2), VMQ(3), VMQ(4),
+                            VWB(2, 1, 4, 2, 5), VWB(2, 1, 4, 2, 6), VWB(2, 1, 4, 2, 8), VWB(4, 1, 4, 2, 3), VWB(4, 1, 4, 2, 4),
+                            VWB(8, 4, 4, 2, 2), VWB(4, 1, 4, 1, 4), VWB(2, 1, 2, 2, 6), VWB(4, 1, 2, 1, 4)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {
