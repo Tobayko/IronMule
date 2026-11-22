@@ -2027,6 +2027,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
            "HF_HUB_OFFLINE": "1",
            "IRONMULE_PILOT": "0"}  # SEQ1: its engines measure widths; the Pilot is not part of that
     env.pop("IRONMULE_GGML_SEQS", None)
+    env["IRONMULE_CUDA_GRAPHS_ROWS"] = "1"  # GR3: one-row graphs in the measuring children (see the gate's children)
     if device is not None:  # MG2: a worker per GPU; measure on one of them
         env["CUDA_VISIBLE_DEVICES"] = device
     started = time.perf_counter()
@@ -2322,6 +2323,10 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         child_env = ({**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0", "IRONMULE_GGML_PREFILL_BATCH": "0",
                       "IRONMULE_W4": "0", "IRONMULE_GGML_PACK": "0", "IRONMULE_GGML_UBATCH": "0",
                       "IRONMULE_CUBLAS_MIN_ROWS": "0"} if stock else env)
+        # GR3 (2026-11-22): the gate's children run with llama.cpp's one-row CUDA graphs. Multi-row graphs
+        # (IRONMULE_CUDA_GRAPHS_ROWS) leave the tokens unchanged (A100, Qwen3-32B: the same greedy tokens with and
+        # without) but ran the tuning child, which opens several contexts in one process, out of an A100's 80 GB.
+        child_env = {**child_env, "IRONMULE_CUDA_GRAPHS_ROWS": "1"}
         if shape and code == GATE_CANDIDATE:
             # Admit all 32 near-1k prompts on the first step. Width and context are fixed in the measuring child.
             child_env = {**child_env, "IRONMULE_PILOT": "0", "IRONMULE_GGML_PROMPT_BUDGET": str(32 * 1024)}

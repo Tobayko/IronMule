@@ -24,6 +24,8 @@ variables the engine reads. Nothing is installed system-wide.
         gate, up) share one fp16 copy, and the KG library learns each src1 node (IRONMULE_PK3=0 turns sharing off).
   gr3   CUDA builds only: CUDA graphs survive warm-up (small helper graphs stay out, too many updates pause instead
         of disabling for good) and a changed graph runs once uncaptured before it is captured (IRONMULE_GR3=0 off).
+  fu1   CUDA builds only: a residual ADD, its RMS_NORM and the weight MUL in one kernel, bit-identical
+        (IRONMULE_FU1=0 off).
   pk2   CUDA builds only: from IRONMULE_CUBLAS_MIN_ROWS prompt rows on, quantized matmuls go through dequantization
         and cuBLAS with fp32 accumulation instead of llama.cpp's MMQ kernels; unset keeps llama.cpp's choice.
 
@@ -64,6 +66,7 @@ PATCH_SETS = {
     "gr2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk2
     "pk3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr2
     "gr3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk3
+    "fu1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr3
 }
 
 
@@ -175,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")
