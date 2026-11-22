@@ -3158,3 +3158,27 @@ IronMule stays about 13 % behind, at one client level to well ahead depending on
   d008af8928708bd7) with FU1 off/on and with one-row/32-row graphs; per 32-row step 32.96 -> 32.50 ms (FU1),
   32.96 -> 30.89 ms (32-row graphs), 30.74 ms with both.
 Pod time 1.03 h by the session's ledger (RunPod's billing for the day was not complete); total 26.14 of 35 USD.
+
+### 2026-11-22, A100: PK4 served, and vLLM on the same pod
+Another RunPod A100 SXM4 80 GB pod. PK4 (`native/ggml_patches/pk4`, after fu1): the fused norm and a new SWIGLU kernel
+write the fp16 copy that the next cuBLAS prompt matmul would convert, into PK3's slot under PK3's key. Engine, 7,680-row
+packed prefill: conversions 254 -> 65 calls (146 -> 28 ms), prefill 2.573 -> 2.485 s; greedy tokens of 32 real prompts
+over 48 steps unchanged. Also on this pod: v9 variants with a minimum of blocks per SM (fewer registers, spills) lost at
+32 tokens and won the 5120 x 25600 matrices at 16 tokens (61.2 -> 57.1 us).
+Served, `ironmule serve --agent on` with FU1 and 32-row graphs, fresh state (gate passed, ratio 0.9940), three repeats,
+then vLLM 0.11.0 (Qwen3-32B-AWQ, AWQ-Marlin, same launch as before) on the same pod, same client, prompts and seeds:
+
+| Clients | IronMule, PK4 on | IronMule, PK4 off | vLLM AWQ, same pod |
+| ---: | ---: | ---: | ---: |
+| 1 | 52.8 / 88.0 / 91.5 | 52.5 / 88.5 / 89.8 | 51.6 / 51.8 / 51.8 |
+| 8 | 153.2 / 153.9 / 156.1 | 151.7 / 154.5 / 155.3 | 180.8 / 180.8 / 180.1 |
+| 32 | 255.2 / 252.3 / 250.0 | 250.0 / 248.6 / 245.4 | 266.9 / 264.4 / 266.3 |
+
+Facts 18/18 in every run of both servers. PK4 adds about 1.8 % at 32 clients (first tokens about 80 ms earlier).
+Against vLLM on the same machine: -5.0 % at 32 clients, -14.5 % at 8, +2 % to +77 % at one client. This corrects the
+"level at 32 clients" of the previous entry, which compared IronMule on one pod with vLLM measured on another: this
+pod ran IronMule about 7 % and vLLM about 3 % slower than the earlier ones, so cross-pod comparisons carry several
+percent of machine difference. Comparisons against vLLM are to be made on the same pod from now on.
+[IronMule PK4 on](../lab/pk1/results/a100-ironmule-http-pod12-pk4on.jsonl) ·
+[off](../lab/pk1/results/a100-ironmule-http-pod12-pk4off.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod12.jsonl).
+Pod time 0.92 h, 2.01 USD; total 28.15 of 35 USD.
