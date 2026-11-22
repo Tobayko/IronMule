@@ -3133,3 +3133,28 @@ server had re-tuned its own table with the pod's older library that still offere
 they stay opt-in and no HTTP numbers exist for GR3. Pod time 1.27 h, 2.78 USD; total 23.87 of 25 USD.
 Next: the server A/B for GR3 (one-row graphs by default, 32-row graphs opt-in) on a fresh pod with the opt-in MQ1;
 then point 2's fusions (add + RMS norm + mul, RoPE + KV write, prep_x into the norm) and the remaining host time.
+
+### 2026-11-22, A100: GR3 served, FU1, 32-row CUDA graphs through the gate -- level with vLLM at 32 clients
+One pod (RunPod A100 SXM4 80 GB), the product path end to end (`ironmule serve --agent on`, its own W4R tuning and
+quality gate in a fresh state), same HTTP client, prompts and seeds as all earlier runs, two repeats, facts graded:
+
+| Clients | GR3 on, one-row graphs | GR3 off | FU1 + GR3 + graphs up to 32 rows | vLLM AWQ (2nd pod) |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 50.0 / 87.4 | 51.6 / 88.3 | 53.1 / 91.2 | 52.0 |
+| 8 | 151.9 / 157.3 | 152.3 / 146.8 | 158.8 / 160.9 | 184 |
+| 32 | 269.1 / 264.7 | 254.6 / 275.3 | **268.1 / 280.6** | 274 |
+
+Facts 18/18 in every run. The quality gate passed with FU1 and multi-row graphs (perplexity ratio 0.9935, interval
+0.9858-1.0001). Startup width measurement at 32 sequences: 1,015 tok/s (GR3 on) and 1,024 tok/s (FU1 + 32-row graphs).
+GR3 on against off is inside the run-to-run spread on HTTP (32 clients 266.9 against 264.9 mean). At 32 clients the
+last arm averages 274.3 tok/s, level with vLLM's 274 on the second pod (its second repeat +2.4 %); at 8 clients
+IronMule stays about 13 % behind, at one client level to well ahead depending on the prompt.
+- 32-row CUDA graphs through the gate: a fresh-state server with `IRONMULE_CUDA_GRAPHS_ROWS=32` again failed the gate's
+  tuning with out_of_memory although MQ1 was already opt-in: multi-row graphs in a process that opens several contexts
+  hold too much memory. The gate's children and SEQ1's measuring children now run with one-row graphs (they do not
+  change tokens); the serving worker uses 32-row graphs, set by `serve` on Ampere+.
+- FU1 (`native/ggml_patches/fu1`, after gr3): a residual ADD, its RMS_NORM and the weight MUL in one kernel, in
+  llama.cpp's arithmetic order. Engine test with 32 real prompts and 48 greedy steps: the same tokens (hash
+  d008af8928708bd7) with FU1 off/on and with one-row/32-row graphs; per 32-row step 32.96 -> 32.50 ms (FU1),
+  32.96 -> 30.89 ms (32-row graphs), 30.74 ms with both.
+Pod time 1.03 h by the session's ledger (RunPod's billing for the day was not complete); total 26.14 of 35 USD.
