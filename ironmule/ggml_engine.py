@@ -78,6 +78,10 @@ DRAFT_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_DRAFT_MAX_RUNNING", 2))  #
 DRAFT_SLOTS = int(os.environ.get("IRONMULE_GGML_DRAFT_SLOTS", DRAFT_MAX_RUNNING))  # DM1: its sequences
 LLAMA_MAX_SEQ = 64  # llama.cpp's limit on sequence ids in one context (4227c9b)
 SHARE_WAIT = 64  # SP1: a prompt waits a step for a fresh one when that one would give it this many more shared tokens
+# SD1 (2026-11-23, experiment): on a GPU, IRONMULE_GGML_SD=k gives every running request k drafts of the draft model
+# (BatchDrafter) while at most IRONMULE_GGML_SD_MAX_RUNNING requests run; 0 (default) keeps DM1's drafter
+SD_K = int(os.environ.get("IRONMULE_GGML_SD", 0) or 0)
+SD_MAX_RUNNING = int(os.environ.get("IRONMULE_GGML_SD_MAX_RUNNING", 8))
 DRAFT_BUCKET = 200  # DM1: drafts of the draft model (their lengths come from its own stopping rule)
 MAX_DRAFT_SLACK = 8  # SP1: cells a running request may take beyond its answer for draft rows (speculation.MAX_DRAFT)  # a waiting request passed over this often by shorter prompts goes first
 # ROW1 round 5 (2026-11-12): a finished request's KV stays in its sequence, and a new request takes the free sequence
@@ -808,14 +812,17 @@ class GgmlEngine:
     def _open_drafter(self, gguf: str, threads: int) -> Any:
         """The draft model with `DRAFT_SLOTS` sequences, or None (with the reason in `draft_refused`) where its
         tokenizer is not this model's."""
-        from .draft_model import Drafter
+        from .draft_model import BatchDrafter, Drafter
 
-        engine = GgmlEngine(gguf, threads=threads, seqs=DRAFT_SLOTS, seq_ctx=self.seq_ctx, speculate=False,
-                            flash_attn=True, kernel_mask=False)
+        sd = SD_K > 0 and bool(self.gpu_layers)  # SD1: one draft per running request, all in one call
+        engine = GgmlEngine(gguf, threads=threads, seqs=self.seqs if sd else DRAFT_SLOTS, seq_ctx=self.seq_ctx,
+                            speculate=False, flash_attn=True, kernel_mask=False)
         if engine.n_vocab != self.n_vocab or engine.tokenize(CHECK_TEXT) != self.tokenize(CHECK_TEXT):
             engine.close()
             self.draft_refused = "the draft GGUF's tokenizer is not the model's"
             return None
+        if sd:
+            return BatchDrafter(engine, k=SD_K, max_running=SD_MAX_RUNNING)
         return Drafter(engine, max_running=DRAFT_MAX_RUNNING)
 
     def _batch_for(self, count: int) -> Any:

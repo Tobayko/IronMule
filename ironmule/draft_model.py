@@ -288,6 +288,103 @@ class Drafter:
             close()
 
 
+class _BatchStop:
+    """SD1's counters, in the shape the engine reads from `Drafter.stop`."""
+
+    def __init__(self) -> None:
+        self.drafted = self.accepted = self.calls = 0
+
+    def summary(self) -> dict[str, Any]:
+        return {"drafted": self.drafted, "accepted": self.accepted, "calls": self.calls,
+                "acceptance": round(self.accepted / self.drafted, 4) if self.drafted else None}
+
+
+class BatchDrafter:
+    """SD1 (2026-11-23, experiment): the draft model for a GPU serving several requests at once. Every running
+    request gets the same number of drafts `k` (one KV stream per request: equal token counts keep the verify step one
+    pass), all requests in one draft call per drafted position, and the draft model reads exactly two tokens per
+    request and step once it has caught up (the one before last again where only one is new), so its own calls stay
+    one pass as well. Slot = the target's sequence id; the draft engine has as many sequences as the target.
+    Measured on an A100 (LAB.md): Qwen3-0.6B accepts 63-68 % of single drafts for Qwen3-32B on the benchmark's
+    prompts. It drafts while at most `max_running` requests run."""
+
+    def __init__(self, engine: Any, k: int = 1, max_running: int = 8):
+        self.e, self.k, self.max_running = engine, max(1, int(k)), max_running
+        self.stop = _BatchStop()
+        self.held: dict[int, list[int]] = {slot: [] for slot in range(engine.seqs)}
+        self.step_seconds = 0.0
+
+    def release(self, key: int) -> None:
+        """The request ended; its slot's cells stay and are reused as far as the next request's prefix matches."""
+
+    def _sync(self, slot: int, context: Sequence[int]) -> list[tuple[int, int, int, bool]]:
+        held = self.held[slot]
+        shared = min(_common(held, context), max(0, len(context) - 2))  # at least two tokens are read again
+        if len(held) > shared:
+            if shared == 0 or not self.e.L.llama_memory_seq_rm(self.e.memory, slot, shared, -1):
+                self.e.L.llama_memory_seq_rm(self.e.memory, slot, -1, -1)
+                shared = 0
+            del held[shared:]
+        feed = list(context[shared:])
+        rows = [(t, shared + j, slot, j == len(feed) - 1) for j, t in enumerate(feed)]
+        held.extend(feed)
+        return rows
+
+    def draft(self, wants: dict[int, tuple[Sequence[int], int]], running: int) -> dict[int, list[int]]:
+        import time
+
+        self.step_seconds = 0.0
+        if running > self.max_running or not wants:
+            return {}
+        keys = sorted(k for k in wants if k in self.held and wants[k][1] >= 1)
+        if not keys:
+            return {}
+        k = min(self.k, min(wants[key][1] for key in keys))
+        started = time.perf_counter()
+        rows: list[tuple[int, int, int, bool]] = []
+        for key in keys:
+            rows += self._sync(key, wants[key][0])
+        cap = getattr(self.e, "batch_cap", 512)
+        picks: list[int] = []
+        while rows:  # a catch-up larger than one call: whole requests per call, in order
+            part, size = [], 0
+            while rows:
+                n = next((i for i, r in enumerate(rows) if r[2] != rows[0][2]), len(rows))
+                if part and size + n > cap:
+                    break
+                part += rows[:n]
+                size += n
+                rows = rows[n:]
+            picks += self.e._decode(part)
+        drafts = {key: [pick] for key, pick in zip(keys, picks)}
+        for _ in range(k - 1):
+            step = []
+            for key in keys:
+                held = self.held[key]
+                step.append((drafts[key][-1], len(held), key, True))
+                held.append(drafts[key][-1])
+            for key, pick in zip(keys, self.e._decode(step)):
+                drafts[key].append(pick)
+        self.stop.calls += k
+        self.step_seconds = time.perf_counter() - started
+        return drafts
+
+    def settle(self, key: int, used: int, accepted: int) -> None:
+        self.stop.drafted += used
+        self.stop.accepted += accepted
+
+    def end_step(self, seconds: float, running: int, draft_rows: int, tokens: int) -> None:
+        self.step_seconds = 0.0
+
+    def summary(self) -> dict[str, Any]:
+        return {"mode": "sd1", "k": self.k, "max_running": self.max_running, **self.stop.summary()}
+
+    def close(self) -> None:
+        close = getattr(self.e, "close", None)
+        if close is not None:
+            close()
+
+
 # DM2: a draft model measured on a T4 for each family (SG1 v3), named for `ironmule serve` to suggest; it is never
 # downloaded without the user's own command. Gemma 3's 1B model is left out: its vocabulary is not the 4B model's.
 DRAFTS = (("qwen3", "Qwen/Qwen3-0.6B-GGUF", "Qwen3-0.6B-Q8_0.gguf"),
