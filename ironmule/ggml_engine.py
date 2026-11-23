@@ -46,7 +46,9 @@ THREADS = int(os.environ.get("IRONMULE_GGML_THREADS") or _usable_cores())
 # ROW1 (2026-11-12): sequences and per-sequence context can be raised for a run, e.g. 32 requests in one batch
 SEQS = int(os.environ.get("IRONMULE_GGML_SEQS", SEQS))
 SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
-POLL = 50  # llama-server's default busy-wait level
+# llama-server's default busy-wait level; IRONMULE_GGML_POLL sets another (HC1, 2026-11-23: with every layer on the GPU the
+# CPU threads only run the small input split of each step and then spin, competing with the server's Python threads)
+POLL = int(os.environ.get("IRONMULE_GGML_POLL", 50))
 ENGINE_VERSION = 5  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005;
 # 5 (ST1): a float32 KV cache ranks first in the autotune only 8 % ahead (rank_settings)
 OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default

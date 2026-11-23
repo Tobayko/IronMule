@@ -283,12 +283,15 @@ class GgmlBridge:
                                                 first=job.first_ns / 1e9, finished=job.finished_ns / 1e9)
         reasons = {"eos": "stop", "length": "length", "cancelled": "cancelled"}
         results = []
+        # SV5 (2026-11-23): one engine summary for the whole run, not one per request (32 summaries here held the
+        # interpreter while the token writer still had the run's last frames to send)
+        metadata = {**self.metadata(), **self.counters()}
         for job in served:
             text = self._tokenizer.decode([t for t in job.tokens if t not in self._eos])
             results.append(EngineBridgeResult(tokens=list(job.tokens), text=text,
                                               finish_reason=reasons[job.reason or "cancelled"],
                                               token_count=len(job.tokens), metrics={},
-                                              metadata={**self.metadata(), **self.counters()}))
+                                              metadata=dict(metadata)))
         return results
 
     def close(self) -> None:
