@@ -3417,3 +3417,25 @@ KV caches into 24 GB), W4R tuned on the card.
 - GB1 (local, `tests/engine/test_ggml_engine.py`): after a group of several prompts, the next lone arrival waits with
   the burst's gather window once; on pods 20 and 22 a 32-client burst had started its first request alone (a 441-row
   prefill of 217 ms) with the other 31 behind it.
+
+### 2026-11-23, A100 pod 24: the server with GB1, GR4 and SD1 (rejected)
+RunPod A100 SXM4 80 GB (secure cloud, 2.19 USD/h; no community A100 was free), Qwen3-32B Q4_K_M,
+`serve --agent on --draft-gguf Qwen3-0.6B-Q4_K_M` with `IRONMULE_GGML_SD=1 IRONMULE_GGML_SD_MAX_RUNNING=8` (SD1 drafts
+while at most 8 requests run), GB1 and GR4 in the build. Startup 1,362 s (gate and the draft model's measurements).
+Three repeats, facts 18/18 in every run:
+
+| Clients | IronMule with SD1 (pod 24) | IronMule without SD1 (pod 22, another pod) |
+| ---: | ---: | ---: |
+| 1 | 52.1 / 52.4 / 52.9 | 55.4 / 95.1 / 98.2 |
+| 8 | 148.1 / 153.6 / 152.2 | 161.5 / 163.3 / 165.7 |
+| 32 | 269.2 / 269.0 / 267.6 | 275.6 / 273.0 / 271.4 |
+
+- SD1 rejected for the server: at one client the batch drafter takes the place of the context drafts that gave
+  95-98 tok/s, and at 8 clients a draft call plus a verification step of two rows per request cost more than the
+  accepted drafts saved (pods differ by up to 10 %, but the one-client drop is far outside that). SD1 stays off by
+  default; GR4 stays (it fixes a second CUDA context's graph state, whatever drafts).
+- GB1 on the server: all three 32-client bursts were prefilled in one call with all 32 prompts (pods 20 and 22 had a
+  lone first request in two of six bursts).
+- No vLLM run on this pod (the remaining balance did not cover it, and this configuration is not the one to compare).
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod24-sd1.jsonl). Pod time 0.52 h, about 1.13 USD; balance after
+pod 24: 1.64 USD.
