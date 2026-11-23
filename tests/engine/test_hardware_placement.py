@@ -148,7 +148,10 @@ def test_restore_regrade_drift_and_persistent_pause(tmp_path, monkeypatch):
     trace = trace_for(learner.native)
     trace.update(binding=learner.binding, identity=train.signature(learner.binding))
     trace["comparison"] = {"qualified": True, "weights": [[999]]}  # saved verdict is never trusted
-    learner.path.write_text(json.dumps(trace))
+    with learner.lock:
+        learner.trace = trace
+    learner._save()
+    assert learner.path.stat().st_mode & 0o077 == 0
     pool.close()
     pool, learner = create_controller(tmp_path, monkeypatch, ("0", "cpu"))
     try:
