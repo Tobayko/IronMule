@@ -1808,6 +1808,11 @@ static void load_table_once() {
 int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64_t N, int64_t K, int64_t B,
                         cudaStream_t s) {
     load_table_once();
+    if (B > 32 && B <= 64 && std::getenv("IRONMULE_W4_SPLIT64")) {  // SD1 (experiment): 33-64 rows as two calls
+        const int64_t first = 32;
+        if (ironmule_kg_mul_mat(type, w, x, y, N, K, first, s) != 0) return 1;
+        return ironmule_kg_mul_mat(type, w, x + first * K, y + first * N, N, K, B - first, s);
+    }
     if ((type != TYPE_Q4_K && type != TYPE_Q6_K) || K % 256 != 0 || B < 1 || B > 32) return 1;
     if (!(((type == TYPE_Q6_K ? mask6 : mask4) >> (B - 1)) & 1u)) return 1;
     std::pair<int, int> pick;
