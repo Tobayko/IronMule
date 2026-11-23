@@ -3207,3 +3207,37 @@ cost about 0.7 ms of a 32-row step against Q4_K, so requantising them would not 
 32-row matmul is the lever for +10 % over vLLM (about 6 ms per step at Marlin's 32-row efficiency); then the small
 kernels (about 7 ms against vLLM's 2.5-3) and the 2.3 ms of host time around the graph.
 [W4R tuning of this pod](../lab/pk1/results/a100-w4-tuning-pod13.log). Pod time 0.4 h, 0.88 USD; total 29.03 of 35 USD.
+
+### 2026-11-23, A100: where the 32-client wave's time goes, and W8A8 prompt matmuls (I81, rejected)
+Owner: the whole remaining RunPod balance for the +10 % goal. Two RunPod A100 SXM4 80 GB pods, Qwen3-32B Q4_K_M.
+- Server trace (`IRONMULE_GGML_TRACE`, one line per native call; HTTP 8 and 32 clients, two repeats): 262.5 / 263.9
+  tok/s at 32 clients and 155.9 / 162.6 at 8 on this pod. A 32-client wave is one packed prefill call (7,600 rows,
+  2.64-2.68 s) and 31 decode calls of about 27-32 ms; between calls the server loses 0.83 ms (median). At 8 clients
+  the prefill call takes 0.83-0.90 s for about 1,900 rows.
+- The benchmark's prompts are 16 short (21 tokens) and 16 long (432 tokens). With one KV stream per sequence llama.cpp
+  splits a call into rectangular micro-batches of consecutive sequence ids at equal token counts: two passes when the
+  short prompts hold the lowest ids (the server sorts them so), one pass per long prompt when short and long
+  alternate (a lab script did that: 6.4 s instead of 2.46 s). Engine prefill of the real mix, sorted: 2.46 s (32) and
+  0.81 s (8; 0.69 s for the same rows at one equal length). Kernels of the 32-prompt prefill: fp16 GEMMs 1.71 s of
+  2.43 s, Q4_K / Q6_K dequantisation 0.22 s (once per pass), SwiGLU 0.10 s, attention 0.08 s.
+- int8 against fp16 tensor-core GEMM on the prefill shapes (torch `_int_mm` against fp16 matmul, 7,680 rows):
+  1.47-1.59x, 315-386 TOPS against 214-249 TF.
+- I81 (`lab/i81`, a patch after pk4, not in the build): `IRONMULE_I8=2` quantised PK2's dequantised weights per
+  output row and the activations per token to int8 and multiplied on the int8 tensor cores; `=1` only rounded both
+  operands. Perplexity on the gate's 16 chunks against llama.cpp's MMQ path, ratio and 95 % interval (bound: upper
+  end below 1.005), and engine prefill of the benchmark mix:
+
+| path | perplexity ratio | prefill 32 / 8 clients |
+| --- | --- | ---: |
+| llama.cpp MMQ (reference) | 1.000 | 5.76 / 1.50 s |
+| PK2 fp16 cuBLAS (served) | 1.004 [0.998, 1.011] | 2.44 / 0.81 s |
+| int8 rounding, fp16 multiply | 1.133 [1.047, 1.268] | 2.75 / 0.94 s |
+| int8 everywhere | 1.090 [1.041, 1.137] | 2.13 / 0.78 s |
+| int8, down projection on fp16 | 1.022 [1.014, 1.030] | 2.21 / 0.78 s |
+
+  Per-token int8 activations cost 2-9 % perplexity: rejected (the 0.23-0.31 s it saves per 32-client wave would have
+  been about +6-8 %). Activation-side fixes (per-channel smoothing, outlier channels on fp16) were not tried.
+What follows: the prefill GEMMs already run at about 80 % of the fp16 peak and the decode step at the bandwidth of
+its kernels, so the remaining levers are small: dequantisation once per pass (0.22 s), the server's prefill and decode
+host time, and the gather window. Pod time about 0.75 h; balance 13.56 USD after these two pods.
+[I81 measurements](../lab/i81/a100-i8-ppl.log)

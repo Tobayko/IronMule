@@ -28,8 +28,6 @@ variables the engine reads. Nothing is installed system-wide.
         (IRONMULE_FU1=0 off).
   pk4   CUDA builds only: FU1 and SWIGLU write the fp16 copy a following cuBLAS prompt matmul needs into PK3's
         slot, so no conversion kernel runs (IRONMULE_PK4=0 off).
-  i81   CUDA builds only: IRONMULE_I8=2 runs PK2's prompt matmuls as int8 x int8 on the tensor cores (per-row and
-        per-token scales; output-changing, off by default), IRONMULE_I8=1 only rounds the operands that way.
   pk2   CUDA builds only: from IRONMULE_CUBLAS_MIN_ROWS prompt rows on, quantized matmuls go through dequantization
         and cuBLAS with fp32 accumulation instead of llama.cpp's MMQ kernels; unset keeps llama.cpp's choice.
 
@@ -72,7 +70,6 @@ PATCH_SETS = {
     "gr3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk3
     "fu1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr3
     "pk4": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after fu1
-    "i81": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk4
 }
 
 
@@ -184,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "i81"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

@@ -1,0 +1,155 @@
+# I81: W8A8 prompt matmuls on the PK2 cuBLAS path (after pk4); argv[1] -> argv[2]
+import sys
+from pathlib import Path
+s = Path(sys.argv[1]).read_text()
+
+anchor = '''extern "C" GGML_BACKEND_API long ironmule_pk2_set_min_rows(long rows) {'''
+assert s.count(anchor) == 1
+kernels = r'''// I81 (IronMule): IRONMULE_I8=2 runs PK2's prompt matmuls as int8 x int8 -> int32 on the tensor cores (weights per
+// output row, activations per token, symmetric, scale = absmax / 127), then scales back to fp32; IRONMULE_I8=1 rounds
+// both operands the same way but multiplies in fp16 (to check the rounding alone). IRONMULE_I8_MAX_K keeps matmuls with
+// a longer inner dimension (the down projection) on fp16. Off (0) by default; output-changing, so behind a quality gate.
+static int ironmule_i8_mode() {
+    static int mode = -1;
+    if (mode < 0) {
+        const char * v = std::getenv("IRONMULE_I8");
+        mode = v ? std::atoi(v) : 0;
+    }
+    return mode;
+}
+
+static long ironmule_i8_max_k() {
+    static long k = -1;
+    if (k < 0) {
+        const char * v = std::getenv("IRONMULE_I8_MAX_K");
+        k = v ? std::atol(v) : 0L;
+    }
+    return k;
+}
+
+// one block per row of n halves: absmax, scale (absmax / 127) and the row rounded to int8 (q) or back to half (fq)
+template <bool SIM>
+static __global__ void ironmule_q8_rows(const half * __restrict__ x, const int64_t n, int8_t * __restrict__ q,
+                                        half * __restrict__ fq, float * __restrict__ scale) {
+    const int64_t row = blockIdx.x;
+    const half2 * xr = (const half2 *) (x + row*n);
+    const int64_t n2 = n/2;
+    float m = 0.0f;
+    for (int64_t i = threadIdx.x; i < n2; i += blockDim.x) {
+        const float2 v = __half22float2(xr[i]);
+        m = fmaxf(m, fmaxf(fabsf(v.x), fabsf(v.y)));
+    }
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) {
+        m = fmaxf(m, __shfl_xor_sync(0xffffffff, m, off));
+    }
+    __shared__ float red[32];
+    const int warp = threadIdx.x/32, lane = threadIdx.x%32;
+    if (lane == 0) {
+        red[warp] = m;
+    }
+    __syncthreads();
+    m = lane < (int) (blockDim.x/32) ? red[lane] : 0.0f;
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) {
+        m = fmaxf(m, __shfl_xor_sync(0xffffffff, m, off));
+    }
+    const float s = m/127.0f;
+    const float inv = m > 0.0f ? 127.0f/m : 0.0f;
+    if (threadIdx.x == 0) {
+        scale[row] = s;
+    }
+    for (int64_t i = threadIdx.x; i < n2; i += blockDim.x) {
+        const float2 v = __half22float2(xr[i]);
+        const int a = max(-127, min(127, __float2int_rn(v.x*inv)));
+        const int b = max(-127, min(127, __float2int_rn(v.y*inv)));
+        if (SIM) {
+            ((half2 *) (fq + row*n))[i] = __floats2half2_rn(a*s, b*s);
+        } else {
+            ((char2 *) (q + row*n))[i] = make_char2((signed char) a, (signed char) b);
+        }
+    }
+}
+
+// dst[j*ldc + i] = acc[j*rows + i] * ws[i] * xs[j]
+static __global__ void ironmule_i8_scale(const int32_t * __restrict__ acc, const int64_t rows, const int64_t cols,
+                                         const float * __restrict__ ws, const float * __restrict__ xs,
+                                         float * __restrict__ dst, const int64_t ldc) {
+    const int64_t i = (int64_t) blockIdx.x*blockDim.x + threadIdx.x;
+    const int64_t j = blockIdx.y;
+    if (i < rows && j < cols) {
+        dst[j*ldc + i] = (float) acc[j*rows + i] * ws[i] * xs[j];
+    }
+}
+
+'''
+s = s.replace(anchor, kernels + anchor, 1)
+
+old = '''        if (GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA4(cc) || ironmule_pk2_min_rows() > 0) {
+            const float alpha = 1.0f;
+            const float beta = 0.0f;
+            CUBLAS_CHECK(
+                cublasGemmEx(ctx.cublas_handle(id), CUBLAS_OP_T, CUBLAS_OP_N,
+                        row_diff, src1_ncols, ne10,
+                        &alpha, src0_ptr,  CUDA_R_16F, ne00,
+                                src1_ptr,  CUDA_R_16F, ne10,
+                        &beta,   dst_dd_i, CUDA_R_32F, ldc,
+                        CUBLAS_COMPUTE_32F,
+                        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+        } else {'''
+assert s.count(old) == 1
+new = '''        const int i8 = ironmule_i8_mode();
+        if (i8 > 0 && ironmule_pk2_min_rows() > 0 && src0->type != GGML_TYPE_F16 && ne00 == ne10 && ne00 % 4 == 0
+                && row_diff % 4 == 0 && (ironmule_i8_max_k() == 0 || ne00 <= ironmule_i8_max_k())) {
+            // I81
+            ggml_cuda_pool_alloc<float> ws(ctx.pool(id), row_diff);
+            ggml_cuda_pool_alloc<float> xs(ctx.pool(id), src1_ncols);
+            if (i8 == 1) {
+                ggml_cuda_pool_alloc<half> w16(ctx.pool(id), row_diff*ne00);
+                ggml_cuda_pool_alloc<half> x16(ctx.pool(id), src1_ncols*ne10);
+                ironmule_q8_rows<true><<<row_diff, 256, 0, stream>>>(src0_ptr, ne00, nullptr, w16.get(), ws.get());
+                ironmule_q8_rows<true><<<src1_ncols, 256, 0, stream>>>(src1_ptr, ne10, nullptr, x16.get(), xs.get());
+                const float alpha = 1.0f;
+                const float beta = 0.0f;
+                CUBLAS_CHECK(
+                    cublasGemmEx(ctx.cublas_handle(id), CUBLAS_OP_T, CUBLAS_OP_N,
+                            row_diff, src1_ncols, ne10,
+                            &alpha, w16.get(), CUDA_R_16F, ne00,
+                                    x16.get(), CUDA_R_16F, ne10,
+                            &beta,   dst_dd_i, CUDA_R_32F, ldc,
+                            CUBLAS_COMPUTE_32F,
+                            CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+            } else {
+                ggml_cuda_pool_alloc<int8_t> w8(ctx.pool(id), row_diff*ne00);
+                ggml_cuda_pool_alloc<int8_t> x8(ctx.pool(id), src1_ncols*ne10);
+                ggml_cuda_pool_alloc<int32_t> acc(ctx.pool(id), row_diff*src1_ncols);
+                ironmule_q8_rows<false><<<row_diff, 256, 0, stream>>>(src0_ptr, ne00, w8.get(), nullptr, ws.get());
+                ironmule_q8_rows<false><<<src1_ncols, 256, 0, stream>>>(src1_ptr, ne10, x8.get(), nullptr, xs.get());
+                const int32_t alpha = 1;
+                const int32_t beta = 0;
+                CUBLAS_CHECK(
+                    cublasGemmEx(ctx.cublas_handle(id), CUBLAS_OP_T, CUBLAS_OP_N,
+                            row_diff, src1_ncols, ne10,
+                            &alpha, w8.get(),  CUDA_R_8I, ne00,
+                                    x8.get(),  CUDA_R_8I, ne10,
+                            &beta,  acc.get(), CUDA_R_32I, row_diff,
+                            CUBLAS_COMPUTE_32I,
+                            CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+                const dim3 grid((row_diff + 255)/256, src1_ncols);
+                ironmule_i8_scale<<<grid, 256, 0, stream>>>(acc.get(), row_diff, src1_ncols, ws.get(), xs.get(), dst_dd_i, ldc);
+            }
+        } else if (GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA4(cc) || ironmule_pk2_min_rows() > 0) {
+            const float alpha = 1.0f;
+            const float beta = 0.0f;
+            CUBLAS_CHECK(
+                cublasGemmEx(ctx.cublas_handle(id), CUBLAS_OP_T, CUBLAS_OP_N,
+                        row_diff, src1_ncols, ne10,
+                        &alpha, src0_ptr,  CUDA_R_16F, ne00,
+                                src1_ptr,  CUDA_R_16F, ne10,
+                        &beta,   dst_dd_i, CUDA_R_32F, ldc,
+                        CUBLAS_COMPUTE_32F,
+                        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+        } else {'''
+s = s.replace(old, new, 1)
+Path(sys.argv[2]).write_text(s)
+print("i81 applied")
