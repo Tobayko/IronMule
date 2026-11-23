@@ -3499,3 +3499,14 @@ kept its only route in both holdouts (completion and first-token ratios 1.00). R
 fit the C++ model and evaluated the holdouts in 0.54 ms on this host. These measurements cover the controller,
 the real CPU engine, foreground preemption and resume. Multi-GPU serving and speed against vLLM need target
 hardware measurements. [Machine-bound trace](../lab/placement/results/smollm2-135m-cpu.json) · [Protocol and reproduction](../training/hardware-placement.md)
+
+A separate comparison pinned two qualified replicas to one and three threads on the **same CPU**. On the two
+held-out rounds the candidate's completion-time ratios were 0.553 and 0.595. One long-prompt fixture ended at
+26 versus 37 tokens in the first holdout and 37 versus 64 in the second. The prespecified equal-output-count
+gate rejected the candidate. A subsequent foreground request used the reference. The campaign took 100.05 s
+after worker startup. [Paired measurements](../lab/placement/results/smollm2-cpu-pair.json) · [Reproduction](../lab/placement/cpu_pair.py)
+
+A follow-up will exercise a real workload change. After the initial verdict, send 32 public foreground requests
+covering 96/1,024 characters and output limits of 4/8, using the same replicas, gate and five rounds. Record both
+holdouts and the route of a foreground request after the campaign. This post-hoc workload selection tests
+adaptation for shorter answers. The initial comparison retains its rejection.
