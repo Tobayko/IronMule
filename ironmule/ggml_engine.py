@@ -1427,10 +1427,18 @@ class GgmlEngine:
                         if room > 0:
                             wants[seq] = (job.full_context(), room)
                     modelled = self.drafter.draft(wants, len(order)) if wants else {}
+                # SV3 (2026-11-23): with no row left for a draft and no PAD size to fill, the policy chooses none, so
+                # the per-request context drafts are not looked up (about 1 ms a step at 32 requests)
+                policy_rows = getattr(self.policy, "rows", None)
+                no_room = (not modelled and isinstance(policy_rows, int) and policy_rows - len(order) <= 0
+                           and not (getattr(self, "pad_to", None) or {}).get(len(order)))
                 for seq in order:
                     job = active[seq]
                     pos = len(job.ids) + len(job.tokens) - 1
                     room = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos)
+                    if no_room:
+                        offers.append(([], 0))
+                        continue
                     if seq in modelled:
                         offers.append((modelled[seq], DRAFT_BUCKET))
                         continue
