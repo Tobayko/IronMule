@@ -113,6 +113,10 @@ class _Session:
     order_values: dict | None = None  # AG2, replay only: the recorded limit and prediction it is sorted by
 
 
+def _is_foreground(session):
+    return not getattr(session.request, "hardware_probe", False)
+
+
 class ProductService:
     """One loaded reference model with bounded FIFO admission.
 
@@ -803,7 +807,7 @@ class ProductService:
                   error=session.error, tokens=session.tokens,
                   queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed)
         with self._lock:
-            if session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
+            if _is_foreground(session) and session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
                 self._live_samples.append({
                     "at": time.time(), "completion_tokens": session.tokens,
                     "tokens_per_second": session.tokens / elapsed,
@@ -1166,7 +1170,7 @@ class ProductService:
         self._emit(session, RequestCancelled("request cancelled"))
         session.outcome = "cancelled"
         with self._lock:
-            self._cancelled += 1
+            self._cancelled += _is_foreground(session)
 
     def _consume_events(self, session: _Session, events: Iterator[dict[str, Any]]) -> None:
         """Validate and deliver one request's frames from either backend path."""
@@ -1229,16 +1233,17 @@ class ProductService:
                                    "prompt_tokens": done.get("prompt_tokens", prompt_tokens),
                                    "completion_tokens": done.get("completion_tokens", generated),
                                    "queue_ns": dispatched - session.submitted_ns,
+                                   "ttft_ns": session.first_ns - session.submitted_ns if session.first_ns else None,
                                    "service_ns": time.monotonic_ns() - session.submitted_ns}):
             raise RequestCancelled("response delivery interrupted")
         with self._lock:
-            self._completed += 1
+            self._completed += _is_foreground(session)
             self._unproven_restarts = 0  # STAB3: a served request proves the worker serving now
         session.outcome = "ok"
         session.tokens = int(done.get("completion_tokens", generated) or 0)
         session.prompt_tokens = int(done.get("prompt_tokens", prompt_tokens) or 0)
         session.end_ns = time.monotonic_ns()
-        if self.serving_log is not None:
+        if self.serving_log is not None and _is_foreground(session):
             end = time.monotonic_ns()
             self.serving_log.append({
                 "arrive": session.submitted_ns / 1e9, "start": dispatched / 1e9,
@@ -1253,7 +1258,7 @@ class ProductService:
             if session.cancelled.is_set():
                 self._emit(session, RequestCancelled("request cancelled"))
                 with self._lock:
-                    self._cancelled += 1
+                    self._cancelled += _is_foreground(session)
                 return
             remaining = None if session.deadline is None else session.deadline - time.monotonic()
             if remaining is not None and remaining <= 0:
@@ -1272,7 +1277,7 @@ class ProductService:
             else:
                 self._emit(session, exc)
                 with self._lock:
-                    self._failed += 1
+                    self._failed += _is_foreground(session)
         except Exception:
             if session.cancelled.is_set():
                 self._finish_cancelled(session, stream, terminal_seen=session.terminal_seen)
@@ -1281,7 +1286,7 @@ class ProductService:
                 # their bodies or persist them as metadata.
                 self._emit(session, BackendUnavailable("model worker failed"))
                 with self._lock:
-                    self._failed += 1
+                    self._failed += _is_foreground(session)
         finally:
             if stream is not None:
                 try:
@@ -1304,7 +1309,7 @@ class ProductService:
                 elif item.deadline is not None and item.deadline <= now:
                     self._emit(item, RequestTimeout("request expired in queue"))
                     with self._lock:
-                        self._failed += 1
+                        self._failed += _is_foreground(item)
                     handled.add(item.request.request_id)
                 else:
                     live.append(item)
@@ -1349,7 +1354,7 @@ class ProductService:
                     else:
                         self._emit(item, exc)
                         with self._lock:
-                            self._failed += 1
+                            self._failed += _is_foreground(item)
                     handled.add(item.request.request_id)
         except Exception:
             # Dispatch happened as one unit: never conceal a failed batch by
@@ -1362,7 +1367,7 @@ class ProductService:
                 else:
                     self._emit(item, BackendUnavailable("model worker failed"))
                     with self._lock:
-                        self._failed += 1
+                        self._failed += _is_foreground(item)
 
     def _deliver(self, item: _Session, frames: Iterator[dict[str, Any]], handled: set[str]) -> None:
         """One grouped request's frames to its caller, with the single path's error handling."""
@@ -1376,7 +1381,7 @@ class ProductService:
             else:
                 self._emit(item, exc)
                 with self._lock:
-                    self._failed += 1
+                    self._failed += _is_foreground(item)
         handled.add(item.request.request_id)
 
     def _stream_batch(self, live: list[_Session], timeout: float | None, handled: set[str]) -> None:
@@ -1495,7 +1500,7 @@ class ProductService:
             with self._lock:
                 self._last_batch_size = len(live) + len(joined)
                 self._batch_count += 1
-                self._joined += len(joined)
+                self._joined += sum(_is_foreground(item) for item in joined)
         finally:
             for item in list(unheard.values()):  # the run failed before they streamed: they report it too
                 consume(unheard.pop(item.request.request_id))

@@ -39,6 +39,8 @@ On one A100 it serves Qwen3-32B from a Q4_K_M GGUF level with to 3% behind vLLM'
 
 ## Quick start
 
+On a Linux server, `ironmule serve --gguf /path/to/model.gguf --placement auto` lets IronMule qualify CPU and GPU workers and learn where different requests finish fastest. During idle periods it measures the alternatives and checks the resulting policy against the shortest queue. [Native training, setup and cloud time estimates](training/hardware-placement.md)
+
 ### Serve a GGUF on Linux CPU
 
 Use Python 3.10 or newer, a C/C++ toolchain, CMake, Git and `patch`. These commands set up a server from a checkout using Python 3.12. Have a GGUF with a chat template available locally.

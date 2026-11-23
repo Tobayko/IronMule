@@ -13,7 +13,7 @@ def main():
     payload = json.load(sys.stdin)
     with redirect_stdout(sys.stderr):
         options = _local_ggml_options(Namespace(**payload["options"]), ModelSpec.from_dict(payload["spec"]),
-                                      ProductStore(payload["root"]), pinned=True)
+                                      ProductStore(payload["root"]), pinned=payload.get("pinned", True))
     print(json.dumps(options, allow_nan=False))
 
 

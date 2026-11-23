@@ -55,6 +55,8 @@ class GenerationRequest:
     stream: bool = False
     request_id: str = field(default_factory=lambda: "chatcmpl-" + uuid.uuid4().hex)
 
+    hardware_probe: bool = field(default=False, repr=False, compare=False)  # internal, never accepted from HTTP
+
     def as_dict(self) -> dict[str, Any]:
         return {"model": self.model, "messages": [{"role": r, "content": c} for r, c in self.messages],
                 "max_tokens": self.max_tokens, "temperature": self.temperature,

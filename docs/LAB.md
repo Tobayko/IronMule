@@ -3487,3 +3487,15 @@ measured on a GPU yet.
   pod 3 showed IronMule answering "200 - 2 = 198 ... **198**" instead of the number alone (a grader format miss, not a
   wrong fact; vLLM answers in the asked format). The pod 25 record kept only a hash of the answers, so this is an
   inference; `lab/pk1/http_bench.py` now records each missed case with its answer (`quality_misses`).
+
+### 2026-11-23, hardware placement on a Linux CPU
+
+SmolLM2-135M-Instruct Q4_K_M ran on an AMD EPYC 9V74, with affinity for five CPUs, a four-core cgroup quota,
+three configured GGML threads and four sequences. A foreground chat interrupted a live paired probe, answered
+“The capital of France is Paris.” and the campaign resumed. In a separate uninterrupted run the public
+`ironmule hardware calibrate` command finished its 40 real cases in 75.05 s after worker startup, 79.05 s
+wall time with a cached GGUF quality gate. The probes themselves accounted for 20.16 s. The single worker
+kept its only route in both holdouts (completion and first-token ratios 1.00). Replaying the completed trace
+fit the C++ model and evaluated the holdouts in 0.54 ms on this host. These measurements cover the controller,
+the real CPU engine, foreground preemption and resume. Multi-GPU serving and speed against vLLM need target
+hardware measurements. [Machine-bound trace](../lab/placement/results/smollm2-135m-cpu.json) · [Protocol and reproduction](../training/hardware-placement.md)

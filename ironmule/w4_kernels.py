@@ -18,6 +18,8 @@ import ctypes
 import hashlib
 import json
 import os
+import fcntl
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,9 @@ from typing import Any
 from .kernel_gen import compile_cuda, compute_capability, fingerprint, nvcc_path, q4k_tensors
 
 SOURCE = Path(__file__).resolve().parents[1] / "native" / "kernels" / "w4mma.cu"
+if not SOURCE.is_file():
+    from importlib.resources import files
+    SOURCE = Path(str(files("ironmule_kernels").joinpath("w4mma.cu")))
 TYPE_Q4_K, TYPE_Q6_K = 12, 14
 # measured; every token count is served by the measurement of its tile count (8 tokens a tile). 24 stands for 17-24
 # tokens (three tiles): without it the table had no entry there and those steps fell back to llama.cpp's kernels
@@ -206,18 +211,43 @@ def ensure(gguf: str, cache: Path, log=print) -> tuple[Path, Path] | None:
     if arch is None or int(arch) < 80:
         return None
     fp = fingerprint()
-    key = hashlib.sha256(json.dumps({"fp": fp, "gguf": file_sha256(gguf), "v": VERSION,
-                                     "src": source_digest()},
-                                    sort_keys=True).encode()).hexdigest()[:24]
-    cache.mkdir(parents=True, exist_ok=True)
-    lib = build(cache, arch)
-    table, record = cache / f"{key}.table", cache / f"{key}.json"
-    if table.exists() and record.exists():
-        return lib, table
-    result = tune(gguf, lib, log=log)
-    record.write_text(json.dumps(result))
-    table.write_text(table_lines(result))
-    return lib, table
+    if not fp.get("driver") or not fp.get("nvcc") or len(fp.get("devices", [])) != 1:
+        return None
+    binding = {"fp": fp, "gguf": file_sha256(gguf), "v": VERSION, "src": source_digest(),
+               "tuner": file_sha256(__file__)}
+    key = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()[:24]
+    directory = cache / key
+    directory.mkdir(parents=True, exist_ok=True)
+    lib, table, record = (directory / name for name in ("kernel.so", "dispatch.table", "measurement.json"))
+    with (directory / ".lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            saved = json.loads(record.read_text())
+            if saved["binding"] == binding:
+                if saved.get("outcome") == "rejected":
+                    return None
+                if saved["binary"] == file_sha256(str(lib)) and saved["table"] == file_sha256(str(table)):
+                    return lib, table
+        except (OSError, KeyError, TypeError, ValueError):
+            pass
+        with tempfile.TemporaryDirectory(dir=directory) as tmp:
+            work = Path(tmp)
+            candidate = build(work, arch)
+            result = tune(gguf, candidate, log=log)
+            if fingerprint() != fp or file_sha256(gguf) != binding["gguf"]:
+                raise RuntimeError("CUDA device, compiler or GGUF changed during W4 calibration")
+            passed = bool(result["entries"])
+            summary = {"binding": binding, "outcome": "built" if passed else "rejected", "measurement": result}
+            if passed:
+                dispatch = work / "dispatch.table"
+                dispatch.write_text(table_lines(result))
+                summary.update(binary=file_sha256(str(candidate)), table=file_sha256(str(dispatch)))
+                os.replace(candidate, lib)
+                os.replace(dispatch, table)
+            log_file = work / "measurement.json"
+            log_file.write_text(json.dumps(summary, allow_nan=False))
+            os.replace(log_file, record)
+        return (lib, table) if passed else None
 
 
 def main(argv=None) -> int:
