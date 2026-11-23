@@ -292,10 +292,10 @@ class _BatchStop:
     """SD1's counters, in the shape the engine reads from `Drafter.stop`."""
 
     def __init__(self) -> None:
-        self.drafted = self.accepted = self.calls = 0
+        self.drafted = self.accepted = self.calls = self.invalid = 0
 
     def summary(self) -> dict[str, Any]:
-        return {"drafted": self.drafted, "accepted": self.accepted, "calls": self.calls,
+        return {"drafted": self.drafted, "accepted": self.accepted, "calls": self.calls, "invalid": self.invalid,
                 "acceptance": round(self.accepted / self.drafted, 4) if self.drafted else None}
 
 
@@ -356,6 +356,14 @@ class BatchDrafter:
                 size += n
                 rows = rows[n:]
             picks += self.e._decode(part)
+        vocab = getattr(self.e, "n_vocab", None)
+
+        def valid(tokens: list[int]) -> bool:  # a draft outside the vocabulary (seen once: -1) drafts nothing
+            return all(type(t) is int and t >= 0 and (vocab is None or t < vocab) for t in tokens)
+
+        if len(picks) != len(keys) or not valid(picks):
+            self.stop.invalid += 1
+            return {}
         drafts = {key: [pick] for key, pick in zip(keys, picks)}
         for _ in range(k - 1):
             step = []
@@ -363,7 +371,11 @@ class BatchDrafter:
                 held = self.held[key]
                 step.append((drafts[key][-1], len(held), key, True))
                 held.append(drafts[key][-1])
-            for key, pick in zip(keys, self.e._decode(step)):
+            more = self.e._decode(step)
+            if len(more) != len(keys) or not valid(more):
+                self.stop.invalid += 1
+                break
+            for key, pick in zip(keys, more):
                 drafts[key].append(pick)
         self.stop.calls += k
         self.step_seconds = time.perf_counter() - started

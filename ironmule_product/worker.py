@@ -842,7 +842,9 @@ class _BatchStream:
             self.sent += 1
             if last and self.terminal is not None:
                 finish = "stop" if token in self.eos else "length"
-                _emit(self.terminal(finish, self.sent, len(self.tokens)))
+                # SV1: through the token writer, after this member's last token (one queue: order kept); the engine
+                # thread no longer waits for the writer to drain once per finishing member
+                _emit_soon(self.terminal(finish, self.sent, len(self.tokens)))
                 self.finished = finish
         except BaseException as exc:  # noqa: BLE001 - raised by finish()
             self.error = exc
@@ -966,14 +968,26 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
 
         stop_ids = _stop_ids(engine_bridge, tokenizer)
 
+        engine_cache: dict[str, Any] = {}
+
+        def engine_section(computed: int) -> dict[str, Any]:
+            """The done frame's engine metadata. SV1 (2026-11-23): computed once per engine step, so the members
+            that end in one step (32 at the end of a 32-request wave) share one summary instead of 32 (measured on
+            an A100: the last request ended about 75 ms after the engine's last call)."""
+            step = getattr(getattr(engine_bridge, "_engine", None), "steps", None)
+            base = engine_cache.get("value") if step is not None and engine_cache.get("step") == step else None
+            if base is None:
+                base = {**engine_bridge.metadata(), **getattr(engine_bridge, "counters", dict)(), "delivery": "streamed"}
+                engine_cache.update(step=step, value=base)
+            return {**base, "computed_tokens": computed}
+
         def terminal_for(row: tuple[str, list[int], int]) -> Any:
             """H9: the member's done, sent with its last token instead of after the whole run."""
             def build(finish: str, completion: int, computed: int) -> dict[str, Any]:
                 frame = {"type": "done", "batch_id": batch_id, "request_id": row[0], "finish_reason": finish,
                          "prompt_tokens": len(row[1]), "completion_tokens": completion,
                          "variant": command["variant"], "metrics": {},
-                         "engine": {**engine_bridge.metadata(), **getattr(engine_bridge, "counters", dict)(),
-                                    "delivery": "streamed", "computed_tokens": computed}}
+                         "engine": engine_section(computed)}
                 if command.get("trace_prompt_identity") is True:
                     frame["prompt_ids_sha256"] = hashlib.sha256(json.dumps(row[1], sort_keys=True,
                         separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
