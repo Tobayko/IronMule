@@ -3364,3 +3364,35 @@ the `std::regex` path, which compiled the pattern again for every fragment (five
   after the last decode call, against 33-166 ms on the A100 pods. Locally a step takes about 200 ms; on the pods 31 ms,
   with 32 token frames per step. That the pod tail depends on the pod (33-40 ms on pod 19, 153-166 ms on pod 21) fits
   HC1 (the CPU threadpool spinning on every core while the server's Python threads stream), not yet shown.
+
+### 2026-11-23, A100 pod 22: TK1 and EM1 on the GPU, and vLLM on the same pod
+Maintainer session. RunPod A100 SXM4 80 GB (community cloud, 1.39 USD/h, 256 visible cores), Qwen3-32B Q4_K_M, build
+with every patch including TK1 and EM1.
+- EM1, engine A/B (`lab/em1/em1_probe.py`, waves of 8 and 32 benchmark prompts, 32-token answers): the answers with the
+  embedding on the GPU equal those with it on the CPU (6/6 waves, 120/120 answers). Decode steps unchanged (32 rows
+  32.46 against 32.44 ms, 8 rows 22.37 against 22.43); the 32-prompt prefill 10-15 ms shorter (2,575 / 2,418 against
+  2,589 / 2,432 ms). The server's quality gate with EM1 then failed: its KV-setting tuning ran out of GPU memory
+  (exit -6), since the table and the step's input rows now live on the GPU. EM1 is opt-in (`IRONMULE_GGML_EM1=1`).
+- HC1 refuted on this pod: rendering the 32 benchmark prompts took 12.9 ms with the engine idle and 12.9 ms while it
+  decoded (28 threads, busy-wait 50), with EM1 on or off; decode steps unchanged by the rendering. With TK1 the serial
+  rendering took 12.9 ms here (103 ms on pod 21).
+- Same pod, three repeats, IronMule `serve --agent on` (TK1, EM1 off) against vLLM 0.11.0 AWQ-Marlin:
+
+| Clients | IronMule (TK1) | vLLM AWQ | difference of the means |
+| ---: | ---: | ---: | ---: |
+| 1 | 55.4 / 95.1 / 98.2 | 51.5 / 51.8 / 51.9 | +60 % (the first repeat is the cold one) |
+| 8 | 161.5 / 163.3 / 165.7 | 190.4 / 186.5 / 189.5 | -13.4 % |
+| 32 | 275.6 / 273.0 / 271.4 | 274.0 / 278.8 / 276.2 | -1.1 % |
+
+  Facts 18/18 in every run except IronMule's third 32-client repeat (17/18).
+- Wave anatomy from the engine trace, 32 clients: where the burst reached the worker as one group, 50 ms passed from
+  the batch command to the packed prefill (106 ms on pod 21: the rendering is gone). In one wave the first request
+  arrived alone and the engine started it at once: a 441-row prefill of 217 ms before the other 31 (7,167 rows,
+  2.37 s), 240 ms from command to the big prefill. Prefill 2.37-2.50 s; 31 decode steps of 30.1-30.2 ms, the first two
+  after a prefill 35 and 42-44 ms (a new CUDA graph).
+- What this means for the +10 % goal at 32 clients: vLLM's wave takes about 3.71 s at 276 tok/s; +10 % needs about
+  3.37 s. IronMule's GPU work alone is about 2.45 s of prefill plus 31 x 30.2 ms of decoding, 3.39 s, before any server
+  time. The server's own time per wave is now small; the decode step (30.2 against about 23 ms in vLLM) is what
+  remains, and within it the 4-bit matmuls at 32 rows (about 21 ms at 0.94 TB/s, against 1.37 TB/s at one row).
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod22-tk1.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod22.jsonl).
+Pod time 0.87 h, about 1.20 USD; balance after pod 22: 3.17 USD.

@@ -27,7 +27,7 @@
 
 Stop renting a cloud to serve your own model. IronMule is a self-hosted LLM server with its own CUDA kernels on NVIDIA GPUs and its own scheduler on every machine it runs on. It answers through an OpenAI-compatible chat API with streaming and concurrent requests.
 
-On one A100 it serves Qwen3-32B from a Q4_K_M GGUF level with to 3% behind vLLM's AWQ-Marlin at 32 concurrent users (four same-machine comparisons), and ahead of it for a single chat. At eight clients vLLM still leads clearly, as the table shows. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
+On one A100 it serves Qwen3-32B from a Q4_K_M GGUF level with to 3% behind vLLM's AWQ-Marlin at 32 concurrent users (five same-machine comparisons), and ahead of it for a single chat. At eight clients vLLM still leads clearly, as the table shows. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
 
 | Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, three repeats) | vLLM 0.11.0, AWQ-Marlin (three repeats) |
 | ---: | ---: | ---: |
