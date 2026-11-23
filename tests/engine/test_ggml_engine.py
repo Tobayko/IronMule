@@ -1302,3 +1302,38 @@ def test_receipted_long_group_cannot_jump_a_preceding_short_prompt():
     stock, grouped = schedule(False), schedule(True)
     assert [2, 3] in grouped
     assert [seq for call in stock for seq in call] == [seq for call in grouped for seq in call]
+
+
+def test_gb1_after_a_burst_a_lone_arrival_waits_for_the_rest_of_the_next_one(monkeypatch):
+    import time
+
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "GATHER_S", 0.02)
+    monkeypatch.setattr(ge, "GATHER_QUIET_S", 0.004)
+    monkeypatch.setattr(ge, "GATHER_BURST_S", 0.3)
+    monkeypatch.setattr(ge, "GATHER_BURST_QUIET_S", 0.06)
+
+    def first_call_seqs(recent_burst: bool) -> set[int]:
+        engine, fed, _ = _stub_engine()
+        engine.pack, engine.settings, engine.batch_cap = True, {"kv_unified": False}, 256
+        if recent_burst:
+            engine._burst_at = time.monotonic()
+        started = time.monotonic()
+        late = [Job([5, 6, 7], 2)]
+
+        def admit(room):  # the burst's second request reaches the server 15 ms after the first
+            return [late.pop()] if late and time.monotonic() - started > 0.015 else []
+
+        engine.run([Job([1, 2, 3], 2)], admit=admit)
+        if recent_burst:  # a group of two renews the memory; a lone request that waited in vain clears it
+            assert engine._burst_at > started
+            alone, _, _ = _stub_engine()
+            alone.pack, alone.settings, alone.batch_cap, alone._burst_at = True, {"kv_unified": False}, 256, time.monotonic()
+            alone.run([Job([1, 2, 3], 2)], admit=lambda room: [])
+            assert alone._burst_at == float("-inf")
+        return {s for _, _, s in fed[0]}
+
+    assert len(first_call_seqs(False)) == 1  # 4 ms without an arrival: the lone request starts at once
+    assert len(first_call_seqs(True)) == 2  # after a burst it waits with the burst's window and both start together

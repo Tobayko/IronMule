@@ -115,6 +115,11 @@ GATHER_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_QUIET_MS", 4)) / 100
 # burst's wall time). A single request still starts after the short gap.
 GATHER_BURST_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MS", 150)) / 1000
 GATHER_BURST_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_QUIET_MS", 25)) / 1000
+# GB1 (2026-11-23): after a burst, the next lone arrival is likely the first of another one. A100 pods 20 and 22: a
+# 32-client burst that reached the server over about 50 ms started its first request alone after the 4 ms gap (a 441-row
+# prefill of 217 ms) and the other 31 behind it, 2 of 3 waves on pod 22. For GATHER_BURST_MEMORY_S after a group of
+# several prompts, a lone arrival waits with the burst's window, once: if no other arrives, the memory is cleared.
+GATHER_BURST_MEMORY_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MEMORY_S", 30))
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default
@@ -578,6 +583,7 @@ class GgmlEngine:
     collective: Any = None
     drafter: Any = None
     draft_refused: str | None = None
+    _burst_at = float("-inf")  # GB1: when the engine last gathered several prompts at once
     _em1: Any = None  # EM1: the override array the model was loaded with (None: llama.cpp's own placement)
 
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
@@ -1385,7 +1391,8 @@ class GgmlEngine:
                         # PK1: gather the rest of a burst before the first packed prefill
                         started_wait = last = time.monotonic()
                         limit, quiet = GATHER_S, GATHER_QUIET_S
-                        if len(pending) > 1:  # PK1-B: the window opened on a burst
+                        # PK1-B: the window opened on a burst; GB1: or a burst ended recently
+                        if len(pending) > 1 or started_wait - self._burst_at < GATHER_BURST_MEMORY_S:
                             limit, quiet = max(limit, GATHER_BURST_S), max(quiet, GATHER_BURST_QUIET_S)
                         # SV2 (2026-11-23): a burst that already fills every free sequence has nothing to wait for
                         while time.monotonic() - started_wait < limit and room() and len(pending) < self._slots():
@@ -1403,6 +1410,9 @@ class GgmlEngine:
                             else:
                                 time.sleep(0.0005)
                         trace_note(f"gathered {len(pending)}")
+                        # GB1: a group of several renews the memory; a lone arrival that waited in vain clears it, so
+                        # a single user pays the burst's gap once
+                        self._burst_at = time.monotonic() if len(pending) > 1 else float("-inf")
                 if scope is not None:
                     scope.update(len(active) + len(pending))
                 if self.pilot is not None and learning is None and decision["threads"] != self.threads:
