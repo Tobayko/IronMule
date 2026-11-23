@@ -3260,3 +3260,37 @@ prefill of the 32-client benchmark mix. `lab/i82` holds the patch, scripts and l
   (32 clients) and 0.81 -> 0.76 s (8 clients). On by default, `IRONMULE_PK5=0` off.
 Balance after this pod: 12.20 USD.
 [I82 logs](../lab/i82/a100-i82-ppl.log)
+
+### 2026-11-23, A100: speculative decoding with a batch draft model (SD1), and vLLM on the same pod with PK5
+Owner: option 2 (bigger work for +10 %), all doors open. One RunPod A100 SXM4 80 GB pod (pod 17), Qwen3-32B Q4_K_M.
+- Model of a 32-client wave (32-token answers): wall = prefill + 31 decode steps + idle. GPU work with PK5 about
+  2.35 s prefill + 31 x 28.4 ms; for +10 % over vLLM the wave has to fit in 3.49 s (pod 12 numbers).
+- Draft model acceptance, teacher-forced on the benchmark's prompts (k = 1, Qwen3-0.6B Q4_K_M for Qwen3-32B):
+  0.660-0.676 at 32 clients (two seeds), 0.629-0.684 at 8. Step costs (`lab/sd1/sd_probe.py`): 32 rows 30.3 ms,
+  64 rows 56.4 ms as two 32-row W4R calls (`IRONMULE_W4_SPLIT64`) or 81 ms on MMQ; 8 rows 20.7 ms, 16 rows 23.4 ms;
+  a draft-model step of 32 / 8 rows 7.0 / 4.6 ms. At 32 clients a draft costs more than it saves (the slowest of 32
+  requests still needs about 22 steps); at 8 clients it can pay once the draft step is cheap.
+- Found on the way: the W4R library's token mask is one per process, and a second engine (the draft model) measured
+  and overwrote it, turning W4R off for the served model (32-row step 55.7 instead of 30.3 ms). A draft engine now
+  leaves the mask alone (`kernel_mask=False`); DM1's GPU results before this fix were measured with that fault.
+- SD1 (`ironmule/draft_model.py` `BatchDrafter`, `IRONMULE_GGML_SD=k`, off by default): one draft per request for
+  all running requests in one draft call, two tokens read per request and step. Engine waves at 8 clients:
+  165.5 / 180.6 / 165.7 tok/s with SD1 (acceptance 0.64-0.70) against 176.6 / 184.3 / 178.6 without; with
+  multi-row CUDA graphs on, one SD1 run produced a draft token of -1 (not located). Not a gain yet.
+- Server trace on this pod: a 32-request burst reaches the server over 50 ms, the packed prefill then takes
+  2.30-2.35 s (PK5), the 31 decode steps about 1.0 s; the server-side wave ends 3.45-3.51 s after the first request.
+- Same pod, same client, prompts and seeds, three repeats, IronMule `serve --agent on` with PK5 against vLLM 0.11.0
+  AWQ-Marlin:
+
+| Clients | IronMule (PK5) | vLLM AWQ | difference |
+| ---: | ---: | ---: | ---: |
+| 1 | 51.3 / 95.0 / 100.0 | 51.3 / 52.7 / 51.8 | 0 to +93 % |
+| 8 | 165.7 / 167.4 / 169.8 | 190.2 / 197.3 / 194.6 | -13.6 % |
+| 32 | 293.8 / 291.6 / 291.1 | 295.5 / 291.3 / 290.9 | -0.1 % (292.2 against 292.6) |
+
+  Facts 18/18 in every run except one IronMule run at 32 clients (17/18; the result file keeps only text hashes, so
+  whether it is the known grader format miss is not checked). This pod ran both servers faster than pod 12 (vLLM
+  292 against 266 at 32 clients). IronMule is level with vLLM at 32 clients on the same machine, behind at 8, and
+  the +10 % goal is not reached.
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod17-pk5.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod17.jsonl).
+Balance after this pod: 10.32 USD.
