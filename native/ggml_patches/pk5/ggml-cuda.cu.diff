@@ -1,0 +1,56 @@
+1204a1205,1250
+> static inline __device__ void ironmule_scale_min_k4(int j, const uint8_t * q, uint8_t & d, uint8_t & m) {
+>     if (j < 4) {
+>         d = q[j] & 63; m = q[j + 4] & 63;
+>     } else {
+>         d = (q[j+4] & 0xF) | ((q[j-4] >> 6) << 4);
+>         m = (q[j+4] >>  4) | ((q[j-0] >> 6) << 4);
+>     }
+> }
+> 
+> // PK5 (IronMule): Q4_K -> fp16 for PK2 with the float arithmetic of llama.cpp's dequantize_block_q4_K (bit-identical),
+> // 8 contiguous values per thread (one 16-byte store) and 8 super-blocks per 256-thread block. IRONMULE_PK5=0 turns it off.
+> static __global__ void ironmule_dequant_q4_K_f16(const block_q4_K * __restrict__ x, half * __restrict__ y, const int64_t nb) {
+>     const int64_t i = (int64_t) blockIdx.x*8 + threadIdx.x/32;
+>     if (i >= nb) {
+>         return;
+>     }
+>     const int t = threadIdx.x % 32;
+>     const int j = t/4;            // sub-block 0..7
+>     const int o = (t%4)*8;        // offset inside the sub-block
+>     const int il = j/2;
+>     const float dall = __low2half(x[i].dm);
+>     const float dmin = __high2half(x[i].dm);
+>     uint8_t sc, m;
+>     ironmule_scale_min_k4(j, x[i].scales, sc, m);
+>     const float d = dall * sc;
+>     const float mn = dmin * m;
+>     const uint2 qv = *(const uint2 *) (x[i].qs + 32*il + o);
+>     const uint8_t * qb = (const uint8_t *) &qv;
+>     half h[8];
+> #pragma unroll
+>     for (int l = 0; l < 8; ++l) {
+>         const int q = (j & 1) ? (qb[l] >> 4) : (qb[l] & 0xF);
+>         h[l] = d * q - mn;
+>     }
+>     *(uint4 *) (y + i*QK_K + 32*j + o) = *(const uint4 *) h;
+> }
+> 
+> static bool ironmule_pk5_on() {
+>     static int on = -1;
+>     if (on < 0) {
+>         const char * v = std::getenv("IRONMULE_PK5");
+>         on = v ? std::atoi(v) : 1;
+>     }
+>     return on != 0;
+> }
+> 
+1299c1345,1350
+<             to_fp16_cuda(src0_dd_i, src0_as_f16.get(), ne, stream);
+---
+>             if (src0->type == GGML_TYPE_Q4_K && ironmule_pk2_min_rows() > 0 && ironmule_pk5_on()) {  // PK5
+>                 const int64_t nb = ne / QK_K;
+>                 ironmule_dequant_q4_K_f16<<<(nb + 7)/8, 256, 0, stream>>>((const block_q4_K *) src0_dd_i, src0_as_f16.get(), nb);
+>             } else {
+>                 to_fp16_cuda(src0_dd_i, src0_as_f16.get(), ne, stream);
+>             }

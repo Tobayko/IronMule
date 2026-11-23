@@ -3241,3 +3241,22 @@ What follows: the prefill GEMMs already run at about 80 % of the fp16 peak and t
 its kernels, so the remaining levers are small: dequantisation once per pass (0.22 s), the server's prefill and decode
 host time, and the gather window. Pod time about 0.75 h; balance 13.56 USD after these two pods.
 [I81 measurements](../lab/i81/a100-i8-ppl.log)
+
+### 2026-11-23, A100: I82 (smoothed int8 prompt matmuls, rejected) and PK5 (kept)
+Owner: keep going until +10 % over vLLM. One more RunPod A100 SXM4 80 GB pod (about 1.4 USD), Qwen3-32B Q4_K_M,
+engine-level, perplexity on the gate's 16 chunks against llama.cpp's MMQ path (bound: upper 95 % end below 1.005),
+prefill of the 32-client benchmark mix. `lab/i82` holds the patch, scripts and logs.
+- Locating the int8 error (operands rounded to int8 levels, fp16 multiply): weights per row alone 1.052
+  [0.997, 1.165], activations per token alone 1.079 [1.030, 1.131]; both add error.
+- Per-channel smoothing (s = sqrt(max|x|) / sqrt(max|w|), activation maxima recorded on README + RUNTIME text): a first
+  run gave 0.939 [0.893, 0.989], better than the reference, which did not reproduce: with the calibration inside the
+  engine, as a server would run it, smoothed int8 gave 1.086 [1.037, 1.131] (unsmoothed 1.090). Rejected; the 0.939
+  is recorded as not reproduced and was not acted on.
+- int8 straight from the Q4_K blocks (no fp16 copy): prefill 1.97 s against 2.33 s, but 1.155 with one chunk at
+  3.34 against 2.16 nats; not investigated further once the int8 path as a whole had failed.
+- PK5 (`native/ggml_patches/pk5`, after pk4): the Q4_K -> fp16 dequantisation of PK2's prompt matmuls with eight
+  contiguous values and one 16-byte store per thread, the same float arithmetic as llama.cpp's kernel. Per-chunk
+  perplexity identical with and without (bit-identical output); prefill of the benchmark mix 2.425 -> 2.345 s
+  (32 clients) and 0.81 -> 0.76 s (8 clients). On by default, `IRONMULE_PK5=0` off.
+Balance after this pod: 12.20 USD.
+[I82 logs](../lab/i82/a100-i82-ppl.log)

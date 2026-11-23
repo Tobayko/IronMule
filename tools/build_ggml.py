@@ -28,9 +28,8 @@ variables the engine reads. Nothing is installed system-wide.
         (IRONMULE_FU1=0 off).
   pk4   CUDA builds only: FU1 and SWIGLU write the fp16 copy a following cuBLAS prompt matmul needs into PK3's
         slot, so no conversion kernel runs (IRONMULE_PK4=0 off).
-  i82   CUDA builds only: PK5, Q4_K -> fp16 for PK2 with 16-byte stores, bit-identical (IRONMULE_PK5=0 off); and
-        IRONMULE_I8 (off by default, output-changing): PK2's prompt matmuls on the int8 tensor cores, 6 = after
-        per-channel smoothing from the engine's calibration, 2 = without; 1, 3, 4, 7 round operands only (diagnostics).
+  pk5   CUDA builds only: Q4_K -> fp16 for PK2's prompt matmuls with 16-byte stores, bit-identical to llama.cpp's
+        dequantization (IRONMULE_PK5=0 off).
   pk2   CUDA builds only: from IRONMULE_CUBLAS_MIN_ROWS prompt rows on, quantized matmuls go through dequantization
         and cuBLAS with fp32 accumulation instead of llama.cpp's MMQ kernels; unset keeps llama.cpp's choice.
 
@@ -73,7 +72,7 @@ PATCH_SETS = {
     "gr3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk3
     "fu1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr3
     "pk4": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after fu1
-    "i82": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk4
+    "pk5": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk4
 }
 
 
@@ -185,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "i82"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

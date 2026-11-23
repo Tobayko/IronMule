@@ -110,12 +110,6 @@ GATHER_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_QUIET_MS", 4)) / 100
 GATHER_BURST_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MS", 150)) / 1000
 GATHER_BURST_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_QUIET_MS", 25)) / 1000
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
-# I82 (2026-11-23, experiment, output-changing): IRONMULE_I8 makes the CUDA library's PK2 prompt matmuls int8 (see
-# native/ggml_patches/i82). 6 = int8 after per-channel smoothing, whose activation maxima the engine records at its start
-# on I8_CALIBRATION (not the gate's text); the gate checks the result like any other setting. Unset or 0: fp16.
-I8 = os.environ.get("IRONMULE_I8", "0")
-I8_SMOOTH = I8 in ("6", "7")
-I8_CALIBRATION = Path(__file__).with_name("i8_calibration.txt")
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default
 TRACE = os.environ.get("IRONMULE_GGML_TRACE", "")
@@ -175,21 +169,6 @@ def pk2_set_min_rows(rows: int) -> int | None:
         return None
     fn.argtypes, fn.restype = [ctypes.c_long], ctypes.c_long
     return int(fn(int(rows)))
-
-
-def i8_set_mode(mode: int) -> int | None:
-    """I82: the CUDA library's int8 prompt-matmul mode (5 records calibration maxima); the previous mode, or None
-    where the loaded library lacks the I82 patch."""
-    import ctypes
-
-    try:
-        L = bindings()
-        folder = Path(L.llama_cpp._lib._name).parent if hasattr(L, "llama_cpp") else Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
-        fn = ctypes.CDLL(str(next(folder.glob("libggml-cuda.so*")))).ironmule_i8_set_mode
-    except Exception:  # noqa: BLE001 - no CUDA library or a build without I82
-        return None
-    fn.argtypes, fn.restype = [ctypes.c_int], ctypes.c_int
-    return int(fn(int(mode)))
 
 
 def gpu_offload(L: Any | None = None) -> bool:
@@ -569,7 +548,6 @@ class GgmlEngine:
         self.steps = 0
         self._warm_up()
         self._argmax_only = self._check_argmax() if self.gpu_layers else None
-        self.i8 = self._calibrate_i8() if self.gpu_layers and I8_SMOOTH else None
         self.context_build_s = time.perf_counter() - context_started
         self.kg: dict[str, Any] = {}
         if KG_LIB and os.environ.get("IRONMULE_KG4_SCOPE") == "low-width8":
@@ -1639,28 +1617,6 @@ class GgmlEngine:
         return served
 
     # --- the quality gate ---------------------------------------------------------------------------------------------
-    def _calibrate_i8(self, chunks: int = 8, size: int = 512) -> dict[str, Any] | None:
-        """I82: record each weight's per-channel activation maxima on the calibration text (int8 mode 5, every chunk
-        through the cuBLAS path), then return to the configured mode, which smooths with them."""
-        if size + 1 > self.seq_ctx:
-            return None
-        previous_rows = pk2_set_min_rows(1)
-        if previous_rows is None:
-            return None
-        mode = i8_set_mode(5)
-        done = 0
-        try:
-            ids = self.tokenize(I8_CALIBRATION.read_text(encoding="utf-8"))
-            for start in range(0, len(ids) - size, size):
-                if done == chunks:
-                    break
-                self.chunk_nll(ids[start:start + size + 1], [])
-                done += 1
-        finally:
-            i8_set_mode(mode if mode is not None else 0)
-            pk2_set_min_rows(previous_rows)
-        return {"mode": mode, "chunks": done, "tokens": done * size}
-
     def chunk_nll(self, ids: list[int], lead: list[int]) -> float:
         """Mean next-token negative log-likelihood of `ids[1:]` after `lead + ids[:-1]`, in one multi-position decode
         (the verify path), as `numeric_choice.nll_per_chunk` scores a chunk."""
@@ -2314,8 +2270,6 @@ def gate_key(snapshot: str, gguf: str) -> str:
     shape_key = [file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, FACT_VERSION,
                                      ENGINE_VERSION, OPTION_BOUND, machine_key(), SEQS, SEQ_CTX, kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
                                      _kernel_digest()]
-    if I8 not in ("", "0"):  # I82: an int8 prompt path is gated anew, with its calibration text
-        shape_key.append(["i8", I8, os.environ.get("IRONMULE_I8_MAX_K"), file_sha256(str(I8_CALIBRATION))])
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1":
         shape_key.append("grouped-split-kv-prefill-v1")
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444":
