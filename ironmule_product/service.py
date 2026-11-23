@@ -803,9 +803,6 @@ class ProductService:
         first_seconds = (session.first_ns - session.submitted_ns) / 1e9 if session.first_ns is not None else None
         dispatch = session.dispatched_ns
         queue_seconds = (dispatch - session.submitted_ns) / 1e9 if dispatch is not None else None
-        self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
-                  error=session.error, tokens=session.tokens,
-                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed)
         with self._lock:
             if _is_foreground(session) and session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
                 self._live_samples.append({
@@ -821,6 +818,10 @@ class ProductService:
             self._sessions.pop(session.request.request_id, None)
             self._active.discard(session.request.request_id)
         self._pending.task_done()
+        # A consumer observing the terminal record can now see the retired request in the counters.
+        self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
+                  error=session.error, tokens=session.tokens,
+                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed)
 
     def _queued(self) -> tuple[int, list[tuple[int, GenerationRequest]]]:
         """Waiting requests and the oldest eight as (submitted_ns, request): metadata for RSI3-LIVE."""

@@ -99,11 +99,19 @@ def test_scheduler_retirement_records_only_successful_delivery():
     service = object.__new__(ProductService)
     service._lock, service._pending = threading.RLock(), queue.Queue()
     service._active, service._sessions, service._live_samples = set(), {}, deque(maxlen=32)
+    def check_terminal_record(event, **fields):
+        assert event == "end"
+        assert fields["id"] not in service._active and fields["id"] not in service._sessions
+        assert service._pending.unfinished_tasks == 0
+
+    service.note = check_terminal_record
     for outcome, count in [("ok", 3)] * 33 + [("cancelled", 2), ("failed", 1), ("ok", 0)]:
         item = _Session(SimpleNamespace(request_id="private"), None)
         item.submitted_ns, item.first_ns, item.end_ns = 0, 250_000_000, 2_000_000_000
         item.dispatched_ns, item.prompt_tokens = 100_000_000, 36
         item.outcome, item.tokens = outcome, count
+        service._active.add(item.request.request_id)
+        service._sessions[item.request.request_id] = item
         service._pending.put(item)
         service._retire(service._pending.get_nowait())
     samples = service.live_samples()
