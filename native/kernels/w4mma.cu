@@ -1610,7 +1610,12 @@ struct Scratch {
     float *part = nullptr;
     size_t xcap = 0, pcap = 0;
 };
-Scratch scratch[16];
+// SG1 (2026-11-23): one scratch per CUDA stream, never freed. Each llama.cpp context computes on its own stream and keeps
+// its own captured CUDA graph, which holds the scratch's address. With one scratch per device, a second engine in the
+// process (SD1's draft model) replayed a graph whose scratch the served model had since grown, i.e. freed and moved
+// (drafts accepted 2-4 % under multi-row graphs against 0.64-0.70 without them, A100 pod 20).
+std::map<cudaStream_t, Scratch> scratches;
+std::vector<void *> retired;  // grown-out buffers stay allocated: an earlier captured graph may still read them
 std::mutex lock_;
 std::map<std::tuple<int, long, long, int>, std::pair<int, int>> choice;  // (type, N, K, B) -> (variant, ksplit)
 std::map<std::pair<int, const void *>, uint8_t *> repacked;               // (device, weights) -> tile-order copy
@@ -1620,7 +1625,7 @@ std::string table_json = "{\"entries\": []}";
 
 int grow(void **p, size_t *cap, size_t need) {
     if (*cap >= need) return 0;
-    if (*p) cudaFree(*p);
+    if (*p) retired.push_back(*p);  // SG1: not freed
     *p = nullptr;
     *cap = 0;
     if (cudaMalloc(p, need) != cudaSuccess) return 1;
@@ -1671,37 +1676,48 @@ struct Prepared {
                buf == o.buf;
     }
 };
-Prepared prepared[16];
+std::map<cudaStream_t, Prepared> prepared;  // SG1: per stream, as the scratch it describes
 
 int run_repacked(const Variant &v, const uint8_t *wr, const float *x, float *y, long N, long K, long B, int ksplit,
                  int dev, cudaStream_t s) {
+    (void)dev;
+    Scratch *scp;
+    {
+        std::lock_guard<std::mutex> guard(lock_);
+        scp = &scratches[s];  // std::map: the element stays where it is when others are added
+    }
+    Scratch &sc = *scp;
     if (v.fp) {  // the kernel reads x itself
         if (ksplit > 1) {
             std::lock_guard<std::mutex> guard(lock_);
-            if (grow((void **)&scratch[dev].part, &scratch[dev].pcap, (size_t)ksplit * B * N * sizeof(float))) return 1;
+            if (grow((void **)&sc.part, &sc.pcap, (size_t)ksplit * B * N * sizeof(float))) return 1;
         }
-        return v.fn(wr, nullptr, x, y, scratch[dev].part, (int)N, (int)K, (int)B, ksplit, s);
+        return v.fn(wr, nullptr, x, y, sc.part, (int)N, (int)K, (int)B, ksplit, s);
     }
     const int rows = v.nt * 8;
     const size_t xbytes = ((size_t)rows * K * sizeof(half) + 255) / 256 * 256;
     {
         std::lock_guard<std::mutex> guard(lock_);
-        Scratch &sc = scratch[dev];
         if (grow((void **)&sc.x, &sc.xcap, xbytes + (size_t)K / 16 * rows * sizeof(float) * 3 / 2)) return 1;
         if (ksplit > 1 && grow((void **)&sc.part, &sc.pcap, (size_t)ksplit * B * N * sizeof(float))) return 1;
     }
-    half *xh = reinterpret_cast<half *>(scratch[dev].x);
-    float *xs = reinterpret_cast<float *>(scratch[dev].x + xbytes);
+    half *xh = reinterpret_cast<half *>(sc.x);
+    float *xs = reinterpret_cast<float *>(sc.x + xbytes);
     // PK3: q, k and v (gate and up) read the same src1 node; within one graph its prepared copy is still in the scratch
     // when nothing else was prepared since. The key is llama.cpp's src1 node and graph epoch (ironmule_kg_src_node), x,
     // B, K and the row count, so another tensor at a reused address never matches.
-    const Prepared want{cur_node, cur_epoch, x, B, K, rows, s, scratch[dev].x};
-    if (cur_node == nullptr || !(want == prepared[dev])) {
+    const Prepared want{cur_node, cur_epoch, x, B, K, rows, s, sc.x};
+    Prepared *last;
+    {
+        std::lock_guard<std::mutex> guard(lock_);
+        last = &prepared[s];
+    }
+    if (cur_node == nullptr || !(want == *last)) {
         const int warps = rows * (int)(K / 32);
         prep_x<<<(warps + 7) / 8, 256, 0, s>>>(x, xh, xs, (int)B, (int)K, rows);
-        prepared[dev] = want;
+        *last = want;
     }
-    return v.fn(wr, xh, xs, y, scratch[dev].part, (int)N, (int)K, (int)B, ksplit, s);
+    return v.fn(wr, xh, xs, y, sc.part, (int)N, (int)K, (int)B, ksplit, s);
 }
 
 }  // namespace
@@ -1833,8 +1849,11 @@ int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64
             } else {
                 const size_t rows = (size_t)v.nt * 8;
                 const size_t xbytes = (rows * K * sizeof(half) + 255) / 256 * 256 + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;
-                if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || (!v.fp && scratch[dev].xcap < xbytes) ||
-                    (pick.second > 1 && scratch[dev].pcap < (size_t)pick.second * B * N * sizeof(float)))
+                auto sit = scratches.find(s);  // SG1: this stream's scratch, prepared by an earlier uncaptured call
+                const size_t xcap = sit == scratches.end() ? 0 : sit->second.xcap;
+                const size_t pcap = sit == scratches.end() ? 0 : sit->second.pcap;
+                if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || (!v.fp && xcap < xbytes) ||
+                    (pick.second > 1 && pcap < (size_t)pick.second * B * N * sizeof(float)))
                     return 1;
             }
         }
