@@ -513,7 +513,8 @@ class GgmlEngine:
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
                  kv_unified: bool = False, kv_f32: bool = False, kv_q8: bool = False, model: Any = None,
-                 shared: bool = False, cap: int | None = None, draft_gguf: str | None = None):
+                 shared: bool = False, cap: int | None = None, draft_gguf: str | None = None,
+                 kernel_mask: bool = True):
         import numpy as np
 
         L = bindings()
@@ -558,7 +559,9 @@ class GgmlEngine:
             except BaseException:
                 self.close()
                 raise
-        elif KG_LIB and self.gpu_layers:
+        elif KG_LIB and self.gpu_layers and kernel_mask:
+            # SD1 (2026-11-23): the library's token-count mask is one per process; a second engine in the same process
+            # (a draft model, kernel_mask=False) must not measure and overwrite the served model's mask
             self.kg = self.measure_kg(KG_LIB)
         self.pk2: dict[str, Any] = self.measure_pk2() if PK2_AUTO and getattr(self, "pack", False) else {}
         self.pad_to: dict[int, int] = {}
@@ -808,7 +811,7 @@ class GgmlEngine:
         from .draft_model import Drafter
 
         engine = GgmlEngine(gguf, threads=threads, seqs=DRAFT_SLOTS, seq_ctx=self.seq_ctx, speculate=False,
-                            flash_attn=True)
+                            flash_attn=True, kernel_mask=False)
         if engine.n_vocab != self.n_vocab or engine.tokenize(CHECK_TEXT) != self.tokenize(CHECK_TEXT):
             engine.close()
             self.draft_refused = "the draft GGUF's tokenizer is not the model's"
