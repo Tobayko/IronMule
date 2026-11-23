@@ -38,6 +38,8 @@ export MODEL="$PWD/smollm2-135m.gguf"
 
 These measurements compare finite local fixtures, under queue depths zero and one. The workload planner caps fixtures at 4,096 prompt characters and 128 output tokens. Read throughput and long-context tails from a separate serving benchmark with representative concurrent traffic. A deployment with more work waiting still serves through the reference and the per-worker Pilot.
 
+A real workload transition was also exercised on two separately qualified configurations of the same CPU. The first campaign kept the reference when output lengths differed. After 32 short requests the policy retrained, passed both comparison rounds and routed a subsequent foreground request to the three-thread worker. The two holdout completion-time ratios were 0.550 and 0.530. That result applies to these short CPU fixtures. [Measurements and reproduction](../docs/LAB.md#2026-11-23-hardware-placement-on-a-linux-cpu)
+
 ## Training time
 
 A complete local CPU run with SmolLM2-135M took **79 seconds** with a cached quality gate, including **75 seconds** of idle calibration. Replaying its trace through the C++ trainer and holdout took **0.54 ms**. [Measured trace](../lab/placement/results/smollm2-135m-cpu.json)
