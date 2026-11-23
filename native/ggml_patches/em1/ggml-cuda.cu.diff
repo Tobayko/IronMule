@@ -1,0 +1,6 @@
+1204a1205,1206
+> extern "C" GGML_BACKEND_API int ironmule_em1(void);  // EM1: this build takes Q4_K / Q6_K rows on the GPU
+> extern "C" GGML_BACKEND_API int ironmule_em1(void) { return 1; }
+3737a3740,3741
+>                     case GGML_TYPE_Q4_K:  // EM1 (IronMule): a token embedding kept on the GPU
+>                     case GGML_TYPE_Q6_K:

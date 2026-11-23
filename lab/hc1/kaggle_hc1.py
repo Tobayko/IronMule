@@ -7,7 +7,7 @@ def sh(cmd):
     subprocess.run(cmd, shell=True, check=True)
 sh(f"git clone -q https://github.com/Tobayko/IronMule.git {W}/IronMule && cd {W}/IronMule && git checkout -q {SHA} && git log --oneline -1")
 os.chdir(f"{W}/IronMule")
-sh("nvidia-smi -L; nproc; pip install -q jinja2 numpy 2>&1 | tail -1")
+sh("nvidia-smi -L; nproc; pip install -q jinja2 numpy \"mlx[cpu]>=0.32,<0.33\" 2>&1 | tail -1")
 # Reuse a CUDA build from an earlier kernel's output (attached as a kernel source) when one is there: the sm75 build
 # takes about 55 minutes on Kaggle's four cores.
 prior = subprocess.run("ls /kaggle/input/*/ggml-cuda75.tar 2>/dev/null | head -1", shell=True, capture_output=True, text=True).stdout.strip()

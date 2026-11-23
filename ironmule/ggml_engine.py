@@ -169,6 +169,60 @@ def am1_function(L: Any) -> Any:
     return fn
 
 
+# EM1 (2026-11-23): llama.cpp keeps a model's token embedding on the CPU ("very little benefit to offloading the input
+# layer"), so with every layer on the GPU a decode step still wakes the CPU threadpool for the rows of its tokens
+# (dequantized there and copied to the GPU), and the threads spin afterwards beside the server's Python threads. Builds
+# with the em1 patch take Q4_K / Q6_K rows on the GPU; the engine then places the embedding there and a step needs no
+# CPU work. IRONMULE_GGML_EM1=0 keeps llama.cpp's placement.
+EM1 = os.environ.get("IRONMULE_GGML_EM1", "1") != "0"
+EM1_TYPES = frozenset({"F32", "F16", "BF16", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q8_0", "Q4_K", "Q6_K"})
+
+
+def _gguf_tensor_type(gguf: str, name: str) -> str | None:
+    """The type name of one tensor in a GGUF (llama.cpp's own reader), or None."""
+    root = Path(os.environ.get("IRONMULE_GGML_BINDINGS", "")) / "vendor" / "llama.cpp" / "gguf-py"
+    if root.exists() and str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    import gguf as gguf_py
+
+    for tensor in gguf_py.GGUFReader(gguf).tensors:
+        if tensor.name == name:
+            return tensor.tensor_type.name
+    return None
+
+
+def em1_overrides(L: Any, gguf: str) -> Any:
+    """EM1: a NULL-terminated `llama_model_tensor_buft_override` array that puts `token_embd.weight` in the CUDA
+    device's buffer, or None (switched off, no em1 patch in the build, not exactly one CUDA device, or an embedding
+    type whose rows the build cannot take on the GPU)."""
+    import ctypes
+
+    if not EM1:
+        return None
+    try:
+        folder = Path(L.llama_cpp._lib._name).parent if hasattr(L, "llama_cpp") else Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+        cuda = ctypes.CDLL(str(next(folder.glob("libggml-cuda.so*"))))
+        cuda.ironmule_em1.restype = ctypes.c_int
+        if cuda.ironmule_em1() != 1 or not cuda_kernel_device(L):
+            return None
+        if _gguf_tensor_type(gguf, "token_embd.weight") not in EM1_TYPES:
+            return None
+        cuda.ggml_backend_cuda_buffer_type.argtypes, cuda.ggml_backend_cuda_buffer_type.restype = [ctypes.c_int], ctypes.c_void_p
+        buft = cuda.ggml_backend_cuda_buffer_type(0)
+    except Exception:  # noqa: BLE001 - no CUDA library, a build without EM1, an unreadable header: llama.cpp's placement
+        return None
+    if not buft:
+        return None
+
+    class Override(ctypes.Structure):
+        _fields_ = [("pattern", ctypes.c_char_p), ("buft", ctypes.c_void_p)]
+
+    overrides = (Override * 2)()
+    overrides[0].pattern, overrides[0].buft = b"^token_embd\\.weight$", buft
+    overrides[1].pattern, overrides[1].buft = None, None
+    return overrides
+
+
 def pk2_set_min_rows(rows: int) -> int | None:
     """PK2: route quantized matmuls with at least `rows` prompt rows through dequantization + cuBLAS (0 = llama.cpp's
     own kernels). Returns the previous threshold, or None where the loaded CUDA library lacks the PK2 patch."""
@@ -522,6 +576,7 @@ class GgmlEngine:
     collective: Any = None
     drafter: Any = None
     draft_refused: str | None = None
+    _em1: Any = None  # EM1: the override array the model was loaded with (None: llama.cpp's own placement)
 
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
@@ -547,6 +602,12 @@ class GgmlEngine:
             mparams.n_gpu_layers = self.gpu_layers
             if self.gpu_layers:
                 mparams.split_mode = SPLIT_MODES.get(SPLIT, 1)
+            # EM1: with every layer on the GPU, the token embedding too (kept referenced while llama.cpp loads)
+            self._em1 = em1_overrides(L, gguf) if self.gpu_layers >= 999 else None
+            if self._em1 is not None:
+                import ctypes
+
+                mparams.tensor_buft_overrides = ctypes.cast(self._em1, ctypes.c_void_p)
         self.model = model or L.llama_model_load_from_file(str(gguf).encode(), mparams)
         if not self.model:
             raise ValueError(f"llama.cpp could not load {gguf}")
