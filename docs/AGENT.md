@@ -1,5 +1,8 @@
 # The IronMule agent
 
+A GGUF server can learn request placement across its local CPU and GPU workers with `--placement auto`. Each worker keeps its own Pilot. A second C++17 model estimates completion time, plans one subsequent arrival, and is compared with the reference on paired hardware measurements while idle. [Setup, comparison and timing](../training/hardware-placement.md)
+
+
 The project's main goal (BACKLOG, "The main goal"): an agent that decides on its own how the model's requests
 run on the hardware, keeps learning by reinforcement learning while it serves, decides in microseconds, and
 serves a decision only after it proved a gain on the machine it runs on. Learning updates the Pilot, the scheduler

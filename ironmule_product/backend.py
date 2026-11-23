@@ -79,7 +79,7 @@ class MLXWorkerClient:
                  dense_width: int | None = None, cpu_blas: str | None = None,
                  cpu_threads: int | None = None, speculate: bool = False, ggml_gguf: str | None = None,
                  ggml_gate: dict[str, Any] | None = None, ggml_kernel_library: str | None = None,
-                 ggml_sequences: int | None = None) -> None:
+                 ggml_sequences: int | None = None, ggml_worker_env: dict[str, str] | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
@@ -96,6 +96,7 @@ class MLXWorkerClient:
             raise ValueError("the ggml engine serves only after its quality gate passed (GG1)")
         if ggml_sequences is not None and (type(ggml_sequences) is not int or ggml_sequences < 1):
             raise ValueError("ggml_sequences must be a positive integer")
+        self.ggml_worker_env = dict(ggml_worker_env or {})
         self.ggml_sequences = ggml_sequences
         self.ggml_kernel_library = ggml_kernel_library
         self.ggml_gguf, self.ggml_gate = ggml_gguf, ggml_gate
@@ -520,6 +521,7 @@ class MLXWorkerClient:
             })
             if self.cuda_device is not None:
                 environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device
+            environment.update(self.ggml_worker_env)
             if self.ggml_kernel_library is not None:
                 environment["IRONMULE_KG_LIB"] = self.ggml_kernel_library
             if self.ggml_sequences is not None:

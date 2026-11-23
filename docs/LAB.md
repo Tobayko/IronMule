@@ -3487,3 +3487,34 @@ measured on a GPU yet.
   pod 3 showed IronMule answering "200 - 2 = 198 ... **198**" instead of the number alone (a grader format miss, not a
   wrong fact; vLLM answers in the asked format). The pod 25 record kept only a hash of the answers, so this is an
   inference; `lab/pk1/http_bench.py` now records each missed case with its answer (`quality_misses`).
+
+### 2026-11-23, hardware placement on a Linux CPU
+
+SmolLM2-135M-Instruct Q4_K_M ran on an AMD EPYC 9V74, with affinity for five CPUs, a four-core cgroup quota,
+three configured GGML threads and four sequences. A foreground chat interrupted a live paired probe, answered
+“The capital of France is Paris.” and the campaign resumed. In a separate uninterrupted run the public
+`ironmule hardware calibrate` command finished its 40 real cases in 75.05 s after worker startup, 79.05 s
+wall time with a cached GGUF quality gate. The probes themselves accounted for 20.16 s. The single worker
+kept its only route in both holdouts (completion and first-token ratios 1.00). Replaying the completed trace
+fit the C++ model and evaluated the holdouts in 0.54 ms on this host. These measurements cover the controller,
+the real CPU engine, foreground preemption and resume. Multi-GPU serving and speed against vLLM need target
+hardware measurements. [Machine-bound trace](../lab/placement/results/smollm2-135m-cpu.json) · [Protocol and reproduction](../training/hardware-placement.md)
+
+A separate comparison pinned two qualified replicas to one and three threads on the **same CPU**. On the two
+held-out rounds the candidate's completion-time ratios were 0.553 and 0.595. One long-prompt fixture ended at
+26 versus 37 tokens in the first holdout and 37 versus 64 in the second. The prespecified equal-output-count
+gate rejected the candidate. A subsequent foreground request used the reference. The campaign took 100.05 s
+after worker startup. [Paired measurements](../lab/placement/results/smollm2-cpu-pair.json) · [Reproduction](../lab/placement/cpu_pair.py)
+
+A follow-up will exercise a real workload change. After the initial verdict, send 32 public foreground requests
+covering 96/1,024 characters and output limits of 4/8, using the same replicas, gate and five rounds. Record both
+holdouts and the route of a foreground request after the campaign. This post-hoc workload selection tests
+adaptation for shorter answers. The initial comparison retains its rejection.
+
+The 32 real requests changed the next idle campaign to 4/8 output tokens without a restart. In the subsequent
+two untouched eight-case rounds the policy changed six routes per round. Its summed completion-time ratios were
+0.550 and 0.530 against the shortest queue. First-token ratios were 0.514 and 0.483 and the output counts
+matched for every compared route. It qualified the immediate-cost model (lookahead weight zero). A subsequent
+eight-token foreground request selected the three-thread worker through the learned policy. The follow-up
+monitor reported 69.05 s to completion. The result covers these short fixtures and these two CPU configurations.
+[Follow-up trace and prior verdict](../lab/placement/results/smollm2-cpu-pair-short.json)

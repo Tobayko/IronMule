@@ -345,6 +345,7 @@ _COMMAND_GROUPS = (
     )),
     ("Serve", (
         ("serve", "Serve a registered local model through HTTP/SSE"),
+        ("hardware", "Calibrate, train or time the native CPU/GPU placement controller"),
         ("setup", "Initialize desktop/server product settings"),
     )),
     ("Measure and tune", (
@@ -761,6 +762,9 @@ def _dispatch(argv: list[str] | None) -> int:
     if command in ("start", "setup", "serve", "optimize", "dream"):
         from ironmule_product.cli import dispatch
         return dispatch(command, rest)
+    if command == "hardware":
+        from ironmule_product.placement_training import main as hardware_main
+        return hardware_main(rest) or 0
     if command == "autopilot":
         from ironmule.autopilot import main as autopilot_main
         return autopilot_main(rest)
