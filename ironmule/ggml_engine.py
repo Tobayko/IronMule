@@ -1038,7 +1038,18 @@ class GgmlEngine:
                 am(0)
             if status != 0:
                 raise RuntimeError("llama_decode failed")
-            return [int(self.L.llama_get_logits_ith(self.ctx, i)[0]) for i, row in enumerate(rows) if row[3]]
+            out = []
+            for i, row in enumerate(rows):
+                if not row[3]:
+                    continue
+                ptr = self.L.llama_get_logits_ith(self.ctx, i)
+                value = ptr[0]
+                if value != int(value) or not 0 <= value < self.n_vocab:
+                    # llama.cpp fell back to copying the whole row (AM1 could not run): its first element is a
+                    # logit, not an index, so the argmax is taken here
+                    value = self.np.ctypeslib.as_array(ptr, shape=(self.n_vocab,)).argmax()
+                out.append(int(value))
+            return out
         status = self.L.llama_decode(self.ctx, b)
         if status == 1 and evict and getattr(self, "pool", None) is not None:  # SP1: no free cells; drop the cached sequences
             with self._lock:
