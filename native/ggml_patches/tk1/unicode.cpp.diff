@@ -1,0 +1,20 @@
+502c502,508
+<     std::wregex expr(regex_expr);
+---
+>     // TK1 (IronMule): compile each pattern once per thread instead of once per text fragment (about 0.23 ms each)
+>     static thread_local std::map<std::wstring, std::wregex> tk1_cache;
+>     auto tk1 = tk1_cache.find(regex_expr);
+>     if (tk1 == tk1_cache.end()) {
+>         tk1 = tk1_cache.emplace(regex_expr, std::wregex(regex_expr)).first;
+>     }
+>     const std::wregex & expr = tk1->second;
+532c538,544
+<     std::regex expr(regex_expr);
+---
+>     // TK1 (IronMule): compile each pattern once per thread instead of once per text fragment (about 0.23 ms each)
+>     static thread_local std::map<std::string, std::regex> tk1_cache;
+>     auto tk1 = tk1_cache.find(regex_expr);
+>     if (tk1 == tk1_cache.end()) {
+>         tk1 = tk1_cache.emplace(regex_expr, std::regex(regex_expr)).first;
+>     }
+>     const std::regex & expr = tk1->second;

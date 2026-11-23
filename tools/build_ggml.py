@@ -19,6 +19,8 @@ variables the engine reads. Nothing is installed system-wide.
         Other shapes, types and devices use the library's own attention.
   am1   a decode can return only each output row's argmax (ironmule_set_argmax_only), computed where the logits are,
         instead of copying every row of logits to the host.
+  tk1   the tokenizer compiles each pre-tokenizer regex once per thread instead of once per text fragment (Qwen2's
+        pattern takes the std::regex path: about 0.23 ms per fragment); the same ids.
   gr2   CUDA builds only: CUDA graphs for decode steps of up to IRONMULE_CUDA_GRAPHS_ROWS rows (default 1, llama.cpp's).
   pk3   CUDA builds only: a graph epoch; within one graph the cuBLAS matmuls that read the same src1 node (q, k, v;
         gate, up) share one fp16 copy, and the KG library learns each src1 node (IRONMULE_PK3=0 turns sharing off).
@@ -67,6 +69,7 @@ PATCH_SETS = {
     "kg1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1, on the file gr1 left
     "pk2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after kg1, on the file kg1 left
     "am1": ([("src/llama-context.cpp", "llama-context.cpp.diff")], []),
+    "tk1": ([("src/unicode.cpp", "unicode.cpp.diff")], []),
     "gr2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk2
     "pk3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr2
     "gr3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk3
@@ -184,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

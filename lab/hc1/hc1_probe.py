@@ -24,8 +24,16 @@ for _ in range(5):
     t = time.perf_counter(); render_all(); idle.append(time.perf_counter() - t)
 ids = sorted(render_all(), key=len)
 e = GgmlEngine(gguf, seqs=32, seq_ctx=2048, flash_attn=True, speculate=False)
+
+
+def prefill():  # the prompts in calls of at most the engine's batch limit (one call on a GPU with PK1)
+    rows = [(ids[s][j], j, s, j == len(ids[s]) - 1) for s in range(32) for j in range(len(ids[s]))]
+    for i in range(0, len(rows), e.batch_cap):
+        e._decode(rows[i:i + e.batch_cap])
+
+
 e._clear()
-e._decode([(ids[s][j], j, s, j == len(ids[s]) - 1) for s in range(32) for j in range(len(ids[s]))])
+prefill()
 steps, busy, stop = [], [], threading.Event()
 
 
@@ -41,11 +49,11 @@ def decode():
             break
 
 
-for _ in range(5):  # decode alone
-    t = time.perf_counter(); e._decode([(8, len(ids[s]) + 300 + _, s, True) for s in range(32)]); steps.append(time.perf_counter() - t)
+for k in range(6):  # decode alone (positions continue each sequence's prompt)
+    t = time.perf_counter(); e._decode([(8, len(ids[s]) + k, s, True) for s in range(32)]); steps.append(time.perf_counter() - t)
 alone = st.median(steps[1:]); steps.clear()
 e._clear()
-e._decode([(ids[s][j], j, s, j == len(ids[s]) - 1) for s in range(32) for j in range(len(ids[s]))])
+prefill()
 th = threading.Thread(target=decode); th.start()
 time.sleep(0.5)
 while th.is_alive() and len(busy) < 20:

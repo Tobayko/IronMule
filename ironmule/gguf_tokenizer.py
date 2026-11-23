@@ -6,18 +6,32 @@ llama.cpp (`vocab_only`: no weights, no context), tokenizes and detokenizes with
 by construction), and renders the template with Jinja2 the way Hugging Face's `apply_chat_template` does (a sandboxed
 environment, `trim_blocks` and `lstrip_blocks`, `raise_exception` and `strftime_now`). It offers the part of the
 tokenizer interface the worker's ggml path uses: `apply_chat_template`, `encode`, `decode`, `eos_token_ids`,
-`bos_token_id` and a streaming `detokenizer`.
+`bos_token_id` and a streaming `detokenizer`. A group's prompts can be tokenized together (`tokenizer(texts)` and
+`apply_chat_template` over a list of conversations, as Hugging Face's interface takes them): llama.cpp's tokenizer
+releases the GIL, so a few threads tokenize them in parallel with the same ids.
 """
 
 from __future__ import annotations
 
 import ctypes
+import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
 GGUF_MODEL_PREFIX = "gguf/"
+_POOL: ThreadPoolExecutor | None = None
+
+
+def _pool() -> ThreadPoolExecutor:
+    """Threads for a group's tokenization (TK1, 2026-11-23: 32 benchmark prompts took 46 ms serially on four local
+    cores and 12.5 ms on four threads, identical ids)."""
+    global _POOL
+    if _POOL is None:
+        _POOL = ThreadPoolExecutor(max_workers=max(1, min(4, os.cpu_count() or 1)), thread_name_prefix="gguf-tok")
+    return _POOL
 
 
 class GgufDetokenizer:
@@ -114,6 +128,15 @@ class GgufTokenizer:
             raise ValueError("llama.cpp could not tokenize the text")
         return list(buf[:n])
 
+    def __call__(self, texts: str | Sequence[str], add_special_tokens: bool = False) -> dict[str, Any]:
+        """Hugging Face's batch interface: {"input_ids": ids of each text}, tokenized in parallel threads."""
+        if isinstance(texts, str):
+            return {"input_ids": self.encode(texts, add_special_tokens)}
+        texts = list(texts)
+        if len(texts) < 2:
+            return {"input_ids": [self.encode(text, add_special_tokens) for text in texts]}
+        return {"input_ids": list(_pool().map(lambda text: self.encode(text, add_special_tokens), texts))}
+
     def decode(self, ids: Sequence[int]) -> str:
         return b"".join(self.piece(int(t)) for t in ids).decode("utf-8", "replace")
 
@@ -128,6 +151,10 @@ class GgufTokenizer:
         if not self.chat_template:
             raise ValueError("this GGUF carries no chat template (tokenizer.chat_template); serve it with --model, "
                              "a registered model with the same tokenizer")
+        if messages and all(isinstance(conversation, (list, tuple)) for conversation in messages):
+            texts = [self.apply_chat_template(conversation, add_generation_prompt, tokenize=False, **extra)
+                     for conversation in messages]  # a batch of conversations, as Hugging Face takes them
+            return self(texts)["input_ids"] if tokenize else texts
         text = render(self.chat_template, messages, add_generation_prompt=add_generation_prompt,
                       bos_token=self.bos_token, eos_token=self.eos_token, **extra)
         return self.encode(text, add_special_tokens=False) if tokenize else text
