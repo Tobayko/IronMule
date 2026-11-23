@@ -30,3 +30,24 @@ def test_fa1_is_taken_only_where_it_is_exact_in_kind():
     text = (ROOT / "native" / "ggml_patches" / "fa1" / "fa1_kern.h").read_text()
     for guard in ("max_bias != 0.0f) return false", "sinks", "GGML_TYPE_F16", "FA1"):
         assert guard in text
+
+
+def test_auto_builds_the_visible_cuda_architectures_and_exports_paths(tmp_path, monkeypatch):
+    import shlex
+    from ironmule import kernel_gen
+
+    tool = load()
+    monkeypatch.setattr(kernel_gen, "nvcc_path", lambda: "/cuda/bin/nvcc")
+    monkeypatch.setattr(kernel_gen, "_visible_cuda_devices", lambda: [{"cc": "100"}, {"cc": "80"}, {"cc": "80"}])
+    source = tmp_path / "source with spaces"
+    monkeypatch.setattr(tool, "fetch", lambda dest: source)
+    monkeypatch.setattr(tool, "patch", lambda *_: [])
+    built = []
+    def build(tree, cuda, jobs, rocm):
+        built.append((cuda, rocm))
+        return tree / "build/bin"
+    monkeypatch.setattr(tool, "build", build)
+    exports = tmp_path / "ggml.env"
+    assert tool.main(["--auto", "--env-file", str(exports)]) == 0
+    assert built == [("80,100", None)]
+    assert shlex.split(exports.read_text().splitlines()[0]) == ["export", f"IRONMULE_GGML_BINDINGS={source}"]

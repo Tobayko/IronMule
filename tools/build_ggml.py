@@ -48,6 +48,7 @@ import argparse
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -92,7 +93,7 @@ def fetch(dest: Path) -> Path:
     if source.exists():
         return source
     dest.mkdir(parents=True, exist_ok=True)
-    run([sys.executable, "-m", "pip", "download", f"llama_cpp_python=={VERSION}", "--no-binary", ":all:", "--no-deps",
+    run([sys.executable, "-m", "pip", "download", f"llama_cpp_python=={VERSION}", "--no-binary", "llama-cpp-python", "--no-deps",
          "-d", str(dest), "-q"])
     with tarfile.open(dest / f"llama_cpp_python-{VERSION}.tar.gz") as archive:
         archive.extractall(dest, filter="data")
@@ -167,10 +168,25 @@ def main(argv: list[str] | None = None) -> int:
     backend = parser.add_mutually_exclusive_group()
     backend.add_argument("--rocm", nargs="?", const="auto", metavar="ARCHS",
                          help="build for detected AMD GPUs or specify targets, e.g. gfx1100 or gfx90a,gfx942")
-    backend.add_argument("--cuda", metavar="ARCHS", help="build with CUDA for these compute capabilities, e.g. 75,86")
+    backend.add_argument("--cuda", metavar="ARCHS", help="CUDA compute capabilities, e.g. 75,86")
+    backend.add_argument("--auto", action="store_true", help="detect the visible CUDA/ROCm toolchain or build for CPU")
+    parser.add_argument("--env-file", type=Path, help="write the two native library exports for a later shell")
     parser.add_argument("--no-patches", action="store_true", help="stock llama.cpp")
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args(argv)
+    if args.auto:
+        sys.path.insert(0, str(ROOT))
+        from ironmule.kernel_gen import _visible_cuda_devices, nvcc_path
+        archs = sorted({d["cc"] for d in _visible_cuda_devices()}, key=int) if nvcc_path() else []
+        if archs:
+            args.cuda = ",".join(archs)
+        elif shutil.which("hipcc") or (Path(os.environ.get("ROCM_PATH", "/opt/rocm")) / "bin/hipcc").is_file():
+            try:
+                args.rocm = rocm_targets()
+            except ValueError:
+                pass
+        print(f"Build target: CUDA {args.cuda}" if args.cuda else f"Build target: ROCm {args.rocm}"
+              if args.rocm else "Build target: CPU", flush=True)
     if args.rocm == "auto":
         try:
             args.rocm = rocm_targets()
@@ -190,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"export IRONMULE_GGML_BINDINGS={source}")
     print(f"export LLAMA_CPP_LIB_PATH={lib}")
     print(f"llama-server: {lib / 'llama-server'}")
+    if args.env_file:
+        args.env_file.write_text(f"export IRONMULE_GGML_BINDINGS={shlex.quote(str(source.resolve()))}\n"
+                                 f"export LLAMA_CPP_LIB_PATH={shlex.quote(str(lib.resolve()))}\n")
     return 0
 
 

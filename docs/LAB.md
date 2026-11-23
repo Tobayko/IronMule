@@ -3341,3 +3341,15 @@ falls back to one-by-one rendering on any doubt; why is not checked). The tail a
 behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached.
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod21-sv4.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod21.jsonl).
 Balance after pod 21: 4.39 USD.
+
+### 2026-11-23, hardware placement on a Linux CPU
+
+SmolLM2-135M-Instruct Q4_K_M ran on an AMD EPYC 9V74, with affinity for five CPUs, a four-core cgroup quota,
+three configured GGML threads and four sequences. A foreground chat interrupted a live paired probe, answered
+“The capital of France is Paris.” and the campaign resumed. In a separate uninterrupted run the public
+`ironmule hardware calibrate` command finished its 40 real cases in 75.05 s after worker startup, 79.05 s
+wall time with a cached GGUF quality gate. The probes themselves accounted for 20.16 s. The single worker
+kept its only route in both holdouts (completion and first-token ratios 1.00). Replaying the completed trace
+fit the C++ model and evaluated the holdouts in 0.54 ms on this host. These measurements cover the controller,
+the real CPU engine, foreground preemption and resume. Multi-GPU serving and speed against vLLM need target
+hardware measurements. [Machine-bound trace](../lab/placement/results/smollm2-135m-cpu.json) · [Protocol and reproduction](../training/hardware-placement.md)
