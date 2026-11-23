@@ -3330,3 +3330,14 @@ Owner: keep going on the server overhead. Pods 18-20 (RunPod A100 SXM4 80 GB), Q
 [pod 19](../lab/pk1/results/a100-ironmule-http-pod19-sv1.jsonl) / [vLLM](../lab/pk1/results/a100-vllm-awq-pod19.jsonl) ·
 [pod 20](../lab/pk1/results/a100-ironmule-http-pod20-sv3.jsonl) / [vLLM](../lab/pk1/results/a100-vllm-awq-pod20.jsonl).
 Balance after pod 20: 5.76 USD.
+
+### 2026-11-23, A100 pod 21: SV1-SV4 against vLLM on the same pod
+Same protocol as pods 19-20 (three repeats, 18/18 facts in every run of both servers): IronMule 157.7 / 159.2 / 163.1
+against vLLM 182.0 / 184.4 / 183.3 tok/s at 8 clients (-12.7 %), 268.9 / 263.3 / 269.7 against 275.1 / 273.2 / 270.7
+at 32 (-2.1 %), 53.8 / 91.5 / 97.7 against 51.5 / 52.1 / 51.8 at one client. The trace markers show SV4 did not
+engage: rendering the 32 prompts still took about 103 ms, so the worker's tokenizer did not take the batched path (it
+falls back to one-by-one rendering on any doubt; why is not checked). The tail after the last decode call was
+153-166 ms on this pod. Over the four same-pod comparisons with PK5 (pods 17, 19, 20, 21) IronMule is level to 3.3 %
+behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached.
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod21-sv4.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod21.jsonl).
+Balance after pod 21: 4.39 USD.

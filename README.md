@@ -5,7 +5,7 @@
   <a id="ironmule"></a>
   <h1>IronMule · Local LLM inference server</h1>
 
-  <p><strong>A 4-bit GGUF against vLLM's AWQ-Marlin on the same A100: dead level at 32 concurrent users, up to 93% ahead for a single chat. Your local inference server called. It wants its GPU back.</strong></p>
+  <p><strong>A 4-bit GGUF against vLLM's AWQ-Marlin on the same A100: neck and neck at 32 concurrent users, up to 93% ahead for a single chat. Your local inference server called. It wants its GPU back.</strong></p>
 
   <p>IronMule serves GGUF on NVIDIA CUDA GPUs and CPUs, and MLX models on Apple Silicon (Metal), with its own CUDA kernels and a learned scheduler.</p>
 
@@ -27,7 +27,7 @@
 
 Stop renting a cloud to serve your own model. IronMule is a self-hosted LLM server with its own CUDA kernels on NVIDIA GPUs and its own scheduler on every machine it runs on. It answers through an OpenAI-compatible chat API with streaming and concurrent requests.
 
-On one A100 it serves Qwen3-32B from a Q4_K_M GGUF level with vLLM's AWQ-Marlin at 32 concurrent users (292.2 against 292.6 tok/s), and ahead of it for a single chat, measured on the same machine. At eight clients vLLM still leads clearly, as the table shows. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
+On one A100 it serves Qwen3-32B from a Q4_K_M GGUF level with to 3% behind vLLM's AWQ-Marlin at 32 concurrent users (four same-machine comparisons), and ahead of it for a single chat. At eight clients vLLM still leads clearly, as the table shows. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
 
 | Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, three repeats) | vLLM 0.11.0, AWQ-Marlin (three repeats) |
 | ---: | ---: | ---: |
@@ -115,7 +115,7 @@ On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B thro
 
 - Both servers answered 18/18 factual check questions in every run except one IronMule run at 32 clients (17/18), and IronMule passed its own perplexity quality gate on this machine.
 - At one client IronMule is level to 93% ahead, depending on the prompt (it drafts from the context).
-- At 32 clients the two are level (292.2 against 292.6 tok/s on average); at 8 clients vLLM leads by about 14%.
+- At 32 clients the two are level on this pod (292.2 against 292.6 tok/s on average); on three later pods vLLM led by 2.1-3.3%. At 8 clients vLLM leads by 13-15%.
 - IronMule is not faster than vLLM in general. Next target: +10% over vLLM on the same machine.
 
 On an earlier pod, before PK5, IronMule was 5% behind at 32 clients (252.5 against 265.9); pods differ by several percent for both servers, so only same-pod comparisons count. [Same-pod measurements](docs/LAB.md#2026-11-23-a100-speculative-decoding-with-a-batch-draft-model-sd1-and-vllm-on-the-same-pod-with-pk5) · [Earlier pod](docs/LAB.md#2026-11-22-a100-pk4-served-and-vllm-on-the-same-pod) · [Earlier A100 runs](docs/LAB.md#2026-11-22-a100-gr3-served-fu1-32-row-cuda-graphs-through-the-gate----level-with-vllm-at-32-clients)
