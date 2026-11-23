@@ -110,6 +110,9 @@ GATHER_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_QUIET_MS", 4)) / 100
 GATHER_BURST_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MS", 150)) / 1000
 GATHER_BURST_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_QUIET_MS", 25)) / 1000
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
+# Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
+# rows, sequences, output rows); off by default
+TRACE = os.environ.get("IRONMULE_GGML_TRACE", "")
 # PK2 (2026-11-19): with packing on a CUDA build that has the PK2 patch, the engine measures at its start whether prompt
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
 # IRONMULE_CUBLAS_MIN_ROWS fixes the threshold instead (0 = never), IRONMULE_PK2=0 skips the measurement.
@@ -990,6 +993,16 @@ class GgmlEngine:
 
     # --- decode calls -------------------------------------------------------------------------------------------------
     def _decode(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
+        if TRACE:
+            started = time.monotonic()
+            out = self._decode_once(rows, evict=evict)
+            with open(TRACE, "a") as fh:
+                fh.write(f"{started:.6f} {time.monotonic() - started:.6f} {len(rows)} "
+                         f"{len({r[2] for r in rows})} {sum(1 for r in rows if r[3])}\n")
+            return out
+        return self._decode_once(rows, evict=evict)
+
+    def _decode_once(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         b = self._batch_for(len(rows))
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
