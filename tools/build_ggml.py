@@ -34,6 +34,8 @@ variables the engine reads. Nothing is installed system-wide.
         dequantization (IRONMULE_PK5=0 off).
   em1   CUDA builds only: get_rows takes Q4_K and Q6_K rows on the GPU (convert.cu's arithmetic), so the engine can keep
         a GGUF's token embedding on the GPU and a decode step needs no CPU work (opt-in: IRONMULE_GGML_EM1=1).
+  gr4   CUDA builds only: GR3's capture state per CUDA backend context instead of process-wide, so a second context
+        (SD1's draft model) cannot replay another graph's instance (IRONMULE_GR4=0 off).
   pk2   CUDA builds only: from IRONMULE_CUBLAS_MIN_ROWS prompt rows on, quantized matmuls go through dequantization
         and cuBLAS with fp32 accumulation instead of llama.cpp's MMQ kernels; unset keeps llama.cpp's choice.
 
@@ -80,6 +82,7 @@ PATCH_SETS = {
     "pk5": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk4
     "em1": ([("ggml/src/ggml-cuda/getrows.cu", "getrows.cu.diff"),
              ("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk5
+    "gr4": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after em1
 }
 
 
@@ -191,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

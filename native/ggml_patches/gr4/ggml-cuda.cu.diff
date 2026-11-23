@@ -1,0 +1,40 @@
+69a70
+> #include <unordered_map>
+2922c2923,2934
+< static bool ironmule_graph_changed = true;
+---
+> // GR4 (IronMule): GR3's state per CUDA backend context. As process-wide statics, a second llama.cpp context in the
+> // process (SD1's draft model) consumed or set the served model's "capture next time" and "changed" flags: a context
+> // then replayed a stored graph instance that belonged to another of its graphs (SD1 drafts accepted 3-5 % under
+> // multi-row graphs against about 0.6 without them, RTX 4090, 2026-11-23). IRONMULE_GR4=0 keeps the shared flags.
+> struct ironmule_gr3_state { bool changed = true; bool recapture = false; int pause = 0; };
+> static ironmule_gr3_state & ironmule_gr3_of(const void * ctx) {
+>     static const bool per_context = getenv("IRONMULE_GR4") == nullptr || atoi(getenv("IRONMULE_GR4")) != 0;
+>     static std::mutex mu;
+>     static std::unordered_map<const void *, ironmule_gr3_state> states;  // node-based: references stay valid
+>     std::lock_guard<std::mutex> lock(mu);
+>     return states[per_context ? ctx : nullptr];
+> }
+2927c2939,2940
+<     ironmule_graph_changed = false;
+---
+>     ironmule_gr3_state & ironmule_st = ironmule_gr3_of(cuda_ctx);
+>     ironmule_st.changed = false;
+2936c2949
+<         ironmule_graph_changed = true;
+---
+>         ironmule_st.changed = true;
+2949c2962
+<             ironmule_graph_changed = true;
+---
+>             ironmule_st.changed = true;
+3362c3375
+<     static int ironmule_gr3_pause = 0;
+---
+>     int & ironmule_gr3_pause = ironmule_gr3_of(cuda_ctx).pause;  // GR4
+3383,3384c3396,3397
+<         static bool ironmule_gr3_recapture = false;
+<         if (ironmule_gr3 && use_cuda_graph && cuda_graph_update_required && ironmule_graph_changed) {
+---
+>         bool & ironmule_gr3_recapture = ironmule_gr3_of(cuda_ctx).recapture;  // GR4
+>         if (ironmule_gr3 && use_cuda_graph && cuda_graph_update_required && ironmule_gr3_of(cuda_ctx).changed) {
