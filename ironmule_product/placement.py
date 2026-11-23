@@ -274,6 +274,7 @@ class Placement:
                 self.policy, self.misses, self.serial = None, 0, 0
                 reason = "withdrawn" if self.trace.get("withdrawn") else "workload_shift" if shifted else "expired"
                 self.trace = self._fresh(self.trace, reason)
+                self.status_text, self.problem = "recalibrating", None
             elif done:
                 return
             serial = self.serial

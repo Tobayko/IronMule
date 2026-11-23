@@ -3364,3 +3364,11 @@ A follow-up will exercise a real workload change. After the initial verdict, sen
 covering 96/1,024 characters and output limits of 4/8, using the same replicas, gate and five rounds. Record both
 holdouts and the route of a foreground request after the campaign. This post-hoc workload selection tests
 adaptation for shorter answers. The initial comparison retains its rejection.
+
+The 32 real requests changed the next idle campaign to 4/8 output tokens without a restart. In the subsequent
+two untouched eight-case rounds the policy changed six routes per round. Its summed completion-time ratios were
+0.550 and 0.530 against the shortest queue. First-token ratios were 0.514 and 0.483 and the output counts
+matched for every compared route. It qualified the immediate-cost model (lookahead weight zero). A subsequent
+eight-token foreground request selected the three-thread worker through the learned policy. The follow-up
+monitor reported 69.05 s to completion. The result covers these short fixtures and these two CPU configurations.
+[Follow-up trace and prior verdict](../lab/placement/results/smollm2-cpu-pair-short.json)
