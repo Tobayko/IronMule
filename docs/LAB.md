@@ -3341,3 +3341,26 @@ falls back to one-by-one rendering on any doubt; why is not checked). The tail a
 behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached.
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod21-sv4.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod21.jsonl).
 Balance after pod 21: 4.39 USD.
+
+### 2026-11-23, local (4-core cloud container, CPU build): why the 32 prompts took 100 ms to render (TK1)
+Maintainer change. The pod 21 trace left open why SV4 never engaged and why rendering the 32 benchmark prompts took
+about 103 ms before every 32-client prefill. Measured locally with Qwen3-0.6B Q4_K_M's own tokenizer (`GgufTokenizer`,
+the same Qwen2 vocabulary and template as Qwen3-32B): the chat template renders all 32 in 0.6 ms; llama.cpp's
+tokenizer takes 44.6 ms for their 7,632 tokens. A call costs about 0.23 ms per text fragment between special tokens
+plus about 0.8 us per token, because Qwen2's pre-tokenizer pattern has no hand-written splitter in llama.cpp and takes
+the `std::regex` path, which compiled the pattern again for every fragment (five fragments per chat prompt).
+- TK1 (`native/ggml_patches/tk1`, every build): each thread compiles a pattern once and keeps it. 32 prompts: 46 ->
+  6.2 ms serially. The ids equal Hugging Face's Qwen3 tokenizer on 370 texts (the benchmark prompts and chat-wrapped
+  ones, German, Japanese, Chinese, Korean, code, emoji, odd whitespace, written special tokens, 300 random Unicode
+  strings).
+- `GgufTokenizer` takes Hugging Face's batch interface (`tokenizer(texts)`, `apply_chat_template` over a list of
+  conversations), tokenizing in up to four threads (llama.cpp releases the GIL; 4 threads: 46 -> 12.5 ms without
+  TK1, 2.2 ms with it, the same ids). SV4's batch rendering in the worker now engages for GGUF serving and passed its
+  equality check: 3.4 ms for the 32 prompts, against 46 ms before.
+- Expected on the A100 pods: about 100 ms less per 32-client wave (about 2.5 % at 32 clients). Not yet measured there.
+- The HC1 probe on Kaggle (T4) failed before measuring (no `PYTHONPATH`; it also did not keep positions consecutive);
+  fixed and rerun, and its CUDA build is now kept as output so later Kaggle runs skip the 55-minute compile.
+- Wave tail, local server (CPU build, 0.6B, 32 clients, `lab/sv/tail_probe.py`): the last request ended 1.2-3.8 ms
+  after the last decode call, against 33-166 ms on the A100 pods. Locally a step takes about 200 ms; on the pods 31 ms,
+  with 32 token frames per step. That the pod tail depends on the pod (33-40 ms on pod 19, 153-166 ms on pod 21) fits
+  HC1 (the CPU threadpool spinning on every core while the server's Python threads stream), not yet shown.
