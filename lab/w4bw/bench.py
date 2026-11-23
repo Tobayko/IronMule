@@ -55,6 +55,8 @@ def main():
     p.add_argument("--source", type=Path, default=ROOT / "native/kernels/w4mma.cu")
     p.add_argument("--reps", type=int, default=20)
     p.add_argument("--only", default="", help="comma list of variant ids to measure (default: all)")
+    p.add_argument("--l2", action="store_true", help="one copy of the matrices that fit the L2 cache: the kernel's "
+                   "compute-side ceiling (what limits it where DRAM is fast, as on an A100 at 32 tokens)")
     a = p.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     arch = compute_capability()
@@ -71,11 +73,12 @@ def main():
     rng = np.random.default_rng(0)
     tokens = [int(t) for t in a.tokens.split(",")]
     best_all = []
-    for kind, K, N, count in SHAPES:
+    shapes = [s for s in SHAPES if not a.l2 or s[1] * s[2] // 256 * BLOCK[s[0]] < 30e6]
+    for kind, K, N, count in shapes:
         code = wk.TYPE_Q4_K if kind == "Q4_K" else wk.TYPE_Q6_K
         raw = random_blocks(kind, N, K, rng)
         wbytes = raw.nbytes
-        copies = max(2, min(8, int(2e9 // wbytes)))
+        copies = 1 if a.l2 else max(2, min(8, int(2e9 // wbytes)))
         ref_rows = min(N, 2048)
         wref = wk.dequant(raw[:ref_rows * (K // 256) * BLOCK[kind]], kind, ref_rows, K)
         x = rng.standard_normal((max(tokens), K)).astype(np.float32)
@@ -104,7 +107,7 @@ def main():
                 continue
             us, vid, ks, err, v = rows[0]
             gbs = wbytes / us / 1e3
-            rec = {"kind": kind, "K": K, "N": N, "B": B, "count": count, "us": round(us, 2), "gb_s": round(gbs, 1),
+            rec = {"l2": a.l2, "kind": kind, "K": K, "N": N, "B": B, "count": count, "us": round(us, 2), "gb_s": round(gbs, 1),
                    "pct_peak": round(100 * gbs / peak, 1), "variant": vid, "ksplit": ks, "rel_err": round(err, 6),
                    "cfg": {k: v[k] for k in ("warps", "ks", "nt")},
                    "next": [(round(r[0], 2), r[1], r[2]) for r in rows[1:4]]}
