@@ -3294,3 +3294,39 @@ Owner: option 2 (bigger work for +10 %), all doors open. One RunPod A100 SXM4 80
   the +10 % goal is not reached.
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod17-pk5.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod17.jsonl).
 Balance after this pod: 10.32 USD.
+
+### 2026-11-23, A100: the server's own time per wave (SV1-SV4), and two more same-pod comparisons
+Owner: keep going on the server overhead. Pods 18-20 (RunPod A100 SXM4 80 GB), Qwen3-32B Q4_K_M, PK5.
+- Wave anatomy from the engine trace and the service's stability log, 32 clients: the requests reach the server
+  over about 50 ms; the service forms the group; then **105-115 ms** pass before the prefill (pod 20 markers: the
+  worker rendered the 32 prompts one by one in about 105 ms, the engine's gather window 25 ms); prefill 2.30-2.62 s by
+  pod; 31 decode calls of about 31 ms with 1.06 ms between them; after the last decode call the last request ended
+  75-90 ms later (33-40 ms on pod 19). The client's wall time equals the server-side wave within a few ms.
+- A local model of the service's grouped streaming path (fake worker, 32 x 32 tokens, 31 ms steps,
+  `lab/sv/evbench.py`) delivers a token in 1.7 ms (median) and ends 3.3 ms after the last frame, so the tail is
+  outside that path; a lab thread profiler (yappi, `lab/sv/sitecustomize.py`) did not capture the serving threads.
+  A shorter GIL switch interval (0.5 ms) changed nothing (pod 18).
+- SV1 (`ironmule_product/worker.py`): a done frame carried a fresh engine summary and the gate record per member,
+  written after a drain of the token writer; now one summary per engine step, sent through the writer. SV2
+  (`ironmule/ggml_engine.py`): no gather wait once the burst fills every free sequence (pod 20: 0 ms instead of 25).
+  SV3: no context-draft lookups in steps that have no row for a draft (the gaps between decode calls stayed
+  1.06 ms, so this was not their cause). SV4: the group's prompts rendered with one chat-template call and one batched
+  tokenization, used only after the first batch was checked equal to the one-by-one rendering (locally 3.7 against
+  about 9 ms for 32 prompts). AM1: one argmax buffer per backend, and the engine recognises a fallback to full logits.
+- SD1 with multi-row CUDA graphs (pod 20, after the AM1 fix): no abort and no invalid draft any more, but acceptance
+  fell to 2-4 % (0.64-0.70 without graphs), so the draft model computes wrong tokens under those graphs; the answers
+  stayed the target's (8/8 identical per wave). Not located; SD1 stays off.
+- Same pod, three repeats, 18/18 facts in every run of both servers:
+
+| pod | IronMule 8 clients | vLLM 8 | IronMule 32 clients | vLLM 32 | at 32 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 19 (SV1) | 166.7 / 168.9 / 167.7 | 197.5 / 198.7 / 196.9 | 284.6 / 286.7 / 278.5 | 293.4 / 293.4 / 292.2 | -3.3 % |
+| 20 (SV1-SV3) | 160.5 / 162.6 / 165.7 | 188.0 / 189.1 / 188.9 | 264.4 / 267.3 / 265.3 | 271.6 / 272.3 / 273.6 | -2.5 % |
+
+  Against pod 17 (level at 32 clients) the pods differ by up to 10 % for both servers. In every pod IronMule's last
+  first token comes earlier than vLLM's (pod 20: 2.80 against 3.02-3.04 s); vLLM then needs about 0.72 s for the rest
+  of the answers, IronMule about 1.05 s: the remaining gap is the decode phase (31 steps at about 31 ms against vLLM's
+  about 23 ms) plus the server's dispatch and tail.
+[pod 19](../lab/pk1/results/a100-ironmule-http-pod19-sv1.jsonl) / [vLLM](../lab/pk1/results/a100-vllm-awq-pod19.jsonl) ·
+[pod 20](../lab/pk1/results/a100-ironmule-http-pod20-sv3.jsonl) / [vLLM](../lab/pk1/results/a100-vllm-awq-pod20.jsonl).
+Balance after pod 20: 5.76 USD.

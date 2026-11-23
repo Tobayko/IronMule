@@ -717,17 +717,54 @@ def _render_rows(requests: list[Any], model_id: str, tokenizer: Any, batch_id: s
     if len(set(map(str, ids))) != len(ids):
         raise ValueError("duplicate request id")
     rows = []
-    for request in requests:
+    rendered = _render_many(tokenizer, requests)
+    for index, request in enumerate(requests):
         try:
             rows.append(_render_engine_request(request, model_id, tokenizer, allow_stream=allow_stream,
-                                               limit=limit))
+                                               limit=limit, ids=rendered[index] if rendered else None))
         except RequestTooLong as error:
             _emit(_rejected(batch_id, error))
     return rows, ids
 
 
+_BATCH_RENDER: dict[int, bool] = {}  # SV4: per tokenizer, whether the batched rendering was checked equal
+
+
+def _render_many(tokenizer: Any, requests: list[Any]) -> list[list[int]] | None:
+    """SV4 (2026-11-23): every request's prompt ids in one chat-template call and one batched tokenization (32
+    requests took about 105 ms one by one on an A100 pod's CPU, before the group's prefill). The first time per
+    tokenizer the result is compared with the one-by-one rendering of the same requests and used only when equal;
+    None (render one by one) for anything else."""
+    key = id(tokenizer)
+    if _BATCH_RENDER.get(key) is False or len(requests) < 2:
+        return None
+    try:
+        conversations = [request["messages"] for request in requests]
+        extra = {} if THINKING else {"enable_thinking": False}
+        with redirect_stdout(sys.stderr):
+            texts = tokenizer.apply_chat_template(conversations, add_generation_prompt=True, tokenize=False, **extra)
+            ids = tokenizer(list(texts), add_special_tokens=False)["input_ids"]
+        ids = [list(row) for row in ids]
+        if len(ids) != len(requests):
+            raise ValueError("batched rendering returned another count")
+        if key not in _BATCH_RENDER:
+            with redirect_stdout(sys.stderr):
+                single = [_render(tokenizer, conversation) for conversation in conversations]
+            if not all(isinstance(row, (list, tuple)) for row in single):  # the one-by-one path would refuse these
+                raise ValueError("the one-by-one rendering does not return ids")
+            single = [list(row) for row in single]
+            _BATCH_RENDER[key] = single == ids
+            if not _BATCH_RENDER[key]:
+                return None
+        return ids
+    except Exception:  # noqa: BLE001 - any doubt renders one by one, as before
+        _BATCH_RENDER[key] = False
+        return None
+
+
 def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: Any,
-                           allow_stream: bool = False, limit: int | None = None) -> tuple[str, list[int], int]:
+                           allow_stream: bool = False, limit: int | None = None,
+                           ids: list[int] | None = None) -> tuple[str, list[int], int]:
     """Apply exactly the single-request identity and rendering validation; `limit` is the engine's own bound
     on prompt plus output tokens, if it has one below the context limit."""
     request_id = command.get("request_id")
@@ -747,8 +784,11 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
            or message["role"] not in {"system", "user", "assistant"}
            or not isinstance(message["content"], str) for message in messages):
         raise ValueError("invalid messages")
-    with redirect_stdout(sys.stderr):
-        raw_ids = _render(tokenizer, messages)
+    if ids is not None:  # SV4: rendered with the batch, checked equal to this path
+        raw_ids = ids
+    else:
+        with redirect_stdout(sys.stderr):
+            raw_ids = _render(tokenizer, messages)
     if not isinstance(raw_ids, (list, tuple)) or not raw_ids:
         raise ValueError("invalid prompt ids")
     ids = list(raw_ids)
