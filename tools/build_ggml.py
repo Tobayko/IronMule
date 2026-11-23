@@ -33,7 +33,7 @@ variables the engine reads. Nothing is installed system-wide.
   pk5   CUDA builds only: Q4_K -> fp16 for PK2's prompt matmuls with 16-byte stores, bit-identical to llama.cpp's
         dequantization (IRONMULE_PK5=0 off).
   em1   CUDA builds only: get_rows takes Q4_K and Q6_K rows on the GPU (convert.cu's arithmetic), so the engine can keep
-        a GGUF's token embedding on the GPU and a decode step needs no CPU work (IRONMULE_GGML_EM1=0 off).
+        a GGUF's token embedding on the GPU and a decode step needs no CPU work (opt-in: IRONMULE_GGML_EM1=1).
   pk2   CUDA builds only: from IRONMULE_CUBLAS_MIN_ROWS prompt rows on, quantized matmuls go through dequantization
         and cuBLAS with fp32 accumulation instead of llama.cpp's MMQ kernels; unset keeps llama.cpp's choice.
 

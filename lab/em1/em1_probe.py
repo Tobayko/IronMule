@@ -1,8 +1,8 @@
-"""EM1 probe: the same engine waves with the token embedding on the GPU (IRONMULE_GGML_EM1=1, the default) or on the
+"""EM1 probe: the same engine waves with the token embedding on the GPU (IRONMULE_GGML_EM1=1) or on the
 CPU (=0, llama.cpp's placement). Prints one JSON line: whether EM1 engaged, wave wall times, the median 32-row decode
 call and the prefill call from the engine trace, and the tokens (compared across the two runs by the caller).
 
-  IRONMULE_GGML_EM1=0 python lab/em1/em1_probe.py MODEL.gguf OUT.json
+  IRONMULE_GGML_EM1=1 python lab/em1/em1_probe.py MODEL.gguf OUT.json
 """
 import json
 import os

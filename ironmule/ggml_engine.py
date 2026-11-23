@@ -173,8 +173,10 @@ def am1_function(L: Any) -> Any:
 # layer"), so with every layer on the GPU a decode step still wakes the CPU threadpool for the rows of its tokens
 # (dequantized there and copied to the GPU), and the threads spin afterwards beside the server's Python threads. Builds
 # with the em1 patch take Q4_K / Q6_K rows on the GPU; the engine then places the embedding there and a step needs no
-# CPU work. IRONMULE_GGML_EM1=0 keeps llama.cpp's placement.
-EM1 = os.environ.get("IRONMULE_GGML_EM1", "1") != "0"
+# CPU work. Opt-in (IRONMULE_GGML_EM1=1): on an A100 with Qwen3-32B it gave the same tokens and saved only 10-15 ms of a
+# 2.4 s 32-prompt prefill (decode steps unchanged), and its extra GPU memory (the table, the step's input rows) made the
+# quality gate's KV-setting tuning run out of memory (2026-11-23, pod 22).
+EM1 = os.environ.get("IRONMULE_GGML_EM1", "0") == "1"
 EM1_TYPES = frozenset({"F32", "F16", "BF16", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q8_0", "Q4_K", "Q6_K"})
 
 
