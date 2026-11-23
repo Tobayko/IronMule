@@ -117,6 +117,13 @@ UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default
 TRACE = os.environ.get("IRONMULE_GGML_TRACE", "")
+
+
+def trace_note(label: str) -> None:
+    """A marker line ("# label monotonic") in the IRONMULE_GGML_TRACE file; nothing without it."""
+    if TRACE:
+        with open(TRACE, "a") as fh:
+            fh.write(f"# {label} {time.monotonic():.6f}\n")
 # PK2 (2026-11-19): with packing on a CUDA build that has the PK2 patch, the engine measures at its start whether prompt
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
 # IRONMULE_CUBLAS_MIN_ROWS fixes the threshold instead (0 = never), IRONMULE_PK2=0 skips the measurement.
@@ -1276,6 +1283,7 @@ class GgmlEngine:
                 return True
             return False
 
+        trace_note("run")
         learning = getattr(self.pilot, "learning", None)
         decision = {"cap": 1 << 30, "budget": 1 << 30, "draft": True}
         arrived = 0
@@ -1303,7 +1311,8 @@ class GgmlEngine:
                         limit, quiet = GATHER_S, GATHER_QUIET_S
                         if len(pending) > 1:  # PK1-B: the window opened on a burst
                             limit, quiet = max(limit, GATHER_BURST_S), max(quiet, GATHER_BURST_QUIET_S)
-                        while time.monotonic() - started_wait < limit and room():
+                        # SV2 (2026-11-23): a burst that already fills every free sequence has nothing to wait for
+                        while time.monotonic() - started_wait < limit and room() and len(pending) < self._slots():
                             got = admit(room())
                             now = time.monotonic()
                             if got:
@@ -1317,6 +1326,7 @@ class GgmlEngine:
                                 break
                             else:
                                 time.sleep(0.0005)
+                        trace_note(f"gathered {len(pending)}")
                 if scope is not None:
                     scope.update(len(active) + len(pending))
                 if self.pilot is not None and learning is None and decision["threads"] != self.threads:

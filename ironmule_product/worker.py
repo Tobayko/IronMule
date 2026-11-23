@@ -38,6 +38,16 @@ END_OF_TURN = ("<end_of_turn>", "<|eot_id|>", "<|im_end|>", "<|end|>")
 _PROTOCOL_OUT = sys.stdout
 
 
+def _trace_note(label: str) -> None:
+    """A marker in the engine's IRONMULE_GGML_TRACE file (diagnostics, off by default)."""
+    if os.environ.get("IRONMULE_GGML_TRACE"):
+        try:
+            from ironmule.ggml_engine import trace_note
+            trace_note(label)
+        except Exception:  # noqa: BLE001 - a diagnostic never fails a request
+            pass
+
+
 def _write(value: dict[str, Any]) -> None:
     encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     if len(encoded.encode("utf-8")) > MAX_LINE:
@@ -902,6 +912,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
         _safe_batch_error("invalid_request", batch_id if isinstance(batch_id, str) else None)
         return
     registered: list[str] = []
+    _trace_note("batch command")
     try:
         limit = getattr(engine_bridge, "request_limit", lambda: None)()  # KB1: the dense plan's slot
         if rendered_override is not None:
@@ -909,6 +920,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
         else:
             rendered, order = _render_rows(requests, model_id, tokenizer, batch_id, allow_stream=live, limit=limit)
         request_ids = [row[0] for row in rendered]
+        _trace_note(f"rendered {len(rendered)}")
         if len(set(request_ids)) != len(request_ids):
             raise ValueError("duplicate request id")
         with lock:
