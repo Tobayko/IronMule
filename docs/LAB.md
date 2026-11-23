@@ -3396,3 +3396,24 @@ with every patch including TK1 and EM1.
   remains, and within it the 4-bit matmuls at 32 rows (about 21 ms at 0.94 TB/s, against 1.37 TB/s at one row).
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod22-tk1.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod22.jsonl).
 Pod time 0.87 h, about 1.20 USD; balance after pod 22: 3.17 USD.
+
+### 2026-11-23, RTX 4090: why SD1's drafts failed under multi-row CUDA graphs (GR4), and GB1
+Maintainer session. RunPod RTX 4090 (secure cloud, 0.89 USD/h, 0.47 h, about 0.42 USD; no Ampere card or A100 was
+free), Qwen3-4B Q4_K_M as the served model and Qwen3-0.6B Q4_K_M as SD1's draft, engine waves of the benchmark prompts
+(`lab/sd1/sd_wave.py`, 8 and 32 clients, 32-token answers, 1,024 context per sequence: 2,048 did not fit both models'
+KV caches into 24 GB), W4R tuned on the card.
+- The bug reproduced: drafts accepted 0.59-0.62 with one-row CUDA graphs, 0.03-0.05 with graphs up to 32 rows.
+- SG1 (one W4R scratch per CUDA stream, grown buffers kept; commit c3f95f3) was not the cause: the same draft counts
+  to the token (12 / 224, 16 / 456, 20 / 688 accepted) with the W4R library before and after it. SG1 stays as a
+  robustness change (it touches no arithmetic).
+- The cause was GR3's capture state ("changed", "capture next time", the pause counter): process-wide statics, so the
+  draft model's context consumed or set the served model's flags and replayed a stored graph instance of another of
+  its graphs. GR4 (`native/ggml_patches/gr4`) keeps that state per CUDA backend context: with 32-row graphs the drafts
+  were accepted 0.62 / 0.61 / 0.59 again (the one-row numbers), with `IRONMULE_GR4=0` 0.05 / 0.04 / 0.03.
+- On this card SD1 still lost at 8 clients (583 against 752 tok/s without drafts): next to a 4B model a 0.6B draft
+  is expensive. Whether it pays next to Qwen3-32B is measured on the A100 (below).
+- Side observation: the served model's answers with 32-row graphs differ from those with one-row graphs in 16-21 of
+  120 answers (greedy divergence; not examined further here).
+- GB1 (local, `tests/engine/test_ggml_engine.py`): after a group of several prompts, the next lone arrival waits with
+  the burst's gather window once; on pods 20 and 22 a 32-client burst had started its first request alone (a 441-row
+  prefill of 217 ms) with the other 31 behind it.
