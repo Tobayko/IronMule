@@ -32,6 +32,7 @@ namespace {
 constexpr int TYPE_Q4_K = 12, TYPE_Q6_K = 14;
 constexpr int BS4 = 144, BS6 = 210;
 constexpr int T4 = 2304;  // bytes per (tile, super-block), Q4_K: 2048 quants + 16 rows x 16-byte headers
+constexpr int T4P = 2560;  // PS (v12): 2048 quants + 16 rows x (8 fp16 sub-block scales + 8 fp16 negated minimums)
 constexpr int T6 = 3584;  // Q6_K: 32 lanes x 96 bytes (16 nibble words + 8 two-bit words) + 16 rows x 32-byte headers
 
 __device__ __forceinline__ void mma16816(float (&c)[4], uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
@@ -128,6 +129,65 @@ __global__ void repack_q4k(const uint8_t *__restrict__ src, uint8_t *__restrict_
         uint4 hd = make_uint4(0, 0, 0, 0);
         if (row < N) memcpy(&hd, src + ((size_t)row * nb + sb) * BS4, 16);
         *reinterpret_cast<uint4 *>(out + 2048 + lane * 16) = hd;
+    }
+}
+
+// PS (v12, 2026-11-24): the same quant order with stride T4P, and per row the eight sub-block scales s_j * d and the
+// eight negated minimums m_j * -dmin as fp16, rounded once exactly as w4d's half2 products round them in the kernel
+__global__ void repack_q4k_pre(const uint8_t *__restrict__ src, uint8_t *__restrict__ dst, int N, int nb) {
+    const size_t id = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const int tiles = (N + 15) / 16;
+    if (id >= (size_t)tiles * nb * 32) return;
+    const int lane = (int)(id % 32), sb = (int)((id / 32) % nb), tile = (int)(id / 32 / nb);
+    const int g = lane / 4, c = lane % 4;
+    uint8_t *out = dst + ((size_t)tile * nb + sb) * T4P;
+    uint32_t words[16];
+#pragma unroll
+    for (int h = 0; h < 2; h++) {
+        const int row = tile * 16 + g + 8 * h;
+        const uint8_t *blk = src + ((size_t)row * nb + sb) * BS4;
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            uint32_t wd = 0;
+            if (row < N) {
+#pragma unroll
+                for (int b = 0; b < 4; b++) {
+                    const int grp = j / 2;
+                    const uint8_t lo = blk[16 + 32 * grp + 8 * c + b], hi = blk[16 + 32 * grp + 8 * c + 4 + b];
+                    const uint32_t qlo = (j & 1) ? lo >> 4 : lo & 0xF, qhi = (j & 1) ? hi >> 4 : hi & 0xF;
+                    wd |= (qlo | (qhi << 4)) << (8 * b);
+                }
+            }
+            words[2 * j + h] = wd;
+        }
+    }
+#pragma unroll
+    for (int i = 0; i < 4; i++)
+        *reinterpret_cast<uint4 *>(out + (i * 32 + lane) * 16) =
+            make_uint4(words[4 * i], words[4 * i + 1], words[4 * i + 2], words[4 * i + 3]);
+    if (lane < 16) {
+        const int row = tile * 16 + lane;
+        half sv[8], mv[8];
+#pragma unroll
+        for (int j = 0; j < 8; j++) sv[j] = mv[j] = __ushort_as_half(0);
+        if (row < N) {
+            const uint8_t *blk = src + ((size_t)row * nb + sb) * BS4;
+            const half d = __ushort_as_half((uint16_t)(blk[0] | (blk[1] << 8)));
+            const half nm = __hneg(__ushort_as_half((uint16_t)(blk[2] | (blk[3] << 8))));
+            const uint8_t *q = blk + 4;
+#pragma unroll
+            for (int j = 0; j < 8; j++) {
+                const int sc = j < 4 ? (q[j] & 63) : ((q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4));
+                const int mn = j < 4 ? (q[j + 4] & 63) : ((q[j + 4] >> 4) | ((q[j] >> 6) << 4));
+                sv[j] = __hmul(__ushort2half_rn((unsigned short)sc), d);   // = w4d's hmul2((1024+s)-1024, D)
+                mv[j] = __hmul(__ushort2half_rn((unsigned short)mn), nm);  // = w4d's hmul2((1024+m)-1024, -dmin)
+            }
+        }
+        uint4 a, b;
+        memcpy(&a, sv, 16);
+        memcpy(&b, mv, 16);
+        *reinterpret_cast<uint4 *>(out + 2048 + lane * 32) = a;
+        *reinterpret_cast<uint4 *>(out + 2048 + lane * 32 + 16) = b;
     }
 }
 
@@ -837,6 +897,143 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
             }
 }
 
+// v12 "PS" (Q4_K, 9-32 tokens, 2026-11-24, experimental): v9 (w4d) on a tile-order copy whose rows carry their eight
+// sub-block scales and negated minimums precomputed in fp16 (repack_q4k_pre, T4P = 2,560 bytes a tile and super-block
+// against 2,304): 11 % more weight bytes for fewer instructions per sub-block. The products are rounded as w4d rounds
+// them, so the results equal w4d's bit for bit. Opt-in (IRONMULE_W4_PRE=1): a matrix it serves keeps a second copy.
+__device__ __forceinline__ uint32_t wget1(const uint4 v, int i) {
+    return i == 0 ? v.x : i == 1 ? v.y : i == 2 ? v.z : v.w;
+}
+
+template <int WARPS, int KS, int NT, int MT, int MINB = 1>  // MINB: blocks per SM the compiler must fit (registers)
+__global__ void __launch_bounds__(WARPS * 32, MINB)
+w4dp(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
+    float *__restrict__ out, int N, int K, int B, int sb_per_split) {
+    constexpr int TILES = WARPS / KS;
+    __shared__ float red[KS > 1 ? WARPS : 1][KS > 1 ? MT * NT * 4 * 32 : 1];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
+    const int nb = K / 256;
+    const int tile0 = (blockIdx.x * TILES + warp / KS) * MT, part = warp % KS;
+    const int sb0 = blockIdx.y * sb_per_split, sb1 = min(nb, sb0 + sb_per_split);
+    const bool live = tile0 * 16 < N;
+    const int tiles = (N + 15) / 16;
+    float acc[MT][NT][4];
+#pragma unroll
+    for (int m = 0; m < MT; m++)
+#pragma unroll
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) acc[m][nt][i] = 0.f;
+    struct Buf { uint4 q[MT][4], h[MT][4]; };  // PS: S and M of rows g and g + 8
+    auto fetch = [&](int sb, Buf &b) {
+#pragma unroll
+        for (int m = 0; m < MT; m++) {
+            const int t = min(tile0 + m, tiles - 1);
+            const uint8_t *p = wr + ((size_t)t * nb + sb) * T4P;
+#pragma unroll
+            for (int i = 0; i < 4; i++) b.q[m][i] = ldg_stream(p + (i * 32 + lane) * 16);
+            b.h[m][0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 32));             // S, row g
+            b.h[m][1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 32 + 16));        // M, row g
+            b.h[m][2] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 32));       // S, row g + 8
+            b.h[m][3] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 32 + 16));  // M, row g + 8
+        }
+    };
+    // prep_x zero-fills token rows B..NT*8-1, so every row of the tile may be read
+    auto xload = [&](int sb, int j, uint4 (&xv)[NT]) {
+#pragma unroll
+        for (int nt = 0; nt < NT; nt++)
+            xv[nt] = __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)(nt * 8 + g) * K + (size_t)sb * 256 + 32 * j + 8 * c));
+    };
+    const half2 h1024 = __half2half2(__ushort_as_half(0x6400));
+    // 0x64 in a register ptxas cannot fold (blockDim.y is 1 at run time, unknown when compiling): a PRMT takes one
+    // immediate, and with 0x64 as that immediate ptxas rebuilt the selector 0x4140 / 0x4342 in a register before
+    // every PRMT (SASS of v9: about 300 IMAD.U32 of 2,400 instructions); this way the selector is the immediate
+    const uint32_t k64 = 0x63u + blockDim.y;
+    auto compute = [&](const Buf &b, int sb) {
+        // the two rows' (g, g + 8) super-block scale and minimum as half2 {row g, row g + 8}; the 6-bit sub-block
+        // scales and minimums become half2 {s_g, s_g8} by the 1024 + s trick (exact), and their products with d are
+        // rounded once to half, as the float path's rounding of its exact product: no int-to-float conversion
+        uint4 xv[2][NT];
+        xload(sb, 0, xv[0]);
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            if (j < 7) xload(sb, j + 1, xv[(j + 1) & 1]);
+            uint32_t a[MT][2][4];
+#pragma unroll
+            for (int m = 0; m < MT; m++) {
+                // PS: {row g, row g + 8} of sub-block j, one byte permute each (w4d: two, a subtract, a multiply)
+                const uint32_t sel = (j & 1) ? 0x7632u : 0x5410u;
+                const half2 sc = bits_h2(__byte_perm(wget1(b.h[m][0], j >> 1), wget1(b.h[m][2], j >> 1), sel));
+                const half2 mn = bits_h2(__byte_perm(wget1(b.h[m][1], j >> 1), wget1(b.h[m][3], j >> 1), sel));
+#pragma unroll
+                for (int h = 0; h < 2; h++) {
+                    const half2 s2 = h ? __high2half2(sc) : __low2half2(sc);
+                    const half2 m2 = h ? __high2half2(mn) : __low2half2(mn);
+                    const uint32_t wd = wget(b.q[m], 2 * j + h);
+#pragma unroll
+                    for (int t = 0; t < 2; t++) {
+                        const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
+                        const uint32_t p0 = __byte_perm(v, k64, 0x4140), p1 = __byte_perm(v, k64, 0x4342);
+                        a[m][t][h] = h2_bits(__hfma2(__hsub2(bits_h2(p0), h1024), s2, m2));
+                        a[m][t][2 + h] = h2_bits(__hfma2(__hsub2(bits_h2(p1), h1024), s2, m2));
+                    }
+                }
+            }
+#pragma unroll
+            for (int nt = 0; nt < NT; nt++) {
+                const uint4 bx = xv[j & 1][nt];
+#pragma unroll
+                for (int m = 0; m < MT; m++) {
+                    mma16816(acc[m][nt], a[m][0][0], a[m][0][1], a[m][0][2], a[m][0][3], bx.x, bx.y);
+                    mma16816(acc[m][nt], a[m][1][0], a[m][1][1], a[m][1][2], a[m][1][3], bx.z, bx.w);
+                }
+            }
+        }
+    };
+    if (live) {
+        Buf ba, bb;
+        int sb = sb0 + part;
+        if (sb < sb1) fetch(sb, ba);
+        for (; sb < sb1; sb += 2 * KS) {
+            if (sb + KS < sb1) fetch(sb + KS, bb);
+            compute(ba, sb);
+            if (sb + KS >= sb1) break;
+            if (sb + 2 * KS < sb1) fetch(sb + 2 * KS, ba);
+            compute(bb, sb + KS);
+        }
+    }
+    if constexpr (KS > 1) {
+#pragma unroll
+        for (int m = 0; m < MT; m++)
+#pragma unroll
+            for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+                for (int i = 0; i < 4; i++) red[warp][((m * NT + nt) * 4 + i) * 32 + lane] = acc[m][nt][i];
+        __syncthreads();
+        if (part != 0) return;
+#pragma unroll
+        for (int m = 0; m < MT; m++)
+#pragma unroll
+            for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+                for (int i = 0; i < 4; i++)
+#pragma unroll
+                    for (int p = 1; p < KS; p++) acc[m][nt][i] += red[warp + p][((m * NT + nt) * 4 + i) * 32 + lane];
+    }
+    if (!live) return;
+    float *o = out + (size_t)blockIdx.y * B * N;
+#pragma unroll
+    for (int m = 0; m < MT; m++)
+#pragma unroll
+        for (int nt = 0; nt < NT; nt++)
+#pragma unroll
+            for (int i = 0; i < 4; i++) {
+                const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
+                const int tok = nt * 8 + 2 * c + (i % 2);
+                if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
+            }
+}
+
 // v10 (Q4_K, 9-32 tokens): v9's arithmetic with v8's weight path. ptxas -v (sm_80) put v9's two-tile warps at
 // 238-245 registers, 8 warps per SM; here each warp streams its MT tiles' super-blocks with cp.async into its own
 // shared-memory ring of STAGES super-blocks and holds only the current one in registers.
@@ -1418,6 +1615,22 @@ int launch_d(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 }
 
 
+template <int WARPS, int KS, int NT, int MT, int MINB = 1>
+int launch_dp(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
+              cudaStream_t s) {
+    constexpr int TILES = WARPS / KS;
+    const int nb = K / 256;
+    const int per = (nb + ksplit - 1) / ksplit;
+    const int splits = (nb + per - 1) / per;
+    dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
+    w4dp<WARPS, KS, NT, MT, MINB><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+    if (splits > 1) {
+        const size_t n = (size_t)B * N;
+        reduce_split<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(part, y, n, splits);
+    }
+    return cudaGetLastError() == cudaSuccess ? 0 : 3;
+}
+
 // v8 (Q4_K, 1-8 tokens): each warp streams its tile's super-blocks with cp.async into its own shared-memory ring of
 // STAGES super-blocks (2304 contiguous bytes each), so about three super-blocks per warp are in flight while it
 // computes; registers hold only the current super-block and the x fragments, which leaves room for more warps
@@ -1549,6 +1762,7 @@ struct Variant {
     launch_fn fn;
     int fp = 0;   // 1: the kernel converts llama.cpp's float activations itself (no prep kernel)
     int mq1 = 0;  // 1: MQ1 (Marlin) on its own copy of the weights, not the tile-order copy
+    int pre = 0;  // 1: PS (v12) on the tile-order copy with precomputed fp16 scales and minimums (T4P)
 };
 
 int mq1_stub(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) {
@@ -1574,6 +1788,11 @@ int mq1_stub(const uint8_t *, const half *, const float *, float *, float *, int
 #define VF(W, N, M) Variant{TYPE_Q4_K, W, 50000 + 100 * M, N, launch_f<TYPE_Q4_K, W, N, M>}
 #define VF6(W, N, M) Variant{TYPE_Q6_K, W, 50000 + 100 * M, N, launch_f<TYPE_Q6_K, W, N, M>}
 // v9 with a minimum of B blocks per SM: fewer registers, more warps to hide the dequantize -> mma chains (2026-11-22)
+#define VWP(W, S, N, M) Variant{TYPE_Q4_K, W, 80000 + 100 * M + S, N, launch_dp<W, S, N, M>, 0, 0, 1}
+#define VWPN(N) VWP(2, 1, N, 2), VWP(4, 1, N, 2), VWP(8, 1, N, 2), VWP(4, 2, N, 2), VWP(8, 2, N, 2), VWP(8, 4, N, 2), \
+                VWP(4, 1, N, 1), VWP(8, 2, N, 1)
+// PS with a minimum of B blocks per SM (fewer registers), the occupancy VWB gives v9
+#define VWPB(W, S, N, M, B) Variant{TYPE_Q4_K, W, 90000 + 100 * M + 10 * B + S, N, launch_dp<W, S, N, M, B>, 0, 0, 1}
 #define VWB(W, S, N, M, B) Variant{TYPE_Q4_K, W, 70000 + 100 * M + 10 * B + S, N, launch_d<TYPE_Q4_K, W, S, N, M, B>}
 #define VW6(W, S, N, M) Variant{TYPE_Q6_K, W, 30000 + 100 * M + S, N, launch_d<TYPE_Q6_K, W, S, N, M>}
 #define VW6N(N) VW6(4, 1, N, 1), VW6(8, 1, N, 1), VW6(8, 2, N, 1), VW6(8, 4, N, 1), VW6(2, 1, N, 2), VW6(4, 1, N, 2), \
@@ -1587,7 +1806,7 @@ const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
                             VQ(1, 8), VQ(2, 8), VQF(2, 4), VQF(4, 4), VQF(4, 3), VQF(2, 6), VQF(1, 8), VQF(2, 8),
                             VPF(2, 1, 1, 1), VPF(4, 1, 1, 1), VPF(4, 2, 1, 1), VPF(8, 2, 1, 1), VPF(2, 1, 1, 0),
                             VPF(4, 1, 1, 0), VPF(4, 2, 1, 0), VPF(2, 1, 2, 1), VPF(4, 1, 2, 1), VPF(4, 2, 2, 0),
-                            VWN(2), VWN(4), VW6N(2), VW6N(4), VEN(2), VEN(4),
+                            VWN(2), VWN(3), VWN(4), VW6N(2), VW6N(3), VW6N(4), VEN(2), VEN(4),  // 3: 17-24 tokens
                             // few output rows (5120): K split inside the block, one tile per 4-16 warps, no reduce kernel
                             VW(4, 4, 2, 1), VW(8, 8, 2, 1), VW(16, 8, 2, 1), VW(16, 16, 2, 1),
                             VW(4, 4, 4, 1), VW(8, 8, 4, 1), VW(16, 8, 4, 1), VW(16, 16, 4, 1), VW(8, 4, 4, 1),
@@ -1602,7 +1821,10 @@ const Variant VARIANTS[] = {VT(TYPE_Q4_K), VT(TYPE_Q6_K),
                             VF6(4, 4, 1), VF6(8, 4, 1), VF6(2, 4, 1), VF6(4, 4, 2), VF6(4, 2, 1), VF6(8, 2, 1),
                             VMQ(1), VMQ(2), VMQ(3), VMQ(4),
                             VWB(2, 1, 4, 2, 5), VWB(2, 1, 4, 2, 6), VWB(2, 1, 4, 2, 8), VWB(4, 1, 4, 2, 3), VWB(4, 1, 4, 2, 4),
-                            VWB(8, 4, 4, 2, 2), VWB(4, 1, 4, 1, 4), VWB(2, 1, 2, 2, 6), VWB(4, 1, 2, 1, 4)};
+                            VWB(8, 4, 4, 2, 2), VWB(4, 1, 4, 1, 4), VWB(2, 1, 2, 2, 6), VWB(4, 1, 2, 1, 4),
+                            VWPN(2), VWPN(3), VWPN(4),  // PS (v12), the configurations of VWN
+                            VWPB(2, 1, 4, 2, 5), VWPB(2, 1, 4, 2, 6), VWPB(4, 1, 4, 2, 3), VWPB(4, 1, 4, 2, 4),
+                            VWPB(8, 4, 4, 2, 2), VWPB(4, 1, 4, 1, 4), VWPB(4, 1, 3, 1, 4), VWPB(4, 1, 2, 1, 4)};
 constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {
@@ -1618,7 +1840,7 @@ std::map<cudaStream_t, Scratch> scratches;
 std::vector<void *> retired;  // grown-out buffers stay allocated: an earlier captured graph may still read them
 std::mutex lock_;
 std::map<std::tuple<int, long, long, int>, std::pair<int, int>> choice;  // (type, N, K, B) -> (variant, ksplit)
-std::map<std::pair<int, const void *>, uint8_t *> repacked;               // (device, weights) -> tile-order copy
+std::map<std::tuple<int, const void *, int>, uint8_t *> repacked;  // (device, weights, PS) -> tile-order copy
 size_t repacked_total = 0;
 uint32_t mask4 = 0xFFFFFFFFu, mask6 = 0xFFFFFFFFu;
 std::string table_json = "{\"entries\": []}";
@@ -1633,29 +1855,31 @@ int grow(void **p, size_t *cap, size_t need) {
     return 0;
 }
 
-size_t repacked_bytes(int type, long N, long K) {
-    return (size_t)((N + 15) / 16) * (K / 256) * (type == TYPE_Q4_K ? T4 : T6);
+size_t repacked_bytes(int type, long N, long K, int pre = 0) {
+    return (size_t)((N + 15) / 16) * (K / 256) * (type == TYPE_Q4_K ? (pre ? T4P : T4) : T6);
 }
 
-void launch_repack(int type, const uint8_t *w, uint8_t *dst, long N, long K, cudaStream_t s) {
+void launch_repack(int type, const uint8_t *w, uint8_t *dst, long N, long K, cudaStream_t s, int pre = 0) {
     const size_t threads = (size_t)((N + 15) / 16) * (K / 256) * 32;
-    if (type == TYPE_Q4_K)
+    if (type == TYPE_Q4_K && pre)
+        repack_q4k_pre<<<(unsigned)((threads + 255) / 256), 256, 0, s>>>(w, dst, (int)N, (int)(K / 256));
+    else if (type == TYPE_Q4_K)
         repack_q4k<<<(unsigned)((threads + 255) / 256), 256, 0, s>>>(w, dst, (int)N, (int)(K / 256));
     else
         repack_q6k<<<(unsigned)((threads + 255) / 256), 256, 0, s>>>(w, dst, (int)N, (int)(K / 256));
 }
 
 // the tile-order copy of w, made the first time (call that first time outside CUDA graph capture)
-uint8_t *repack(int dev, int type, const void *w, long N, long K, cudaStream_t s) {
+uint8_t *repack(int dev, int type, const void *w, long N, long K, cudaStream_t s, int pre = 0) {
     std::lock_guard<std::mutex> guard(lock_);
-    auto it = repacked.find({dev, w});
+    auto it = repacked.find({dev, w, pre});
     if (it != repacked.end()) return it->second;
     uint8_t *dst = nullptr;
-    const size_t bytes = repacked_bytes(type, N, K);
+    const size_t bytes = repacked_bytes(type, N, K, pre);
     if (cudaMalloc(&dst, bytes) != cudaSuccess) return nullptr;
-    launch_repack(type, (const uint8_t *)w, dst, N, K, s);
+    launch_repack(type, (const uint8_t *)w, dst, N, K, s, pre);
     if (cudaGetLastError() != cudaSuccess) { cudaFree(dst); return nullptr; }
-    repacked[{dev, w}] = dst;
+    repacked[{dev, w, pre}] = dst;
     repacked_total += bytes;
     return dst;
 }
@@ -1735,7 +1959,7 @@ int im_w4_variant_count() { return NV; }
 // type, warps, ks, nt, 0, 0 of variant i (the tuner's view)
 void im_w4_variant(int i, int *out) {
     const Variant &v = VARIANTS[i];
-    out[0] = v.type; out[1] = v.warps; out[2] = v.ks; out[3] = v.nt; out[4] = 0; out[5] = 0;
+    out[0] = v.type; out[1] = v.warps; out[2] = v.ks; out[3] = v.nt; out[4] = v.pre; out[5] = 0;
 }
 
 // y[B][N] = w[N][K] (GGUF blocks at w; repacked once) x[B][K]^T with variant i: 0 on success
@@ -1777,7 +2001,7 @@ int im_w4_run(int i, const void *w, const float *x, float *y, long N, long K, lo
     cudaGetDevice(&dev);
     if (dev < 0 || dev >= 16) return 1;
     if (v.mq1) return mq1_serve(dev, w, x, y, N, K, B, ksplit, s);
-    uint8_t *wr = repack(dev, v.type, w, N, K, s);
+    uint8_t *wr = repack(dev, v.type, w, N, K, s, v.pre);
     if (wr == nullptr) return 4;
     return run_repacked(v, wr, x, y, N, K, B, ksplit, dev, s);
 }
@@ -1852,7 +2076,7 @@ int ironmule_kg_mul_mat(int type, const void *w, const float *x, float *y, int64
                 auto sit = scratches.find(s);  // SG1: this stream's scratch, prepared by an earlier uncaptured call
                 const size_t xcap = sit == scratches.end() ? 0 : sit->second.xcap;
                 const size_t pcap = sit == scratches.end() ? 0 : sit->second.pcap;
-                if (dev < 0 || dev >= 16 || repacked.find({dev, w}) == repacked.end() || (!v.fp && xcap < xbytes) ||
+                if (dev < 0 || dev >= 16 || repacked.find({dev, w, v.pre}) == repacked.end() || (!v.fp && xcap < xbytes) ||
                     (pick.second > 1 && pcap < (size_t)pick.second * B * N * sizeof(float)))
                     return 1;
             }
@@ -1915,7 +2139,7 @@ int im_w4_bench(int i, const void *w_host, size_t wbytes, long N, long K, const 
     if (v.mq1) return mq1_bench(w_host, wbytes, N, K, x_host, B, ksplit, copies, reps, us, y_host);
     uint8_t *w = nullptr, *wr = nullptr;
     float *x = nullptr, *y = nullptr;
-    const size_t rb = repacked_bytes(v.type, N, K);
+    const size_t rb = repacked_bytes(v.type, N, K, v.pre);
     int rc = 0;
     cudaGetLastError();  // a previous variant's failed launch must not fail this one
     if (cudaMalloc(&w, wbytes) != cudaSuccess) return 10;
@@ -1925,7 +2149,7 @@ int im_w4_bench(int i, const void *w_host, size_t wbytes, long N, long K, const 
     }
     cudaMemcpy(w, w_host, wbytes, cudaMemcpyHostToDevice);
     cudaMemcpy(x, x_host, sizeof(float) * B * K, cudaMemcpyHostToDevice);
-    for (int c = 0; c < copies; c++) launch_repack(v.type, w, wr + c * rb, N, K, 0);
+    for (int c = 0; c < copies; c++) launch_repack(v.type, w, wr + c * rb, N, K, 0, v.pre);
     int dev = 0;
     cudaGetDevice(&dev);
     rc = run_repacked(v, wr, x, y, N, K, B, ksplit, dev, 0);

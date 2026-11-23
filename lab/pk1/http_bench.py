@@ -57,6 +57,9 @@ def main():
                 qs = cases(seed)
                 qrows, _ = compare.batch(a.engine, server, [c.prompt for c in qs], width, MAX_TOKENS, deadline)
                 out["quality"] = f"{sum(correct(c, r['text']) for c, r in zip(qs, qrows))}/{len(qs)}"
+                # the synthetic fact questions and their wrong answers, so a miss can be read (no user text)
+                out["quality_misses"] = [{"key": c.key, "expected": c.expected, "answer": r["text"][:300]}
+                                         for c, r in zip(qs, qrows) if not correct(c, r["text"])]
             print(json.dumps(out), flush=True)
 
 

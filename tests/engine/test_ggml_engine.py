@@ -1337,3 +1337,30 @@ def test_gb1_after_a_burst_a_lone_arrival_waits_for_the_rest_of_the_next_one(mon
 
     assert len(first_call_seqs(False)) == 1  # 4 ms without an arrival: the lone request starts at once
     assert len(first_call_seqs(True)) == 2  # after a burst it waits with the burst's window and both start together
+
+
+def test_pk2_m_mix_calibration_times_half_short_half_long_prompts(monkeypatch):
+    import types
+
+    from ironmule import ggml_engine as ge
+
+    def calibrate(mode):
+        monkeypatch.setattr(ge, "PK2_CALIBRATION", mode)
+        thresholds = []
+        monkeypatch.setattr(ge, "pk2_set_min_rows", lambda rows: thresholds.append(rows) or 0)
+        engine = ge.GgmlEngine.__new__(ge.GgmlEngine)
+        engine.gpu_layers, engine.pack, engine.seqs, engine.seq_ctx, engine.vocab = 999, True, 32, 2048, None
+        engine.L = types.SimpleNamespace(llama_vocab_bos=lambda vocab: 1)
+        engine.tokenize = lambda text: list(range(5000))
+        engine._clear = lambda: None
+        seen = []
+        engine._pack_prefill = lambda group: seen.append(sorted(len(job.ids) for _, job, _ in group))
+        engine.chunk_nll = lambda chunk, prefix: 1.0
+        out = engine.measure_pk2(repeats=1)
+        return out, seen[-1], set(thresholds)
+
+    out, lengths, tried = calibrate("equal")
+    assert lengths == [444] * 8 and out["calibration"] == "equal" and 128 not in tried
+    out, lengths, tried = calibrate("mix")
+    assert lengths == [33] * 4 + [444] * 4 and out["rows"] == 4 * 33 + 4 * 444
+    assert out["calibration"] == "mix" and 128 in tried

@@ -17,6 +17,7 @@ import argparse
 import ctypes
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,9 @@ from .kernel_gen import compile_cuda, compute_capability, fingerprint, nvcc_path
 
 SOURCE = Path(__file__).resolve().parents[1] / "native" / "kernels" / "w4mma.cu"
 TYPE_Q4_K, TYPE_Q6_K = 12, 14
-TOKENS = (1, 8, 16, 32)  # measured; every token count is served by the measurement of its tile count
+# measured; every token count is served by the measurement of its tile count (8 tokens a tile). 24 stands for 17-24
+# tokens (three tiles): without it the table had no entry there and those steps fell back to llama.cpp's kernels
+TOKENS = (1, 8, 16, 24, 32)
 KSPLITS = (1, 2, 4, 8)  # 8: long-K matrices with few output rows (down, 25600 -> 5120) at 32 tokens
 ERROR_BOUND = 4e-3  # relative L2 error against float64; fp16 activations and weights give about 3e-4
 VERSION = 2  # 2: W4R, weights repacked once into tile order
@@ -117,7 +120,7 @@ def variants(lib) -> list[dict[str, int]]:
     for i in range(lib.im_w4_variant_count()):
         v = (ctypes.c_int * 6)()
         lib.im_w4_variant(i, v)
-        out.append({"id": i, "type": v[0], "warps": v[1], "ks": v[2], "nt": v[3]})
+        out.append({"id": i, "type": v[0], "warps": v[1], "ks": v[2], "nt": v[3], "pre": v[4]})
     return out
 
 
@@ -152,6 +155,8 @@ def tune(gguf: str, lib_path: Path, *, tokens=TOKENS, reps: int = 20, log=print,
                 for v in vs:
                     if v["type"] != code or v["nt"] != -(-B // 8):
                         continue
+                    if v.get("pre") and os.environ.get("IRONMULE_W4_PRE") != "1":
+                        continue  # PS (v12): a second copy of every matrix it serves; opt-in
                     for ks in ksplits:
                         if ks > 1 and (K // 256) < 2 * ks:
                             continue

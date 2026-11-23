@@ -135,6 +135,11 @@ def trace_note(label: str) -> None:
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
 # IRONMULE_CUBLAS_MIN_ROWS fixes the threshold instead (0 = never), IRONMULE_PK2=0 skips the measurement.
 PK2_AUTO = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS") is None and os.environ.get("IRONMULE_PK2", "1") != "0"
+# PK2-M (2026-11-24, experimental): "mix" also times the thresholds on a burst of half short (33-token) and half long
+# prompts, as the benchmark's eight clients send, and chooses by it. On one KV stream per sequence such a burst runs
+# as two passes (llama.cpp's split_equal), the short one of about 130 rows below every threshold "equal" measures; on the
+# A100 profile the real mix took 0.81 s against 0.69 s for as many rows of equal prompts. "equal" (default): as before.
+PK2_CALIBRATION = os.environ.get("IRONMULE_PK2_CALIBRATION", "equal")
 # W4 (2026-11-19): on a CUDA GPU of compute capability 8.0 or newer, packed engines generate and tune IronMule's W4R
 # kernels for this GPU and GGUF (ironmule/w4_kernels.py, cached under IRONMULE_W4_CACHE) and hand them to the kg1 hook,
 # unless IRONMULE_KG_LIB names a library; measure_kg then keeps them only for the token counts where the step got
@@ -735,6 +740,12 @@ class GgmlEngine:
         width = min(8, self.seqs)
         length = min(444, self.seq_ctx - 8, max(64, (len(ids) - 1) // width))
         group = [(seq, Job([bos] + ids[seq * length:(seq + 1) * length - 1], 1), 0) for seq in range(width)]
+        mix = PK2_CALIBRATION == "mix"
+        if mix:  # PK2-M: half short prompts (the lowest sequence ids, as the server sorts them), half long
+            short = min(33, length)
+            group = [(seq, Job([bos] + ids[seq * length:seq * length + (short if seq < width // 2 else length) - 1], 1), 0)
+                     for seq in range(width)]
+            thresholds = tuple(sorted({128, *thresholds}))
 
         def burst() -> float:
             self._clear()
@@ -771,7 +782,8 @@ class GgmlEngine:
         finally:
             self._clear()
         pk2_set_min_rows(chosen)
-        return {"min_rows": chosen, "reason": reason, "rows": width * length,
+        return {"min_rows": chosen, "reason": reason, "rows": sum(len(job.ids) for _, job, _ in group),
+                "calibration": "mix" if mix else "equal",
                 "burst_ms": {str(t): round(1000 * v, 1) for t, v in med.items()}}
 
     def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:

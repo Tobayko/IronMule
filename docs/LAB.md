@@ -3457,3 +3457,33 @@ the 25 ms quiet gap before the rest. Over the six same-pod comparisons since PK5
 IronMule is level with to 3.3 % behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached.
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod25-gb1.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod25.jsonl).
 Pod time 0.56 h, about 0.77 USD; balance after pod 25: 0.86 USD.
+
+### 2026-11-24: width 24 in the W4R tuner, PS (precomputed Q4_K scales), PK2-M; the A100 measurement is pending
+Maintainer session. Goal (owner): +10 % over vLLM at 32 clients on the A100 with Qwen3-32B (pod 25: 281.2 against
+287.6 tok/s; about 405 ms per wave short) and a smaller gap at 8 (166.4 against 191.9). No A100 was reachable within
+the approved GPU time (Kaggle has none; 0.77 USD left on RunPod against about 3.4 USD for the session below), so the
+changes are built and checked locally and the session is prepared (`lab/w4bw/a100_20261124.sh`); no number below is
+measured on a GPU yet.
+- Width 24 (fix, on by default): `ironmule/w4_kernels.py` measured 1 / 8 / 16 / 32 tokens and serves every count by the
+  measurement of its tile count, so 17-24 tokens (three tiles) had no table entry and fell back to llama.cpp's kernels;
+  the engine's startup check then found no gain there. TOKENS now includes 24, and the v9 families (VWN, VW6N) are
+  built for three tiles too. Test: `tests/engine/test_w4_kernels.py`. Pending: steps of 17-24 rows and HTTP at 24
+  clients, against the old table (session step 2a and 3).
+- PS / v12 (experimental, opt-in `IRONMULE_W4_PRE=1`): `repack_q4k_pre` stores each row's eight sub-block scales and
+  negated minimums as fp16 in the tile-order copy (2,560 bytes a tile and super-block against 2,304, i.e. 160 against
+  144 bytes a row and super-block), rounded as v9 rounds them in the kernel, so `w4dp` must equal `w4d` bit for bit.
+  Per sub-block it replaces two byte permutes, a subtract and a multiply (scale and minimum each) by one permute.
+  Compiled for sm_80: up to 255 registers per thread against 128-168 for v9 (the prefetched headers are twice as
+  wide), little spilling; variants with a forced minimum occupancy (VWPB) are included. The benchmark
+  (`lab/w4bw/bench.py --shapes Q4_K:5120:25600`) reports the best PS and the best v9 time per shape and token count and
+  whether their outputs are identical. Pending: whether the saved work outweighs 11 % more weight bytes on the full
+  5120 x 25600 matrix and in the 32-row decode step (session steps 1 and 2b).
+- PK2-M (experimental, opt-in `IRONMULE_PK2_CALIBRATION=mix`): the startup calibration timed eight equal 444-token
+  prompts; the 8-client mix (4 short, 4 long) runs as two passes on one KV stream per sequence, the short one of about
+  130 rows below every threshold measured. "mix" times the thresholds (now with 128) on that mix and chooses by it.
+  Test in `tests/engine/test_ggml_engine.py`. Pending: prefill and time to first token per threshold on the real mix
+  (session step 2c).
+- The failed fact in pod 25's third 32-client repeat: that repeat's seed (20263169) holds "What is 33 * 6?", the case
+  pod 3 showed IronMule answering "200 - 2 = 198 ... **198**" instead of the number alone (a grader format miss, not a
+  wrong fact; vLLM answers in the asked format). The pod 25 record kept only a hash of the answers, so this is an
+  inference; `lab/pk1/http_bench.py` now records each missed case with its answer (`quality_misses`).
