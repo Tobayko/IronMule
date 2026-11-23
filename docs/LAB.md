@@ -3439,3 +3439,21 @@ Three repeats, facts 18/18 in every run:
 - No vLLM run on this pod (the remaining balance did not cover it, and this configuration is not the one to compare).
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod24-sd1.jsonl). Pod time 0.52 h, about 1.13 USD; balance after
 pod 24: 1.64 USD.
+
+### 2026-11-23, A100 pod 25: TK1, GB1 and GR4 (no SD1) against vLLM on the same pod
+RunPod A100 SXM4 80 GB (community cloud, 1.39 USD/h), Qwen3-32B Q4_K_M, `serve --agent on`, build with every patch
+(TK1, EM1 opt-in and off, GR4), SD1 off. Startup 1,221 s. Three repeats each:
+
+| Clients | IronMule | vLLM 0.11.0 AWQ-Marlin | difference of the means |
+| ---: | ---: | ---: | ---: |
+| 1 | 55.3 / 95.7 / 101.4 | 51.8 / 52.7 / 52.1 | +62 % (the first IronMule repeat is the cold one) |
+| 8 | 164.3 / 165.9 / 169.0 | 191.1 / 190.7 / 193.9 | -13.3 % |
+| 32 | 283.3 / 280.3 / 280.0 | 287.4 / 287.4 / 288.0 | -2.2 % |
+
+Facts 18/18 in every run except IronMule's third 32-client repeat (17/18). GB1 only partly held: prompts per prefill
+call in the three 32-client bursts were 1 + 31, 2 + 31 and 32. Before the first burst a lone request (the end of the
+8-client part) had waited in vain and cleared the burst memory; in the second the first two requests arrived more than
+the 25 ms quiet gap before the rest. Over the six same-pod comparisons since PK5 (pods 17, 19, 20, 21, 22, 25)
+IronMule is level with to 3.3 % behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached.
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod25-gb1.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod25.jsonl).
+Pod time 0.56 h, about 0.77 USD; balance after pod 25: 0.86 USD.
