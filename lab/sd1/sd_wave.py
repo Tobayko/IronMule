@@ -4,8 +4,8 @@ import torch
 from ironmule.ggml_engine import GgmlEngine, Job
 from ironmule_product import compare
 TPL = "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-draft = '/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf' if os.environ.get("IRONMULE_GGML_SD", "0") != "0" else None
-e = GgmlEngine('/models/Qwen3-32B-Q4_K_M.gguf', seqs=32, seq_ctx=2048, flash_attn=True, speculate=True, draft_gguf=draft)
+draft = os.environ.get('SD_DRAFT', '/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf') if os.environ.get("IRONMULE_GGML_SD", "0") != "0" else None
+e = GgmlEngine(os.environ.get('SD_TARGET', '/models/Qwen3-32B-Q4_K_M.gguf'), seqs=32, seq_ctx=2048, flash_attn=True, speculate=True, draft_gguf=draft)
 print("WAVE drafter", type(e.drafter).__name__ if e.drafter else None, "refused", e.draft_refused, flush=True)
 out = {}
 for width in [int(w) for w in sys.argv[1].split(',')]:
