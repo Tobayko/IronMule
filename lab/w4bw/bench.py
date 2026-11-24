@@ -41,6 +41,8 @@ def build(out: Path, arch: str, source: Path) -> Path:
     lib = out / f"w4_{source.stem}_sm{arch}.so"
     cmd = [nvcc, "-O3", "-std=c++17", f"-arch=sm_{arch}", "-shared", "-Xcompiler", "-fPIC", "--cudart", "shared",
            "--expt-relaxed-constexpr", "-I", str(source.parent), "-o", str(lib), str(source)]
+    if int(arch) < 80:  # T4W: Turing (Kaggle's T4) runs W4R through m16n8k8 and plain copies; MQ1 (Marlin) needs sm_80
+        cmd.insert(1, "-DIRONMULE_NO_MQ1")
     subprocess.run(cmd, check=True)
     probe = out / f"bwprobe_sm{arch}.so"
     subprocess.run([nvcc, "-O3", f"-arch=sm_{arch}", "-shared", "-Xcompiler", "-fPIC", "--cudart", "shared",

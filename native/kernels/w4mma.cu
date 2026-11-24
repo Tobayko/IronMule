@@ -25,7 +25,18 @@
 #include <tuple>
 #include <vector>
 
+#ifndef IRONMULE_NO_MQ1
 #include "mq1/mq1.cuh"  // MQ1: vLLM's Marlin for Q4_K (native/kernels/mq1)
+#else
+// T4W (2026-11-24): Marlin needs sm_80; a Turing build (lab/w4bw on Kaggle's T4) leaves MQ1 out
+namespace mq1 {
+struct Prepared {};
+struct Scratch { void *a = nullptr, *c = nullptr, *c_tmp = nullptr, *locks = nullptr; };
+inline int prepare(const void *, long, long, int, cudaStream_t, Prepared &) { return 1; }
+inline int run(const Prepared &, const float *, float *, int, int, cudaStream_t, Scratch &, bool) { return 1; }
+inline void release(Prepared &) {}
+}  // namespace mq1
+#endif
 
 namespace {
 
@@ -37,10 +48,20 @@ constexpr int T6 = 3584;  // Q6_K: 32 lanes x 96 bytes (16 nibble words + 8 two-
 
 __device__ __forceinline__ void mma16816(float (&c)[4], uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                                          uint32_t b0, uint32_t b1) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
+    // T4W: Turing has m16n8k8 only; k 0-7 is (a0, a1; b0), k 8-15 is (a2, a3; b1) in the same fragment layout
+    asm volatile("mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\n"
+                 : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
+                 : "r"(a0), "r"(a1), "r"(b0));
+    asm volatile("mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\n"
+                 : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
+                 : "r"(a2), "r"(a3), "r"(b1));
+#else
     asm volatile(
         "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
         : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
         : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
+#endif
 }
 
 __device__ __forceinline__ uint32_t h2_bits(half2 v) { return *reinterpret_cast<uint32_t *>(&v); }
@@ -272,12 +293,21 @@ __global__ void prep_x(const float *__restrict__ x, half *__restrict__ xh, float
 }
 
 // ----------------------------------------------------------------------------------------------------------------- compute
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
+// T4W: no cp.async before sm_80; a plain 16-byte copy (complete when issued), the kernels' barriers stay
+__device__ __forceinline__ void cp_async16(void *smem, const void *gmem) {
+    *reinterpret_cast<uint4 *>(smem) = *reinterpret_cast<const uint4 *>(gmem);
+}
+__device__ __forceinline__ void cp_commit() {}
+template <int N> __device__ __forceinline__ void cp_wait() {}
+#else
 __device__ __forceinline__ void cp_async16(void *smem, const void *gmem) {
     const uint32_t s = (uint32_t)__cvta_generic_to_shared(smem);
     asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"(s), "l"(gmem));
 }
 __device__ __forceinline__ void cp_commit() { asm volatile("cp.async.commit_group;\n" ::); }
 template <int N> __device__ __forceinline__ void cp_wait() { asm volatile("cp.async.wait_group %0;\n" ::"n"(N)); }
+#endif
 
 template <int KS, int NT>
 struct XCfg {
