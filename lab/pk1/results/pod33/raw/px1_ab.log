@@ -1,0 +1,27 @@
+ENGINE {"start_s": 50.39, "pack": true, "pk2": {"min_rows": 128, "reason": "2.16x a packed burst, likelihood ratio 1.00073", "rows": 1908, "calibration": "mix", "burst_ms": {"0": 1588.5, "128": 734.8, "256": 737.6, "512": 824.1, "1024": 825.1}}, "ubatch": "8192", "kg_tokens": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32]}
+COLD {"kind": "cold", "rep": 0, "wall_s": 3.3209, "calls": [{"ms": 2367.23, "rows": 7632, "prompt_rows": 7632}], "px1": []}
+AB {"kind": "ab", "pair": 0, "rep": 1, "px1": false, "wall_s": 3.3284, "prefill_ms": 2358.57, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 0, "rep": 1, "px1": true, "wall_s": 3.3083, "prefill_ms": 2356.17, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 1}], "reused": 259}
+AB {"kind": "ab", "pair": 1, "rep": 2, "px1": true, "wall_s": 3.2701, "prefill_ms": 2309.75, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 1}], "reused": 160}
+AB {"kind": "ab", "pair": 1, "rep": 2, "px1": false, "wall_s": 3.3574, "prefill_ms": 2405.76, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 2, "rep": 1, "px1": false, "wall_s": 3.32, "prefill_ms": 2360.7, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 2, "rep": 1, "px1": true, "wall_s": 3.3221, "prefill_ms": 2363.74, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 1}], "reused": 259}
+AB {"kind": "ab", "pair": 3, "rep": 2, "px1": true, "wall_s": 3.262, "prefill_ms": 2310.73, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 1}], "reused": 160}
+AB {"kind": "ab", "pair": 3, "rep": 2, "px1": false, "wall_s": 3.3593, "prefill_ms": 2409.8, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 4, "rep": 1, "px1": false, "wall_s": 3.3146, "prefill_ms": 2361.28, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 4, "rep": 1, "px1": true, "wall_s": 3.3133, "prefill_ms": 2358.02, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 1}], "reused": 259}
+AB {"kind": "ab", "pair": 5, "rep": 2, "px1": true, "wall_s": 3.2671, "prefill_ms": 2316.48, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 1}], "reused": 160}
+AB {"kind": "ab", "pair": 5, "rep": 2, "px1": false, "wall_s": 3.3649, "prefill_ms": 2413.4, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 6, "rep": 1, "px1": false, "wall_s": 3.3186, "prefill_ms": 2364.56, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 6, "rep": 1, "px1": true, "wall_s": 3.3152, "prefill_ms": 2362.99, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 1}], "reused": 259}
+AB {"kind": "ab", "pair": 7, "rep": 2, "px1": true, "wall_s": 3.2707, "prefill_ms": 2316.46, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 1}], "reused": 160}
+AB {"kind": "ab", "pair": 7, "rep": 2, "px1": false, "wall_s": 3.361, "prefill_ms": 2410.1, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 8, "rep": 1, "px1": false, "wall_s": 3.3121, "prefill_ms": 2360.84, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 8, "rep": 1, "px1": true, "wall_s": 3.3102, "prefill_ms": 2360.76, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 1}], "reused": 259}
+AB {"kind": "ab", "pair": 9, "rep": 2, "px1": true, "wall_s": 3.2686, "prefill_ms": 2316.11, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 1}], "reused": 160}
+AB {"kind": "ab", "pair": 9, "rep": 2, "px1": false, "wall_s": 3.3648, "prefill_ms": 2413.37, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 10, "rep": 1, "px1": false, "wall_s": 3.3185, "prefill_ms": 2360.0, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+AB {"kind": "ab", "pair": 10, "rep": 1, "px1": true, "wall_s": 3.3112, "prefill_ms": 2360.38, "notes": [{"passes": 5, "even": 2, "extra": 99, "on": 1}], "reused": 259}
+AB {"kind": "ab", "pair": 11, "rep": 2, "px1": true, "wall_s": 3.2667, "prefill_ms": 2316.02, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 1}], "reused": 160}
+AB {"kind": "ab", "pair": 11, "rep": 2, "px1": false, "wall_s": 3.3608, "prefill_ms": 2411.99, "notes": [{"passes": 7, "even": 2, "extra": 99, "on": 0}], "reused": 259}
+SUMMARY {"pairs": 12, "saving_ms": [-2.1, 1.3, 1.9, 3.4, 7.3, 20.1, 87.3, 90.3, 94.1, 96.2, 97.3, 97.8], "saving_median_ms": 53.7, "px1_faster": 11, "ref_wall_median_s": 3.3429, "px1_wall_median_s": 3.2895, "identical_answers": "378/384", "px1_evened": 6}

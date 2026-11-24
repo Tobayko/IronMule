@@ -3929,3 +3929,61 @@ the llama.cpp patch TL1 (`IRONMULE_TL1`: per ubatch the host time for graph buil
 added synchronisation; buffered). `lab/pf3/pauses.py` joins them and classifies a call's excess as compute, CPU
 wait, driver call, other synchronisation, page faults or open. The CUDA API calls around a gap are not recorded (no
 CUPTI in the timed server); a driver call shows as an ioctl on /dev/nvidia*.
+
+### 2026-11-24, A100 pod 33: PF3 measured -- PX1 kept (on by default), no pause in 80 large prefill calls
+RunPod A100 SXM4 80 GB (community, 0.818 h, 1.14 USD; balance afterwards 41.29 USD), Qwen3-32B Q4_K_M, PD1 on, RF1
+and PK1-C off, at bff6984. Session `lab/pf3/a100_pf3.sh` with scope, stop rule and a 2.0 h watchdog fixed before
+the pod (not reached, not changed); raw data in `lab/pk1/results/pod33/raw`. nvidia-smi every 200 ms: during the
+HTTP arms the SM clock's median was 1,410 MHz (10th percentile 1,290-1,305 MHz) in every arm alike; during the dense
+in-process prefills 1,305 MHz at the 400 W cap. Runtimes are not normalised.
+
+Pause diagnostics (three server starts with the probe and TL1; the first ran the quality gate, 1,224 s): no pause.
+The three first waves took 3.80, 3.70 and 3.58 s, their large calls 2.22-2.34 s for 7,122-7,599 rows in 2 passes.
+In every large call the thread was running in every sample (`R`, no system call): llama_decode returns from the
+launch after 0.36-0.43 s and then spins in the output copy's synchronisation for 1.07-1.13 s while the GPU computes;
+CPU time 1.57-1.83 s user and 0.64-0.69 s system per call; no major faults, no run delay, no cgroup throttling. No
+call in any trace of this pod (80 calls of 300 rows or more, HTTP and in-process) exceeded its rows' expectation by
+more than 0.2 s. So the 1.2-2.0 s pauses of pod 32 did not recur, and their cause stays open; the probe is ready
+(`IRONMULE_GGML_PAUSE`, `IRONMULE_TL1`, `lab/pf3/pauses.py`) for the next pod where one occurs.
+
+PX1 in one engine process (`lab/pf3/px1_ab.py`; the benchmark's 32-request repeats 1 and 2, each after a primer of
+the repeat before with the KV cleared first, so both arms find the same kept prefixes; 12 ABBA pairs, 32-token
+answers, no profiler):
+
+| | passes (reference -> PX1) | rows recomputed | prefill call | wave (prefill + decode) |
+| --- | --- | --- | --- | --- |
+| repeat 2, 6 pairs | 7 -> 2 | 99 | 2,405-2,413 -> 2,310-2,316 ms | 3.357-3.365 -> 3.262-3.271 s, -87 to -98 ms in every pair |
+| repeat 1, 6 pairs | 5 (2 possible) | 99 not allowed | unchanged | -2 to +20 ms (noise) |
+
+- Repeat 1 was not evened: 99 recomputed rows exceed the 32-rows-per-saved-pass limit (96 for 3 passes). By the
+  pod-32 fit the break-even is about 64 rows a pass (21.5 / 0.335 ms), so a looser limit would likely gain about 30
+  ms there too; noted post hoc, not changed in this run.
+- Answers: 378 of 384 identical; the six differences are one request (repeat 2, request 19) diverging at its third
+  token in every PX1 wave, deterministic (the recomputed prefix is computed in a different batch).
+- Stop rule (median paired saving >= 40 ms, faster in >= 10 of 12 pairs): 53.7 ms, 11 of 12. HTTP followed.
+
+HTTP, same pod, server starts alternating reference (PX1 off) / PX1 / reference / PX1, then vLLM 0.11.0 (AWQ-Marlin),
+the same prompts at the same position everywhere:
+
+| 32 clients | wave 0 | wave 1 | wave 2 | first token p50 |
+| --- | --- | --- | --- | --- |
+| reference R1 / R2 | 3.630 / 3.535 s | 3.701 / 3.670 s | 3.758 / 3.738 s | 2.571-2.672 s (median 2.617) |
+| PX1 P1 / P2 | 3.593 / 3.585 s | 3.594 / 3.549 s | 3.691 / 3.509 s | 2.471-2.603 s (median 2.512) |
+| vLLM | 3.669 s | 3.767 s | 3.661 s | 1.788-2.102 s (max 2.94-3.05 s) |
+
+- Median 32-client wave over both starts: 3.589 s with PX1 against 3.686 s (-96 ms, -2.6 %); later waves only 3.572
+  against 3.720 s (-148 ms); first waves unchanged (3.589 against 3.583 s mean). Throughput median 285.3 against
+  277.9 tok/s (vLLM 279.1). First token p50 -105 ms. Facts 18/18 in all four starts and in vLLM.
+- In the HTTP later waves PX1 evened 9-11 passes to 2 (extra rows 60-107) and the large prefill call took 2,221-2,318
+  ms against 2,300-2,499 ms.
+- 8 clients (two waves each): reference 1.479 / 1.394 and 1.494 / 1.390 s, PX1 1.451 / 1.402 and 1.479 / 1.397 s, vLLM
+  1.382 / 1.356 s: no PX1 effect (the 8-request groups were not fragmented enough to qualify) and IronMule is 3-7 %
+  behind vLLM here.
+- Release rule (median 32-client wave >= 40 ms shorter, first token not later by more than 5 %, facts 18/18): met.
+  PX1 is on by default (`IRONMULE_GGML_PX1=0` turns it off).
+
+Against +10 % over vLLM (target wave = vLLM wave / 1.10, same prompts): PX1 leaves 0.25 s (wave 0), 0.15 s (wave 1)
+and 0.27 s (wave 2) at 32 clients, and 0.17-0.21 s at 8 clients. Supported reserve for the next round: the admission
+path (40-60 ms, both widths), the PX1 row limit (about 30 ms where 3 passes are at stake), the GEMM algorithm or
+workspace (0.03-0.06 s); together still below the remaining gap, so a larger mechanism is needed (the decode part of
+the wave, about 1.0 s, and the first waves' 2-pass prefill).

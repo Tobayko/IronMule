@@ -1,0 +1,2 @@
+{"label": "D3", "engine": "ironmule", "warmup_s": 0.252}
+{"label": "D3", "engine": "ironmule", "repeat": 0, "width": 32, "tok_s": 285.8, "wall_s": 3.583, "ttft_p50_ms": 2481.2, "ttft_p95_ms": 2492.6, "ttft_max_ms": 2493.6, "tokens": 1024, "prompt_tokens": 7632, "texts": "a75e820976b16fe8", "queue_ms": [13.0, 71.0], "dispatch_to_first_ms": [2390.6, 2468.1], "first_to_end_ms": [1058.5, 3274.0]}

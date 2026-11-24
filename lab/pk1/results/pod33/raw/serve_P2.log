@@ -1,0 +1,12 @@
+{"gguf_model": "gguf/Qwen3-32B-Q4_K_M"}
+ggml_cuda_init: GGML_CUDA_FORCE_MMQ:    no
+ggml_cuda_init: GGML_CUDA_FORCE_CUBLAS: no
+ggml_cuda_init: found 1 CUDA devices:
+  Device 0: NVIDIA A100-SXM4-80GB, compute capability 8.0, VMM: yes
+{"ggml_kernels": "/work/pf3/st/kernels/w4/w4mma_sm80_v2_34e713dcabe8.so"}
+{"ggml_gate": {"kernel_mode": "generated", "passes": true, "diagnostic": null, "ratio": 0.9940459236928927, "interval": [0.9851111812015977, 1.000845966611683]}}
+{"ggml_streams": {"settings": {"flash_attn": true, "kv_unified": false, "kv_f32": false}, "ratio": 0.9940459236928927, "interval": [0.9851111812015977, 1.000845966611683], "sequences": 32}}
+{"ggml_sequences": {"sequences": 32, "fitting": [8, 16, 32, 64], "rates": {"8": 350.3173622455567, "16": 682.4661636255463, "32": 1040.126314305545, "64": 752.45499431961}, "reason": "the widest width whose doubling still bought the gain rule"}}
+{"draft_model_suggestion": {"repo": "Qwen/Qwen3-0.6B-GGUF", "file": "Qwen3-0.6B-Q8_0.gguf", "download": "curl -L -o Qwen3-0.6B-Q8_0.gguf https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf", "use": "--draft-gguf Qwen3-0.6B-Q8_0.gguf"}}
+{"agent": {"serving": "the ggml engine's measured width (SEQ1)", "configurations": []}}
+{"service": "ironmule", "host": "127.0.0.1", "port": 8002, "ready": true}

@@ -137,8 +137,10 @@ UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # the same length become unequal and a 32-request prefill ran as 8-14 passes instead of 2, each a full trip through
 # the model (A100 pod 32: 21.5 ms a pass, 0.335 ms a row, fitted over 60 calls). A packed group then keeps the same
 # prefix in every stream (the smallest), when that saves passes for at most PX1_ROWS rows recomputed per pass saved.
-# The recomputed tokens are computed as in any prefill. Off until measured on the A100: IRONMULE_GGML_PX1=1 turns it on.
-PX1 = os.environ.get("IRONMULE_GGML_PX1", "0") == "1"
+# The recomputed tokens are computed as in any prefill. A100 pod 33 (one process, 12 ABBA pairs): 7 passes to 2 for 99
+# rows, prefill -95 ms in every pair; HTTP over two starts per arm: 32-client wave median -96 ms, first token p50 -105
+# ms, facts 18/18. On by default; IRONMULE_GGML_PX1=0 turns it off.
+PX1 = os.environ.get("IRONMULE_GGML_PX1", "1") != "0"
 PX1_ROWS = int(os.environ.get("IRONMULE_GGML_PX1_ROWS", 32))
 
 
