@@ -3487,3 +3487,53 @@ measured on a GPU yet.
   pod 3 showed IronMule answering "200 - 2 = 198 ... **198**" instead of the number alone (a grader format miss, not a
   wrong fact; vLLM answers in the asked format). The pod 25 record kept only a hash of the answers, so this is an
   inference; `lab/pk1/http_bench.py` now records each missed case with its answer (`quality_misses`).
+
+### 2026-11-24, A100 pod 26: width 24, PS and PK2-M measured; baseline, candidate and vLLM on the same pod
+RunPod A100 SXM4 80 GB (community cloud, 1.39 USD/h, 1.28 h, about 1.77 USD), Qwen3-32B Q4_K_M, session
+`lab/w4bw/a100_20261124.sh` (log: `lab/pk1/results/a100-pod26-session.log`). Baseline 255a58f, candidate b901f27.
+Kernels (`lab/w4bw/bench.py`, random blocks in the model's shapes, every W4R variant, best per shape; the GPU read
+1,733 GB/s with a plain streaming kernel):
+
+| matrices of one decode step | 8 rows | 16 rows | 24 rows | 32 rows |
+| --- | ---: | ---: | ---: | ---: |
+| matmul time | 17.15 ms | 18.16 ms | 21.54 ms | 24.09 ms |
+| share of the achievable bandwidth | 65 % | 61 % | 52 % | 46 % |
+
+At 32 tokens the gate/up matrix (5120 x 25600) reached 56.5 %, down (Q4_K) 46.3 %, q and o 34-35 %, k and v
+(5120 x 1024) 9 %: the small matrices take about 7.4 of the 24.1 ms for about a fifth of the bytes.
+- PS (v12): bit for bit equal to v9 in every compared configuration; on the full 5120 x 25600 matrix 75.67 against
+  75.32 us at 32 tokens, 59.80 against 57.19 at 16, 65.95 against 68.10 at 24 (the one shape and width where it won);
+  slower on every other shape. In the decode step (engine, tables from one tuning run) 30.07 against 30.14 ms at
+  32 rows and 26.38 against 27.15 at 24, with 167 of 168 answers equal (another configuration won one entry).
+  Rejected: the saved instructions do not pay for 11 % more weight bytes and a second copy; it stays opt-in.
+- Width 24 (engine, decode step by rows, base table without width 24 against the candidate's): 20 rows 49.04 ->
+  25.90 ms, 24 rows 50.32 -> 27.15 ms; 8 and 32 rows unchanged (20.43 / 20.42, 30.22 / 30.14). Kept (on by default).
+- PK2-M (engine, the 8-client mix, five seeds): llama.cpp's kernels 2.202 s a wave and 1,558 ms to the first token;
+  threshold 1024 rows 1.458 s / 811 ms; "equal" (chose 256) 1.439 s / 792 ms; 128 rows 1.395 s / 748 ms; "mix" (chose
+  128) 1.392 s / 746 ms. Made the default (below).
+- HTTP, same pod, prompts, seeds and 32-token answers, three repeats each (output tok/s; first token median of the
+  per-run medians):
+
+| clients | baseline | candidate (width 24, PK2-M) | vLLM AWQ | candidate against vLLM |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 48.5 / 95.5 / 100.2 | 56.0 / 100.9 / 102.8 | 51.9 / 52.0 / 52.1 | +66 % |
+| 8 | 164.3 / 172.1 / 163.5 | 171.9 / 166.1 / 174.2 | 185.9 / 184.9 / 185.1 | -7.9 % (baseline -10.1 %) |
+| 24 | 207.5 / 207.1 / 202.8 | 256.8 / 254.5 / 256.0 | 254.8 / 259.8 / 254.6 | -0.2 % (baseline -19.7 %) |
+| 32 | 273.1 / 266.4 / 279.9 | 269.4 / 269.3 / 271.5 | 274.8 / 277.3 / 273.6 | -1.9 % (baseline -0.8 %) |
+
+  First token at 8 clients: baseline 852 / 871 / 885 ms, candidate 831 / 843 / 797, vLLM 844 / 853 / 854. At 32
+  clients the median first token is vLLM's (1.6-2.0 s against 2.7 s), the slowest IronMule's (2.73 against 3.0 s).
+  Facts 18/18 in every run except the baseline's third 32-client repeat: 17/18, recorded now as
+  `20263169:arithmetic-2` with the answer "200 - 2 = 198 / So, 33 * 6 = **198**" (right, not in the asked format).
+- Decisions: width 24 kept (+24.3 % at 24 clients, 3 of 3 repeats above every baseline repeat); PK2-M made the
+  default (first token earlier in 3 of 3 repeats, throughput +2.4 % with overlapping ranges); PS rejected. The +10 % at
+  32 clients is not reached (-1.9 % here); the 8-client gap shrank from -10.1 % to -7.9 % on this pod.
+- Next lever from the kernel table: the small matrices at 32 tokens (k and v at 9 %, q and o at 35 % of the bandwidth),
+  i.e. one launch for q, k and v (and for gate and up) instead of three (two).
+[baseline](../lab/pk1/results/a100-ironmule-http-pod26-base.jsonl) ·
+[candidate](../lab/pk1/results/a100-ironmule-http-pod26-cand.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod26.jsonl) ·
+[kernels](../lab/pk1/results/pod26/a100-w4bw-bench.json). Balance after pod 26: 49.03 USD.
+- Kaggle T4 (T4W: the W4R kernels built for Turing, m16n8k8 and plain copies; Turing numbers, not an A100's): the
+  T4 read 277 GB/s; a decode step's matmuls 75.8 / 78.3 / 83.3 / 92.4 / 99.0 ms at 1 / 8 / 16 / 24 / 32 tokens, 92 / 89 /
+  84 / 76 / 70 % of that bandwidth; PS equal to v9 bit for bit and slower on every shape but k / v at 32 tokens.
+  [T4 kernels](../lab/pk1/results/pod26/t4-w4bw-bench.json)

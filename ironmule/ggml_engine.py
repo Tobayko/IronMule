@@ -135,11 +135,13 @@ def trace_note(label: str) -> None:
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
 # IRONMULE_CUBLAS_MIN_ROWS fixes the threshold instead (0 = never), IRONMULE_PK2=0 skips the measurement.
 PK2_AUTO = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS") is None and os.environ.get("IRONMULE_PK2", "1") != "0"
-# PK2-M (2026-11-24, experimental): "mix" also times the thresholds on a burst of half short (33-token) and half long
-# prompts, as the benchmark's eight clients send, and chooses by it. On one KV stream per sequence such a burst runs
-# as two passes (llama.cpp's split_equal), the short one of about 130 rows below every threshold "equal" measures; on the
-# A100 profile the real mix took 0.81 s against 0.69 s for as many rows of equal prompts. "equal" (default): as before.
-PK2_CALIBRATION = os.environ.get("IRONMULE_PK2_CALIBRATION", "equal")
+# PK2-M (2026-11-24, default): "mix" times the thresholds on a burst of half short (33-token) and half long prompts, as
+# the benchmark's eight clients send, and chooses by it. On one KV stream per sequence such a burst runs as two passes
+# (llama.cpp's split_equal), the short one of about 130 rows below every threshold "equal" measured. A100 pod 26,
+# Qwen3-32B, 8 clients: "mix" chose 128 rows ("equal" 256); engine waves 1.392 against 1.439 s, first token 746 against
+# 792 ms; over HTTP the first token came earlier in 3 of 3 repeats (median 824 against 869 ms), 170.7 against
+# 166.6 tok/s (ranges overlap), facts 18/18. "equal": the earlier calibration on eight equal prompts.
+PK2_CALIBRATION = os.environ.get("IRONMULE_PK2_CALIBRATION", "mix")
 # W4 (2026-11-19): on a CUDA GPU of compute capability 8.0 or newer, packed engines generate and tune IronMule's W4R
 # kernels for this GPU and GGUF (ironmule/w4_kernels.py, cached under IRONMULE_W4_CACHE) and hand them to the kg1 hook,
 # unless IRONMULE_KG_LIB names a library; measure_kg then keeps them only for the token counts where the step got
