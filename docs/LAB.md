@@ -3591,3 +3591,54 @@ q 2.11 ms (64 calls), k and the Q4_K v 1.18 ms (96), prep_x 1.19, reduce_split 0
   own efficiency (each already fills the GPU), so it is not the next experiment either; the matmul kernels themselves
   at 32 rows (gate / up, down) are.
 [session](../lab/pk1/results/pod28/a100-pod28-session.log) · [profile](../lab/pk1/results/pod28/a100-pod28-profile.log)
+
+### 2026-11-24, A100 pod 29: PF1, the prefill/decode timeline of one 32-client wave -- the decode step, not the schedule
+RunPod A100 SXM4 80 GB (community, 0.685 h, about 0.95 USD), Qwen3-32B Q4_K_M (IronMule, build 96a4b6c with the
+patches of pod 28, QK1 off) against Qwen3-32B AWQ (vLLM 0.11.0, AWQ-Marlin, its defaults: chunked prefill with a
+2,048-token budget, prefix caching), session `lab/pf/a100_pf1.sh`. Workload: `lab/pk1/http_bench.py`'s 32-client mix
+(16 short prompts of 33 tokens, 16 documents of about 444), 32-token answers, three waves with their own prompts, the
+same seeds for both engines. Each arm is a fresh server process; vLLM's prefix-cache hits over the timed waves: 0 of
+7,632 tokens a wave; IronMule reused 0-12 tokens of a prompt (its kept template prefix). Prompt tokens a wave: IronMule
+7,413-7,423, vLLM 7,632 (chat templates differ). New instrumentation (trace only, no added synchronisation): the
+engine trace's per-call prompt / decode / placeholder rows and per-request prefill start and end, the service's
+submit / dispatch / first / end times, the client's arrival of every token, joined by the server's request id
+(`lab/pf/analyze.py`).
+
+Whole waves (single values, s; "last long first" is the last document's first token at the client, "after" is from
+there to the wave's end, both on the same request's timeline):
+
+| arm | tok/s | wave | last long first | after | short TTFT min / median / max | long TTFT median | short done median |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| IronMule, no trace | 267.3 / 267.4 / 278.3 | 3.823 / 3.824 / 3.676 | 2.771 / 2.790 / 2.650 | 1.05 / 1.03 / 1.03 | 0.48 / 2.74 / 2.75, 2.75 / 2.76 / 2.77, 2.62 / 2.62 / 2.63 | 2.75 / 2.77 / 2.63 | 3.78 / 3.78 / 3.65 |
+| IronMule, trace | 275.0 / 270.0 / 275.0 | 3.720 / 3.788 / 3.720 | 2.674 / 2.773 / 2.716 | 1.05 / 1.02 / 1.00 | 0.38 / 2.65 / 2.65, 2.74 / 2.75 / 2.75, 2.68 / 2.69 / 2.70 | 2.66 / 2.76 / 2.70 | 3.68 / 3.75 / 3.68 |
+| vLLM | 279.9 / 279.5 / 277.6 | 3.655 / 3.659 / 3.685 | 2.958 / 2.962 / 2.995 | 0.70 / 0.70 / 0.69 | 0.23 / 1.59 / 2.93, 0.22 / 1.60 / 2.94, 0.71 / 1.80 / 2.90 | 1.96 / 1.96 / 2.16 | 3.62 / 3.63 / 3.64 |
+
+Facts: IronMule 18/18, vLLM 18/18 (one graded wave each, apart from the timed ones). The trace costs nothing visible
+(270-275 against 267-278 tok/s).
+- IronMule's schedule: the wave's prompts go into one native call (waves 2 and 3: 7,413 and 7,423 rows of 32
+  sequences, 2.55 and 2.52 s; wave 1: 2 early arrivals alone, 474 rows in 0.29 s, then 7,155 rows of 30 in 2.25 s),
+  then 31 decode calls of 32 rows (engine 30.26 ms median over 135 calls; 31.2-31.6 ms between tokens at the
+  client). So a short request does not wait after its own prefill: its prefill ends in the same call as the longest
+  prompt's, and its first token comes 0-30 ms after the documents' (every short request: 0 tokens when the last
+  prefill ended, 1 at the last document's first token).
+- vLLM's schedule (`/metrics` per wave): 37 steps, 4 of 1,025-2,048 tokens (the prompt chunks with the running
+  requests' decode rows), 1 of 257-1,024, 32 of at most 64 (31 of at most 32). First tokens come in four groups about
+  0.72 s apart, one per chunk. By the last document's first token the short requests had 1-6 tokens (median 3), the
+  documents 1-6: mixing gained them three to four tokens, not a shorter path.
+- Where the wave's difference sits: vLLM ends its last prefill 0.17-0.35 s later than IronMule (2.96-3.00 against
+  2.65-2.79 s: IronMule's packed prompt call is the faster prefill, about 2,900 against 2,600 prompt tokens a second;
+  vLLM's chunks also carry the running requests' decode rows), and needs 0.69-0.70 s instead of 1.00-1.05 s for the remaining 31 tokens:
+  22.7-22.8 ms a step against 31.2-31.6 ms. vLLM's waves are 0.02-0.17 s shorter because of the decode step alone.
+- vLLM mainly hands out first tokens earlier (short median 1.6-1.8 against 2.6-2.8 s; its slowest first token is
+  later, 2.90-2.94 against 2.64-2.78 s); it does not finish the wave earlier by scheduling. With one burst of
+  arrivals the wave cannot end before the last prompt's prefill plus its 31 decode steps; mixing decode rows into the
+  prompt calls only moves that prefill later (and, with IronMule's KV streams, splits the call into passes). A mixed
+  prefill/decode prototype would trade later documents for earlier short answers and is not the next experiment for
+  throughput or wave time.
+- Next: the 32-row decode step. At vLLM's 22.7 ms the same waves would take about 2.65-2.79 + 0.70 s = 3.35-3.49 s,
+  5-9 % below vLLM's 3.65-3.69 s. The step's parts (pod 28): about 28.7 ms of kernels, of which gate / up 9.35 ms and
+  down 5.74 ms (Q4_K and Q6_K), against a 30.26 ms native call and a 31.5 ms client gap: about 1.5 ms of launch and
+  graph overhead and about 1.2 ms of host time (sampling, events) a step. The gate / up and down kernels at 32 rows
+  come first, the host time per step second.
+[session](../lab/pk1/results/pod29/a100-pod29-session.log) · [raw data](../lab/pk1/results/pod29/) (client timelines
+`tl_*.jsonl`, engine trace `trace.txt`, service `stability-log.jsonl`, vLLM `metrics_vllm.jsonl`, analysis `pf_*.json`)
