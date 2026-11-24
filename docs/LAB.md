@@ -3537,3 +3537,26 @@ At 32 tokens the gate/up matrix (5120 x 25600) reached 56.5 %, down (Q4_K) 46.3 
   T4 read 277 GB/s; a decode step's matmuls 75.8 / 78.3 / 83.3 / 92.4 / 99.0 ms at 1 / 8 / 16 / 24 / 32 tokens, 92 / 89 /
   84 / 76 / 70 % of that bandwidth; PS equal to v9 bit for bit and slower on every shape but k / v at 32 tokens.
   [T4 kernels](../lab/pk1/results/pod26/t4-w4bw-bench.json)
+
+### 2026-11-24, A100 pod 27: Q/K/V in isolation, separate against one fused launch (v13)
+RunPod A100 SXM4 80 GB (community, 0.18 h, about 0.25 USD; no model needed: random blocks of the real formats).
+`lab/w4bw/qkv_bench.py`: a layer's q (5120 -> 8192), k and v (5120 -> 1024) as served, i.e. the best W4R variant of
+each shape back to back on one stream with one prepared x shared (PK3), against v13 (`w4dq`, one launch over the
+segments as one virtual matrix); weights in eight copies beyond the L2 cache, two alternating rounds, best of each.
+Correction to pod 26's note: the 7.4 ms there included the o projection (after attention); Q/K/V alone is 4.8 ms at
+32 rows.
+
+| rows | layer (32 each) | separate | fused | per decode step: separate -> fused |
+| ---: | --- | ---: | ---: | ---: |
+| 8 | q + k + v (v Q4_K) | 45.50 us | 31.51 us | |
+| 8 | q + k (v Q6_K apart, 15.62 us) | 36.63 us | 34.44 us | 3.128 -> 2.610 ms (-0.52) |
+| 24 | q + k + v | 62.67 us | 41.40 us | |
+| 24 | q + k (v Q6_K apart, 18.43 us) | 59.67 us | 48.74 us | 4.505 -> 3.474 ms (-1.03) |
+| 32 | q + k + v | 66.73 us | 48.03 us | |
+| 32 | q + k (v Q6_K apart, 19.71 us) | 63.97 us | 57.24 us | 4.813 -> 3.999 ms (-0.81) |
+
+Every fused output within the error bound against float64 (relative 3.5-3.8e-4); not bit for bit equal to the separate
+path (another configuration wins, so another summation order). At 32 rows that is about a quarter of the 3.3 ms the
+small matrices were estimated to leave, about 2.7 % of a 30.1 ms step and about 25 ms of a 3.8 s wave. Next: v13 in
+the served step behind a switch, the step at 8 / 24 / 32 rows with and without it. Not yet in llama.cpp's graph.
+[measurements](../lab/pk1/results/pod27/a100-qkv-isolated.json)
