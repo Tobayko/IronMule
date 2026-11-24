@@ -3642,3 +3642,82 @@ Facts: IronMule 18/18, vLLM 18/18 (one graded wave each, apart from the timed on
   come first, the host time per step second.
 [session](../lab/pk1/results/pod29/a100-pod29-session.log) · [raw data](../lab/pk1/results/pod29/) (client timelines
 `tl_*.jsonl`, engine trace `trace.txt`, service `stability-log.jsonl`, vLLM `metrics_vllm.jsonl`, analysis `pf_*.json`)
+
+### 2026-11-24, PF1 numbers attributed, and A100 pod 30: DK1, what limits the 32-row decode matmuls -- SM-bound, no single cause
+Owner's order for this round: first attribute PF1's numbers, then one dominant decode bottleneck, at most two variants.
+
+PF1 (pod 29) on one time axis, from the raw data already saved:
+- vLLM's 22.7 ms is a direct 32-row reference, not an average over shrinking batches: in every wave 26-27 consecutive
+  token arrivals reached all 32 requests at once, 22.6-23.5 ms apart at the client (the last 4-5 steps had 31-1
+  requests). It is vLLM's whole step period at the client; its GPU time per 32-row step (the 2026-11-20 study, another
+  run) was about 20 ms, so about 2.8 ms of it are outside the kernels, not split further.
+- IronMule, traced waves: 32-row native call 30.0-30.1 ms (median per wave), 1.2-1.3 ms between calls (median;
+  0.5-1.7), start to start 31.2-31.4 ms = the client's spacing of full 32-token arrivals (31.2-31.5 ms); the first
+  chunk arrives 0.6-0.8 ms after a call ends. Inside the call the kernels are not on this time axis; the 28.4 ms of
+  kernels per 32-row step come from pod 13's profile (another run, CUPTI), so the 1.6-1.7 ms between them and the call
+  stay unexplained here (pod 13 put about 0.8 ms of input setup and 0.1-0.7 ms of readback around its graph).
+- What +10 % over vLLM needs, wave by wave (the same prompts; target = vLLM's wave / 1.10; IronMule's own time to the
+  last document's first token and 31 steps after it):
+
+| wave | vLLM wave | target | IronMule last first token (no trace / trace) | step period needed (no trace / trace) | now |
+| --- | ---: | ---: | --- | --- | --- |
+| 1 | 3.655 s | 3.322 s | 2.771 / 2.674 s | 17.8 / 20.9 ms | 31.4 ms |
+| 2 | 3.659 s | 3.327 s | 2.790 / 2.773 s | 17.3 / 17.9 ms | 31.4 ms |
+| 3 | 3.685 s | 3.350 s | 2.650 / 2.716 s | 22.6 / 20.4 ms | 31.2 ms |
+
+  So with the present prefill, a 17-23 ms step period (a native call of about 16-21 ms): a cut of 30-47 %, not the
+  "20-22 ms" working figure; the same throughput could also come partly from the prefill (68-74 % of the wave).
+
+DK1 on pod 30 (RunPod A100 SXM4 80 GB, community, 0.546 h, about 0.76 USD; Qwen3-32B Q4_K_M; build 38e4267, product
+kernels unchanged; `lab/dk1`, raw data in `lab/pk1/results/pod30`):
+- Nsight Compute is installed but RunPod's container refuses GPU counters (`ERR_NVGPUCTRPERM`, a host driver setting):
+  no DRAM bytes, stall reasons or pipe utilisation. The limit was located by timing instead: lab-only compile switches
+  in v9 (`IRONMULE_W4_ABL`, default off; the product build's SASS is unchanged, 2,072 instructions, 236 registers, no
+  spills) that remove one part at a time, all builds loaded in one process and measured in turn after a warm-up, six
+  rounds of 200 calls (spread below 1 %). Separate processes with short windows had scattered by up to 20 % and
+  were discarded; a first pin of the blocks per SM through dynamic shared memory also shrank L1 to 28 KB and slowed
+  the full kernel to 104-121 us, so it was replaced.
+- The winners at 32 tokens (all variants measured again): gate / up v9 (variant 184: 2 warps, 2 tiles per warp, 236
+  registers, 4 blocks = 8 warps per SM, 400 blocks for 432 slots) 75.6 us; down Q4_K v11 (VF(4,4,1), K-split 4, 122
+  registers, 36 KB shared) 92.3 us; down Q6_K v11 111.9 us (times with prep_x and reduce_split; the pod's own tuning
+  chose the same). Served steps without a profiler: 20.4 / 22.3 / 26.8 / 30.2 ms at 8 / 16 / 24 / 32 rows.
+- Gate / up at 32 tokens, us per call (median of six rounds):
+
+| arm (v9, variant 184) | us | what it shows |
+| --- | ---: | --- |
+| product build | 75.4 | |
+| largest L1 requested (carveout 0 %) | 75.4 | the driver already gives the largest L1 here |
+| carveout 50 % / 100 % (L1 about 28 KB) | 79.1 / 103.3 | x through L1 matters, but is already at its best |
+| weights streamed only (no x, no math; 122 registers) | 50.7 | the load structure reaches 1.45 TB/s (84 % of 1.73) |
+| weights from L2 instead of DRAM | 72.2 | **without the DRAM stream only 3.2 us faster** |
+| x from one sub-block (always in L1; 194 registers) | 67.7 | x traffic at most about 8 us |
+| no mma (164 registers) | 63.4 | mma at most about 12 us |
+| no dequantisation (206 registers, same 4 blocks) | 61.3 | dequantisation at most about 14 us |
+
+  Down Q4_K with v9 (variant 184, K-split 4): 102.7 us full, 59.2 weights only, 95.3 weights from L2, 84.3 without
+  dequantisation: the same picture.
+- Finding: at 32 rows the matmuls are limited inside the SM, not by DRAM: removing the whole DRAM stream gains 4-7 %,
+  so prefetch depth, layout or fewer bytes cannot help much there. No single part dominates: dequantisation (the
+  largest clean bound, 14 of 75 us) and mma (12) add up almost exactly to the 24.7 us above the streaming floor, so
+  they barely overlap; ptxas already interleaves the HMMAs with the dequantisation in the SASS. A count of the SASS
+  per super-block (about 1,036 instructions, 128 HMMA, about 475 integer ops at half rate) puts tensor pipe, integer
+  pipe and issue each near 25-27 us of the 72 us: each about a third busy, with two warps per scheduler.
+- No variant was built. The best-targeted mechanism (nibble unpacking by LOP3 with a permuted tile layout, 7 -> 5
+  integer ops per 8 weights) would remove about 2/7 of the dequantisation's integer work; with the bound above that is
+  at most about 3-4 us per gate / up call, about 0.5-0.8 ms per 32-row step (at most about 0.7 % of a wave), and it
+  needs a second copy of the weights in another layout. PS (pod 26), which removed the per-sub-block scale arithmetic,
+  gained nothing at 32 tokens. Not worth an integrated or HTTP run against a 30-47 % target.
+- Bound for the whole line: even all matmuls of a 32-row step at the copy bandwidth would save about 9.6 ms (pod 13:
+  21.1 ms at 0.94 TB/s against 11.4 ms at 1.73), just the size of the needed cut; real kernels get a fraction. The +10 %
+  therefore needs several levers together. Measured sizes per 32-row step: matmul overlap at most about 2 ms (the
+  12-14 us above, per gate / up call), prep_x and reduce_split 1.95 ms (pod 13), attention 2.5 ms against vLLM's 1.5,
+  norms / RoPE / KV / SwiGLU about 2.7 ms against about 1.3, 1.6-1.7 ms inside the call outside the kernels and
+  1.2 ms between calls. Together about 8 ms at best: a step near 23 ms and a wave near 3.44 s, about +6-7 % over vLLM;
+  the rest would have to come from the prefill.
+- Next, concretely: removing prep_x and reduce_split from the decode step (1.95 ms of a 30.2 ms step, measured,
+  exact arithmetic possible: x written in fp16 by the FU1 norm as PK4 already does for prompts, K-split partial sums
+  reduced inside the W4R kernel); expected about 1.5 ms per step, about 47 ms per wave (+1.3 %). For the matmul kernels
+  themselves, a machine that grants GPU counters first: without stall reasons the overlap of dequantisation and mma
+  cannot be targeted.
+[session](../lab/pk1/results/pod30/a100_dk1.log) · [ablations, separate processes](../lab/pk1/results/pod30/a100_dk1b.log) ·
+[ablations, one process](../lab/pk1/results/pod30/a100_dk1c.log) · [down](../lab/pk1/results/pod30/a100_dk1d_down.jsonl)

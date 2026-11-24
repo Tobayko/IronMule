@@ -1,0 +1,47 @@
+== 16:47:19 a1f59de DK1: v9 ablation switches (lab-only compile flags), Nsight Compute drivers and the A100 diagnostic session
+NVIDIA A100-SXM4-80GB, 1410 MHz, 1593 MHz, 400.00 W, 595.91.07
+== 16:47:19 ncu: /usr/local/cuda/bin/ncu Version 2025.1.1.0 (build 35528883) (public-release)
+== 16:47:19 1. all variants, 16 and 32 tokens
+{"gpu_sm": "80", "achievable_read_gb_s": 1730.3, "compile_s": 154}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 25600, "B": 16, "count": 128, "us": 57.24, "gb_s": 1288.0, "pct_peak": 74.4, "variant": 284, "ksplit": 1, "rel_err": 0.000366, "cfg": {"warps": 4, "ks": 70141, "nt": 2, "pre": 0}, "best_plain_us": 57.24, "best_ps_us": 59.94, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[59.94, 316, 1], [60.14, 285, 1], [60.86, 286, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 25600, "B": 32, "count": 128, "us": 75.61, "gb_s": 975.2, "pct_peak": 56.4, "variant": 184, "ksplit": 1, "rel_err": 0.000359, "cfg": {"warps": 2, "ks": 30201, "nt": 4, "pre": 0}, "best_plain_us": 75.61, "best_ps_us": 76.83, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[76.83, 302, 1], [77.41, 185, 1], [78.57, 303, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 25600, "N": 5120, "B": 16, "count": 32, "us": 65.4, "gb_s": 1127.3, "pct_peak": 65.2, "variant": 232, "ksplit": 1, "rel_err": 0.00035, "cfg": {"warps": 4, "ks": 30104, "nt": 2, "pre": 0}, "best_plain_us": 65.4, "best_ps_us": 68.74, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[68.61, 284, 4], [68.74, 291, 4], [68.88, 284, 8]]}
+{"l2": false, "kind": "Q4_K", "K": 25600, "N": 5120, "B": 32, "count": 32, "us": 92.26, "gb_s": 799.1, "pct_peak": 46.2, "variant": 256, "ksplit": 4, "rel_err": 0.000366, "cfg": {"warps": 4, "ks": 50100, "nt": 4, "pre": 0}, "best_plain_us": 92.26, "best_ps_us": 100.66, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[92.4, 251, 8], [92.84, 231, 8], [92.84, 256, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 25600, "N": 5120, "B": 16, "count": 32, "us": 86.29, "gb_s": 1246.0, "pct_peak": 72.0, "variant": 270, "ksplit": 4, "rel_err": 0.000359, "cfg": {"warps": 4, "ks": 50100, "nt": 2, "pre": 0}, "best_plain_us": 86.29, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[86.49, 241, 1], [90.93, 192, 4], [90.93, 270, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 25600, "N": 5120, "B": 32, "count": 32, "us": 111.92, "gb_s": 960.7, "pct_peak": 55.5, "variant": 266, "ksplit": 4, "rel_err": 0.000358, "cfg": {"warps": 4, "ks": 50100, "nt": 4, "pre": 0}, "best_plain_us": 111.92, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[116.97, 267, 8], [118.0, 266, 8], [118.92, 269, 8]]}
+{"step_B": 16, "matmul_ms": 12.181, "gb": 15.237, "effective_gb_s": 1250.9, "pct_peak": 72.3}
+{"step_B": 32, "matmul_ms": 16.212, "gb": 15.238, "effective_gb_s": 939.9, "pct_peak": 54.3}
+== 16:51:15 winners at 32 tokens: gate/up 184/1, down Q4_K 256/4, down Q6_K 266/4
+== 16:51:15 2. v9 ablations on gate/up (variant 184 = v9 2 warps, 2 tiles, the pod-26 winner; 4 blocks per SM pinned)
+ABL 0 round 1 121.65 us ks 1 err 0.000359 next [[122.9, 184, 4], [124.56, 184, 2], [132.67, 184, 8]]
+ABL 1 round 1 52.39 us ks 1 err 1.0 next [[61.56, 184, 2], [67.71, 184, 4], [80.94, 184, 8]]
+ABL 2 round 1 82.88 us ks 1 err 1.107213 next [[89.85, 184, 2], [93.66, 184, 4], [107.91, 184, 8]]
+ABL 3 round 1 81.24 us ks 1 err 6.530668 next [[93.76, 184, 2], [97.67, 184, 4], [106.31, 184, 8]]
+ABL 4 round 1 72.17 us ks 1 err 1.0 next [[82.21, 184, 2], [86.34, 184, 4], [102.22, 184, 8]]
+ABL 0 round 2 121.32 us ks 1 err 0.000359 next [[122.45, 184, 4], [124.25, 184, 2], [130.38, 184, 8]]
+ABL 1 round 2 53.13 us ks 1 err 1.0 next [[63.16, 184, 2], [69.32, 184, 4], [81.47, 184, 8]]
+ABL 2 round 2 84.77 us ks 1 err 1.107213 next [[91.96, 184, 2], [95.58, 184, 4], [109.98, 184, 8]]
+ABL 3 round 2 81.22 us ks 1 err 6.530668 next [[93.76, 184, 2], [97.59, 184, 4], [100.15, 184, 8]]
+ABL 4 round 2 68.94 us ks 1 err 1.0 next [[78.36, 184, 2], [82.72, 184, 4], [97.48, 184, 8]]
+== 16:54:03 3. Nsight Compute, isolated winners at 32 tokens
+==ERROR== ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA GPU Performance Counters on the target device 0. For instructions on enabling permissions and to get more information see https://developer.nvidia.com/ERR_NVGPUCTRPERM
+rc=0 us=398.68 (with the profiler attached)
+==PROF== Disconnected from process 5562
+== 16:54:06 GPU counters not permitted on this pod: Nsight Compute skipped
+== 16:54:06 4. tuning and served decode steps
+12 5120 25600 32 256 4
+12 25600 5120 32 184 1
+14 5120 25600 32 266 4
+12 1024 5120 1 126 1
+12 1024 5120 2 126 1
+WAVE {"width": 8, "seed": 0, "wall_s": 1.4138, "ttft_p50_ms": 765.1, "ttft_max_ms": 765.1, "tok_s": 181.1, "prefill": [[1908, 8, 0.7637]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 1.3758, "ttft_p50_ms": 728.4, "ttft_max_ms": 728.4, "tok_s": 186.1, "prefill": [[1844, 8, 0.7267]]}
+WAVE {"width": 16, "seed": 0, "wall_s": 2.0803, "ttft_p50_ms": 1370.1, "ttft_max_ms": 1370.1, "tok_s": 246.1, "prefill": [[3783, 16, 1.3667]]}
+WAVE {"width": 16, "seed": 1, "wall_s": 2.09, "ttft_p50_ms": 1383.9, "ttft_max_ms": 1383.9, "tok_s": 245.0, "prefill": [[3683, 16, 1.3801]]}
+WAVE {"width": 24, "seed": 0, "wall_s": 2.8623, "ttft_p50_ms": 2013.6, "ttft_max_ms": 2013.7, "tok_s": 268.3, "prefill": [[5628, 24, 2.0079]]}
+WAVE {"width": 24, "seed": 1, "wall_s": 2.8855, "ttft_p50_ms": 2039.0, "ttft_max_ms": 2039.0, "tok_s": 266.2, "prefill": [[5524, 24, 2.033]]}
+WAVE {"width": 32, "seed": 0, "wall_s": 3.6056, "ttft_p50_ms": 2649.2, "ttft_max_ms": 2649.2, "tok_s": 284.0, "prefill": [[7471, 32, 2.629]]}
+WAVE {"width": 32, "seed": 1, "wall_s": 3.5909, "ttft_p50_ms": 2637.5, "ttft_max_ms": 2637.5, "tok_s": 285.2, "prefill": [[7369, 32, 2.6285]]}
+STEPS {"label": "base", "decode_ms_by_rows": {"8": 20.422, "16": 22.262, "24": 26.764, "32": 30.181}}
+-rw-r--r-- 1 root root 6106 Nov 24 17:02 /work/dk1.tgz
+== 17:02:35 A100-DK1-DONE
