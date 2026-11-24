@@ -8,7 +8,7 @@
 # 2. decode step: PD1 on in both arms, RF1 off / on alternating in one process, four rounds (lab/pd1/step_ab.py).
 set -uo pipefail
 W=/work/rf
-mkdir -p $W
+mkdir -p $W $W/lib
 cd /work/IronMule
 T=$(ls -d ~/.cache/ironmule/ggml/ironmule/cuda/llama_cpp_python-0.3.16)
 export IRONMULE_GGML_BINDINGS=$T LLAMA_CPP_LIB_PATH=$T/vendor/llama.cpp/build/bin
