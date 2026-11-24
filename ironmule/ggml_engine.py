@@ -131,9 +131,42 @@ GATHER_BURST_MEMORY_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MEMORY_
 PK1C = os.environ.get("IRONMULE_GGML_PK1C", "0") == "1"
 GATHER_EXPECT_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_EXPECT_QUIET_MS", 120)) / 1000
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
+# PX1 (2026-11-24): with one KV stream per sequence llama.cpp splits a packed call sequentially: a pass takes the run of
+# consecutive sequence ids that all still have tokens and advances each by the fewest any of them has left. Prefix
+# reuse keeps a different number of template tokens in each stream (0-12 in the benchmark's later waves), so prompts of
+# the same length become unequal and a 32-request prefill ran as 8-14 passes instead of 2, each a full trip through
+# the model (A100 pod 32: 21.5 ms a pass, 0.335 ms a row, fitted over 60 calls). A packed group then keeps the same
+# prefix in every stream (the smallest), when that saves passes for at most PX1_ROWS rows recomputed per pass saved.
+# The recomputed tokens are computed as in any prefill. Off until measured on the A100: IRONMULE_GGML_PX1=1 turns it on.
+PX1 = os.environ.get("IRONMULE_GGML_PX1", "0") == "1"
+PX1_ROWS = int(os.environ.get("IRONMULE_GGML_PX1_ROWS", 32))
+
+
+def split_passes(seq_rows: dict[int, int], n_ubatch: int) -> int:
+    """PX1: how many passes llama.cpp's sequential split_equal makes of a packed call ({sequence id: rows})."""
+    left = {s: r for s, r in seq_rows.items() if r > 0}
+    passes = 0
+    while left:
+        ids = sorted(left)
+        run = [ids[0]]
+        for s in ids[1:]:
+            if s != run[-1] + 1:
+                break
+            run.append(s)
+        step = max(1, min(min(left[s] for s in run), max(1, n_ubatch // len(run))))
+        for s in run:
+            left[s] -= step
+            if left[s] <= 0:
+                del left[s]
+        passes += 1
+    return passes
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default
 TRACE = os.environ.get("IRONMULE_GGML_TRACE", "")
+# PF3 (diagnostics, with the trace only): IRONMULE_GGML_PAUSE names a file for ironmule.ggml_pause's samples of native
+# calls of IRONMULE_GGML_PAUSE_MIN_MS (1000) or more (a py-spy dump once a call passes IRONMULE_GGML_PAUSE_SPY_MS), and
+# adds per-call CPU, fault, run-delay and throttle deltas to every trace line
+PAUSE = os.environ.get("IRONMULE_GGML_PAUSE", "") if TRACE else ""
 
 
 def trace_note(label: str) -> None:
@@ -1126,9 +1159,21 @@ class GgmlEngine:
     # --- decode calls -------------------------------------------------------------------------------------------------
     def _decode(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         if TRACE:
+            probe = getattr(self, "_pause_probe", None)
+            if PAUSE and probe is None:
+                from ironmule.ggml_pause import PauseProbe
+
+                probe = self._pause_probe = PauseProbe(
+                    PAUSE, float(os.environ.get("IRONMULE_GGML_PAUSE_MIN_MS", 1000)),
+                    spy_ms=float(os.environ.get("IRONMULE_GGML_PAUSE_SPY_MS", 0)))
+            if probe is not None:
+                probe.begin()
             started_ns = time.monotonic_ns()
-            out = self._decode_once(rows, evict=evict)
-            ended_ns = time.monotonic_ns()
+            try:
+                out = self._decode_once(rows, evict=evict)
+            finally:
+                ended_ns = time.monotonic_ns()
+                pause_fields = probe.end(f"rows={len(rows)}") if probe is not None else ""
             # PF1: a row inside its request's prompt is a prompt row, one past it decodes, one of a sequence without a
             # request is a KG3 placeholder. Times around the call are taken where llama.cpp returns anyway: no added
             # synchronisation.
@@ -1153,7 +1198,7 @@ class GgmlEngine:
                 fh.write(f"{started_ns / 1e9:.6f} {(ended_ns - started_ns) / 1e9:.6f} {len(rows)} {len(seqs)} "
                          f"{sum(1 for r in rows if r[3])} {prompt_rows} {len(rows) - prompt_rows - filler_rows} "
                          f"{filler_rows} seqs={','.join(map(str, seqs))} b={(built - started_ns) / 1e6:.3f} "
-                         f"l={(decoded - built) / 1e6:.3f} r={(ended_ns - decoded) / 1e6:.3f}\n")
+                         f"l={(decoded - built) / 1e6:.3f} r={(ended_ns - decoded) / 1e6:.3f}{pause_fields}\n")
             return out
         return self._decode_once(rows, evict=evict)
 
@@ -1322,6 +1367,38 @@ class GgmlEngine:
         self.prefill_batch_prompts += len(group)
         self.prefill_batch_rows += len(rows)
         return picks
+
+    def _even_reuse(self, group: list[tuple[int, Job, int]]) -> list[tuple[int, Job, int]]:
+        """PX1: the same kept prefix in every stream of a packed group, when that saves llama.cpp passes."""
+        on = getattr(self, "px1", PX1)
+        if (not on and not TRACE) or len(group) < 2:
+            return group
+        keeps = [keep for _, _, keep in group]
+        low = min(keeps)
+        if low == max(keeps) or sum(len(job.ids) - keep for _, job, keep in group) > self.batch_cap:
+            return group  # nothing to even out, or the group spans several calls (each split on its own)
+        ubatch = UBATCH or 512
+        now = split_passes({seq: len(job.ids) - keep for seq, job, keep in group}, ubatch)
+        even = split_passes({seq: len(job.ids) - low for seq, job, _ in group}, ubatch)
+        extra = sum(keep - low for keep in keeps)
+        trace_note(f"px1 passes {now} even {even} extra {extra} on {int(bool(on))}")
+        if not on or even >= now or extra > PX1_ROWS * (now - even):
+            return group
+        out = []
+        for seq, job, keep in group:
+            if keep > low:
+                if low == 0 or not self.L.llama_memory_seq_rm(self.memory, seq, low, -1):
+                    self.L.llama_memory_seq_rm(self.memory, seq, -1, -1)
+                    if low > 0:  # the stream could not be cut at `low`: it starts empty, the rest stay even
+                        self.reused_tokens -= keep
+                        job.reused = 0
+                        out.append((seq, job, 0))
+                        continue
+                self.reused_tokens -= keep - low
+                job.reused = low
+            out.append((seq, job, low))
+        self.px1_evened = getattr(self, "px1_evened", 0) + 1
+        return out
 
     def _pack_prefill(self, group: list[tuple[int, Job, int]]) -> list[int]:
         """PK1: the prompts of `group` (ascending sequence ids) in as few native calls as the logical batch allows."""
@@ -1685,7 +1762,7 @@ class GgmlEngine:
                 singles = fresh
                 delayed_groups = None
                 if getattr(self, "pack", False) and streams and fresh:
-                    group = sorted(fresh, key=lambda item: item[0])
+                    group = self._even_reuse(sorted(fresh, key=lambda item: item[0]))  # PX1
                     for sq, other, _ in group:
                         active[sq] = other
                     for (sq, other, _), pick in zip(group, self._pack_prefill(group), strict=True):

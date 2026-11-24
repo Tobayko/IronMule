@@ -1,0 +1,60 @@
+16a17,38
+> 
+> // TL1 (IronMule, diagnostics, 2026-11-24): with IRONMULE_TL1 naming a file, every llama_decode appends one line of
+> // host timestamps (ggml_time_us, the monotonic clock): the batch split, then per ubatch its tokens and sequences,
+> // whether the previous graph was reused, and the microseconds spent building/allocating the graph, setting its inputs,
+> // launching it (graph_compute returns once the kernels are queued; a full launch queue blocks it) and copying its
+> // outputs. No synchronisation is added. Output is buffered and flushed after calls of 100 ms or more.
+> struct ironmule_tl1_ub { int64_t t0, build, inputs, compute, out; int ntok, nseq, reused; };
+> static FILE * ironmule_tl1_file() {
+>     static FILE * f = nullptr;
+>     static bool tried = false;
+>     if (!tried) {
+>         tried = true;
+>         const char * path = getenv("IRONMULE_TL1");
+>         if (path && *path) {
+>             f = fopen(path, "a");
+>             if (f) setvbuf(f, nullptr, _IOFBF, 1 << 16);
+>         }
+>     }
+>     return f;
+> }
+> static thread_local std::vector<ironmule_tl1_ub> ironmule_tl1_ubs;
+> static thread_local ironmule_tl1_ub ironmule_tl1_cur;
+780a803,804
+>     FILE * tl1 = ironmule_tl1_file();
+>     if (tl1) { ironmule_tl1_cur = {ggml_time_us(), 0, 0, 0, 0, (int) ubatch.n_tokens, (int) ubatch.n_seqs_unq, 0}; }
+784a809
+>         if (tl1) ironmule_tl1_cur.reused = 1;
+809a835
+>     if (tl1) ironmule_tl1_cur.build = ggml_time_us();
+817a844
+>     if (tl1) ironmule_tl1_cur.inputs = ggml_time_us();
+819a847
+>     if (tl1) ironmule_tl1_cur.compute = ggml_time_us();
+1052a1081,1083
+>     const int64_t tl1_d0 = ironmule_tl1_file() ? ggml_time_us() : 0;
+>     if (tl1_d0) ironmule_tl1_ubs.clear();
+> 
+1100a1132,1133
+>     const int64_t tl1_split = tl1_d0 ? ggml_time_us() : 0;
+> 
+1247a1281,1284
+>         if (tl1_d0) {
+>             ironmule_tl1_cur.out = ggml_time_us();
+>             ironmule_tl1_ubs.push_back(ironmule_tl1_cur);
+>         }
+1301a1339,1351
+> 
+>     if (tl1_d0) {
+>         // D start_us split_us total_us ubatches | per ubatch: start_offset_us:tokens:seqs:reused:build:inputs:launch:out
+>         FILE * f = ironmule_tl1_file();
+>         const int64_t d1 = ggml_time_us();
+>         fprintf(f, "D %" PRId64 " %" PRId64 " %" PRId64 " %zu", tl1_d0, tl1_split - tl1_d0, d1 - tl1_d0, ironmule_tl1_ubs.size());
+>         for (const auto & u : ironmule_tl1_ubs) {
+>             fprintf(f, " %" PRId64 ":%d:%d:%d:%" PRId64 ":%" PRId64 ":%" PRId64 ":%" PRId64, u.t0 - tl1_d0, u.ntok, u.nseq, u.reused,
+>                     u.build - u.t0, u.inputs - u.build, u.compute - u.inputs, u.out - u.compute);
+>         }
+>         fputc('\n', f);
+>         if (d1 - tl1_d0 >= 100000) fflush(f);
+>     }

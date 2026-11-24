@@ -3863,3 +3863,69 @@ waves per start, facts 18/18 in every one:
 Next, by share of the wave: the packed prefill call (2.4-2.6 s of a 3.65-3.90 s wave; cuBLAS GEMMs 1.84-1.90 s of it),
 first its spread of about 0.25 s between waves of the same size (the power cap and clocks above are the first
 suspect; observed, not tested), then the host-side pause that turns some calls into 3.0-4.0 s.
+
+### 2026-11-24, PF3 before the pod: PF2's conclusions made precise, the GEMM efficiency of the packed prefill, pass fragmentation (PX1) chosen
+Local analysis of pod 32's raw data (`lab/pk1/results/pod32`), no GPU time. PD1 on, RF1 and PK1-C off.
+
+Corrections to PF2:
+- Split bursts, at equal prompt work: pairing every split 32-client wave with an unsplit one of the same repeat (same
+  prompts, PF2 S1-S3 and the PK1-C A/Bs, pause calls excluded), the time to the last first token differs by a median
+  of +24 ms (-49 to +79 ms) for the split waves. The first, small call computes rows the wave needs anyway; what a
+  split adds is one more pass through the weights, and an unsplit wave spends 0.20-0.24 s in the service and the
+  gathering window before its call where a split wave spends 0.05-0.09 s. So the split is not the largest avoidable
+  block.
+- PK1-C only waits: it holds the window open until the expected count is there. Ten of ten merged later waves show
+  that the grouping works, not that the wave gets faster (it did not, within the call-to-call spread). The cause of
+  the late joins is the admission path (below), not the window.
+- Page faults: S4's worker had no major faults, but S4 had no pause. That does not exclude page faults (or anything
+  else) in the paused calls of S1 and S2; the cause of those pauses stays open until a paused call is observed with
+  the probe below.
+
+GEMM efficiency of the packed prefill (CUPTI kernels of pod 32's separate engine process; Qwen3-32B, 64 layers):
+
+| per layer (out x in) | q 8192x5120 | k, v 1024x5120 | o 5120x8192 | gate, up 25600x5120 | down 5120x25600 |
+| --- | --- | --- | --- | --- | --- |
+| share of the GEMM FLOPs | 8.6 % | 1.1 % each | 8.6 % | 26.9 % each | 26.9 % |
+
+- Path (PK2, passes of 128 rows or more): Q4_K / Q6_K weights dequantised to fp16 per pass, then
+  `cublasGemmEx(OP_T, OP_N)` with fp16 weights and activations, fp32 output, `CUBLAS_COMPUTE_32F`,
+  `CUBLAS_GEMM_DEFAULT_TENSOR_OP` (cuBLAS's heuristic; ggml sets no workspace of its own). Kernels:
+  `ampere_s16816gemm_fp16_256x128_ldg8_stages_64x3_tn`, its 128x256 sibling and
+  `cutlass_80_tensorop_s16816gemm_f16_128x256_32x6_tn_align8` (fp16 MMA, fp32 accumulation). 7 GEMMs a layer, 448 a
+  pass; the tokens are the GEMM's N, unpadded (the tile edge wastes 1.2 % at 6,576 rows, 9 % at 1,056).
+- The output projection runs only on the 32 rows that need logits (below the PK2 threshold, not cuBLAS).
+- Wave 0 (passes of 1,056 and 6,576 rows, 7,632 tokens): 2 x 7,632 x 31.21e9 = 4.763e14 FLOP in 1,904 ms of GEMM
+  kernels = 250 TFLOPS. Wave 3 (896 + 6,464 cuBLAS rows and five small W4R passes): about 250 TFLOPS as well.
+- The A100's fp16 tensor peak is 108 SMs x 2,048 FLOP a clock: 312 TFLOPS at 1,410 MHz, 280 TFLOPS at the 1,268 MHz
+  the SM clock held during these calls (power cap 400 W active). Achieved: 89 % of the clock-adjusted peak, 80 % of
+  the nominal one. Lower bound for these FLOPs: 1.70 s at the observed clock, 1.53 s at 1,410 MHz.
+- Practically supported target: large fp16 GEMMs with fp32 accumulation reach about 90-93 % of the clock's peak on
+  A100s; fp16 accumulation has the same peak on the A100, so the type is no lever. From 89 % to 93 %: about 0.08 s a
+  wave; a workspace or algorithm choice that recovers part of it: 0.03-0.06 s. The clock itself is a measurement
+  condition here, not a shown reserve.
+- So the GEMMs hold no reserve near the 0.30-0.55 s needed for +10 % over vLLM.
+
+Pass fragmentation (`lab/pf3/passes.py`, the passes rebuilt from the trace's request lines with llama.cpp's
+sequential split): with one KV stream per sequence a pass takes the run of consecutive sequence ids that all still
+have tokens and advances each by the fewest any of them has left. Prefix reuse keeps 0-12 template tokens per stream,
+different from stream to stream, so in later waves prompts of equal length become unequal and a 32-request prefill
+runs as 6-14 passes (median 8; first waves: 2). Fitted over 60 large calls, robustly (pause calls excluded): 0.3347
+ms a row plus 21.5 ms a pass (95 % bootstrap 18.6-23.9 ms), residual median 11.5 ms. Keeping the same prefix in every
+stream of a packed group gives 2 passes in every call for a median of 67 more rows: predicted -110 ms a packed call
+(median; 0 to -233 ms), in later waves only. That is 20-37 % of the needed saving, the largest supported candidate.
+
+Admission path (local CPU server, py-spy): the client's 16-22 ms burst becomes 94-113 ms of submits, because every
+request runs `ProductService.health()` (JSON reads under file locks, about 62 ms over 32 requests) and
+`ServingLog.append` (about 23 ms) on the serialised Python path. Estimated 40-60 ms; the next candidate after PX1.
+
+PX1 (`IRONMULE_GGML_PX1=1`, off until measured): a packed group keeps the smallest kept prefix in every stream when
+that saves passes, for at most 32 recomputed rows per pass saved (`llama_memory_seq_rm` cuts the longer prefixes;
+the recomputed tokens are an ordinary prefill). The trace notes the passes before and after either way.
+
+Pause diagnostics prepared, for the server only with `IRONMULE_GGML_TRACE`: `IRONMULE_GGML_PAUSE` (per call: thread
+CPU time, minor and major faults, run delay, cgroup throttling; for calls of 1 s or more, buffered samples every 5 ms
+of the thread's state, system call with its file and wait channel; one `py-spy dump --native` past a set time) and
+the llama.cpp patch TL1 (`IRONMULE_TL1`: per ubatch the host time for graph build, inputs, launch and output copy; no
+added synchronisation; buffered). `lab/pf3/pauses.py` joins them and classifies a call's excess as compute, CPU
+wait, driver call, other synchronisation, page faults or open. The CUDA API calls around a gap are not recorded (no
+CUPTI in the timed server); a driver call shows as an ioctl on /dev/nvidia*.

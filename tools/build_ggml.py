@@ -77,6 +77,7 @@ PATCH_SETS = {
     "pk2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after kg1, on the file kg1 left
     "am1": ([("src/llama-context.cpp", "llama-context.cpp.diff")], []),
     "tk1": ([("src/unicode.cpp", "unicode.cpp.diff")], []),
+    "tl1": ([("src/llama-context.cpp", "llama-context.cpp.diff")], []),  # after am1; diagnostics, IRONMULE_TL1
     "gr2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk2
     "pk3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr2
     "gr3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk3
@@ -199,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1", "tl1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

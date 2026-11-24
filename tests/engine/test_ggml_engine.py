@@ -1389,6 +1389,37 @@ def test_pk1c_the_window_expects_the_last_waves_size_and_ends_when_it_is_there(m
     assert len(seqs) == 1  # PK1-C off: the window closed before the joins came
 
 
+def test_px1_a_packed_group_keeps_the_same_prefix_when_that_saves_passes(monkeypatch):
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job, split_passes
+
+    # llama.cpp's sequential split: equal lengths in consecutive streams make one pass, unequal ones several
+    assert split_passes({0: 30, 1: 30, 2: 30}, 8192) == 1
+    assert split_passes({0: 30, 1: 22, 2: 30}, 8192) == 3  # after 22, streams 0 and 2 are no longer consecutive
+    assert split_passes({0: 33, 1: 25, 2: 33, 3: 444, 4: 436}, 8192) == 5
+
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.batch_cap = 8192
+    engine.px1 = True
+    monkeypatch.setattr(ge, "UBATCH", 8192)
+    group = [(0, Job(list(range(33)), 2), 3), (1, Job(list(range(33)), 2), 11), (2, Job(list(range(444)), 2), 3),
+             (3, Job(list(range(444)), 2), 11)]
+    engine.reused_tokens = 28
+    evened = engine._even_reuse(group)
+    assert [keep for _, _, keep in evened] == [3, 3, 3, 3]  # 2 passes instead of 4 for 16 rows recomputed
+    assert sorted(removed) == [(1, 3, -1), (3, 3, -1)] and engine.reused_tokens == 12
+    assert [job.reused for _, job, _ in evened] == [0, 3, 0, 3]  # only the cut streams' records change
+
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.batch_cap = 8192
+    engine.px1 = True
+    far = [(0, Job(list(range(300)), 2), 0), (1, Job(list(range(300)), 2), 200)]
+    assert engine._even_reuse(far) == far and removed == []  # 200 rows for one pass saved: not worth it
+
+    engine.px1 = False
+    assert engine._even_reuse(group) == group
+
+
 def test_pk2_m_mix_calibration_times_half_short_half_long_prompts(monkeypatch):
     import types
 
