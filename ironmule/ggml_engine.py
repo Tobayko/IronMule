@@ -349,6 +349,7 @@ class Job:
     tag: str | None = None  # PF1: the serving request's id, for the trace only
     prefill_start_ns: int = 0  # PF1 (trace only): the start of the first native call with this prompt's rows
     prefill_end_ns: int = 0  # PF1 (trace only): the end of the call with its last prompt row
+    seen_ns: int = field(default_factory=time.monotonic_ns)  # PF2: when the engine side made the job
 
     def full_context(self) -> list[int]:
         """ids + tokens, grown by the new tokens only (the engine's per-step view of a request's context)."""
@@ -639,7 +640,9 @@ class GgmlEngine:
         self._open(seqs, seq_ctx, flash_attn=flash_attn, kv_unified=kv_unified or self.shared, kv_f32=kv_f32,
                    kv_q8=kv_q8)
         self.steps = 0
+        trace_note("init warm_up begin")  # PF2: what the start runs before serving, with times
         self._warm_up()
+        trace_note("init check_argmax begin")
         self._argmax_only = self._check_argmax() if self.gpu_layers else None
         self.context_build_s = time.perf_counter() - context_started
         self.kg: dict[str, Any] = {}
@@ -654,8 +657,11 @@ class GgmlEngine:
         elif KG_LIB and self.gpu_layers and kernel_mask:
             # SD1 (2026-11-23): the library's token-count mask is one per process; a second engine in the same process
             # (a draft model, kernel_mask=False) must not measure and overwrite the served model's mask
+            trace_note("init measure_kg begin")
             self.kg = self.measure_kg(KG_LIB)
+        trace_note("init measure_pk2 begin")
         self.pk2: dict[str, Any] = self.measure_pk2() if PK2_AUTO and getattr(self, "pack", False) else {}
+        trace_note("init measure_padding begin")
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
@@ -668,6 +674,7 @@ class GgmlEngine:
         self.pilot = None
         # PI1: the decision network, with this machine's measured step costs; its cost measurement decodes past 256
         # tokens of one sequence, so a context too small for that (SEQ1's KV-size probe opens 256 cells) runs without it
+        trace_note("init pilot begin")
         if PILOT and model is None and seq_ctx >= 512:
             from .pilot import Pilot
 
@@ -675,6 +682,15 @@ class GgmlEngine:
                           gpu=bool(self.gpu_layers))
             self.pilot = pilot if pilot.active else None
             self.pilot_refused = None if pilot.active else pilot.reason
+        if TRACE:  # PF2: the start's choices that steer later calls
+            trace_note("init end")
+            import json as _json
+
+            with open(TRACE, "a") as fh:
+                fh.write("# init result " + _json.dumps({
+                    "pk2": self.pk2, "kg_tokens": (self.kg or {}).get("tokens_served"), "pad_to": self.pad_to,
+                    "pilot": self.pilot is not None, "argmax_only": self._argmax_only is not None,
+                    "context_build_s": round(self.context_build_s, 3)}, default=str) + "\n")
 
     def _step_prices(self, counts: Any, repeats: int = 5) -> dict[int, float]:
         """Seconds of a step of t tokens of one sequence at positions 64+ (median of `repeats`), for each t in `counts`."""
@@ -1121,9 +1137,12 @@ class GgmlEngine:
                     if any(r[2] == seq and r[1] + 1 == len(job.ids) for r in rows):
                         job.prefill_end_ns = ended_ns
             with open(TRACE, "a") as fh:
+                # PF2: the batch built on the host, llama_decode, then the readback of the sampled rows (ms)
+                built, decoded = getattr(self, "_tl_marks", (started_ns, ended_ns))
                 fh.write(f"{started_ns / 1e9:.6f} {(ended_ns - started_ns) / 1e9:.6f} {len(rows)} {len(seqs)} "
                          f"{sum(1 for r in rows if r[3])} {prompt_rows} {len(rows) - prompt_rows - filler_rows} "
-                         f"{filler_rows} seqs={','.join(map(str, seqs))}\n")
+                         f"{filler_rows} seqs={','.join(map(str, seqs))} b={(built - started_ns) / 1e6:.3f} "
+                         f"l={(decoded - built) / 1e6:.3f} r={(ended_ns - decoded) / 1e6:.3f}\n")
             return out
         return self._decode_once(rows, evict=evict)
 
@@ -1132,6 +1151,7 @@ class GgmlEngine:
         for i, (token, pos, seq, logits) in enumerate(rows):
             b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
             b.seq_id[i][0] = seq
+        built = time.monotonic_ns() if TRACE else 0  # PF2 (trace only)
         am = getattr(self, "_argmax_only", None)
         if am is not None:  # AM1: only each output row's argmax leaves the GPU
             am(1)
@@ -1144,6 +1164,8 @@ class GgmlEngine:
                     status = self.L.llama_decode(self.ctx, b)
             finally:
                 am(0)
+            if TRACE:
+                self._tl_marks = (built, time.monotonic_ns())
             if status != 0:
                 raise RuntimeError("llama_decode failed")
             out = []
@@ -1164,6 +1186,8 @@ class GgmlEngine:
                 while self.pool._evict(None):
                     pass
             status = self.L.llama_decode(self.ctx, b)
+        if TRACE:
+            self._tl_marks = (built, time.monotonic_ns())
         if status != 0:
             raise RuntimeError("llama_decode failed")
         out = []
@@ -1363,7 +1387,8 @@ class GgmlEngine:
                 self._tl_jobs.pop(seq, None)
                 with open(TRACE, "a") as fh:
                     fh.write(f"# job seq={seq} tag={job.tag} prompt={len(job.ids)} reused={job.reused} "
-                             f"tokens={len(job.tokens)} reason={reason} prefill_start={job.prefill_start_ns / 1e9:.6f} "
+                             f"tokens={len(job.tokens)} reason={reason} seen={job.seen_ns / 1e9:.6f} "
+                             f"prefill_start={job.prefill_start_ns / 1e9:.6f} "
                              f"prefill_end={job.prefill_end_ns / 1e9:.6f} first={job.first_ns / 1e9:.6f} "
                              f"end={job.finished_ns / 1e9:.6f}\n")
             if self.collective is not None and reason in ("eos", "length") and job.tokens:
@@ -1436,6 +1461,7 @@ class GgmlEngine:
                             and (more or arrived == 0)):
                         # PK1: gather the rest of a burst before the first packed prefill
                         started_wait = last = time.monotonic()
+                        trace_note(f"gather start {len(pending)}")  # PF2
                         limit, quiet = GATHER_S, GATHER_QUIET_S
                         # PK1-B: the window opened on a burst; GB1: or a burst ended recently
                         if len(pending) > 1 or started_wait - self._burst_at < GATHER_BURST_MEMORY_S:
