@@ -1808,6 +1808,9 @@ class GgmlEngine:
         finally:
             if peak > 1:  # PK1-C: a burst's size; a lone request between bursts leaves the memory as it was
                 self._burst_peak = peak
+                # and the burst memory itself: a window that caught only the burst's first request cleared it (GB1's
+                # "lone arrival that waited in vain"), although the rest joined this run right after (A100 pod 32)
+                self._burst_at = time.monotonic()
             if scope is not None:
                 scope.end()
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for

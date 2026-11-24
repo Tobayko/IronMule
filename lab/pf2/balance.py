@@ -37,7 +37,7 @@ def load_trace(path):
             inits.append((p[2], float(p[-1]), None))
         elif line.startswith("# gather start") or line.startswith("# gathered"):
             p = line.split()
-            notes.append(("start" if p[1] == "gather" else "end", int(p[-2]), float(p[-1])))
+            notes.append(("start" if p[1] == "gather" else "end", int(p[3] if p[1] == "gather" else p[2]), float(p[-1])))
         elif line.strip() and not line.startswith("#"):
             p = line.split()
             c = {"start": float(p[0]), "sec": float(p[1]), "rows": int(p[2]), "seqs": int(p[3]),

@@ -1374,6 +1374,17 @@ def test_pk1c_the_window_expects_the_last_waves_size_and_ends_when_it_is_there(m
 
     seqs, given = wave(True)
     assert len(seqs) == 3  # 40 ms is longer than the 25 ms quiet gap, within the 80 ms it now waits for
+
+    # a wave whose window caught only its first request still renews the burst memory once the rest joined
+    monkeypatch.setattr(ge, "PK1C", True)
+    engine, fed, _ = _stub_engine()
+    engine.pack, engine.settings, engine.batch_cap = True, {"kv_unified": False}, 256
+    started = time.monotonic()
+    late = [Job([5, 6, 7], 2), Job([6, 7, 8], 2)]
+    # the window (no memory yet) starts the first request alone; the other two join after its prefill call
+    engine.run([Job([1, 2, 3], 2)], admit=lambda room: [late.pop() for _ in range(len(late))] if fed else [])
+    assert len({s for _, _, s in fed[0]}) == 1
+    assert engine._burst_peak == 3 and engine._burst_at > started
     seqs, _ = wave(False)
     assert len(seqs) == 1  # PK1-C off: the window closed before the joins came
 
