@@ -3643,7 +3643,7 @@ Facts: IronMule 18/18, vLLM 18/18 (one graded wave each, apart from the timed on
 [session](../lab/pk1/results/pod29/a100-pod29-session.log) · [raw data](../lab/pk1/results/pod29/) (client timelines
 `tl_*.jsonl`, engine trace `trace.txt`, service `stability-log.jsonl`, vLLM `metrics_vllm.jsonl`, analysis `pf_*.json`)
 
-### 2026-11-24, PF1 numbers attributed, and A100 pod 30: DK1, what limits the 32-row decode matmuls -- SM-bound, no single cause
+### 2026-11-24, PF1 numbers attributed, and A100 pod 30: DK1, what limits the 32-row decode matmuls -- v9 on gate / up is not HBM-bound; the ablations give no bounds
 Owner's order for this round: first attribute PF1's numbers, then one dominant decode bottleneck, at most two variants.
 
 PF1 (pod 29) on one time axis, from the raw data already saved:
@@ -3683,41 +3683,44 @@ kernels unchanged; `lab/dk1`, raw data in `lab/pk1/results/pod30`):
   chose the same). Served steps without a profiler: 20.4 / 22.3 / 26.8 / 30.2 ms at 8 / 16 / 24 / 32 rows.
 - Gate / up at 32 tokens, us per call (median of six rounds):
 
-| arm (v9, variant 184) | us | what it shows |
+| arm (v9, variant 184) | us | what else the arm changed (SASS and ptxas of the same builds) |
 | --- | ---: | --- |
-| product build | 75.4 | |
-| largest L1 requested (carveout 0 %) | 75.4 | the driver already gives the largest L1 here |
-| carveout 50 % / 100 % (L1 about 28 KB) | 79.1 / 103.3 | x through L1 matters, but is already at its best |
-| weights streamed only (no x, no math; 122 registers) | 50.7 | the load structure reaches 1.45 TB/s (84 % of 1.73) |
-| weights from L2 instead of DRAM | 72.2 | **without the DRAM stream only 3.2 us faster** |
-| x from one sub-block (always in L1; 194 registers) | 67.7 | x traffic at most about 8 us |
-| no mma (164 registers) | 63.4 | mma at most about 12 us |
-| no dequantisation (206 registers, same 4 blocks) | 61.3 | dequantisation at most about 14 us |
+| product build | 75.4 | 2,072 instructions per two super-blocks, 236 registers, 4 blocks per SM |
+| largest L1 requested (carveout 0 %) | 75.4 | nothing: the driver already chose the largest L1 in this process |
+| carveout 50 % / 100 % (L1 about 28 KB) | 79.1 / 103.3 | only the L1 size |
+| weights streamed only (no x, no math) | 50.7 | 416 instructions, 122 registers, 8 blocks per SM |
+| weights from L2 instead of DRAM | 72.2 | 2,192 instructions (address arithmetic), 236 registers, 4 blocks per SM |
+| x from one sub-block (L1-resident) | 67.7 | x loads hoisted (40 LDG instead of 100), 194 registers, 5 blocks per SM |
+| no mma | 63.4 | HMMA replaced by XORs (363 LOP3 instead of 186), 164 registers, 6 blocks per SM |
+| no dequantisation (raw words into the mma) | 61.3 | 1,000 instructions, 206 registers, 4 blocks per SM |
 
   Down Q4_K with v9 (variant 184, K-split 4): 102.7 us full, 59.2 weights only, 95.3 weights from L2, 84.3 without
-  dequantisation: the same picture.
-- Finding: at 32 rows the matmuls are limited inside the SM, not by DRAM: removing the whole DRAM stream gains 4-7 %,
-  so prefetch depth, layout or fewer bytes cannot help much there. No single part dominates: dequantisation (the
-  largest clean bound, 14 of 75 us) and mma (12) add up almost exactly to the 24.7 us above the streaming floor, so
-  they barely overlap; ptxas already interleaves the HMMAs with the dequantisation in the SASS. A count of the SASS
-  per super-block (about 1,036 instructions, 128 HMMA, about 475 integer ops at half rate) puts tensor pipe, integer
-  pipe and issue each near 25-27 us of the 72 us: each about a third busy, with two warps per scheduler.
-- No variant was built. The best-targeted mechanism (nibble unpacking by LOP3 with a permuted tile layout, 7 -> 5
-  integer ops per 8 weights) would remove about 2/7 of the dequantisation's integer work; with the bound above that is
-  at most about 3-4 us per gate / up call, about 0.5-0.8 ms per 32-row step (at most about 0.7 % of a wave), and it
-  needs a second copy of the weights in another layout. PS (pod 26), which removed the per-sub-block scale arithmetic,
-  gained nothing at 32 tokens. Not worth an integrated or HTTP run against a 30-47 % target.
-- Bound for the whole line: even all matmuls of a 32-row step at the copy bandwidth would save about 9.6 ms (pod 13:
-  21.1 ms at 0.94 TB/s against 11.4 ms at 1.73), just the size of the needed cut; real kernels get a fraction. The +10 %
-  therefore needs several levers together. Measured sizes per 32-row step: matmul overlap at most about 2 ms (the
-  12-14 us above, per gate / up call), prep_x and reduce_split 1.95 ms (pod 13), attention 2.5 ms against vLLM's 1.5,
-  norms / RoPE / KV / SwiGLU about 2.7 ms against about 1.3, 1.6-1.7 ms inside the call outside the kernels and
-  1.2 ms between calls. Together about 8 ms at best: a step near 23 ms and a wave near 3.44 s, about +6-7 % over vLLM;
-  the rest would have to come from the prefill.
-- Next, concretely: removing prep_x and reduce_split from the decode step (1.95 ms of a 30.2 ms step, measured,
-  exact arithmetic possible: x written in fp16 by the FU1 norm as PK4 already does for prompts, K-split partial sums
-  reduced inside the W4R kernel); expected about 1.5 ms per step, about 47 ms per wave (+1.3 %). For the matmul kernels
-  themselves, a machine that grants GPU counters first: without stall reasons the overlap of dequantisation and mma
-  cannot be targeted.
+  dequantisation. This is v9 on the down shape, not the served down kernels (Q4_K: variant 256, v11 VF(4,4,1);
+  Q6_K: variant 266, v11 for Q6_K; both K-split 4, 122-126 registers, 36 KB of shared memory, x staged in shared
+  memory): nothing here is measured for them.
+- What the measurements support (v9 on gate / up at 32 tokens): taking the DRAM stream away (weights from L2, the
+  same registers and occupancy) saves 3.2 of 75.4 us, so the HBM bandwidth itself is not the dominant limit there.
+  That does not show that other layouts would not help: a layout also changes the dequantisation, the registers and
+  the accesses inside the SM, which this arm leaves as they are.
+- What they do not support: the other arms are not cost blocks and not upper bounds. Each one also changed the
+  instructions executed, the registers and with them the blocks per SM (5, 6 or 8 instead of 4), and the dependence
+  chains (no mma: nothing waits for the dequantised registers; no dequantisation: the mma no longer waits for it), so
+  their differences cannot be added or read as the most a change could gain. That HMMAs and dequantisation are
+  interleaved in the SASS order says nothing about whether they overlap in execution; restructuring the data
+  dependences (for example dequantising one sub-block ahead into a second register set) would be a different
+  hypothesis from reordering the source, and is untested. A count of the SASS per super-block (about 1,036
+  instructions, 128 HMMA, about 475 integer ops at half rate) estimates tensor pipe, integer pipe and issue at about
+  25-27 us each of the 72 us; without counters this is an estimate.
+- No variant was built in this round. The best-targeted mechanism found (nibble unpacking by LOP3 with a permuted
+  tile layout, 7 -> 5 integer ops per 8 weights) was estimated at a few microseconds per gate / up call and needs a
+  second copy of the weights in another layout; PS (pod 26), which removed the per-sub-block scale arithmetic, gained
+  nothing at 32 tokens. This is an estimate, not a measured limit; the kernel line is open, not closed.
+- For the whole step: all matmuls of a 32-row step at the copy bandwidth would save about 9.6 ms (pod 13: 21.1 ms at
+  0.94 TB/s against 11.4 ms at 1.73), about the size of the needed cut. The other parts of a 32-row step known from
+  earlier runs (not re-measured here): prep_x and reduce_split 1.95 ms (pod 13, an older build and run: a starting
+  hypothesis, not an available saving), attention 2.5 ms against vLLM's 1.5, norms / RoPE / KV / SwiGLU about 2.7 ms
+  against about 1.3, and 1.6-1.7 ms inside the native call outside the kernels plus 1.2 ms between calls (PF1). No
+  single one of them closes the gap; the prefill is 68-74 % of the wave.
+- Next: decode producers that write the matmul's prepared activations (PD1 below), then reduce_split separately.
 [session](../lab/pk1/results/pod30/a100_dk1.log) · [ablations, separate processes](../lab/pk1/results/pod30/a100_dk1b.log) ·
 [ablations, one process](../lab/pk1/results/pod30/a100_dk1c.log) · [down](../lab/pk1/results/pod30/a100_dk1d_down.jsonl)

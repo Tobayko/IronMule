@@ -16,7 +16,7 @@ from torch.profiler import ProfilerActivity, profile
 from ironmule.ggml_engine import GgmlEngine
 
 
-def table(prof, title, n=25):
+def table(prof, title, n=40):
     rows = []
     for e in prof.key_averages():
         t = getattr(e, "device_time_total", None) or getattr(e, "cuda_time_total", 0)

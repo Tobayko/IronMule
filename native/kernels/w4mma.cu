@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
@@ -290,6 +291,16 @@ __global__ void prep_x(const float *__restrict__ x, half *__restrict__ xh, float
     if (lane == 0 || lane == 16) xs[(size_t)(grp * 2 + lane / 16) * rows + n] = t;
     const float t32 = t + __shfl_xor_sync(0xffffffffu, t, 16);
     if (lane == 0) xs[(size_t)(K / 16) * rows + (size_t)grp * rows + n] = t32;  // then the 32-sums [K/32][rows]
+}
+
+// PD1 check (IRONMULE_KG_PD1_CHECK=1, diagnostics only): count the halves of the first B rows where a producer's copy
+// differs bit for bit from prep_x's
+__global__ void pd1_compare(const half *__restrict__ a, const half *__restrict__ b, size_t n,
+                            unsigned long long *__restrict__ counts) {
+    const size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    if (__half_as_ushort(a[i]) != __half_as_ushort(b[i])) atomicAdd(&counts[0], 1ull);
+    if (threadIdx.x == 0) atomicAdd(&counts[1], (unsigned long long)min((size_t)blockDim.x, n - i));
 }
 
 // ----------------------------------------------------------------------------------------------------------------- compute
@@ -2034,23 +2045,26 @@ struct Variant {
     int fp = 0;   // 1: the kernel converts llama.cpp's float activations itself (no prep kernel)
     int mq1 = 0;  // 1: MQ1 (Marlin) on its own copy of the weights, not the tile-order copy
     int pre = 0;  // 1: PS (v12) on the tile-order copy with precomputed fp16 scales and minimums (T4P)
+    int sums = 0; // 1: the kernel reads prep_x's 16- or 32-value sums of x, not only its fp16 copy (w4r, v7, v8)
 };
+// PD1: the variants that read prep_x's sums
+constexpr Variant with_sums(Variant v) { v.sums = 1; return v; }
 
 int mq1_stub(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) {
     return 1;
 }
 #define VMQ(N) Variant{TYPE_Q4_K, 8, 60000, N, mq1_stub, 0, 1}
 
-#define V(T, W, S, N) Variant{T, W, S, N, launch<T, W, S, N, 0>}
-#define VD(T, W, S, N) Variant{T, W, S + 10, N, launch<T, W, S, N, 1>}
+#define V(T, W, S, N) with_sums(Variant{T, W, S, N, launch<T, W, S, N, 0>})
+#define VD(T, W, S, N) with_sums(Variant{T, W, S + 10, N, launch<T, W, S, N, 1>})
 #define VDN(T, W, S) VD(T, W, S, 1), VD(T, W, S, 2), VD(T, W, S, 3), VD(T, W, S, 4)
 #define VN(T, W, S) V(T, W, S, 1), V(T, W, S, 2), V(T, W, S, 3), V(T, W, S, 4)
 #define VT(T) VN(T, 4, 1), VN(T, 8, 1), VN(T, 4, 2), VN(T, 8, 2), VN(T, 16, 2), VN(T, 8, 4), VN(T, 16, 4), VN(T, 16, 1)
-#define VP(W, S, N, P, M) Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 1000 * M, N, launch_p<W, S, N, P, M, 0>}
+#define VP(W, S, N, P, M) with_sums(Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 1000 * M, N, launch_p<W, S, N, P, M, 0>})
 #define VPF(W, S, N, P) Variant{TYPE_Q4_K, W, S + 100 * (1 + P) + 20000, N, launch_p<W, S, N, P, 1, 1>, 1}
 #define VPN(W, S) VP(W, S, 1, 1, 1), VP(W, S, 2, 1, 1), VP(W, S, 1, 0, 1), VP(W, S, 2, 0, 1), VP(W, S, 1, 0, 2), \
                   VP(W, S, 2, 0, 2)
-#define VQ(W, S) Variant{TYPE_Q4_K, W, 5000 + S, 1, launch_q<W, S, 0>}
+#define VQ(W, S) with_sums(Variant{TYPE_Q4_K, W, 5000 + S, 1, launch_q<W, S, 0>})
 #define VQF(W, S) Variant{TYPE_Q4_K, W, 25000 + S, 1, launch_q<W, S, 1>, 1}
 #define VW(W, S, N, M) Variant{TYPE_Q4_K, W, 30000 + 100 * M + S, N, launch_d<TYPE_Q4_K, W, S, N, M>}
 #define VE(W, ST, N, M) Variant{TYPE_Q4_K, W, 40000 + 100 * M + ST, N, launch_e<W, ST, N, M>}
@@ -2166,12 +2180,22 @@ struct Prepared {
     int rows = 0;
     cudaStream_t s = nullptr;
     const void *buf = nullptr;  // the scratch it lies in (a grown scratch is a new buffer)
+    bool sums = true;  // PD1: false when a producer kernel wrote the fp16 copy without prep_x's sums (not in the key)
     bool operator==(const Prepared &o) const {
         return node == o.node && epoch == o.epoch && x == o.x && B == o.B && K == o.K && rows == o.rows && s == o.s &&
                buf == o.buf;
     }
 };
 std::map<cudaStream_t, Prepared> prepared;  // SG1: per stream, as the scratch it describes
+
+// PD1 check: prep_x's copy of a producer-prepared x, compared bit for bit (counts[0] differing halves, [1] compared)
+bool pd1_check_on() {
+    static const bool on = std::getenv("IRONMULE_KG_PD1_CHECK") && std::atoi(std::getenv("IRONMULE_KG_PD1_CHECK")) != 0;
+    return on;
+}
+uint8_t *pd1_check_x = nullptr;
+size_t pd1_check_cap = 0;
+unsigned long long *pd1_counts = nullptr;
 
 int run_repacked(const Variant &v, const uint8_t *wr, const float *x, float *y, long N, long K, long B, int ksplit,
                  int dev, cudaStream_t s) {
@@ -2207,10 +2231,34 @@ int run_repacked(const Variant &v, const uint8_t *wr, const float *x, float *y, 
         std::lock_guard<std::mutex> guard(lock_);
         last = &prepared[s];
     }
-    if (cur_node == nullptr || !(want == *last)) {
+    // PD1: a producer (llama.cpp's fused norm or SWIGLU, patch pd1) may have written the fp16 copy under this key
+    // already, without the sums; a variant that reads the sums then still runs prep_x
+    if (cur_node == nullptr || !(want == *last) || (v.sums && !last->sums)) {
         const int warps = rows * (int)(K / 32);
         prep_x<<<(warps + 7) / 8, 256, 0, s>>>(x, xh, xs, (int)B, (int)K, rows);
         *last = want;
+    } else if (!last->sums && pd1_check_on()) {  // the producer's copy against prep_x's (never in a capture's growth)
+        cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+        cudaStreamIsCapturing(s, &capture);
+        const size_t need = xbytes + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;
+        bool ready;
+        {
+            std::lock_guard<std::mutex> guard(lock_);
+            if (capture == cudaStreamCaptureStatusNone) {
+                grow((void **)&pd1_check_x, &pd1_check_cap, need);
+                if (pd1_counts == nullptr && cudaMalloc(&pd1_counts, 2 * sizeof(unsigned long long)) == cudaSuccess)
+                    cudaMemset(pd1_counts, 0, 2 * sizeof(unsigned long long));
+            }
+            ready = pd1_counts != nullptr && pd1_check_cap >= need;
+        }
+        if (ready) {
+            half *ch = reinterpret_cast<half *>(pd1_check_x);
+            const int warps = rows * (int)(K / 32);
+            prep_x<<<(warps + 7) / 8, 256, 0, s>>>(x, ch, reinterpret_cast<float *>(pd1_check_x + xbytes), (int)B, (int)K,
+                                                    rows);
+            const size_t n = (size_t)B * K;
+            pd1_compare<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(xh, ch, n, pd1_counts);
+        }
     }
     return v.fn(wr, xh, xs, y, sc.part, (int)N, (int)K, (int)B, ksplit, s);
 }
@@ -2224,6 +2272,7 @@ void ironmule_kg_src_node(const void *node, unsigned long long epoch) {
     cur_node = node;
     cur_epoch = epoch;
 }
+
 
 int im_w4_variant_count() { return NV; }
 
@@ -2313,6 +2362,64 @@ static void load_table_once() {
         for (size_t i = 0; i < choice.size(); i++) list += i ? ",0" : "0";
         table_json = std::string("{\"source\": \"") + path + "\", \"entries\": " + list + "]}";
     });
+}
+
+// PD1 (decode): instead of prep_x converting a matmul's float activations x [B][K] into the fp16 copy, the kernel that
+// produces x (llama.cpp's fused add + RMS norm + mul, or SWIGLU; patch pd1) writes that copy itself, with prep_x's
+// conversion (saturated to +-65000, rounded to nearest). This returns where: this stream's scratch, rows [0, B) of the
+// [ceil(B / 8) * 8][K] layout, and records it under PK3's key (node, graph epoch, x, B, K, rows, stream, buffer), so
+// the matmuls on that node skip prep_x; prep_x's 16- and 32-value sums are not written, so a variant that reads them
+// still runs prep_x. nullptr (the producer writes no copy) when PD1 is off, for a batch or K the library takes no
+// matmul for, and inside a CUDA graph capture when the scratch would have to grow. IRONMULE_KG_PD1=1 turns it on;
+// ironmule_kg_pd1_set overrides that at run time (-1: the environment again), for A/B measurements in one process.
+static std::atomic<int> pd1_override{-1};
+void ironmule_kg_pd1_set(int on) { pd1_override.store(on); }
+int ironmule_kg_pd1_enabled() {
+    const int o = pd1_override.load();
+    if (o >= 0) return o != 0;
+    static const bool env = [] {
+        const char *v = std::getenv("IRONMULE_KG_PD1");
+        return v != nullptr && std::atoi(v) != 0;
+    }();
+    return env ? 1 : 0;
+}
+// PD1 check: halves compared and halves that differed so far (synchronises the device)
+void ironmule_kg_pd1_counts(unsigned long long *out) {
+    out[0] = out[1] = 0;
+    if (pd1_counts == nullptr) return;
+    cudaDeviceSynchronize();
+    unsigned long long h[2] = {0, 0};
+    cudaMemcpy(h, pd1_counts, sizeof(h), cudaMemcpyDeviceToHost);
+    out[0] = h[1];
+    out[1] = h[0];
+}
+
+void *ironmule_kg_prepare(const void *node, unsigned long long epoch, const float *x, int64_t K, int64_t B,
+                          cudaStream_t s) {
+    if (!ironmule_kg_pd1_enabled() || node == nullptr || x == nullptr || K % 256 != 0 || B < 1 || B > 32) return nullptr;
+    if (!(((mask4 | mask6) >> (B - 1)) & 1u)) return nullptr;
+    load_table_once();
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    cudaStreamIsCapturing(s, &capture);
+    const int rows = (int)((B + 7) / 8 * 8);
+    const size_t xbytes = ((size_t)rows * K * sizeof(half) + 255) / 256 * 256;
+    const size_t need = xbytes + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;  // as run_repacked grows it
+    std::lock_guard<std::mutex> guard(lock_);
+    bool any = false;  // a matmul with this K and batch that the table gives to this library
+    for (const auto &kv : choice)
+        if (std::get<2>(kv.first) == (long)K && std::get<3>(kv.first) == (int)B && !VARIANTS[kv.second.first].fp) {
+            any = true;
+            break;
+        }
+    if (!any) return nullptr;
+    if (capture != cudaStreamCaptureStatusNone) {
+        auto it = scratches.find(s);
+        if (it == scratches.end() || it->second.xcap < need) return nullptr;
+    }
+    Scratch &sc = scratches[s];
+    if (grow((void **)&sc.x, &sc.xcap, need)) return nullptr;
+    prepared[s] = Prepared{node, epoch, x, (long)B, (long)K, rows, s, sc.x, false};
+    return sc.x;
 }
 
 // llama.cpp's kg1 hook: 0 when this library computed y = w x, non-zero for llama.cpp's own kernels
