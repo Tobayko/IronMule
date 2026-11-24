@@ -43,6 +43,14 @@ class ModelSpec:
         return cls(model_id, revision, path, size)
 
 
+def model_catalog(registered, resident, ready):
+    models = {spec.model_id: spec for spec in registered}
+    if resident is not None:
+        models[resident.model_id] = resident
+    return [{"id": spec.model_id, "object": "model", "owned_by": "local",
+             "revision": spec.revision, "loaded": spec == resident and ready} for spec in models.values()]
+
+
 @dataclass(frozen=True)
 class GenerationRequest:
     model: str
@@ -62,6 +70,12 @@ class GenerationRequest:
                 "max_tokens": self.max_tokens, "temperature": self.temperature,
                 "top_p": self.top_p, "seed": self.seed, "stop": list(self.stop),
                 "stream": self.stream, "request_id": self.request_id}
+
+    def worker_payload(self) -> dict[str, Any]:
+        payload = self.as_dict()
+        if self.hardware_probe:
+            payload["hardware_probe"] = True
+        return payload
 
     @classmethod
     def from_payload(cls, payload: Any, *, exact: bool = True) -> "GenerationRequest":

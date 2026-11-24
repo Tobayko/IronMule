@@ -5,8 +5,10 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import statistics
 import time
+from collections import Counter
 from pathlib import Path
 
 from .placement_native import NativeModel
@@ -15,14 +17,17 @@ from .state import _atomic_write
 ROUNDS = 5
 FIT_ROUNDS = 3
 CASES = 8
-SCHEMA = "ironmule.placement.v1"
+LEGACY_SCHEMA = "ironmule.placement.v1"
+RESPONSE_SCHEMA = "ironmule.placement.v2"
+SCHEMA = "ironmule.placement.v3"
+MAX_BACKGROUND = 4
 
 
 def signature(binding):
     return hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def workload(sizes, devices):
+def workload(sizes, devices, backlogs=()):
     """A small factorial design covers short/long prompts, two output budgets and asymmetric queues."""
     chars, limits = [96, 1024], [8, 64]
     if sizes:
@@ -33,23 +38,34 @@ def workload(sizes, devices):
                 bounds[i] = max(minimum, min(maximum, val))
             if bounds[0] == bounds[1]:
                 bounds[0] = max(minimum, bounds[1] // 2)
+    frequencies = Counter(q for q in backlogs if 0 < sum(q) <= MAX_BACKGROUND)
+    patterns = sorted((q for q, n in frequencies.items() if n >= 4), key=lambda q: (-frequencies[q], q))[:4]
     cases = []
     for i, size in enumerate(chars):
         for j, limit in enumerate(limits):
             for loaded in (False, True):
                 queues = [0] * devices
                 if loaded:
-                    queues[(2 * i + j) % devices] = 1
+                    slot = 2 * i + j
+                    if patterns:
+                        queues = list(patterns[slot % len(patterns)])
+                    else:
+                        queues[slot % devices] = 1
                 cases.append([size, limit, queues])
     return cases
 
 
-def valid_trial(row, spec):
+def valid_trial(row, spec, schema=SCHEMA):
     if not isinstance(row, dict) or row.get("case") != spec:
         return False
     readings = row.get("arms")
     if not isinstance(readings, list) or len(readings) != len(spec[2]):
         return False
+    if schema != LEGACY_SCHEMA:
+        outputs = row.get("outputs")
+        if (not isinstance(outputs, list) or len(outputs) != len(readings)
+                or any(not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) for digest in outputs)):
+            return False
     for item in readings:
         if not isinstance(item, list) or len(item) != 3:
             return False
@@ -66,7 +82,8 @@ def check_trace(trace):
     if type(trace.get("started")) not in (int, float) or not math.isfinite(trace["started"]):
         raise ValueError("invalid campaign timestamp")
     devices = binding["devices"]
-    if (trace.get("schema") != SCHEMA or trace.get("identity") != signature(binding)
+    if (trace.get("schema") not in (SCHEMA, RESPONSE_SCHEMA, LEGACY_SCHEMA)
+            or binding.get("protocol", trace["schema"]) != trace["schema"] or trace.get("identity") != signature(binding)
             or not isinstance(devices, list) or not devices or len(devices) != len(set(devices))
             or not isinstance(plan, list) or len(plan) != CASES
             or not isinstance(rows, list) or len(rows) > CASES * ROUNDS):
@@ -77,10 +94,11 @@ def check_trace(trace):
         chars, limit, queues = case
         if (type(chars) is not int or not 1 <= chars <= 4096 or type(limit) is not int or not 1 <= limit <= 128
                 or not isinstance(queues, list) or len(queues) != len(devices)
-                or any(type(q) is not int or q not in (0, 1) for q in queues)):
+                or any(type(q) is not int or q < 0 for q in queues)
+                or (sum(queues) > MAX_BACKGROUND if trace["schema"] == SCHEMA else max(queues) > 1)):
             raise ValueError("unsupported placement workload")
     for i, row in enumerate(rows):
-        if (not valid_trial(row, plan[i % CASES]) or ("wall_s" in row and
+        if (not valid_trial(row, plan[i % CASES], trace["schema"]) or ("wall_s" in row and
                 (type(row["wall_s"]) not in (int, float) or not math.isfinite(row["wall_s"]) or row["wall_s"] < 0))):
             raise ValueError("invalid hardware timing or incomplete paired trial")
 
@@ -95,49 +113,98 @@ def decision(native, weights, chars, limit, queues, future=None, weight=0.0):
     return native.choose(weights, chars, limit, queues, future or (chars, limit), weight)
 
 
+def choose_route(native, policy, chars, limit, queues):
+    if policy.get("method") == "reward_policy":
+        return native.choose_rewards(policy["reward_weights"], chars, limit, queues)
+    # The two-request lookahead models at most one request ahead on the next lane.
+    future_weight = 0.0 if max(queues) > 1 else policy["future_weight"]
+    return decision(native, policy["weights"], chars, limit, queues, policy["next_shape"], future_weight)
+
+
+def _latency_weights(native, rows):
+    fitted = []
+    for i in range(len(rows[0]["arms"])):
+        inputs = []
+        for row in rows:
+            size, limit, queues = row["case"]
+            inputs.append((size, limit, queues[i], row["arms"][i][0]))
+        fitted.append(native.fit(inputs))
+    return fitted
+
+
+def _compare_routes(native, policy, rows, schema):
+    totals = [0.0] * 4
+    counts, responses, changes = True, True if schema != LEGACY_SCHEMA else None, 0
+    for row in rows:
+        size, limit, queues = row["case"]
+        chosen = choose_route(native, policy, size, limit, queues)
+        ref = min(range(len(queues)), key=queues.__getitem__)
+        base, actual = row["arms"][ref], row["arms"][chosen]
+        counts &= base[2] == actual[2]
+        if responses is not None:
+            responses &= row["outputs"][ref] == row["outputs"][chosen]
+        changes += chosen != ref
+        for i, value in enumerate((actual[0], base[0], actual[1], base[1])):
+            totals[i] += value
+    return {"completion_ratio": totals[0] / totals[1], "first_token_ratio": totals[2] / totals[3],
+            "equal_output_counts": counts, "matching_responses": responses, "changed_routes": changes}
+
+
 def qualify(native, trace):
     check_trace(trace)
     rows = trace["trials"]
     if len(rows) != CASES * ROUNDS:
         raise ValueError(f"qualification needs {CASES * ROUNDS} completed paired trials, got {len(rows)}")
-    if trace["binding"]["trainer"] != native.version:
+    binding, schema = trace["binding"], trace["schema"]
+    if binding["trainer"] != native.version:
         raise ValueError("this trace belongs to a different native trainer")
-    fitted = []
-    for i in range(len(trace["binding"]["devices"])):
-        inputs = []
-        for row in rows[:CASES * FIT_ROUNDS]:
-            size, limit, queues = row["case"]
-            inputs.append((size, limit, queues[i], row["arms"][i][0]))
-        fitted.append(native.fit(inputs))
-    # Each alternative imagines a second, long arrival. Pick its weight using completed training rounds only.
+    use_rewards = "reward_trainer" in binding
+    if use_rewards and (schema == LEGACY_SCHEMA or binding["reward_trainer"] != native.reward_version):
+        raise ValueError("incompatible response evidence or reward trainer")
+    training = rows[:CASES * FIT_ROUNDS]
+    # Traces before the reward learner priced their lookahead on the whole training partition.
+    fitting = training[:-CASES] if use_rewards else training
+    selection = training[-CASES:] if use_rewards else training
     future = [max(c[i] for c in trace["plan"]) for i in (0, 1)]
-    def training_cost(weight):
-        total = 0.0
-        for row in rows[:CASES * FIT_ROUNDS]:
-            choice = decision(native, fitted, *row["case"], future, weight)
-            total += row["arms"][choice][0]
-        return total
-    weight = min((0.0, 0.25, 0.5), key=training_cost)
-    rounds = []
-    for r in range(FIT_ROUNDS, ROUNDS):
-        totals = [0.0] * 4
-        comparable = True
-        changes = 0
-        for row in rows[r * CASES:(r + 1) * CASES]:
-            size, limit, queues = row["case"]
-            chosen = decision(native, fitted, size, limit, queues, future, weight)
-            reference = min(range(len(queues)), key=queues.__getitem__)
-            base, actual = row["arms"][reference], row["arms"][chosen]
-            comparable &= base[2] == actual[2]
-            changes += chosen != reference
-            for index, value in enumerate((actual[0], base[0], actual[1], base[1])):
-                totals[index] += value
-        rounds.append({"completion_ratio": totals[0] / totals[1], "first_token_ratio": totals[2] / totals[3],
-                       "equal_output_counts": comparable, "changed_routes": changes})
-    passed = all(r["completion_ratio"] <= 0.95 and r["first_token_ratio"] <= 1.0 and r["equal_output_counts"]
-                 for r in rounds)
-    return {"qualified": passed, "weights": fitted, "next_shape": future, "future_weight": weight,
-            "holdout": rounds, "identity": trace["identity"]}
+    prices = _latency_weights(native, fitting)
+    candidates = [{"method": "latency_model", "weights": prices, "next_shape": future, "future_weight": w}
+                  for w in (0.0, 0.25, 0.5)]
+    if use_rewards and len(prices) > 1:
+        candidates.append({**candidates[0], "method": "reward_policy", "reward_weights": native.fit_rewards(fitting)})
+    scores = [_compare_routes(native, c, selection, schema) for c in candidates]
+    def rank(i):
+        row = scores[i]
+        admissible = row["equal_output_counts"] and row["matching_responses"] and row["first_token_ratio"] <= 1
+        return (use_rewards and not admissible, row["completion_ratio"])
+    policy = candidates[min(range(len(scores)), key=rank)].copy()
+    if use_rewards:
+        policy["selection"] = [{"method": c["method"], "future_weight": c["future_weight"], **score}
+                               for c, score in zip(candidates, scores)]
+        policy["weights"] = _latency_weights(native, training)
+        if policy["method"] == "reward_policy":
+            policy["reward_weights"] = native.fit_rewards(training)
+    rounds = [_compare_routes(native, policy, rows[r * CASES:(r + 1) * CASES], schema)
+              for r in range(FIT_ROUNDS, ROUNDS)]
+    passed = all(r["completion_ratio"] <= 0.95 and r["first_token_ratio"] <= 1 and r["equal_output_counts"]
+                 and r["matching_responses"] is not False for r in rounds)
+    return {**policy, "qualified": passed, "holdout": rounds, "identity": trace["identity"], "protocol": schema}
+
+
+def remaining_idle_seconds(trace):
+    """Estimate each remaining case from its own elapsed worker time once measured."""
+    rows = trace["trials"]
+    total = CASES * ROUNDS
+    if len(rows) == total:
+        return 0.0
+    known = [r["wall_s"] for r in rows if "wall_s" in r]
+    if not known:
+        return None
+    typical = statistics.mean(known)
+    by_case = []
+    for case in range(CASES):
+        repeats = [r["wall_s"] for r in rows[case::CASES] if "wall_s" in r]
+        by_case.append(statistics.median(repeats) if repeats else typical)
+    return sum(1 + by_case[i % CASES] for i in range(len(rows), total))
 
 
 def wait_for_calibration(service, minutes):
@@ -157,7 +224,7 @@ def wait_for_calibration(service, minutes):
             previous = progress
         if status["phase"] == "reference_after_failed_measurements":
             return 1
-        if status["paired_trials"] == status["target_trials"]:
+        if status["paired_trials"] == status["target_trials"] and status["phase"] in ("qualified", "reference"):
             return 0
         time.sleep(1)
     print(json.dumps({"status": "calibration budget expired", "resumable": True}), flush=True)
@@ -173,8 +240,11 @@ def main(argv=None):
     parser.add_argument("--trace", type=Path, help="hardware trace shown by /health under placement.trace")
     parser.add_argument("--output", type=Path, help="optional offline comparison report")
     parser.add_argument("--cache", type=Path, default=Path.home() / ".cache/ironmule/placement-native")
-    parser.add_argument("--devices", type=int, default=2, help="number of candidate workers for a planning estimate")
-    parser.add_argument("--seconds-per-arm", type=float, help="mean time for one worker in one case, including load")
+    parser.add_argument("--devices", type=int, help="number of workers for an equal-cost estimate (default 2)")
+    times = parser.add_mutually_exclusive_group()
+    times.add_argument("--seconds-per-worker", nargs="+", type=float, metavar="SECONDS",
+                       help="mean wall seconds for each worker in the same case, in device order")
+    times.add_argument("--seconds-per-arm", type=float, help="mean time for one worker in one case, including load")
     parser.add_argument("--startup-minutes", type=float, default=0.0)
     args = parser.parse_args(argv)
     if args.command == "calibrate":
@@ -183,18 +253,35 @@ def main(argv=None):
         if not args.gguf or not args.gguf.is_file() or not math.isfinite(args.minutes) or args.minutes <= 0:
             parser.error("calibrate needs an existing --gguf and positive --minutes")
         store = ProductStore(args.state_dir)
-        if not (store.root / "settings.json").exists():
-            store.setup("server")
         return serve(["--gguf", str(args.gguf), "--placement", "auto", "--state-dir", str(store.root)],
                      calibration_minutes=args.minutes)
     if args.command == "estimate":
-        if (args.devices < 1 or args.seconds_per_arm is None or not math.isfinite(args.seconds_per_arm)
-                or args.seconds_per_arm <= 0 or not math.isfinite(args.startup_minutes) or args.startup_minutes < 0):
-            parser.error("estimate needs positive devices, positive --seconds-per-arm and nonnegative startup time")
-        runs = CASES * ROUNDS * args.devices
+        if args.trace:
+            if any(v is not None for v in (args.seconds_per_arm, args.seconds_per_worker, args.devices)) or args.startup_minutes:
+                parser.error("--trace estimates remaining work from measurements and takes no assumed times")
+            trace = json.loads(args.trace.read_text())
+            check_trace(trace)
+            print(json.dumps({"completed_cases": len(trace["trials"]), "target_cases": CASES * ROUNDS,
+                              "estimated_remaining_idle_seconds": remaining_idle_seconds(trace),
+                              "excludes": "foreground traffic, external contention and interrupted work"}))
+            return
+        if args.seconds_per_worker is not None:
+            if args.devices is not None:
+                parser.error("--seconds-per-worker already specifies the number of workers")
+            durations = args.seconds_per_worker
+        else:
+            count = 2 if args.devices is None else args.devices
+            if count < 1 or args.seconds_per_arm is None:
+                parser.error("supply positive --devices and --seconds-per-arm, or --seconds-per-worker")
+            durations = [args.seconds_per_arm]
+        if (any(not math.isfinite(v) or v <= 0 for v in durations)
+                or not math.isfinite(args.startup_minutes) or args.startup_minutes < 0):
+            parser.error("worker seconds must be finite and positive; startup minutes must be finite and nonnegative")
         from .placement import IDLE_SECONDS
-        idle_minutes = (runs * args.seconds_per_arm + CASES * ROUNDS + IDLE_SECONDS) / 60
-        print(json.dumps({"worker_measurements": runs, "estimated_idle_minutes": idle_minutes,
+        seconds = sum(durations) if args.seconds_per_worker is not None else count * durations[0]
+        workers = len(durations) if args.seconds_per_worker is not None else count
+        idle_minutes = (CASES * ROUNDS * (seconds + 1) + IDLE_SECONDS) / 60
+        print(json.dumps({"worker_measurements": CASES * ROUNDS * workers, "estimated_idle_minutes": idle_minutes,
                           "estimated_total_minutes": args.startup_minutes + idle_minutes,
                           "excludes": "waiting for external load, interrupted trials, downloads and builds"}))
         return

@@ -53,7 +53,7 @@ ironmule_kernels = "native/kernels"
 ironmule_kernels = ["w4mma.cu", "mq1/*.h", "mq1/*.cuh", "mq1/LICENSE-vllm", "mq1/NOTICE.md", "mq1/vllm/*.cuh", "mq1/vllm/*.h", "mq1/vllm/core/*.hpp"]
 friday_evidence = ["migrations/*.sql"]
 ironmule = ["tune_knowledge_seed.json", "quality_reference.txt", "pilot_weights.npz", "pilot_weights_gpu.npz"]
-ironmule_product = ["dispatch/*/*.json", "placement_model.cpp"]
+ironmule_product = ["dispatch/*/*.json", "placement_model.cpp", "placement_policy.cpp"]
 
 [tool.setuptools.dynamic]
 version = { attr = "ironmule._version.__version__" }

@@ -321,17 +321,22 @@ class ProductStore:
     def _models_path(self) -> Path:
         return self.root / _MODELS
 
-    def setup(self, mode: str = "desktop") -> dict[str, Any]:
+    def setup(self, mode: str = "desktop", *, only_if_missing: bool = False) -> dict[str, Any]:
         if not isinstance(mode, str) or mode not in _MODES:
             raise StateError("mode must be 'desktop' or 'server'")
         with _locked(self.root):
             current = _read_json(self._settings_path)
             models = _read_json(self._models_path)
             paused = False
-            if current is not None:
-                paused = _settings_value(current)["optimization_paused"]
             if models is not None:
                 _models_value(models)
+            if current is not None:
+                current = _settings_value(current)
+                if only_if_missing:
+                    if models is None:
+                        _atomic_write(self._models_path, _empty_models())
+                    return dict(current)
+                paused = current["optimization_paused"]
             value = {
                 "schema": _SCHEMA,
                 "mode": mode,

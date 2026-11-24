@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ironmule.gguf_tokenizer import gguf_model_id, gguf_revision
@@ -25,6 +26,8 @@ def main():
     parser.add_argument("--state-dir", required=True, type=Path)
     parser.add_argument("--short-traffic", action="store_true",
                         help="send 32 short public requests after the initial comparison and observe requalification")
+    parser.add_argument("--burst-size", type=int, choices=(1, 2, 4), default=1,
+                        help="send the short foreground requests in waves of this size")
     args = parser.parse_args()
     path = args.gguf.resolve()
     spec = ModelSpec(gguf_model_id(str(path)), gguf_revision(str(path)), str(path), path.stat().st_size)
@@ -54,10 +57,13 @@ def main():
                     previous = learner.trace["started"]
                     already_short = max(case[1] for case in learner.trace["plan"]) == 8
                 if not already_short:
-                    for i in range(32):
+                    def serve_short(i):
                         size, limit = (96, 1024)[i % 2], (4, 8)[(i // 2) % 2]
                         text = ("List as many world capitals as possible, in alphabetical order. " * 20)[:size]
                         list(pool.stream(GenerationRequest(spec.model_id, (("user", text),), limit)))
+                    with ThreadPoolExecutor(max_workers=args.burst_size) as clients:
+                        for start in range(0, 32, args.burst_size):
+                            list(clients.map(serve_short, range(start, start + args.burst_size)))
                     deadline = time.monotonic() + 60
                     while time.monotonic() < deadline:
                         with learner.lock:

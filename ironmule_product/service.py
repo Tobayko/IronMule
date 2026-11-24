@@ -16,7 +16,7 @@ from typing import Any, Iterator
 from .errors import (BackendUnavailable, EngineLimitExceeded, InvalidRequest, StateError,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .serving_policy import ServingLog, ServingPolicy, load_policy
-from .types import MAX_OUTPUT_TOKENS, GenerationRequest, ModelSpec
+from .types import MAX_OUTPUT_TOKENS, GenerationRequest, ModelSpec, model_catalog
 
 STABILITY_LOG = "stability-log.jsonl"  # STAB1: admission, groups, ends, worker exits; bounded like the serving log
 MAX_RESTARTS, RESTART_WINDOW_S = 3, 600.0  # STAB1: a fourth worker loss within ten minutes stops recovery
@@ -154,6 +154,7 @@ class ProductService:
         self.spec = spec
         self._pending: queue.Queue = queue.Queue(maxsize=self.settings["max_pending"])
         self._sessions: dict[str, _Session] = {}
+        self._hardware_probes = 0
         # A session removed from the stdlib queue has acquired one queue task.
         # Keep it here, rather than putting it back, so each acquisition has
         # exactly one matching task_done().
@@ -320,6 +321,10 @@ class ProductService:
         with self._lock:
             return len(self._sessions)
 
+    def foreground_outstanding(self) -> int:
+        with self._lock:
+            return len(self._sessions) - self._hardware_probes
+
     def holds(self, request_id: str) -> bool:
         """HW1: whether this request id is admitted here and not yet retired."""
         with self._lock:
@@ -454,12 +459,7 @@ class ProductService:
             agent.reason = "the agent failed while learning; the reference schedule serves"
 
     def models(self) -> list[dict[str, Any]]:
-        specs = list(self.store.models())
-        if self.spec is not None and self.spec not in specs:  # GG4: a GGUF served on its own is not registered
-            specs.append(self.spec)
-        return [{"id": spec.model_id, "object": "model", "owned_by": "local",
-                 "revision": spec.revision, "loaded": self.spec == spec and self.health()["ready"]}
-                for spec in specs]
+        return model_catalog(self.store.models(), self.spec, self.health()["ready"])
 
     def stream(self, request: GenerationRequest) -> Iterator[dict[str, Any]]:
         # Validate direct Python callers as well as the HTTP boundary. No
@@ -496,6 +496,8 @@ class ProductService:
                 session = None
             if session is not None:
                 self._sessions[request.request_id] = session
+                if request.hardware_probe:
+                    self._hardware_probes += 1
                 queued = self._pending.qsize() + len(self._carry)
                 replay = getattr(self, "_replay_state", None)
                 if replay is not None:  # RSI3-LIVE-P2: real demand cancels replay the moment it is admitted
@@ -815,7 +817,9 @@ class ProductService:
                     if dispatch is not None and session.first_ns is not None else None,
                     "first_to_end_ms": (session.end_ns - session.first_ns) / 1e6 if session.first_ns is not None else None,
                 })
-            self._sessions.pop(session.request.request_id, None)
+            retired = self._sessions.pop(session.request.request_id, None)
+            if retired is not None and not _is_foreground(retired):
+                self._hardware_probes -= 1
             self._active.discard(session.request.request_id)
         self._pending.task_done()
         # A consumer observing the terminal record can now see the retired request in the counters.

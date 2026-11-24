@@ -1,0 +1,122 @@
+{
+  "model": "SmolLM2-135M-Instruct-Q4_K_M",
+  "startup_s": 3.02,
+  "requests": [
+    {
+      "elapsed_s": 0.1,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 0
+    },
+    {
+      "elapsed_s": 6.15,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 0
+    },
+    {
+      "elapsed_s": 12.21,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 1
+    },
+    {
+      "elapsed_s": 18.26,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 2
+    },
+    {
+      "elapsed_s": 24.3,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 3
+    },
+    {
+      "elapsed_s": 30.34,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 4
+    },
+    {
+      "elapsed_s": 36.38,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 5
+    },
+    {
+      "elapsed_s": 42.42,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 6
+    },
+    {
+      "elapsed_s": 48.47,
+      "correct": true,
+      "trials_before_chat": 0,
+      "idle_delay_s": 15,
+      "observed_gaps": 7
+    },
+    {
+      "elapsed_s": 54.53,
+      "correct": true,
+      "trials_before_chat": 3,
+      "idle_delay_s": 2.0,
+      "observed_gaps": 8
+    },
+    {
+      "elapsed_s": 60.61,
+      "correct": true,
+      "trials_before_chat": 5,
+      "idle_delay_s": 2.0,
+      "observed_gaps": 9
+    },
+    {
+      "elapsed_s": 66.68,
+      "correct": true,
+      "trials_before_chat": 7,
+      "idle_delay_s": 2.0,
+      "observed_gaps": 10
+    },
+    {
+      "elapsed_s": 72.72,
+      "correct": true,
+      "trials_before_chat": 7,
+      "idle_delay_s": 15,
+      "observed_gaps": 11
+    }
+  ],
+  "seconds_until_complete": 133.89,
+  "quiet_tail_s": 61.16,
+  "paired_trials": 40,
+  "interruptions": 1,
+  "holdout": [
+    {
+      "completion_ratio": 1.0,
+      "first_token_ratio": 1.0,
+      "equal_output_counts": true,
+      "matching_responses": true,
+      "changed_routes": 0
+    },
+    {
+      "completion_ratio": 1.0,
+      "first_token_ratio": 1.0,
+      "equal_output_counts": true,
+      "matching_responses": true,
+      "changed_routes": 0
+    }
+  ],
+  "policy_active": false,
+  "hardware": "AMD EPYC Linux CPU, quota 4 cores, 3 GGML threads, 4 sequences",
+  "protocol": "v2 response checks, one worker, before native reward policy",
+  "fixture": "13 repetitions of the capital of France, output limit 12, about six seconds between calls",
+  "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d"
+}

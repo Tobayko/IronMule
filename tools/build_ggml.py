@@ -124,20 +124,19 @@ def build(tree: Path, cuda: str | None, jobs: int, rocm: str | None = None) -> P
         options += ["-DGGML_HIP=ON", f"-DAMDGPU_TARGETS={rocm.replace(',', ';')}"]
     if cuda:
         options += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_ARCHITECTURES={cuda.replace(',', ';')}"]
-        # Kaggle: a CUDA 12 toolkit where one is installed (its default CUDA 13 postdates llama.cpp 4227c9b), and its
-        # driver stub for CUDA::cuda_driver
-        toolkits = sorted(Path("/usr/local").glob("cuda-12*"), reverse=True) + [Path("/usr/local/cuda")]
-        root = next((t for t in toolkits if (t / "bin" / "nvcc").exists()), None)
-        if root is not None:
-            options += [f"-DCUDAToolkit_ROOT={root}", f"-DCMAKE_CUDA_COMPILER={root}/bin/nvcc",
-                        f"-DCMAKE_LIBRARY_PATH={root}/lib64/stubs"]
-            # CUDA::cuda_driver: the toolkit's stub, else the driver itself (Kaggle's toolkit ships no stub; KG1 v3's
-            # build failed without it)
-            driver = next(iter(sorted(root.glob("lib64/stubs/libcuda.so")) + sorted(root.glob("targets/*/lib/stubs/libcuda.so"))
-                               + sorted(Path("/usr/lib/x86_64-linux-gnu").glob("libcuda.so*"))
-                               + sorted(Path("/usr/local/nvidia/lib64").glob("libcuda.so*"))), None)
-            if driver is not None:
-                options.append(f"-DCUDA_cuda_driver_LIBRARY={driver}")
+        from ironmule.kernel_gen import cuda_compiler_for
+        compiler = cuda_compiler_for(cuda.split(","))
+        if compiler is None:
+            raise ValueError(f"no installed nvcc generates native code for CUDA targets {cuda}")
+        root = Path(compiler).resolve().parents[1]
+        options += [f"-DCUDAToolkit_ROOT={root}", f"-DCMAKE_CUDA_COMPILER={compiler}",
+                    f"-DCMAKE_LIBRARY_PATH={root}/lib64/stubs"]
+        # Kaggle toolkits may use the actual driver if the CUDA::cuda_driver stub is missing.
+        driver = next(iter(sorted(root.glob("lib64/stubs/libcuda.so")) + sorted(root.glob("targets/*/lib/stubs/libcuda.so"))
+                           + sorted(Path("/usr/lib/x86_64-linux-gnu").glob("libcuda.so*"))
+                           + sorted(Path("/usr/local/nvidia/lib64").glob("libcuda.so*"))), None)
+        if driver is not None:
+            options.append(f"-DCUDA_cuda_driver_LIBRARY={driver}")
     run(["cmake", "-B", "build", *options], cwd=tree, log=log)
     run(["cmake", "--build", "build", "--target", "llama", "llama-server", "-j", str(jobs)], cwd=tree, log=log)
     return tree / "build" / "bin"
@@ -174,10 +173,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-patches", action="store_true", help="stock llama.cpp")
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args(argv)
-    if args.auto:
+    if args.auto or args.cuda:
         sys.path.insert(0, str(ROOT))
+    if args.auto:
         from ironmule.kernel_gen import _visible_cuda_devices, nvcc_path
-        archs = sorted({d["cc"] for d in _visible_cuda_devices()}, key=int) if nvcc_path() else []
+        visible = sorted({d["cc"] for d in _visible_cuda_devices()}, key=int)
+        archs = visible if visible and nvcc_path() else []
+        if visible and not archs:
+            print(f"No installed nvcc reports native support for {','.join(visible)}. Checking other backends.", flush=True)
         if archs:
             args.cuda = ",".join(archs)
         elif shutil.which("hipcc") or (Path(os.environ.get("ROCM_PATH", "/opt/rocm")) / "bin/hipcc").is_file():
@@ -195,13 +198,27 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Detected AMD GPU targets: {args.rocm}", flush=True)
     if args.rocm and not re.fullmatch(r"gfx[0-9a-f]+(?:,gfx[0-9a-f]+)*", args.rocm):
         parser.error("--rocm requires comma-separated gfx targets, e.g. gfx1100")
-    dest = args.dest / ("stock" if args.no_patches else "ironmule") / ("rocm" if args.rocm else "cuda" if args.cuda else "cpu")
-    if args.rocm:
-        dest = dest / args.rocm
-    source = fetch(dest)
-    tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5"] if args.cuda else []))
-    lib = build(tree, args.cuda, args.jobs, args.rocm)
+    base = args.dest / ("stock" if args.no_patches else "ironmule")
+    targets = [(args.cuda, args.rocm)]
+    if args.auto and (args.cuda or args.rocm):
+        targets.append((None, None))
+    for cuda, rocm in targets:
+        dest = base / ("rocm" if rocm else "cuda" if cuda else "cpu")
+        if rocm:
+            dest = dest / rocm
+        source = fetch(dest)
+        tree = source / "vendor" / "llama.cpp"
+        names = ["fa1", "row1", "am1"]
+        if cuda:
+            names += ["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5"]
+        try:
+            applied = [] if args.no_patches else patch(tree, names)
+            lib = build(tree, cuda, args.jobs, rocm)
+            break
+        except (SystemExit, ValueError, OSError, subprocess.CalledProcessError) as exc:
+            if not args.auto or not (cuda or rocm):
+                raise
+            print(f"Accelerator build failed ({exc}). Building the CPU backend.", file=sys.stderr, flush=True)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")
     print(f"export LLAMA_CPP_LIB_PATH={lib}")

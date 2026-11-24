@@ -25,7 +25,7 @@ from typing import Any, Callable, Iterator
 from .errors import BackendUnavailable, EngineLimitExceeded, InvalidRequest, Overloaded
 from .service import STABILITY_LOG
 from .serving_policy import ServingLog
-from .types import GenerationRequest
+from .types import GenerationRequest, model_catalog
 
 _SUMMED = ("queued_requests", "active_requests", "completed_requests", "failed_requests", "cancelled_requests",
            "joined_requests")
@@ -154,7 +154,7 @@ class DevicePool:
             if not order:
                 raise BackendUnavailable("no model worker is ready")
             router = self.router
-            outstanding = [shard.outstanding() for shard in self.shards]
+            outstanding = [shard.foreground_outstanding() if placement else shard.outstanding() for shard in self.shards]
             prediction = None
             if placement is not None:
                 order, prediction = placement.order(order, shape, outstanding)
@@ -235,7 +235,7 @@ class DevicePool:
         if self.hardware_placement is not None or self.hardware_placement_error:
             for device_info, target in zip(result["devices"], self.devices):
                 device_info["placement_target"] = target
-                if target in ("cpu", "local"):
+                if target in ("cpu", "local") or target.startswith("rocm:"):
                     device_info["cuda_device"] = None
         dispatch = self.dispatch
         result["dispatch"] = "learned" if dispatch is not None and dispatch.active else "join_shortest_queue"
@@ -301,10 +301,7 @@ class DevicePool:
             raise InvalidRequest(str(exc)) from exc
 
     def models(self) -> list[dict[str, Any]]:
-        ready = self.health()["ready"]
-        return [{"id": spec.model_id, "object": "model", "owned_by": "local",
-                 "revision": spec.revision, "loaded": self.spec == spec and ready}
-                for spec in self.store.models()]
+        return model_catalog(self.store.models(), self.spec, self.health()["ready"])
 
     def close(self) -> None:
         if self.hardware_placement is not None:

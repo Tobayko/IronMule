@@ -277,7 +277,7 @@ class MLXWorkerClient:
                 payload = request.as_dict()
                 payload.pop("request_id", None)
                 GenerationRequest.from_payload(payload, exact=True)
-                commands.append(request.as_dict())
+                commands.append(request.worker_payload())
             _bounded_json_line({"type": "generate_batch", "batch_id": "batch-" + "b" * 32,
                                 "requests": commands, "variant": self.execution_variant,
                                 "trace_prompt_identity": self.trace_prompt_identity})
@@ -807,7 +807,7 @@ class MLXWorkerClient:
             raise ValueError("timeout must be None or finite and positive")
         batch_id = "batch-" + uuid.uuid4().hex
         command = {"type": "generate_batch", "batch_id": batch_id,
-                   "requests": [request.as_dict() for request in request_list],
+                   "requests": [request.worker_payload() for request in request_list],
                    "variant": self.execution_variant, "trace_prompt_identity": self.trace_prompt_identity}
         try:
             _bounded_json_line(command)
@@ -853,7 +853,7 @@ class MLXWorkerClient:
                     token_counts[request.request_id] = 0
                     prompt_counts[request.request_id] = None
                 self._send({"type": "join_batch", "batch_id": batch_id,
-                            "requests": [request.as_dict() for request, _ in fresh]}, deadline)
+                            "requests": [request.worker_payload() for request, _ in fresh]}, deadline)
 
             # The operation flag is protected by the lock, but inference is
             # not: close() must remain able to acquire the lock and terminate
@@ -1031,7 +1031,7 @@ class MLXWorkerClient:
             raise ValueError("timeout must be None or finite and positive")
         if cancel is not None and not isinstance(cancel, threading.Event):
             raise TypeError("cancel must be threading.Event or None")
-        command = {"type": "generate", **request.as_dict(), "variant": variant,
+        command = {"type": "generate", **request.worker_payload(), "variant": variant,
                    "trace_forwards": trace_forwards, "trace_prompt_identity": self.trace_prompt_identity}
         try:
             _bounded_json_line(command)

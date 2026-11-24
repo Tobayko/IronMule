@@ -277,6 +277,8 @@ class Job:
     passed_over: int = 0
     context: Any = None  # speculation.NgramIndex over ids + tokens, kept up to date by the engine
 
+    hardware_probe: bool = False  # measured device work, excluded from foreground arrival and admission histories
+
     def full_context(self) -> list[int]:
         """ids + tokens, grown by the new tokens only (the engine's per-step view of a request's context)."""
         if self.context is None:
@@ -1356,7 +1358,7 @@ class GgmlEngine:
                     if getattr(self, "pack", False):  # PK1: a step's prompts share one packed call
                         budget = self.batch_cap
                 if (admission_observer is not None and cohort is None and not active and 2 <= len(pending) <= 64
-                        and all(j.limit == pending[0].limit for j in pending)):
+                        and all(not j.hardware_probe and j.limit == pending[0].limit for j in pending)):
                     # The same actual admission boundary the runtime rule can influence.
                     cohort = (time.monotonic_ns(), tuple(pending))
                 if not active and len(pending) > 1 and getattr(self, "admission_budgets", None):

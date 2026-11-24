@@ -457,6 +457,8 @@ def _pinned_ggml_options(device: str, args, spec: ModelSpec, store: ProductStore
     environment = worker_environment(device)
     options = {k: getattr(args, k) for k in ("gguf", "draft_gguf", "speculate", "agent", "model")}
     payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root), "pinned": device not in ("cpu", "local")}
+    if device.startswith("rocm:"):
+        payload.update(pinned=False, rocm_bus=device.removeprefix("rocm:"))
     child = subprocess.run([sys.executable, "-m", "ironmule_product.pinned_ggml"],
                            env={**os.environ, **environment},
                            input=json.dumps(payload, default=str), text=True, stdout=subprocess.PIPE)
@@ -466,7 +468,9 @@ def _pinned_ggml_options(device: str, args, spec: ModelSpec, store: ProductStore
         result = json.loads(child.stdout.strip().splitlines()[-1])
     except (IndexError, ValueError) as exc:
         raise InvalidRequest(f"GGUF worker {device} returned no readable qualification") from exc
-    if device in ("cpu", "local"):
+    if device.startswith("rocm:"):
+        result["ggml_gate"]["placement_rocm_bus"] = payload["rocm_bus"]
+    if device in ("cpu", "local") or device.startswith("rocm:"):
         result["ggml_worker_env"] = {**environment, **result.get("ggml_worker_env", {})}
     return result
 
@@ -609,7 +613,10 @@ def serve(argv: list[str], *, calibration_minutes: float | None = None) -> int:
     from .service import ProductService
 
     store = ProductStore(args.state_dir)
-    store.settings()
+    if auto_place:
+        store.setup("server", only_if_missing=True)
+    else:
+        store.settings()
     backend = service = server = agent_setup = None
     ggml_options: dict[str, Any] = {}
     lease = None
@@ -695,8 +702,9 @@ def serve(argv: list[str], *, calibration_minutes: float | None = None) -> int:
                 speculate = args.engine == "dense" and args.speculate == "context"
                 if args.engine == "ggml":
                     # MG2: with --gpus each worker sees one GPU and offloads every layer to it (data parallel)
+                    cuda_device = None if device in (None, "cpu", "local") or device.startswith("rocm:") else device
                     return MLXWorkerClient(spec, thinking=not args.no_thinking, execution_variant="current_engine",
-                                           cuda_device=None if device in ("cpu", "local") else device, **ggml_options[device])
+                                           cuda_device=cuda_device, **ggml_options[device])
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        cpu_blas=None if args.cpu_blas == "stock" else args.cpu_blas,

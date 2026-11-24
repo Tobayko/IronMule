@@ -30,7 +30,7 @@ def trace_for(native):
             for arm, q in enumerate(queues):
                 cost = (10 + size / 64 + cap / 8) * (1 + q) * (4 if arm == 0 else 1)
                 readings.append([cost, cost / 2, cap])
-            trace["trials"].append({"case": case, "arms": readings})
+            trace["trials"].append({"case": case, "arms": readings, "outputs": ["a" * 64] * 2})
     return trace
 
 
@@ -91,6 +91,8 @@ class Worker:
     def outstanding(self):
         return len(self.open)
 
+    foreground_outstanding = outstanding
+
     def stream(self, request):
         gate = threading.Event()
         self.open[request.request_id] = gate
@@ -124,8 +126,11 @@ def create_controller(tmp_path, monkeypatch, names=("cpu",)):
 def test_arrival_preempts_probe_and_preserves_request(tmp_path, monkeypatch):
     pool, learner = create_controller(tmp_path, monkeypatch)
     worker = pool.shards[0]
-    learner.last_arrival -= 4000
-    task = threading.Thread(target=learner.step)
+    learner.idle_since -= 4000
+    def run_probe():
+        with pytest.raises(placement.Interrupted):
+            learner.step()
+    task = threading.Thread(target=run_probe)
     task.start()
     try:
         assert worker.started.wait(5)
@@ -189,3 +194,153 @@ def test_cuda_replicas_split_and_cpu(monkeypatch):
     assert placement_devices.candidates(gib) == ["cpu"]
     assert placement_devices.worker_environment("cpu")["IRONMULE_GGML_GPU_LAYERS"] == "0"
     assert placement_devices.worker_environment("GPU-b")["CUDA_VISIBLE_DEVICES"] == "GPU-b"
+
+
+def test_equal_length_different_response_or_stop_rejects_v2(native):
+    trace = trace_for(native)
+    trace["trials"][-train.CASES]["outputs"][1] = "b" * 64
+    result = train.qualify(native, trace)
+    assert not result["qualified"]
+    assert result["holdout"][-1]["equal_output_counts"] and not result["holdout"][-1]["matching_responses"]
+    del trace["trials"][-1]["outputs"]
+    with pytest.raises(ValueError):
+        train.qualify(native, trace)
+    trace["schema"] = train.LEGACY_SCHEMA
+    old = train.qualify(native, trace)
+    assert old["protocol"] == train.LEGACY_SCHEMA and old["holdout"][-1]["matching_responses"] is None
+
+
+def test_idle_shortens_only_when_recent_quiet_windows_fit_and_a_preemption_backs_off(tmp_path, monkeypatch):
+    pool, learner = create_controller(tmp_path, monkeypatch)
+    try:
+        learner.idle_seconds = 15
+        learner.idle_gaps.extend([6] * 7)
+        assert learner.status()["idle_delay_seconds"] == 15
+        learner.idle_gaps.append(6)
+        learner.last_trial_s = 3
+        assert learner.status()["idle_delay_seconds"] == 2
+        learner.last_trial_s = 8
+        assert learner.status()["idle_delay_seconds"] == 15
+        learner.last_trial_s = 3
+        learner.inflight["probe"] = pool.shards[0]
+        req = GenerationRequest("small", (("user", "new foreground request"),))
+        learner.arrival(req)
+        assert learner.status()["idle_delay_seconds"] == 15
+    finally:
+        pool.close()
+
+
+def test_rocm_replicas_use_physical_pci_child_identity_and_local_busy_sensors(tmp_path, monkeypatch):
+    import ironmule_devices
+    from ironmule import ggml_engine
+    from ironmule_product.errors import InvalidRequest
+
+    gib = 1 << 30
+    first, second = "0000:31:00.0", "0000:4a:00.0"
+    rows = [{"name": f"ROCm{i}", "provider": "rocm", "pci": bus, "free_memory": 4 * gib}
+            for i, bus in enumerate((first, second))]
+    monkeypatch.setattr(ggml_engine, "ggml_devices", lambda: rows)
+    monkeypatch.setattr(ironmule_devices, "ggml_devices", lambda: rows)
+    monkeypatch.setattr(ggml_engine, "memory_bytes", lambda: (2 * gib, 2 * gib))
+    monkeypatch.delenv("IRONMULE_GGML_GPU_LAYERS", raising=False)
+    monkeypatch.setenv("HIP_VISIBLE_DEVICES", "3,1")
+    monkeypatch.setenv("ROCR_VISIBLE_DEVICES", "0,2,4,5")
+    replicas = ["rocm:" + first, "rocm:" + second]
+    assert placement_devices.candidates(gib) == [*replicas, "cpu"]
+    assert placement_devices.candidates(6 * gib) == ["local"]
+    env = placement_devices.worker_environment(replicas[1])
+    assert env["HIP_VISIBLE_DEVICES"] == "1" and "ROCR_VISIBLE_DEVICES" not in env
+    with pytest.raises(InvalidRequest):
+        placement_devices.verify_rocm_worker(second)
+    monkeypatch.setattr(ironmule_devices, "ggml_devices", lambda: [rows[0]])
+    with pytest.raises(InvalidRequest):
+        placement_devices.verify_rocm_worker(second)
+    placement_devices.verify_rocm_worker(first)
+    for bus, load in ((first, "0"), (second, "99")):
+        (tmp_path / bus).mkdir()
+        (tmp_path / bus / "gpu_busy_percent").write_text(load)
+    assert placement_devices.accelerators_quiet(replicas[:1], pci_root=tmp_path) == []
+    assert placement_devices.accelerators_quiet(replicas, pci_root=tmp_path) is None
+    (tmp_path / first / "gpu_busy_percent").unlink()
+    assert placement_devices.accelerators_quiet(replicas[:1], pci_root=tmp_path) is None
+
+
+def test_cost_forecast_uses_remaining_cases_and_asymmetric_workers(native, capsys):
+    t = trace_for(native)
+    for i, row in enumerate(t["trials"]):
+        row["wall_s"] = 12 if i % 8 == 7 else 1
+    t["trials"] = t["trials"][:-1]
+    assert train.remaining_idle_seconds(t) == 13
+    train.main(["estimate", "--seconds-per-worker", "4", "60"])
+    assert json.loads(capsys.readouterr().out)["estimated_idle_minutes"] == pytest.approx(43.58333)
+
+
+def test_native_reward_fit_uses_own_paired_rewards_and_freezes_before_holdout(native):
+    t = trace_for(native)
+    t["binding"]["reward_trainer"] = native.reward_version
+    t["identity"] = train.signature(t["binding"])
+    first = native.fit_rewards(t["trials"][:16])
+    assert native.choose_rewards(first, 96, 8, [0, 0]) == 1
+    # Quicker answers that differ from the reference should lose the reward.
+    for row in t["trials"][:16]:
+        if row["case"][2][0] == 0:
+            row["outputs"][1] = "b" * 64
+    changed = native.fit_rewards(t["trials"][:16])
+    assert native.choose_rewards(changed, 96, 8, [0, 0]) == 0
+    a = train.qualify(native, t)
+    assert len(a["selection"]) == 4 and a["selection"][-1]["method"] == "reward_policy"
+    for row in t["trials"][-train.CASES:]:
+        row["arms"][1][0] *= 1000
+    b = train.qualify(native, t)
+    for key in ("selection", "method", "weights"):
+        assert a[key] == b[key]
+    assert a.get("reward_weights") == b.get("reward_weights")
+
+
+def test_first_start_preserves_existing_server_settings_and_lists_an_unregistered_gguf(tmp_path):
+    from ironmule_product.state import ProductStore
+    from ironmule_product.types import ModelSpec
+
+    store = ProductStore(tmp_path)
+    settings = store.setup("desktop")
+    assert store.setup("server", only_if_missing=True) == settings
+    pool = DevicePool([Worker()], ["cpu"])
+    pool.store = store
+    pool.spec = ModelSpec("gguf/example", "gguf-revision", str(tmp_path / "model.gguf"), 1024)
+    pool.health = lambda: {"ready": True}
+    assert pool.models() == [{"id": "gguf/example", "object": "model", "owned_by": "local",
+                              "revision": "gguf-revision", "loaded": True}]
+    assert store.models() == []
+
+
+def test_recurrent_foreground_queue_shapes_reach_the_idle_plan_and_long_backlogs_keep_reference(native):
+    repeated = [(2, 1)] * 6 + [(1, 2)] * 4 + [(6, 0)] * 12
+    plan = train.workload([], 2, repeated)
+    assert {tuple(queues) for _, _, queues in plan} == {(0, 0), (2, 1), (1, 2)}
+    assert not train.covered(plan, 96, 8, [6, 0])
+    t = trace_for(native)
+    t["plan"] = plan
+    for i, row in enumerate(t["trials"]):
+        row["case"] = plan[i % train.CASES]
+    train.check_trace(t)
+    assert train.qualify(native, t)["holdout"]
+    t["plan"][0][2][0] = 5
+    with pytest.raises(ValueError):
+        train.check_trace(t)
+
+
+def test_paired_probes_hold_background_work_on_other_lanes_and_release_it(tmp_path, monkeypatch):
+    pool, learner = create_controller(tmp_path, monkeypatch, ("cpu", "local"))
+    worker, other = pool.shards
+    def target(request):
+        assert other.outstanding() == 2
+        yield {"type": "token", "text": "correct"}
+        yield {"type": "done", "service_ns": 2000000, "ttft_ns": 1000000,
+               "completion_tokens": 1, "finish_reason": "stop"}
+    monkeypatch.setattr(worker, "stream", target)
+    try:
+        times, digest = learner._probe(0, [96, 8, [0, 2]], learner.serial, 1)
+        assert times == [2, 1, 1] and len(digest) == 64
+        assert other.outstanding() == 0 and len(other.cancelled) == 2
+    finally:
+        pool.close()

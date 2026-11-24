@@ -20,6 +20,9 @@ class GgmlBridge:
 
         settings = {k: bool(v) for k, v in ((gate or {}).get("settings") or {}).items()
                     if k in ("flash_attn", "kv_unified", "kv_f32", "kv_q8")}  # GG1: what the first start measured, and the gate passed
+        if bus := (gate or {}).get("placement_rocm_bus"):
+            from .placement_devices import verify_rocm_worker
+            verify_rocm_worker(bus)
         plan = (gate or {}).get("agent") or {}
         start = (plan.get("configs") or {}).get(plan.get("incumbent")) if os.environ.get(
             "IRONMULE_GGML_AGENT", "1") != "0" else None
@@ -230,13 +233,13 @@ class GgmlBridge:
         return self._engine.free_slots()
 
     def generate(self, prompt_ids: Sequence[int], max_tokens: int, on_token=None,
-                 boundaries: Sequence[int] | None = None) -> EngineBridgeResult:
-        return self.generate_many([prompt_ids], max_tokens, on_tokens=[on_token],
+                 boundaries: Sequence[int] | None = None, *, hardware_probe: bool = False) -> EngineBridgeResult:
+        return self.generate_many([prompt_ids], max_tokens, on_tokens=[on_token], hardware_probes=[hardware_probe],
                                   boundaries=None if boundaries is None else [boundaries])[0]
 
     def generate_many(self, prompt_ids: Sequence[Sequence[int]], max_tokens: int | Sequence[int], on_tokens=None,
                       boundaries=None, admit: Callable[[int], list[Any]] | None = None,
-                      cancelled=None) -> list[EngineBridgeResult]:
+                      cancelled=None, hardware_probes=None) -> list[EngineBridgeResult]:
         from ironmule.ggml_engine import Job
 
         if boundaries is not None and any(cuts is not None for cuts in boundaries):
@@ -244,8 +247,9 @@ class GgmlBridge:
         limits = [max_tokens] * len(prompt_ids) if type(max_tokens) is int else list(max_tokens)
         emitters = list(on_tokens) if on_tokens is not None else [None] * len(prompt_ids)
         stops = list(cancelled) if cancelled is not None else [None] * len(prompt_ids)
-        jobs = [Job(list(ids), int(limit), emit, stop)
-                for ids, limit, emit, stop in zip(prompt_ids, limits, emitters, stops)]
+        probes = [False] * len(prompt_ids) if hardware_probes is None else hardware_probes
+        jobs = [Job(list(ids), int(limit), emit, stop, hardware_probe=probe)
+                for ids, limit, emit, stop, probe in zip(prompt_ids, limits, emitters, stops, probes, strict=True)]
         arrived = {id(job): time.monotonic() for job in jobs}
 
         def take(free: int) -> list[Job]:
@@ -255,7 +259,8 @@ class GgmlBridge:
                 ids, limit, emit = row[:3]
                 if len(row) > 3 and row[3] is not None:
                     raise ValueError("the ggml engine serves one-shot prompts")
-                fresh.append(Job(list(ids), int(limit), emit, row[4] if len(row) > 4 else None))
+                fresh.append(Job(list(ids), int(limit), emit, row[4] if len(row) > 4 else None,
+                                 hardware_probe=len(row) > 5 and row[5]))
                 arrived[id(fresh[-1])] = time.monotonic()
             return fresh
 
@@ -277,7 +282,7 @@ class GgmlBridge:
                     self._demand -= 1
         if self._agent is not None:  # the traffic memory: arrival, prompt and answer lengths, no text
             for job in served:
-                if job.reason != "cancelled":
+                if not job.hardware_probe and job.reason != "cancelled":
                     self._agent.observe_request(arrived.get(id(job), time.monotonic()), len(job.ids),
                                                 max(1, len(job.tokens)), len(job.ids) - job.reused,
                                                 first=job.first_ns / 1e9, finished=job.finished_ns / 1e9)
