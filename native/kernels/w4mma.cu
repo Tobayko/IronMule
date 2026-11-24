@@ -796,8 +796,10 @@ int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 #ifndef IRONMULE_W4_PIN
 #define IRONMULE_W4_PIN 0
 #endif
-#ifndef IRONMULE_W4_CARVE  // percent of the unified 192 KB that becomes shared memory (the rest is L1)
-#define IRONMULE_W4_CARVE 100
+#ifdef IRONMULE_W4_CARVE  // percent of the unified 192 KB that becomes shared memory (the rest is L1, which holds x)
+#define IRONMULE_W4_CARVE_PCT IRONMULE_W4_CARVE
+#else
+#define IRONMULE_W4_CARVE_PCT 100
 #endif
 // v9 (Q4_K, 9-32 tokens): v7's barrier-free register prefetch of MT 16-row tiles per warp, with the dequantize-once
 // arithmetic of w4r's DQ path (fp16 weights q * S - m, so the tensor cores accumulate straight into the result and no
@@ -1846,13 +1848,15 @@ int launch_d(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     const int per = (nb + ksplit - 1) / ksplit;
     const int splits = (nb + per - 1) / per;
     dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
-    if constexpr (TYPE == TYPE_Q4_K && IRONMULE_W4_PIN > 0) {  // DK1: the whole carveout, so PIN alone sets blocks per SM
+#if defined(IRONMULE_W4_CARVE) || IRONMULE_W4_PIN > 0
+    if constexpr (TYPE == TYPE_Q4_K) {  // DK1: an explicit carveout (and room for the pin)
         static bool once = (cudaFuncSetAttribute(w4d<WARPS, KS, NT, MT, MINB>, cudaFuncAttributePreferredSharedMemoryCarveout,
-                                                 IRONMULE_W4_CARVE),
+                                                 IRONMULE_W4_CARVE_PCT),
                             cudaFuncSetAttribute(w4d<WARPS, KS, NT, MT, MINB>, cudaFuncAttributeMaxDynamicSharedMemorySize,
                                                  IRONMULE_W4_PIN), true);
         (void)once;
     }
+#endif
     if constexpr (TYPE == TYPE_Q4_K)
         w4d<WARPS, KS, NT, MT, MINB><<<grid, WARPS * 32, IRONMULE_W4_PIN, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B,
                                                                             per);
