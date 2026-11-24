@@ -789,12 +789,15 @@ int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 // 3: x read from the first sub-block only (weights and math real); 4: no mma (weights, x and dequantisation real);
 // 5: no dequantisation (raw nibble words into the mma; weights, x and mma real).
 // IRONMULE_W4_PIN: dynamic shared memory per block, so that an ablation with fewer registers keeps the full kernel's
-// blocks per SM.
+// blocks per SM; IRONMULE_W4_CARVE: the shared-memory carveout it asks for (the rest of the 192 KB is L1, which holds x).
 #ifndef IRONMULE_W4_ABL
 #define IRONMULE_W4_ABL 0
 #endif
 #ifndef IRONMULE_W4_PIN
 #define IRONMULE_W4_PIN 0
+#endif
+#ifndef IRONMULE_W4_CARVE  // percent of the unified 192 KB that becomes shared memory (the rest is L1)
+#define IRONMULE_W4_CARVE 100
 #endif
 // v9 (Q4_K, 9-32 tokens): v7's barrier-free register prefetch of MT 16-row tiles per warp, with the dequantize-once
 // arithmetic of w4r's DQ path (fp16 weights q * S - m, so the tensor cores accumulate straight into the result and no
@@ -1845,7 +1848,7 @@ int launch_d(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
     if constexpr (TYPE == TYPE_Q4_K && IRONMULE_W4_PIN > 0) {  // DK1: the whole carveout, so PIN alone sets blocks per SM
         static bool once = (cudaFuncSetAttribute(w4d<WARPS, KS, NT, MT, MINB>, cudaFuncAttributePreferredSharedMemoryCarveout,
-                                                 100),
+                                                 IRONMULE_W4_CARVE),
                             cudaFuncSetAttribute(w4d<WARPS, KS, NT, MT, MINB>, cudaFuncAttributeMaxDynamicSharedMemorySize,
                                                  IRONMULE_W4_PIN), true);
         (void)once;
