@@ -95,6 +95,24 @@ def test_runtime_projects_status_recent_requests_and_width_decisions():
     assert runtime(None)["status"] == "detached"
 
 
+def test_live_placement_shows_routes_and_idle_progress_without_host_identifiers():
+    health = {"placement": {"phase": "measuring", "method": "shortest_queue", "probing": True, "interruptions": 1,
+                            "paired_trials": 3, "target_trials": 40, "remaining_idle_seconds": 51.7,
+                            "trace": "/private/state/trace.json", "error": "private",
+                            "last_decision": {"worker": "private-accelerator", "reason": "preferred_worker_full"}},
+              "devices": [{"placement_target": "cpu", "device": "cpu"},
+                          {"placement_target": "private-accelerator", "device": "gpu"}]}
+    service = SimpleNamespace(health=lambda: health)
+    data = runtime(service)
+    assert data["placement"] == {"phase": "measuring", "method": "shortest_queue", "probing": True,
+                                 "interruptions": 1, "paired_trials": 3, "target_trials": 40,
+                                 "remaining_idle_seconds": 51.7, "last_worker": "GPU 2",
+                                 "last_reason": "preferred_worker_full"}
+    assert "private" not in json.dumps(data)
+    health["placement"]["phase"] = "private"
+    assert runtime(service)["placement"] is None
+
+
 def test_scheduler_retirement_records_only_successful_delivery():
     service = object.__new__(ProductService)
     service._lock, service._pending = threading.RLock(), queue.Queue()

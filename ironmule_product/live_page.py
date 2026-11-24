@@ -112,6 +112,7 @@ main{padding:16px 13px 32px}
 <p class="notice" id="provider" hidden></p>
 <section class="hero" aria-labelledby="rateLabel"><div><div id="rateLabel" class="kicker">Last completion throughput</div><div class="big"><strong id="rate">—</strong><span>tok/s</span></div><small class="herotext" id="scope"></small></div><div class="chart"><canvas id="plot" aria-hidden="true"></canvas><small id="plotLabel"></small></div></section>
 <div class="cards" id="cards"></div>
+<section class="panel" id="placementPanel" hidden><div class="panelhead"><h2>Hardware routing</h2><span id="placementPhase" class="caption"></span></div><dl class="details" id="placementDetails"></dl></section>
 <section class="panel"><div class="panelhead"><h2 id="tableTitle">Request history</h2><span id="rowCount" class="caption"></span></div><div class="table-shelf"><table class="rows" id="table"></table></div><p id="empty" class="empty"></p></section>
 <section class="panel" id="paired" hidden><div class="panelhead"><h2>Paired deployment results</h2></div>
 <p>Ratios use IronMule GGUF divided by vLLM AWQ. Higher throughput and lower first-token latency are faster.</p>
@@ -193,6 +194,27 @@ function details(rows, id = "details") {
     d.append(el("dt", k), el("dd", v ?? "—"));
     box.append(d);
   });
+}
+function renderPlacement(p) {
+  $("placementPanel").hidden = !p;
+  if (!p) return;
+  const phases = {
+    waiting_for_idle: "Waiting for idle time", waiting_for_spare_capacity: "Waiting for spare capacity",
+    waiting_for_refresh: "Waiting to refresh", recalibrating: "Recalibrating", measuring: "Measuring routes",
+    training: "Training the controller", qualified: "Learned routing active", reference: "Shortest queue retained",
+    reference_after_failed_measurements: "Measurement failed", withdrawn_after_latency_drift: "Latency changed",
+    withdrawn_after_worker_failure: "Worker unavailable", paused: "Learning paused"
+  };
+  const methods = {shortest_queue: "Shortest queue", latency_model: "Latency model",
+    reward_policy: "Reward policy", preferred_worker_full: "Preferred worker full"};
+  txt("placementPhase", p.probing ? "Running idle probes" : phases[p.phase]);
+  const rows = [
+    ["Current policy", methods[p.method]],
+    ["Measured cases", present(p.target_trials) ? fmt(p.paired_trials, 0) + " / " + fmt(p.target_trials, 0) : null],
+    ["Estimated idle time remaining", present(p.remaining_idle_seconds) ? fmt(p.remaining_idle_seconds, 0) + " s" : null],
+    ["Interrupted probes", fmt(p.interruptions, 0)], ["Last request", p.last_worker], ["Routing decision", methods[p.last_reason]]
+  ];
+  details(rows, "placementDetails");
 }
 function renderAdmission(a, workers) {
   $("admissionPanel").hidden = !a;
@@ -322,6 +344,7 @@ function draw() {
   $("provider").hidden = true;
   const deployment = isBench && b.kind === "deployment";
   $("paired").hidden = !deployment;
+  renderPlacement(isBench ? null : r.placement);
   renderAdmission(isBench ? null : r.admission_learning, r.workers);
   if (!isBench) {
     status(r.status);

@@ -60,7 +60,7 @@ when it is ready:
 | `GET` | `/v1/ironmule/dispatch` | the learned dispatch's status (LD1), or the agent's (AG1): active or not and why, policy digest, evidence, decisions, errors |
 | `POST` | `/v1/ironmule/dispatch` | `{"action": "off"}` withdraws the learned dispatch without a restart; `400` when none is configured. With `--agent on`, `off` also pauses the agent's learning and `{"action": "on"}` resumes it |
 
-With GGUF `--placement auto`, `GET /health` includes the placement phase, learned method, observed idle gaps, current idle threshold, measured and planned trial counts, estimated remaining idle seconds and machine-bound trace path. The learning endpoint supports pause and resume for this controller. [Placement protocol](../training/hardware-placement.md)
+With GGUF `--placement auto`, open `/live#inference` to follow hardware routing, its idle trials, interruptions and last worker decision. The local `GET /health` report also includes the current idle threshold, observed idle gaps and machine-bound trace path. The learning endpoint supports pause and resume for this controller. [Placement protocol](../training/hardware-placement.md)
 
 
 The request body is read as OpenAI chat completion input: `messages` (required,
