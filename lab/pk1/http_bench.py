@@ -30,7 +30,9 @@ def main():
     a = p.parse_args()
     server = {"base_url": a.url, "model_id": a.model}
     deadline = time.monotonic() + 3600
+    warm = time.perf_counter()
     compare.stream(a.engine, server, compare.WARMUP, 8, deadline)
+    print(json.dumps({"label": a.label, "engine": a.engine, "warmup_s": round(time.perf_counter() - warm, 3)}), flush=True)
     for rep in range(a.repeats):
         for width in [int(w) for w in a.widths.split(",")]:
             seed = a.seed + rep * 1009 + width
@@ -40,6 +42,7 @@ def main():
             out = {"label": a.label, "engine": a.engine, "repeat": rep, "width": width,
                    "tok_s": round(m["tokens_per_second"], 2), "wall_s": round(m["wall_s"], 3),
                    "ttft_p50_ms": round(m["ttft_median_ms"], 1), "ttft_p95_ms": round(m["ttft_p95_ms"], 1),
+                   "ttft_max_ms": round(max(r["ttft_ms"] for r in rows), 1),  # the last request's wait for its first token
                    "tokens": m["completion_tokens"], "prompt_tokens": sum(m["performance_prompt_tokens"]),
                    "texts": hashlib.sha256(json.dumps([r["text"] for r in rows]).encode()).hexdigest()[:16]}
             if a.engine == "ironmule":  # the server's own intervals for this wave: queue, dispatch to first token

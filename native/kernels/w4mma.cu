@@ -2527,4 +2527,73 @@ int im_w4_qkv_bench(int nseg, const void *const *w_host, const size_t *wbytes, c
     return rc;
 }
 
+
+// QK1: llama.cpp's group hook (native/ggml_patches/qk1). IRONMULE_KG_QKV_TABLE: lines "nseg ntot K B variant ksplit",
+// the fused configuration measured faster than the separate ones (lab/w4bw/qkv_bench.py); a group without a line, a
+// token count off the mask, or (inside a CUDA graph capture) one not yet repacked or prepared returns 1: llama.cpp then
+// runs each matmul as before.
+static std::map<std::tuple<int, long, long, int>, std::pair<int, int>> group_choice;
+static void load_group_table_once() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        const char *path = getenv("IRONMULE_KG_QKV_TABLE");
+        FILE *f = path ? fopen(path, "r") : nullptr;
+        if (!f) return;
+        int ns, b, v, ks;
+        long nt, k;
+        while (fscanf(f, "%d %ld %ld %d %d %d", &ns, &nt, &k, &b, &v, &ks) == 6)
+            if (v >= 0 && v < NFV && FVARIANTS[v].nt == (b + 7) / 8) group_choice[{ns, nt, k, b}] = {v, ks};
+        fclose(f);
+    });
+}
+
+int ironmule_kg_mul_mat_group(int n, const int *types, const void *const *w, const float *x, float *const *y,
+                              const int64_t *n_rows, int64_t K, int64_t B, cudaStream_t s) {
+    load_group_table_once();
+    if (n < 2 || n > 3 || B < 1 || B > 32 || K % 256 != 0 || !((mask4 >> (B - 1)) & 1u)) return 1;
+    long ntot = 0;
+    for (int i = 0; i < n; i++) {
+        if (types[i] != TYPE_Q4_K || n_rows[i] % 16 != 0) return 1;
+        ntot += (long)n_rows[i];
+    }
+    auto it = group_choice.find({n, ntot, (long)K, (int)B});
+    if (it == group_choice.end()) return 1;
+    const FusedVariant &v = FVARIANTS[it->second.first];
+    const int ks = it->second.second;
+    int dev = 0;
+    cudaGetDevice(&dev);
+    if (dev < 0 || dev >= 16) return 1;
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    cudaStreamIsCapturing(s, &capture);
+    Seg3 sg{};
+    sg.nseg = n;
+    sg.ntot = (int)ntot;
+    int tiles = 0, before = 0;
+    for (int i = 0; i < n; i++) {
+        uint8_t *wr = nullptr;
+        if (capture != cudaStreamCaptureStatusNone) {  // inside a capture: only what an earlier call prepared
+            std::lock_guard<std::mutex> guard(lock_);
+            auto r = repacked.find({dev, w[i], 0});
+            auto sc = scratches.find(s);
+            const size_t rows = (size_t)v.nt * 8;
+            const size_t xbytes = (rows * K * sizeof(half) + 255) / 256 * 256 + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;
+            if (r == repacked.end() || sc == scratches.end() || sc->second.xcap < xbytes ||
+                (ks > 1 && sc->second.pcap < (size_t)ks * B * ntot * sizeof(float)))
+                return 1;
+            wr = r->second;
+        } else {
+            wr = repack(dev, TYPE_Q4_K, w[i], n_rows[i], K, s);
+            if (wr == nullptr) return 4;
+        }
+        sg.wr[i] = wr;
+        sg.out[i] = y[i];
+        tiles += (int)(n_rows[i] / 16);
+        sg.tend[i] = tiles;
+        sg.n[i] = (int)n_rows[i];
+        sg.before[i] = before;
+        before += (int)n_rows[i];
+    }
+    return run_fused(v, sg, x, K, B, ks, s);
+}
+
 }  // extern "C"

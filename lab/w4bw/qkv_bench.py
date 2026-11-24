@@ -4,7 +4,7 @@ one virtual matrix in one launch. Two layer kinds: 32 layers with v in Q4_K (q +
 (q + k fused, v separate). Per token count the best fused configuration, its error against a float64 decoding and its
 largest difference from the separate path, and the Q/K/V time of one decode step with and without fusion.
 
-  python lab/w4bw/qkv_bench.py OUT_DIR [--tokens 8,24,32]
+  python lab/w4bw/qkv_bench.py OUT_DIR [--tokens 8,16,24,32]     # also writes OUT_DIR/qkv.table for QK1
 """
 import argparse
 import ctypes
@@ -129,6 +129,19 @@ def main():
             results.append(step)
             print("STEP " + json.dumps(step), flush=True)
     (a.out / "qkv.json").write_text(json.dumps(results))
+    # QK1's table (IRONMULE_KG_QKV_TABLE): "nseg ntot K B variant ksplit" for every token count of a measured tile count
+    # where the fused launch beat the separate ones; never 1 token (the one-row kernels stay)
+    lines = []
+    for r in results:
+        b = r.get("best_fused")
+        if not b or b["us_fused"] >= b["us_sep"]:
+            continue
+        nseg, ntot = (3, NQ + 2 * NKV) if r["layer"] == "qkv" else (2, NQ + NKV)
+        nt = -(-r["B"] // 8)
+        for tok in range(max(2, 8 * (nt - 1) + 1), 8 * nt + 1):
+            lines.append(f"{nseg} {ntot} {K} {tok} {b['fv']['id']} {b['ksplit']}")
+    (a.out / "qkv.table").write_text("\n".join(lines) + "\n")
+    print(json.dumps({"qkv_table_lines": len(lines)}), flush=True)
 
 
 if __name__ == "__main__":

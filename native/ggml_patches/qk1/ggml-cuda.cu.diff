@@ -1,0 +1,95 @@
+2148a2149,2232
+> // QK1 (IronMule, experimental, IRONMULE_KG_QKV=1): matmuls of one graph that read the same activations (a layer's q,
+> // k and v) computed by one launch of the kernel library (ironmule_kg_mul_mat_group, W4R v13). The later ones run
+> // early, so each is taken only where its output overlaps no tensor of the nodes in between (the graph allocator reuses
+> // memory); a group the library declines runs node by node as before.
+> typedef int (*ironmule_kg_group_fn)(int n, const int * types, const void * const * w, const float * x, float * const * y,
+>                                     const int64_t * n_rows, int64_t k, int64_t batch, cudaStream_t stream);
+> static bool ironmule_qk1_on() {
+>     static const bool on = getenv("IRONMULE_KG_QKV") != nullptr && atoi(getenv("IRONMULE_KG_QKV")) != 0;
+>     return on;
+> }
+> static ironmule_kg_group_fn ironmule_qk1_fn() {
+>     static const ironmule_kg_group_fn fn = [] {
+>         const char * path = getenv("IRONMULE_KG_LIB");
+>         void * handle = (path && *path && ironmule_qk1_on()) ? dlopen(path, RTLD_NOW | RTLD_LOCAL) : nullptr;
+>         return handle ? (ironmule_kg_group_fn) dlsym(handle, "ironmule_kg_mul_mat_group") : (ironmule_kg_group_fn) nullptr;
+>     }();
+>     return fn;
+> }
+> static bool ironmule_qk1_plain(const ggml_tensor * t) {  // a matmul the group can take: Q4_K weights, f32, one matrix
+>     return t->op == GGML_OP_MUL_MAT && t->src[0]->type == GGML_TYPE_Q4_K && t->src[1]->type == GGML_TYPE_F32 &&
+>            t->type == GGML_TYPE_F32 && t->src[0]->ne[2] == 1 && t->src[0]->ne[3] == 1 && t->src[1]->ne[2] == 1 &&
+>            t->src[1]->ne[3] == 1 && ggml_is_contiguous(t->src[0]) && ggml_is_contiguous(t->src[1]) &&
+>            ggml_is_contiguous(t) && t->src[0]->ne[1] % 16 == 0 && !ggml_backend_buft_is_cuda_split(t->src[0]->buffer->buft);
+> }
+> static bool ironmule_qk1_overlap(const ggml_tensor * a, const ggml_tensor * b) {
+>     if (a == nullptr || b == nullptr || a->data == nullptr || b->data == nullptr) {
+>         return false;
+>     }
+>     const char * a0 = (const char *) a->data, * b0 = (const char *) b->data;
+>     return a0 < b0 + ggml_nbytes(b) && b0 < a0 + ggml_nbytes(a);
+> }
+> // node i is a plain matmul: find up to two later plain matmuls with the same src1 that may run now, run all as one
+> // group; their indices go to `done`. False: nothing was run.
+> static bool ironmule_qk1_group(ggml_backend_cuda_context & ctx, ggml_cgraph * cgraph, int i, std::vector<int> & done) {
+>     ggml_tensor * first = cgraph->nodes[i];
+>     ironmule_kg_group_fn fn = ironmule_qk1_fn();
+>     if (fn == nullptr || !ironmule_qk1_plain(first) || first->src[1]->ne[1] > 32) {
+>         return false;
+>     }
+>     int members[3] = {i, -1, -1}, n = 1;
+>     for (int j = i + 1; j < cgraph->n_nodes && j <= i + 24 && n < 3; j++) {
+>         ggml_tensor * t = cgraph->nodes[j];
+>         if (!ironmule_qk1_plain(t) || t->src[1] != first->src[1] || t->src[0]->ne[0] != first->src[0]->ne[0]) {
+>             continue;
+>         }
+>         bool safe = true;  // t's output written before nodes i+1 .. j-1 ran: it must not share memory with them
+>         for (int m = i + 1; m < j && safe; m++) {
+>             ggml_tensor * u = cgraph->nodes[m];
+>             if (ironmule_qk1_overlap(t, u)) safe = false;
+>             for (int s = 0; s < GGML_MAX_SRC && safe; s++) {
+>                 if (ironmule_qk1_overlap(t, u->src[s])) safe = false;
+>             }
+>         }
+>         for (int s = 0; s < n && safe; s++) {
+>             if (ironmule_qk1_overlap(t, cgraph->nodes[members[s]])) safe = false;
+>         }
+>         if (safe) {
+>             members[n++] = j;
+>         }
+>     }
+>     if (n < 2) {
+>         return false;
+>     }
+>     int types[3];
+>     const void * w[3];
+>     float * y[3];
+>     int64_t rows[3];
+>     for (int s = 0; s < n; s++) {
+>         const ggml_tensor * t = cgraph->nodes[members[s]];
+>         types[s] = (int) t->src[0]->type;
+>         w[s] = t->src[0]->data;
+>         y[s] = (float *) t->data;
+>         rows[s] = t->src[0]->ne[1];
+>     }
+>     if (fn(n, types, w, (const float *) first->src[1]->data, y, rows, first->src[0]->ne[0], first->src[1]->ne[1],
+>            ctx.stream()) != 0) {
+>         return false;
+>     }
+>     for (int s = 1; s < n; s++) {
+>         done.push_back(members[s]);
+>     }
+>     return true;
+> }
+> 
+3244a3329
+>             std::vector<int> ironmule_qk1_done;  // QK1: nodes a group already computed
+3248a3334,3340
+>                     continue;
+>                 }
+>                 if (!ironmule_qk1_done.empty() &&
+>                     std::find(ironmule_qk1_done.begin(), ironmule_qk1_done.end(), i) != ironmule_qk1_done.end()) {
+>                     continue;  // QK1: computed with its group
+>                 }
+>                 if (ironmule_qk1_on() && node->op == GGML_OP_MUL_MAT && ironmule_qk1_group(*cuda_ctx, cgraph, i, ironmule_qk1_done)) {
