@@ -75,7 +75,7 @@ def remaining(deadline):
     return value
 
 
-def stream(engine, server, prompt, limit, deadline, *, request_id=None, on_first_visible=None):
+def stream(engine, server, prompt, limit, deadline, *, request_id=None, on_first_visible=None, timeline=False):
     """Require successful OpenAI SSE termination and server-generated token counts in each arm."""
     parsed = urllib.parse.urlsplit(server["base_url"])
     if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
@@ -88,6 +88,9 @@ def stream(engine, server, prompt, limit, deadline, *, request_id=None, on_first
     if engine == "vllm":
         body["chat_template_kwargs"] = {"enable_thinking": False}
     started = time.perf_counter()
+    sent = time.monotonic()  # PF1 (timeline): the clock the server's and the engine's records use
+    chunk_times: list[float] = []
+    server_id = None
     conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=min(remaining(deadline), 120))
     first = first_visible = usage = finish = None
     pieces = []
@@ -113,6 +116,8 @@ def stream(engine, server, prompt, limit, deadline, *, request_id=None, on_first
                 break
             if line.startswith(b"data:"):
                 chunk = json.loads(line[5:])
+                if timeline and server_id is None:
+                    server_id = chunk.get("id")
                 if chunk.get("error"):
                     raise RuntimeError(f"{engine} returned a stream error")
                 if chunk.get("usage"):
@@ -120,6 +125,8 @@ def stream(engine, server, prompt, limit, deadline, *, request_id=None, on_first
                 for choice in chunk.get("choices") or []:
                     text = choice.get("delta", {}).get("content") or ""
                     if text:
+                        if timeline:
+                            chunk_times.append(time.monotonic())
                         if first is None:
                             first = time.perf_counter() - started
                         if first_visible is None and text.strip():
@@ -133,19 +140,24 @@ def stream(engine, server, prompt, limit, deadline, *, request_id=None, on_first
         n, p = usage.get("completion_tokens"), usage.get("prompt_tokens")
         if type(n) is not int or not 0 < n <= limit or type(p) is not int or p <= 0:
             raise RuntimeError(f"{engine} returned invalid token counts")
-        return {"text": "".join(pieces), "tokens": n, "prompt_tokens": p, "ttft_ms": 1000 * first,
-                "visible_ttft_ms": None if first_visible is None else 1000 * first_visible, "finish_reason": finish}
+        out = {"text": "".join(pieces), "tokens": n, "prompt_tokens": p, "ttft_ms": 1000 * first,
+               "visible_ttft_ms": None if first_visible is None else 1000 * first_visible, "finish_reason": finish}
+        if timeline:  # PF1: one content chunk per streamed token piece, monotonic seconds
+            out.update(server_id=server_id, t_send=sent, t_done=time.monotonic(), chunk_times=chunk_times)
+        return out
     finally:
         conn.close()
 
 
-def batch(engine, server, prompts, width, limit, deadline, *, request_id_prefix=None):
+def batch(engine, server, prompts, width, limit, deadline, *, request_id_prefix=None, timeline=False):
     started = time.perf_counter()
     pool = ThreadPoolExecutor(max_workers=width)
     try:
         futures = []
         for index, prompt in enumerate(prompts):
             options = {} if request_id_prefix is None else {"request_id": f"{request_id_prefix}-{index}"}
+            if timeline:
+                options["timeline"] = True
             futures.append(pool.submit(stream, engine, server, prompt, limit, deadline, **options))
         rows = [future.result(timeout=remaining(deadline)) for future in futures]
     except BaseException:

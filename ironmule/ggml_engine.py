@@ -346,6 +346,9 @@ class Job:
     finished_ns: int = 0
     passed_over: int = 0
     context: Any = None  # speculation.NgramIndex over ids + tokens, kept up to date by the engine
+    tag: str | None = None  # PF1: the serving request's id, for the trace only
+    prefill_start_ns: int = 0  # PF1 (trace only): the start of the first native call with this prompt's rows
+    prefill_end_ns: int = 0  # PF1 (trace only): the end of the call with its last prompt row
 
     def full_context(self) -> list[int]:
         """ids + tokens, grown by the new tokens only (the engine's per-step view of a request's context)."""
@@ -1096,11 +1099,31 @@ class GgmlEngine:
     # --- decode calls -------------------------------------------------------------------------------------------------
     def _decode(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         if TRACE:
-            started = time.monotonic()
+            started_ns = time.monotonic_ns()
             out = self._decode_once(rows, evict=evict)
+            ended_ns = time.monotonic_ns()
+            # PF1: a row inside its request's prompt is a prompt row, one past it decodes, one of a sequence without a
+            # request is a KG3 placeholder. Times around the call are taken where llama.cpp returns anyway: no added
+            # synchronisation.
+            jobs = getattr(self, "_tl_jobs", None) or {}
+            seqs = sorted({r[2] for r in rows})
+            prompt_rows = filler_rows = 0
+            for r in rows:
+                job = jobs.get(r[2])
+                if job is None:
+                    filler_rows += 1
+                elif r[1] < len(job.ids):
+                    prompt_rows += 1
+            for seq in seqs:
+                job = jobs.get(seq)
+                if job is not None and not job.prefill_end_ns and any(r[2] == seq and r[1] < len(job.ids) for r in rows):
+                    job.prefill_start_ns = job.prefill_start_ns or started_ns
+                    if any(r[2] == seq and r[1] + 1 == len(job.ids) for r in rows):
+                        job.prefill_end_ns = ended_ns
             with open(TRACE, "a") as fh:
-                fh.write(f"{started:.6f} {time.monotonic() - started:.6f} {len(rows)} "
-                         f"{len({r[2] for r in rows})} {sum(1 for r in rows if r[3])}\n")
+                fh.write(f"{started_ns / 1e9:.6f} {(ended_ns - started_ns) / 1e9:.6f} {len(rows)} {len(seqs)} "
+                         f"{sum(1 for r in rows if r[3])} {prompt_rows} {len(rows) - prompt_rows - filler_rows} "
+                         f"{filler_rows} seqs={','.join(map(str, seqs))}\n")
             return out
         return self._decode_once(rows, evict=evict)
 
@@ -1336,6 +1359,13 @@ class GgmlEngine:
 
         def finish(seq: int, job: Job, reason: str, keep: bool = True) -> None:
             job.reason, job.finished_ns = reason, time.monotonic_ns()
+            if TRACE:  # PF1: the request's own timeline, monotonic seconds (0: not reached)
+                self._tl_jobs.pop(seq, None)
+                with open(TRACE, "a") as fh:
+                    fh.write(f"# job seq={seq} tag={job.tag} prompt={len(job.ids)} reused={job.reused} "
+                             f"tokens={len(job.tokens)} reason={reason} prefill_start={job.prefill_start_ns / 1e9:.6f} "
+                             f"prefill_end={job.prefill_end_ns / 1e9:.6f} first={job.first_ns / 1e9:.6f} "
+                             f"end={job.finished_ns / 1e9:.6f}\n")
             if self.collective is not None and reason in ("eos", "length") and job.tokens:
                 self.collective.add(job.tokens)  # SP4: this answer becomes a draft source for later requests
             if self.drafter is not None:
@@ -1380,6 +1410,8 @@ class GgmlEngine:
             return False
 
         trace_note("run")
+        if TRACE:
+            self._tl_jobs: dict[int, Job] = getattr(self, "_tl_jobs", {})
         learning = getattr(self.pilot, "learning", None)
         decision = {"cap": 1 << 30, "budget": 1 << 30, "draft": True}
         arrived = 0
@@ -1497,6 +1529,8 @@ class GgmlEngine:
                     self.prompt_tokens += len(job.ids)
                     self.reused_tokens += keep
                     fresh.append((seq, job, keep))
+                    if TRACE:  # PF1
+                        self._tl_jobs[seq] = job
                 if fresh and learning is not None and decision["threads"] != self.threads:
                     self.set_threads(decision["threads"])  # includes separate prefills issued before the main decode
                 if not active and not fresh:

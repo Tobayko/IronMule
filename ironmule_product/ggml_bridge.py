@@ -12,6 +12,13 @@ from typing import Any, Callable, Sequence
 from .engine_bridge import EngineBridgeResult
 
 
+
+def _request_tag(emit) -> str | None:
+    """PF1: the serving request id behind a token callback (the worker's stream), for the engine trace only."""
+    owner = getattr(emit, "__self__", None)
+    tag = getattr(owner, "request_id", None)
+    return tag if isinstance(tag, str) else None
+
 class GgmlBridge:
     configuration = "ggml"
 
@@ -244,7 +251,7 @@ class GgmlBridge:
         limits = [max_tokens] * len(prompt_ids) if type(max_tokens) is int else list(max_tokens)
         emitters = list(on_tokens) if on_tokens is not None else [None] * len(prompt_ids)
         stops = list(cancelled) if cancelled is not None else [None] * len(prompt_ids)
-        jobs = [Job(list(ids), int(limit), emit, stop)
+        jobs = [Job(list(ids), int(limit), emit, stop, tag=_request_tag(emit))
                 for ids, limit, emit, stop in zip(prompt_ids, limits, emitters, stops)]
         arrived = {id(job): time.monotonic() for job in jobs}
 
@@ -255,7 +262,7 @@ class GgmlBridge:
                 ids, limit, emit = row[:3]
                 if len(row) > 3 and row[3] is not None:
                     raise ValueError("the ggml engine serves one-shot prompts")
-                fresh.append(Job(list(ids), int(limit), emit, row[4] if len(row) > 4 else None))
+                fresh.append(Job(list(ids), int(limit), emit, row[4] if len(row) > 4 else None, tag=_request_tag(emit)))
                 arrived[id(fresh[-1])] = time.monotonic()
             return fresh
 

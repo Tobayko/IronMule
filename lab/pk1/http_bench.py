@@ -16,6 +16,25 @@ from ironmule.factual_gate import MAX_TOKENS, cases, correct
 from ironmule_product import compare
 
 
+def scrape(url):
+    """The server's Prometheus samples as {name{labels}: value} (empty where it has no /metrics)."""
+    import urllib.request
+
+    try:
+        text = urllib.request.urlopen(url.rstrip("/") + "/metrics", timeout=10).read().decode()
+    except OSError:
+        return {}
+    out = {}
+    for line in text.splitlines():
+        if line.startswith("vllm:"):
+            name, _, value = line.rpartition(" ")
+            try:
+                out[name] = float(value)
+            except ValueError:
+                pass
+    return out
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--url", required=True)
@@ -27,6 +46,9 @@ def main():
     p.add_argument("--max-tokens", type=int, default=32)
     p.add_argument("--quality", action="store_true", help="also grade the factual cases at each width")
     p.add_argument("--label", default="")
+    p.add_argument("--timeline", default="", help="PF1: one JSON line per request (send, every token, server id)")
+    p.add_argument("--metrics", default="", help="PF1: FILE for the change of the server's /metrics over each wave "
+                   "(vLLM: steps and their token counts, prefix-cache queries and hits)")
     a = p.parse_args()
     server = {"base_url": a.url, "model_id": a.model}
     deadline = time.monotonic() + 3600
@@ -37,7 +59,23 @@ def main():
         for width in [int(w) for w in a.widths.split(",")]:
             seed = a.seed + rep * 1009 + width
             prompts = compare.performance_prompts(seed, width, max(width, 8))
-            rows, elapsed = compare.batch(a.engine, server, prompts, width, a.max_tokens, deadline)
+            before = scrape(a.url) if a.metrics else None
+            wave_start = time.monotonic()
+            rows, elapsed = compare.batch(a.engine, server, prompts, width, a.max_tokens, deadline,
+                                          timeline=bool(a.timeline))
+            if a.timeline:
+                with open(a.timeline, "a") as fh:
+                    for index, r in enumerate(rows):
+                        fh.write(json.dumps({"label": a.label, "engine": a.engine, "repeat": rep, "width": width,
+                                             "index": index, "wave_start": wave_start, "server_id": r["server_id"],
+                                             "prompt_tokens": r["prompt_tokens"], "tokens": r["tokens"],
+                                             "ttft_ms": r["ttft_ms"], "t_send": r["t_send"], "t_done": r["t_done"],
+                                             "chunk_times": r["chunk_times"]}) + "\n")
+            if a.metrics:
+                after = scrape(a.url)
+                delta = {k: round(v - before.get(k, 0.0), 6) for k, v in after.items() if v != before.get(k, 0.0)}
+                with open(a.metrics, "a") as fh:
+                    fh.write(json.dumps({"label": a.label, "repeat": rep, "width": width, "delta": delta}) + "\n")
             m = compare.performance_metrics(rows, elapsed)
             out = {"label": a.label, "engine": a.engine, "repeat": rep, "width": width,
                    "tok_s": round(m["tokens_per_second"], 2), "wall_s": round(m["wall_s"], 3),

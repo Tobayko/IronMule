@@ -799,9 +799,13 @@ class ProductService:
         first_seconds = (session.first_ns - session.submitted_ns) / 1e9 if session.first_ns is not None else None
         dispatch = session.dispatched_ns
         queue_seconds = (dispatch - session.submitted_ns) / 1e9 if dispatch is not None else None
+        # PF1: the request's own times on the monotonic clock the engine trace and the client use (seconds)
         self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
                   error=session.error, tokens=session.tokens,
-                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed)
+                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed,
+                  t_submit=session.submitted_ns / 1e9,
+                  t_dispatch=None if dispatch is None else dispatch / 1e9,
+                  t_first=None if session.first_ns is None else session.first_ns / 1e9, t_end=session.end_ns / 1e9)
         with self._lock:
             if session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
                 self._live_samples.append({
