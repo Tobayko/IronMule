@@ -25,7 +25,7 @@ from typing import Any, Callable, Iterator
 from .errors import BackendUnavailable, EngineLimitExceeded, InvalidRequest, Overloaded
 from .service import STABILITY_LOG
 from .serving_policy import ServingLog
-from .types import GenerationRequest
+from .types import GenerationRequest, model_catalog
 
 _SUMMED = ("queued_requests", "active_requests", "completed_requests", "failed_requests", "cancelled_requests",
            "joined_requests")
@@ -110,6 +110,9 @@ class DevicePool:
         if not shards or len(shards) != len(devices):
             raise ValueError("a device pool needs one service per device")
         self.shards, self.devices = list(shards), list(devices)
+        self.hardware_placement = None
+        self.hardware_placement_error = None
+        self.start_failures = {}
         self.spec = shards[0].spec
         self.store = shards[0].store
         self._lock = threading.Lock()  # placement only; each device's service keeps its own
@@ -145,11 +148,16 @@ class DevicePool:
         with self._lock:
             if any(shard.holds(request.request_id) for shard in self.shards):
                 raise InvalidRequest("duplicate request id")
+            placement = self.hardware_placement
+            shape = placement.arrival(request) if placement else None
             order = self._order(request)
             if not order:
                 raise BackendUnavailable("no model worker is ready")
             router = self.router
-            outstanding = [shard.outstanding() for shard in self.shards]
+            outstanding = [shard.foreground_outstanding() if placement else shard.outstanding() for shard in self.shards]
+            prediction = None
+            if placement is not None:
+                order, prediction = placement.order(order, shape, outstanding)
             if router is not None and len(order) == len(self.shards):
                 try:
                     chosen = router.choose(outstanding, request.max_tokens)
@@ -161,6 +169,10 @@ class DevicePool:
             for index in order:
                 try:
                     events = self.shards[index].stream(request)
+                    if placement is not None:
+                        placement.admitted(index, prediction)
+                        if prediction and prediction[0] == index:
+                            return placement.watch(events, prediction)
                     if router is None:
                         return events
                     return self._held(request, index, router.watch(index, outstanding[index] + 1, events),
@@ -220,8 +232,21 @@ class DevicePool:
                               "active_requests": health.get("active_requests"),
                               "completed_requests": health.get("completed_requests")}
                              for device, health in zip(self.devices, healths)]
+        if self.hardware_placement is not None or self.hardware_placement_error:
+            for device_info, target in zip(result["devices"], self.devices):
+                device_info["placement_target"] = target
+                if target in ("cpu", "local") or target.startswith("rocm:"):
+                    device_info["cuda_device"] = None
         dispatch = self.dispatch
         result["dispatch"] = "learned" if dispatch is not None and dispatch.active else "join_shortest_queue"
+        if self.start_failures:
+            result["placement_skipped_workers"] = self.start_failures
+        if self.hardware_placement_error:
+            result["placement"] = {"active": False, "phase": "reference", "error": self.hardware_placement_error}
+        if self.hardware_placement is not None:
+            result["placement"] = self.hardware_placement.status()
+            if result["placement"]["active"]:
+                result["dispatch"] = "hardware_placement"
         if dispatch is not None:
             result["learned_dispatch"] = dispatch.status()
         if self.agents:
@@ -234,6 +259,11 @@ class DevicePool:
         serving = {"ready": health["ready"], "device": health.get("device"), "backend": health["backend"],
                    "loaded_model": health["loaded_model"], "queued_requests": health["queued_requests"],
                    "replay_phase": None}
+        if self.hardware_placement is not None:
+            status = health["placement"]
+            return {"schema": "ironmule.live_learning.v1", "mode": "paused" if status["phase"] == "paused" else "active",
+                    "eligible": True, "serving": serving, "strategy": {"active": health["dispatch"]},
+                    "placement": status}
         reason = "live learning models one worker; this server spreads requests over several GPUs (HW1)"
         return {"schema": "ironmule.live_learning.v1", "mode": "off", "eligible": False, "reason": reason,
                 "strategy": {"active": "reference", "version": None, "reason": reason},
@@ -241,6 +271,14 @@ class DevicePool:
 
     def learning_control(self, action: str, arm: str | None = None,
                          evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+        if self.hardware_placement is not None and arm is None and evidence is None:
+            try:
+                self.hardware_placement.control(action)
+            except ValueError as exc:
+                raise InvalidRequest(str(exc)) from exc
+            return self.learning_status()
+        if self.hardware_placement is not None:
+            raise InvalidRequest("placement accepts pause and resume without arm or evidence")
         raise InvalidRequest("learning is off: it models one worker, and this server runs one per GPU (HW1)")
 
     def dispatch_status(self) -> dict[str, Any]:
@@ -263,12 +301,11 @@ class DevicePool:
             raise InvalidRequest(str(exc)) from exc
 
     def models(self) -> list[dict[str, Any]]:
-        ready = self.health()["ready"]
-        return [{"id": spec.model_id, "object": "model", "owned_by": "local",
-                 "revision": spec.revision, "loaded": self.spec == spec and ready}
-                for spec in self.store.models()]
+        return model_catalog(self.store.models(), self.spec, self.health()["ready"])
 
     def close(self) -> None:
+        if self.hardware_placement is not None:
+            self.hardware_placement.close()
         for shard in self.shards:
             shard.close()
 
@@ -282,7 +319,7 @@ def start_paths(store: Any, spec: Any, makers: list[Callable[[], Any]], labels: 
 
 
 def start_pool(store: Any, spec: Any, devices: list[str], make_backend: Callable[[str], Any],
-               service_type: Callable[..., Any]) -> DevicePool:
+               service_type: Callable[..., Any], *, allow_partial: bool = False) -> DevicePool:
     """Start one worker per device at once (each loads its own copy of the model) and wrap them.
 
     All or nothing: a device that was asked for and does not come up stops the server, because
@@ -296,21 +333,32 @@ def start_pool(store: Any, spec: Any, devices: list[str], make_backend: Callable
         except BaseException as exc:  # noqa: BLE001 - reported below, after every start has ended
             failures[index] = exc
 
-    threads = [threading.Thread(target=start, args=(index,), daemon=True) for index in range(len(backends))]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    if allow_partial:  # automatic heterogeneous replicas should not peak in host memory at the same instant
+        for index in range(len(backends)):
+            start(index)
+    else:
+        threads = [threading.Thread(target=start, args=(i,), daemon=True) for i in range(len(backends))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
     failed = [(device, exc) for device, exc in zip(devices, failures) if exc is not None]
-    if failed:
+    if failed and (not allow_partial or len(failed) == len(devices)):
         for backend in backends:
             backend.close()
         device, exc = failed[0]
         raise BackendUnavailable(f"the worker for CUDA device {device} did not start") from exc
     shards = []
-    for device, backend in zip(devices, backends):
+    ready = []
+    for device, backend, failure in zip(devices, backends, failures):
+        if failure is not None:
+            backend.close()
+            continue
+        ready.append(device)
         shard = service_type(store, backend=backend, spec=spec)
         shard.make_backend = (lambda device=device: make_backend(device))  # STAB1, on the same card
         shard.label = device  # STAB3: names this shard in the stability log the shards share
         shards.append(shard)
-    return DevicePool(shards, devices)
+    pool = DevicePool(shards, ready)
+    pool.start_failures = {device: type(exc).__name__ for device, exc in failed}
+    return pool

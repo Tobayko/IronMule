@@ -178,6 +178,8 @@ def test_the_bridge_feeds_the_agent_and_switches_the_engine_between_runs(tmp_pat
     for _ in range(3):
         bridge.generate_many([[1, 2, 3]] * 20, 50)
     assert bridge._agent.requests == 60 and len(bridge._agent._steps) == 60
+    bridge.generate_many([[3], [4]], [4, 4], hardware_probes=[True, False])
+    assert bridge._agent.requests == 61 and len(bridge._agent._steps) == 62
     bridge._switch("w32-fa-kv8")
     assert bridge._engine.reconfigured == [(32, {"flash_attn": True, "kv_q8": True})]
     assert bridge.counters()["ggml_agent"]["serving"] == "w32-fa-kv8"

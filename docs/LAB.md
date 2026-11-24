@@ -3341,3 +3341,46 @@ falls back to one-by-one rendering on any doubt; why is not checked). The tail a
 behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached.
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod21-sv4.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod21.jsonl).
 Balance after pod 21: 4.39 USD.
+
+### 2026-11-23, hardware placement on a Linux CPU
+
+SmolLM2-135M-Instruct Q4_K_M ran on an AMD EPYC 9V74, with affinity for five CPUs, a four-core cgroup quota,
+three configured GGML threads and four sequences. A foreground chat interrupted a live paired probe, answered
+“The capital of France is Paris.” and the campaign resumed. In a separate uninterrupted run the public
+`ironmule hardware calibrate` command finished its 40 real cases in 75.05 s after worker startup, 79.05 s
+wall time with a cached GGUF quality gate. The probes themselves accounted for 20.16 s. The single worker
+kept its only route in both holdouts (completion and first-token ratios 1.00). Replaying the completed trace
+fit the C++ model and evaluated the holdouts in 0.54 ms on this host. These measurements cover the controller,
+the real CPU engine, foreground preemption and resume. Multi-GPU serving and speed against vLLM need target
+hardware measurements. [Machine-bound trace](../lab/placement/results/smollm2-135m-cpu.json) · [Protocol and reproduction](../training/hardware-placement.md)
+
+A separate comparison pinned two qualified replicas to one and three threads on the **same CPU**. On the two
+held-out rounds the candidate's completion-time ratios were 0.553 and 0.595. One long-prompt fixture ended at
+26 versus 37 tokens in the first holdout and 37 versus 64 in the second. The prespecified equal-output-count
+gate rejected the candidate. A subsequent foreground request used the reference. The campaign took 100.05 s
+after worker startup. [Paired measurements](../lab/placement/results/smollm2-cpu-pair.json) · [Reproduction](../lab/placement/cpu_pair.py)
+
+A follow-up will exercise a real workload change. After the initial verdict, send 32 public foreground requests
+covering 96/1,024 characters and output limits of 4/8, using the same replicas, gate and five rounds. Record both
+holdouts and the route of a foreground request after the campaign. This post-hoc workload selection tests
+adaptation for shorter answers. The initial comparison retains its rejection.
+
+The 32 real requests changed the next idle campaign to 4/8 output tokens without a restart. In the subsequent
+two untouched eight-case rounds the policy changed six routes per round. Its summed completion-time ratios were
+0.550 and 0.530 against the shortest queue. First-token ratios were 0.514 and 0.483 and the output counts
+matched for every compared route. It qualified the immediate-cost model (lookahead weight zero). A subsequent
+eight-token foreground request selected the three-thread worker through the learned policy. The follow-up
+monitor reported 69.05 s to completion. The result covers these short fixtures and these two CPU configurations.
+[Follow-up trace and prior verdict](../lab/placement/results/smollm2-cpu-pair-short.json)
+
+### 2026-11-24, training during short idle windows on a CPU server
+
+SmolLM2-135M-Instruct Q4_K_M ran through the normal HTTP service on an AMD EPYC 9V74 CPU with a four-core quota, three GGML threads and four sequences. Thirteen requests asked the same public geography question six seconds apart. All 13 returned Paris. Once the controller had seen eight idle intervals, it shortened its quiet threshold from 15 to two seconds. Seven full calibration cases fit between foreground requests. One subsequent arrival interrupted a probe and restored the 15-second delay. When foreground demand ended, the controller finished its 40 cases in another 61.16 seconds. With only one worker, both held-out comparisons retained the reference. This run exercised the response-digest protocol before adding the native reward policy and multi-worker background queues. [Readings](../lab/placement/results/smollm2-cpu-idle-windows.json) · [Foreground workload](../lab/placement/idle_traffic.py)
+
+The CPU build selected by `tools/build_ggml.py --auto` completed with the FA1, ROW1 and AM1 patches. A separate cold placement calibration on this host took 160.41 seconds from invocation to exit, including 68.02 seconds for the 40 cases after worker startup. It had an empty state directory, an already built backend, locally available weights and one eligible worker. Neither the fit time nor these CPU wall times predict GGUF throughput on a GPU.
+
+A second experiment used independent one- and three-thread workers on the same CPU and trained both native candidates with protocol v2. The initial comparison rejected a faster route because answers differed. Following 32 short foreground requests, a new campaign selected the latency model. Both fresh rounds cut total completion time to 52.5% and 52.7% of the shortest-queue reference and matched visible responses and stops. The learned route was then used for a foreground request. This was a short CPU workload. [Complete trace, selection and both verdicts](../lab/placement/results/smollm2-cpu-reward-comparison-v2.json)
+
+The v3 follow-up used the same two CPU workers. IronMule rejected the first campaign after 98.04 seconds because the faster routes changed responses and output counts. Then 32 short requests arrived four at a time. IronMule learned a new workload plan that included two requests ahead on one worker and one on the other. It recreated and drained the observed queues for each measured route. The second campaign took 70.05 seconds. The native reward policy and the native latency model tied on the selection set, and the controller selected the immediate latency model. In the two fresh rounds its total completion time was 48.68% and 55.47% of the shortest-queue reference. Time to first token was 46.69% and 51.38% of the reference. Visible responses, output-token counts and stop reasons matched on every selected route. A subsequent foreground request used the qualified three-thread route. Offline fitting and holdout replay of the saved trace took 0.82 ms with the native trainer already built.
+
+Reproduce this load transition with `python -m lab.placement.cpu_pair --gguf MODEL --state-dir STATE --short-traffic --burst-size 4`. The results cover a single host and this small GGUF with short outputs. [Queue patterns, paired timings and verdicts](../lab/placement/results/smollm2-cpu-reward-burst-v3.json)

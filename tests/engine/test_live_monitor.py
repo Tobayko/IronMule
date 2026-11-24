@@ -95,15 +95,41 @@ def test_runtime_projects_status_recent_requests_and_width_decisions():
     assert runtime(None)["status"] == "detached"
 
 
+def test_live_placement_shows_routes_and_idle_progress_without_host_identifiers():
+    health = {"placement": {"phase": "measuring", "method": "shortest_queue", "probing": True, "interruptions": 1,
+                            "paired_trials": 3, "target_trials": 40, "remaining_idle_seconds": 51.7,
+                            "trace": "/private/state/trace.json", "error": "private",
+                            "last_decision": {"worker": "private-accelerator", "reason": "preferred_worker_full"}},
+              "devices": [{"placement_target": "cpu", "device": "cpu"},
+                          {"placement_target": "private-accelerator", "device": "gpu"}]}
+    service = SimpleNamespace(health=lambda: health)
+    data = runtime(service)
+    assert data["placement"] == {"phase": "measuring", "method": "shortest_queue", "probing": True,
+                                 "interruptions": 1, "paired_trials": 3, "target_trials": 40,
+                                 "remaining_idle_seconds": 51.7, "last_worker": "GPU 2",
+                                 "last_reason": "preferred_worker_full"}
+    assert "private" not in json.dumps(data)
+    health["placement"]["phase"] = "private"
+    assert runtime(service)["placement"] is None
+
+
 def test_scheduler_retirement_records_only_successful_delivery():
     service = object.__new__(ProductService)
     service._lock, service._pending = threading.RLock(), queue.Queue()
     service._active, service._sessions, service._live_samples = set(), {}, deque(maxlen=32)
+    def check_terminal_record(event, **fields):
+        assert event == "end"
+        assert fields["id"] not in service._active and fields["id"] not in service._sessions
+        assert service._pending.unfinished_tasks == 0
+
+    service.note = check_terminal_record
     for outcome, count in [("ok", 3)] * 33 + [("cancelled", 2), ("failed", 1), ("ok", 0)]:
         item = _Session(SimpleNamespace(request_id="private"), None)
         item.submitted_ns, item.first_ns, item.end_ns = 0, 250_000_000, 2_000_000_000
         item.dispatched_ns, item.prompt_tokens = 100_000_000, 36
         item.outcome, item.tokens = outcome, count
+        service._active.add(item.request.request_id)
+        service._sessions[item.request.request_id] = item
         service._pending.put(item)
         service._retire(service._pending.get_nowait())
     samples = service.live_samples()
