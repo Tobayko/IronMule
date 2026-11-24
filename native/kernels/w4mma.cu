@@ -751,6 +751,9 @@ __global__ void reduce_split(const float *__restrict__ part, float *__restrict__
 
 typedef int (*launch_fn)(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int,
                          cudaStream_t);
+// RF1: this call's per-range counters (zeroed, RF1_COUNTERS ints in the stream's scratch), nullptr: reduce_split
+thread_local int *rf1_counters = nullptr;
+constexpr unsigned RF1_COUNTERS = 4096;
 
 template <int TYPE, int WARPS, int KS, int NT, int DQ>
 int launch(const uint8_t *wr, const half *xh, const float *xs, float *y, float *part, int N, int K, int B, int ksplit,
@@ -1440,14 +1443,38 @@ int launch_e(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     return cudaGetLastError() == cudaSuccess ? 0 : 3;
 }
 
+// RF1 (2026-11-24, opt-in IRONMULE_KG_RF1=1): a grid K-split kernel reduces its own partial sums. Every block writes
+// its partials as before; the last block of a row range to finish (an atomic count per range, after a fence, nothing
+// waits) adds them in reduce_split's order (0 + p0 + p1 + ...) into y and resets the count for the next launch.
+__device__ __forceinline__ void split_finish(const float *part, float *__restrict__ y, int *__restrict__ counters, int r0,
+                                             int rows, int N, int B) {
+    __shared__ int last;
+    __threadfence();
+    __syncthreads();
+    if (threadIdx.x == 0) last = atomicAdd(&counters[blockIdx.x], 1) == (int)gridDim.y - 1;
+    __syncthreads();
+    if (!last) return;
+    __threadfence();
+    const int nr = min(rows, N - r0);
+    const size_t n = (size_t)B * N;
+    for (int i = threadIdx.x; i < nr * B; i += blockDim.x) {
+        const int tok = i / nr, row = r0 + i % nr;
+        const size_t idx = (size_t)tok * N + row;
+        float sum = 0.f;
+        for (int k = 0; k < (int)gridDim.y; k++) sum += __ldcg(part + (size_t)k * n + idx);
+        y[idx] = sum;
+    }
+    if (threadIdx.x == 0) counters[blockIdx.x] = 0;
+}
+
 // v11 (Q4_K, 9-32 tokens, long K): v9 with the x of each super-block staged once per block in shared memory
 // (cp.async, double buffered) and read by all WARPS x MT tiles of the block. A diagnostic with x folded onto two
 // super-blocks (L1-resident) took the 25600 x 5120 down matrix at 32 tokens from 99 to 87 us: v9 re-read the 1.6 MB of
 // x from L2 for every one or two tiles.
-template <int WARPS, int NT, int MT>
+template <int WARPS, int NT, int MT, int FR = 0>  // FR: RF1, the K-split partials reduced in the kernel
 __global__ void __launch_bounds__(WARPS * 32)
 w4f(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
-    float *__restrict__ out, int N, int K, int B, int sb_per_split) {
+    float *__restrict__ out, int N, int K, int B, int sb_per_split, float *__restrict__ y, int *__restrict__ counters) {
     constexpr int ROWS = NT * 8, XROW = 256 + 32;  // halves per staged token row (64-byte pad: conflict-free)
     __shared__ __align__(16) half xbuf[2][ROWS * XROW];
     const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
@@ -1558,24 +1585,28 @@ w4f(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
         __syncthreads();
     }
     cp_wait<0>();
-    if (!live) return;
+    if constexpr (FR == 0)
+        if (!live) return;
     float *o = out + (size_t)blockIdx.y * B * N;
+    if (FR == 0 || live) {
 #pragma unroll
-    for (int m = 0; m < MT; m++)
+        for (int m = 0; m < MT; m++)
 #pragma unroll
-        for (int nt = 0; nt < NT; nt++)
+            for (int nt = 0; nt < NT; nt++)
 #pragma unroll
-            for (int i = 0; i < 4; i++) {
-                const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
-                const int tok = nt * 8 + 2 * c + (i % 2);
-                if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
-            }
+                for (int i = 0; i < 4; i++) {
+                    const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
+                    const int tok = nt * 8 + 2 * c + (i % 2);
+                    if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
+                }
+    }
+    if constexpr (FR != 0) split_finish(out, y, counters, blockIdx.x * WARPS * MT * 16, WARPS * MT * 16, N, B);
 }
 
-template <int WARPS, int NT, int MT>
+template <int WARPS, int NT, int MT, int FR = 0>  // FR: RF1, the K-split partials reduced in the kernel
 __global__ void __launch_bounds__(WARPS * 32)
 w4f6(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
-    float *__restrict__ out, int N, int K, int B, int sb_per_split) {
+    float *__restrict__ out, int N, int K, int B, int sb_per_split, float *__restrict__ y, int *__restrict__ counters) {
     constexpr int ROWS = NT * 8, XROW = 256 + 32;  // halves per staged token row (64-byte pad: conflict-free)
     __shared__ __align__(16) half xbuf[2][ROWS * XROW];
     const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
@@ -1685,18 +1716,22 @@ w4f6(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *_
         __syncthreads();
     }
     cp_wait<0>();
-    if (!live) return;
+    if constexpr (FR == 0)
+        if (!live) return;
     float *o = out + (size_t)blockIdx.y * B * N;
+    if (FR == 0 || live) {
 #pragma unroll
-    for (int m = 0; m < MT; m++)
+        for (int m = 0; m < MT; m++)
 #pragma unroll
-        for (int nt = 0; nt < NT; nt++)
+            for (int nt = 0; nt < NT; nt++)
 #pragma unroll
-            for (int i = 0; i < 4; i++) {
-                const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
-                const int tok = nt * 8 + 2 * c + (i % 2);
-                if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
-            }
+                for (int i = 0; i < 4; i++) {
+                    const int row = (tile0 + m) * 16 + g + 8 * (i / 2);
+                    const int tok = nt * 8 + 2 * c + (i % 2);
+                    if (row < N && tok < B) o[(size_t)tok * N + row] = acc[m][nt][i];
+                }
+    }
+    if constexpr (FR != 0) split_finish(out, y, counters, blockIdx.x * WARPS * MT * 16, WARPS * MT * 16, N, B);
 }
 
 template <int TYPE, int WARPS, int NT, int MT>
@@ -1706,10 +1741,19 @@ int launch_f(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     const int per = (nb + ksplit - 1) / ksplit;
     const int splits = (nb + per - 1) / per;
     dim3 grid((((N + 15) / 16 + MT - 1) / MT + WARPS - 1) / WARPS, splits);
+    int *cnt = rf1_counters;  // RF1: set by run_repacked when on and room for this grid
+    if (splits > 1 && cnt != nullptr && grid.x <= RF1_COUNTERS) {
+        if constexpr (TYPE == TYPE_Q4_K)
+            w4f<WARPS, NT, MT, 1><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, part, N, K, B, per, y, cnt);
+        else
+            w4f6<WARPS, NT, MT, 1><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, part, N, K, B, per, y, cnt);
+        return cudaGetLastError() == cudaSuccess ? 0 : 3;
+    }
     if constexpr (TYPE == TYPE_Q4_K)
-        w4f<WARPS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+        w4f<WARPS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per, nullptr, nullptr);
     else
-        w4f6<WARPS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+        w4f6<WARPS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per, nullptr,
+                                                        nullptr);
     if (splits > 1) {
         const size_t n = (size_t)B * N;
         reduce_split<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(part, y, n, splits);
@@ -2114,6 +2158,7 @@ constexpr int NV = sizeof(VARIANTS) / sizeof(VARIANTS[0]);
 
 struct Scratch {
     uint8_t *x = nullptr;  // activations as half, then their 16-value sums
+    int *cnt = nullptr;    // RF1: RF1_COUNTERS zeroed counts, made outside a capture
     float *part = nullptr;
     size_t xcap = 0, pcap = 0;
 };
@@ -2188,6 +2233,15 @@ struct Prepared {
 };
 std::map<cudaStream_t, Prepared> prepared;  // SG1: per stream, as the scratch it describes
 
+// RF1 switch: IRONMULE_KG_RF1=1, or ironmule_kg_rf1_set at run time (-1: the environment again)
+std::atomic<int> rf1_override{-1};
+bool ironmule_kg_rf1_on() {
+    const int o = rf1_override.load();
+    if (o >= 0) return o != 0;
+    static const bool env = std::getenv("IRONMULE_KG_RF1") && std::atoi(std::getenv("IRONMULE_KG_RF1")) != 0;
+    return env;
+}
+
 // PD1 check: prep_x's copy of a producer-prepared x, compared bit for bit (counts[0] differing halves, [1] compared)
 bool pd1_check_on() {
     static const bool on = std::getenv("IRONMULE_KG_PD1_CHECK") && std::atoi(std::getenv("IRONMULE_KG_PD1_CHECK")) != 0;
@@ -2260,7 +2314,20 @@ int run_repacked(const Variant &v, const uint8_t *wr, const float *x, float *y, 
             pd1_compare<<<(unsigned)((n + 255) / 256), 256, 0, s>>>(xh, ch, n, pd1_counts);
         }
     }
-    return v.fn(wr, xh, xs, y, sc.part, (int)N, (int)K, (int)B, ksplit, s);
+    // RF1: the launcher reduces a grid K-split inside the kernel where it can (v11) and these counts exist
+    rf1_counters = nullptr;
+    if (ksplit > 1 && ironmule_kg_rf1_on()) {
+        cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+        cudaStreamIsCapturing(s, &capture);
+        std::lock_guard<std::mutex> guard(lock_);
+        if (sc.cnt == nullptr && capture == cudaStreamCaptureStatusNone &&
+            cudaMalloc((void **)&sc.cnt, RF1_COUNTERS * sizeof(int)) == cudaSuccess)
+            cudaMemsetAsync(sc.cnt, 0, RF1_COUNTERS * sizeof(int), s);
+        rf1_counters = sc.cnt;
+    }
+    const int rc = v.fn(wr, xh, xs, y, sc.part, (int)N, (int)K, (int)B, ksplit, s);
+    rf1_counters = nullptr;
+    return rc;
 }
 
 }  // namespace
@@ -2374,6 +2441,7 @@ static void load_table_once() {
 // ironmule_kg_pd1_set overrides that at run time (-1: the environment again), for A/B measurements in one process.
 static std::atomic<int> pd1_override{-1};
 void ironmule_kg_pd1_set(int on) { pd1_override.store(on); }
+void ironmule_kg_rf1_set(int on) { rf1_override.store(on); }
 int ironmule_kg_pd1_enabled() {
     const int o = pd1_override.load();
     if (o >= 0) return o != 0;
@@ -2405,11 +2473,13 @@ void *ironmule_kg_prepare(const void *node, unsigned long long epoch, const floa
     const size_t xbytes = ((size_t)rows * K * sizeof(half) + 255) / 256 * 256;
     const size_t need = xbytes + (size_t)K / 16 * rows * sizeof(float) * 3 / 2;  // as run_repacked grows it
     std::lock_guard<std::mutex> guard(lock_);
-    bool any = false;  // a matmul with this K and batch that the table gives to this library
+    // a matmul with this K and batch that the table gives to this library, and none whose variant reads prep_x's sums
+    // (prep_x would run anyway, and the producer's copy would be extra work: +0.04 ms per 8-row step, A100, pod 31)
+    bool any = false;
     for (const auto &kv : choice)
         if (std::get<2>(kv.first) == (long)K && std::get<3>(kv.first) == (int)B && !VARIANTS[kv.second.first].fp) {
+            if (VARIANTS[kv.second.first].sums) return nullptr;
             any = true;
-            break;
         }
     if (!any) return nullptr;
     if (capture != cudaStreamCaptureStatusNone) {

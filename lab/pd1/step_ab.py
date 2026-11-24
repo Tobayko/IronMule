@@ -46,21 +46,28 @@ def main():
     ap.add_argument("--widths", default="8,16,24,32")
     ap.add_argument("--seeds", default="3,4")
     ap.add_argument("--rounds", type=int, default=3)
+    ap.add_argument("--switch", default="pd1", choices=("pd1", "rf1"), help="what the candidate arm turns on")
+    ap.add_argument("--base", default="", help="switches on in both arms, e.g. pd1 (RF1 measured on top of PD1)")
     a = ap.parse_args()
     kg = ctypes.CDLL(os.environ["IRONMULE_KG_LIB"])
     kg.ironmule_kg_pd1_set.argtypes = [ctypes.c_int]
+    if a.switch == "rf1" or "rf1" in a.base:
+        kg.ironmule_kg_rf1_set.argtypes = [ctypes.c_int]
+    setters = {"pd1": kg.ironmule_kg_pd1_set, "rf1": getattr(kg, "ironmule_kg_rf1_set", None)}
     folder = Path(os.environ["LLAMA_CPP_LIB_PATH"])
     e = GgmlEngine(a.gguf, seqs=32, seq_ctx=2048, flash_attn=True, speculate=False)
     cuda = ctypes.CDLL(str(next(folder.glob("libggml-cuda.so*"))))
     widths = [int(w) for w in a.widths.split(",")]
     seeds = [int(s) for s in a.seeds.split(",")]
     prompts = {(w, s): compare.performance_prompts(s, w, max(w, 8))[:w] for w in widths for s in seeds}
-    rec = {"widths": widths, "seeds": seeds, "rounds": []}
+    rec = {"widths": widths, "seeds": seeds, "switch": a.switch, "base": a.base, "rounds": []}
     tokens = {}
     for r in range(a.rounds):
-        arms = ("ref", "pd1") if r % 2 == 0 else ("pd1", "ref")
+        arms = ("ref", "pd1") if r % 2 == 0 else ("pd1", "ref")  # "pd1": the candidate arm (--switch)
         for arm in arms:
-            kg.ironmule_kg_pd1_set(1 if arm == "pd1" else 0)
+            for name, fn in setters.items():
+                if fn is not None:
+                    fn(1 if (name in a.base.split(",") or (arm == "pd1" and name == a.switch)) else 0)
             cuda.ironmule_cuda_graphs_invalidate()
             for w in widths:  # one discarded wave per width: graphs captured anew with this arm's choice
                 e.run([Job(e.tokenize(TPL.format(p)), 32) for p in compare.performance_prompts(99, w, max(w, 8))[:w]])
