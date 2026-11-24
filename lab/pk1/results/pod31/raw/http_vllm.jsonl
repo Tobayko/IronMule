@@ -1,0 +1,5 @@
+{"label": "vllm", "engine": "vllm", "warmup_s": 0.633}
+{"label": "vllm", "engine": "vllm", "repeat": 0, "width": 32, "tok_s": 277.62, "wall_s": 3.688, "ttft_p50_ms": 2161.9, "ttft_p95_ms": 2895.7, "ttft_max_ms": 2965.6, "tokens": 1024, "prompt_tokens": 7632, "texts": "a4dc3ace7c09e153", "quality": "18/18", "quality_misses": []}
+{"label": "vllm", "engine": "vllm", "repeat": 0, "width": 8, "tok_s": 188.02, "wall_s": 1.362, "ttft_p50_ms": 828.7, "ttft_p95_ms": 830.7, "ttft_max_ms": 830.7, "tokens": 256, "prompt_tokens": 1908, "texts": "76d7f8e8ec64aff6", "quality": "18/18", "quality_misses": []}
+{"label": "vllm", "engine": "vllm", "repeat": 1, "width": 32, "tok_s": 276.4, "wall_s": 3.705, "ttft_p50_ms": 1809.2, "ttft_p95_ms": 2985.0, "ttft_max_ms": 2985.6, "tokens": 1024, "prompt_tokens": 7632, "texts": "0c399edafab12045", "quality": "18/18", "quality_misses": []}
+{"label": "vllm", "engine": "vllm", "repeat": 1, "width": 8, "tok_s": 188.11, "wall_s": 1.361, "ttft_p50_ms": 831.1, "ttft_p95_ms": 832.7, "ttft_max_ms": 832.7, "tokens": 256, "prompt_tokens": 1908, "texts": "7aca9cd8e18d09b3", "quality": "18/18", "quality_misses": []}

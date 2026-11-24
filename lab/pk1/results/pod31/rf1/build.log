@@ -1,0 +1,321 @@
+/work/IronMule/native/kernels/w4mma.cu(414): warning #177-D: variable "sh" was declared but never referenced
+                          const int sh = 8 * (j & 3);
+                                    ^
+          detected during instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=1, NT=1, DQ=0]" at line 2131
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/work/IronMule/native/kernels/w4mma.cu(443): warning #177-D: variable "sh" was declared but never referenced
+                      const int sh = 8 * (j & 3);
+                                ^
+          detected during instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=1, NT=1, DQ=0]" at line 2131
+
+/work/IronMule/native/kernels/w4mma.cu(346): warning #177-D: variable "rows8" was declared but never referenced
+      const int nb = K / 256, rows8 = NT * 8;
+                              ^
+          detected during instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=1, NT=1, DQ=0]" at line 2131
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=1, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=1, NT=1, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=1, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=1, NT=2, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=1, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=1, NT=3, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=1, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=1, NT=4, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=1, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=1, NT=1, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=1, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=1, NT=2, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=1, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=1, NT=3, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=1, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=1, NT=4, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=2, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=2, NT=1, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=2, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=2, NT=2, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=2, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=2, NT=3, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=8, KS=2, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=8, KS=2, NT=4, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=2, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=2, NT=1, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=2, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=2, NT=2, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=2, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=2, NT=3, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(438): warning #128-D: loop is not reachable
+              for (int j = 0; j < 8; j++) {
+              ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=12, WARPS=4, KS=2, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=12, WARPS=4, KS=2, NT=4, DQ=1]" at line 2132
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=1, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=1, NT=1, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=1, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=1, NT=2, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=1, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=1, NT=3, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=1, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=1, NT=4, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=1, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=1, NT=1, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=1, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=1, NT=2, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=1, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=1, NT=3, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=1, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=1, NT=4, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=2, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=2, NT=1, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=2, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=2, NT=2, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=2, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=2, NT=3, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=8, KS=2, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=8, KS=2, NT=4, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=2, NT=1, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=2, NT=1, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=2, NT=2, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=2, NT=2, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=2, NT=3, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=2, NT=3, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(513): warning #128-D: loop is not reachable
+                  for (int nt = 0; nt < NT; nt++)
+                  ^
+          detected during:
+            instantiation of "void <unnamed>::w4r<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with TYPE=14, WARPS=4, KS=2, NT=4, DQ=1]" at line 768
+            instantiation of "int <unnamed>::launch<TYPE,WARPS,KS,NT,DQ>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with TYPE=14, WARPS=4, KS=2, NT=4, DQ=1]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(673): warning #177-D: variable "sh" was declared but never referenced
+                      const int sh = 8 * (j & 3);
+                                ^
+          detected during instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=2, KS=1, NT=1, PX=1, MT=1, FP=0]" at line 2133
+
+/work/IronMule/native/kernels/w4mma.cu(2034): warning #177-D: variable "sh" was declared but never referenced
+                  const int sh = 8 * (j & 3);
+                            ^
+          detected during instantiation of "int <unnamed>::launch_q<WARPS,STAGES,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=2, STAGES=4, FP=0]" at line 2134
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=2, KS=1, NT=1, PX=1, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=2, KS=1, NT=1, PX=1, MT=1, FP=1]" at line 2136
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=1, NT=1, PX=1, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=1, NT=1, PX=1, MT=1, FP=1]" at line 2136
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=2, NT=1, PX=1, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=2, NT=1, PX=1, MT=1, FP=1]" at line 2136
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=8, KS=2, NT=1, PX=1, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=8, KS=2, NT=1, PX=1, MT=1, FP=1]" at line 2136
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=2, KS=1, NT=1, PX=0, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=2, KS=1, NT=1, PX=0, MT=1, FP=1]" at line 2136
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=1, NT=1, PX=0, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=1, NT=1, PX=0, MT=1, FP=1]" at line 2137
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=2, NT=1, PX=0, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=2, NT=1, PX=0, MT=1, FP=1]" at line 2137
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=2, KS=1, NT=2, PX=1, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=2, KS=1, NT=2, PX=1, MT=1, FP=1]" at line 2137
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=1, NT=2, PX=1, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=1, NT=2, PX=1, MT=1, FP=1]" at line 2137
+
+/work/IronMule/native/kernels/w4mma.cu(624): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=2, NT=2, PX=0, MT=1, FP=1]" at line 792
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=2, NT=2, PX=0, MT=1, FP=1]" at line 2137
+

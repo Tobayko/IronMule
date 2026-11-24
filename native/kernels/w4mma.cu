@@ -2437,8 +2437,10 @@ static void load_table_once() {
 // [ceil(B / 8) * 8][K] layout, and records it under PK3's key (node, graph epoch, x, B, K, rows, stream, buffer), so
 // the matmuls on that node skip prep_x; prep_x's 16- and 32-value sums are not written, so a variant that reads them
 // still runs prep_x. nullptr (the producer writes no copy) when PD1 is off, for a batch or K the library takes no
-// matmul for, and inside a CUDA graph capture when the scratch would have to grow. IRONMULE_KG_PD1=1 turns it on;
-// ironmule_kg_pd1_set overrides that at run time (-1: the environment again), for A/B measurements in one process.
+// matmul for, and inside a CUDA graph capture when the scratch would have to grow. On by default since pod 31
+// (A100, 2026-11-24: every producer-written copy bit-identical to prep_x's, decode step -0.85 / -0.65 / -0.54 ms at
+// 32 / 24 / 16 rows); IRONMULE_KG_PD1=0 turns it off; ironmule_kg_pd1_set overrides both at run time (-1: the
+// environment again), for A/B measurements in one process.
 static std::atomic<int> pd1_override{-1};
 void ironmule_kg_pd1_set(int on) { pd1_override.store(on); }
 void ironmule_kg_rf1_set(int on) { rf1_override.store(on); }
@@ -2447,7 +2449,7 @@ int ironmule_kg_pd1_enabled() {
     if (o >= 0) return o != 0;
     static const bool env = [] {
         const char *v = std::getenv("IRONMULE_KG_PD1");
-        return v != nullptr && std::atoi(v) != 0;
+        return v == nullptr || std::atoi(v) != 0;
     }();
     return env ? 1 : 0;
 }

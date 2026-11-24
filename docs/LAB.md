@@ -3724,3 +3724,75 @@ kernels unchanged; `lab/dk1`, raw data in `lab/pk1/results/pod30`):
 - Next: decode producers that write the matmul's prepared activations (PD1 below), then reduce_split separately.
 [session](../lab/pk1/results/pod30/a100_dk1.log) · [ablations, separate processes](../lab/pk1/results/pod30/a100_dk1b.log) ·
 [ablations, one process](../lab/pk1/results/pod30/a100_dk1c.log) · [down](../lab/pk1/results/pod30/a100_dk1d_down.jsonl)
+
+### 2026-11-24, A100 pod 31: PD1 (decode producers write the matmul's fp16 activations) kept; RF1 (K-split reduced in the kernel) rejected
+RunPod A100 SXM4 80 GB (community, 1.453 h, about 2.02 USD; balance afterwards 44.36 USD), Qwen3-32B Q4_K_M, build
+with patch pd1, the pod's own W4R table (matmul variants and K-splits unchanged in every arm). Sessions
+`lab/pd1/a100_pd1.sh` and `lab/rf1/a100_rf1.sh`; raw data in `lab/pk1/results/pod31`.
+
+What prep_x did, from the code: per matmul input x [B][K] (float) it wrote the fp16 copy (saturated to +-65000,
+rounded to nearest) into the W4R library's scratch with the token rows padded to the 8-token tile, plus the 16- and
+32-value sums of the rounded copy. Only w4r and the 1-8-token kernels v7 / v8 read those sums; the 9-32-row
+winners (v9, v11, w4d6) read the fp16 copy alone. PK3 already shared one copy between q / k / v and gate / up.
+PD1: FU1's fused add + RMS norm + mul (the attention and FFN inputs of every layer but the first) and PK4's SWIGLU
+write that copy themselves when the library offers a slot (`ironmule_kg_prepare`): this stream's scratch, recorded
+under PK3's key (node, graph epoch, data, B, K, rows, stream, buffer) as prepared without sums. A matmul skips prep_x
+only on that key and only with a variant that reads no sums; no slot is given where a table entry for that K and
+batch reads sums, inside a capture without room, for other K or batch. The fp32 outputs are still written; the first
+layer's norm, the output norm and the o projection (input from attention) keep prep_x.
+- Correctness: one round with `IRONMULE_KG_PD1_CHECK=1` (prep_x run beside every producer-written copy, inside the
+  CUDA graphs, compared bit for bit): 45,485,568,000 halves compared, 0 differed; answers of all 64 timed waves
+  identical to the reference arm (8 / 16 / 24 / 32 requests, two prompt sets, four rounds).
+- Decode step, reference and PD1 in one process (graphs captured anew after each switch, a discarded wave per
+  width), medians of eight waves each, no profiler:
+
+| rows | reference | PD1 | difference |
+| ---: | ---: | ---: | ---: |
+| 8 | 20.392 ms | 20.429 ms | +0.037 ms |
+| 16 | 22.515 ms | 21.973 ms | -0.542 ms |
+| 24 | 26.764 ms | 26.119 ms | -0.645 ms |
+| 32 | 30.486 ms | 29.638 ms | -0.848 ms |
+
+  The waves of the two arms did not overlap at 16-32 rows (32 rows: 30.47-30.56 against 29.58-29.78 ms). At 8 rows
+  the table's variants read the sums, so prep_x still ran and the producer's copy was extra work; the slot is now
+  refused there (8-row step with the corrected rule in the RF1 run: 20.372 ms).
+- The chain, CUPTI kernel tables of 16 steps at 32 rows (diagnostic, apart): prep_x 19.49 ms (4,112 calls) -> 4.07 ms
+  (1,040: the o projection and the output matrix), FU1 norm 15.46 -> 15.85 ms, SWIGLU 6.73 (llama.cpp's) -> 7.10 ms
+  (PK4's with the copy), matmuls unchanged; kernels per step -0.92 ms.
+- HTTP on the same pod (IronMule reference / PD1 / reference / PD1, two repeats each; vLLM 0.11.0 AWQ-Marlin), 32
+  clients, tok/s, wave, the last document's first token and the rest of the wave (client timelines):
+
+| arm | tok/s | wave s | last long first token s | after it s |
+| --- | --- | --- | --- | --- |
+| IronMule reference | 273.5 / 271.9 / (185.3) / 270.4 | 3.739 / 3.761 / (5.521) / 3.783 | 2.710 / 2.748 / (4.463) / 2.751 | 1.030 / 1.013 / (1.057) / 1.032 |
+| IronMule PD1 | 283.4 / 277.6 / 270.3 / 278.8 | 3.609 / 3.684 / 3.781 / 3.668 | 2.577 / 2.665 / 2.775 / 2.663 | 1.031 / 1.019 / 1.006 / 1.006 |
+| vLLM | 277.6 / 276.4 | 3.684 / 3.701 | 2.991 / 3.006 | 0.693 / 0.695 |
+
+  At 8 clients: reference 174.0 / 176.4 / 172.5 / 169.3, PD1 172.7 / 177.0 / 172.8 / 175.9, vLLM 188.0 / 188.1 tok/s.
+  Facts 18/18 in every run of every server. The bracketed reference wave was the first after a restart that reused
+  the gate: its 32 requests reached the engine within 0.145 s, one was prefilled alone (first token 0.43 s), the
+  packed prefill of the others gave first tokens only at 4.45 s instead of about 2.6 s; no engine trace ran, so its
+  cause is open (not PD1's arm). Without it: reference 271.9, PD1 277.5, vLLM 277.0 tok/s mean. The decode part of
+  the waves moved by the expected amount (31 steps x 0.85 ms = 26 ms: 1.013-1.032 against 1.006-1.031 s); the rest
+  of the HTTP difference is the prefill's spread between server starts (last first token 2.58-2.78 s), which is
+  larger than PD1's whole effect. So PD1 is worth about +0.7 % per 32-client wave on IronMule, and IronMule with PD1
+  is level with vLLM on this pod (277.5 against 277.0), not ahead.
+- PD1 is on by default (`IRONMULE_KG_PD1=0` turns it off). Its output is bit-identical to prep_x's, so the quality
+  gate's cached results stay valid; the gate ran anew in the PD1 arm here and passed.
+
+RF1 (`IRONMULE_KG_RF1=1`, off): the v11 kernels (down Q4_K 256/4, q 256/4, down Q6_K 267/8; 128 of the 160
+reduce_split calls of a 32-row step) reduce their own K-split partials: every block fences and counts, the last block
+of a row range adds the partials in reduce_split's order and resets the count; nothing waits. Outputs bit-identical
+(isolated and all 64 waves), but slower, prep_x + matmul + whole reduction per call: down Q4_K 92.0 -> 114.4 us, q
+40.3 -> 55.7, down Q6_K 117.2 -> 129.8; the w4d6 control 19.7 -> 19.7. Decode step with PD1 on in both arms:
++0.42 ms at 16 rows, +2.26 ms at 32, none at 8 and 24. The last block of each range sums 64 rows x 32 tokens x 4-8
+partials with 128 threads after its own matmul, a serial tail of L2 loads at the end of the kernel that costs more
+than the separate reduce kernel (0.51 ms per 32-row step in the profile). Rejected in this form; a reduction in the
+consumer (the next residual add or norm reading the partials) would avoid that tail and is untested.
+
+Where +10 % over vLLM stands (this pod's paired waves): vLLM 3.684 / 3.701 s gives a target of 3.349 / 3.365 s; with
+IronMule's present time to the last first token (2.58-2.78 s) the decode part would have to fall from about 1.01 s
+to 0.57-0.77 s. In IronMule's waves the prefill up to the last first token is 70-74 % of the wave and the decode
+part 27-28 %, and the prefill alone varies by about 0.2 s between server starts. Next, by share of the wave: the
+prefill, first its spread (one traced HTTP wave per start: gathering, packing and the packed call apart), then the
+packed call itself.
