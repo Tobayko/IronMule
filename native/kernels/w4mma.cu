@@ -783,6 +783,18 @@ int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     return cudaGetLastError() == cudaSuccess ? 0 : 3;
 }
 
+// DK1 (2026-11-24, lab only): IRONMULE_W4_ABL removes one part of v9 (w4d) to locate its limit; wrong results by design,
+// never set in a product build. 1: weights streamed, no x, no dequantisation, no mma; 2: every super-block reads the
+// first super-block's weights again (loads issued, served from L2, no DRAM stream; x, dequantisation and mma real);
+// 3: x read from the first sub-block only (weights and math real); 4: no mma (weights, x and dequantisation real).
+// IRONMULE_W4_PIN: dynamic shared memory per block, so that an ablation with fewer registers keeps the full kernel's
+// blocks per SM.
+#ifndef IRONMULE_W4_ABL
+#define IRONMULE_W4_ABL 0
+#endif
+#ifndef IRONMULE_W4_PIN
+#define IRONMULE_W4_PIN 0
+#endif
 // v9 (Q4_K, 9-32 tokens): v7's barrier-free register prefetch of MT 16-row tiles per warp, with the dequantize-once
 // arithmetic of w4r's DQ path (fp16 weights q * S - m, so the tensor cores accumulate straight into the result and no
 // 32-value sums are read). Each x fragment, read through L1 one sub-block ahead, serves all MT tiles: at 32 tokens a
@@ -800,6 +812,7 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
     const bool live = tile0 * 16 < N;
     const int tiles = (N + 15) / 16;
     float acc[MT][NT][4];
+    uint32_t sink = 0;  // DK1 ablations: keeps what a removed part would have used alive
 #pragma unroll
     for (int m = 0; m < MT; m++)
 #pragma unroll
@@ -811,7 +824,7 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
 #pragma unroll
         for (int m = 0; m < MT; m++) {
             const int t = min(tile0 + m, tiles - 1);
-            const uint8_t *p = wr + ((size_t)t * nb + sb) * T4;
+            const uint8_t *p = wr + ((size_t)t * nb + (IRONMULE_W4_ABL == 2 ? sb0 + part : sb)) * T4;
 #pragma unroll
             for (int i = 0; i < 4; i++) b.q[m][i] = ldg_stream(p + (i * 32 + lane) * 16);
             b.h[m][0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 16));
@@ -822,7 +835,8 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
     auto xload = [&](int sb, int j, uint4 (&xv)[NT]) {
 #pragma unroll
         for (int nt = 0; nt < NT; nt++)
-            xv[nt] = __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)(nt * 8 + g) * K + (size_t)sb * 256 + 32 * j + 8 * c));
+            xv[nt] = __ldg(reinterpret_cast<const uint4 *>(xh + (size_t)(nt * 8 + g) * K +
+                                                           (IRONMULE_W4_ABL == 3 ? 0 : (size_t)sb * 256 + 32 * j) + 8 * c));
     };
     const half2 h1024 = __half2half2(__ushort_as_half(0x6400));
     // 0x64 in a register ptxas cannot fold (blockDim.y is 1 at run time, unknown when compiling): a PRMT takes one
@@ -830,6 +844,16 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
     // every PRMT (SASS of v9: about 300 IMAD.U32 of 2,400 instructions); this way the selector is the immediate
     const uint32_t k64 = 0x63u + blockDim.y;
     auto compute = [&](const Buf &b, int sb) {
+        if constexpr (IRONMULE_W4_ABL == 1) {
+#pragma unroll
+            for (int m = 0; m < MT; m++) {
+#pragma unroll
+                for (int i = 0; i < 4; i++) sink ^= b.q[m][i].x ^ b.q[m][i].y ^ b.q[m][i].z ^ b.q[m][i].w;
+                sink ^= b.h[m][0].x ^ b.h[m][0].y ^ b.h[m][0].z ^ b.h[m][0].w ^ b.h[m][1].x ^ b.h[m][1].y ^ b.h[m][1].z ^
+                        b.h[m][1].w;
+            }
+            return;
+        }
         // the two rows' (g, g + 8) super-block scale and minimum as half2 {row g, row g + 8}; the 6-bit sub-block
         // scales and minimums become half2 {s_g, s_g8} by the 1024 + s trick (exact), and their products with d are
         // rounded once to half, as the float path's rounding of its exact product: no int-to-float conversion
@@ -877,8 +901,15 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
                 const uint4 bx = xv[j & 1][nt];
 #pragma unroll
                 for (int m = 0; m < MT; m++) {
-                    mma16816(acc[m][nt], a[m][0][0], a[m][0][1], a[m][0][2], a[m][0][3], bx.x, bx.y);
-                    mma16816(acc[m][nt], a[m][1][0], a[m][1][1], a[m][1][2], a[m][1][3], bx.z, bx.w);
+                    if constexpr (IRONMULE_W4_ABL == 4) {
+                        if (nt == 0)
+#pragma unroll
+                            for (int t = 0; t < 2; t++) sink ^= a[m][t][0] ^ a[m][t][1] ^ a[m][t][2] ^ a[m][t][3];
+                        sink ^= bx.x ^ bx.y ^ bx.z ^ bx.w;
+                    } else {
+                        mma16816(acc[m][nt], a[m][0][0], a[m][0][1], a[m][0][2], a[m][0][3], bx.x, bx.y);
+                        mma16816(acc[m][nt], a[m][1][0], a[m][1][1], a[m][1][2], a[m][1][3], bx.z, bx.w);
+                    }
                 }
             }
         }
@@ -914,6 +945,7 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
                     for (int p = 1; p < KS; p++) acc[m][nt][i] += red[warp + p][((m * NT + nt) * 4 + i) * 32 + lane];
     }
     if (!live) return;
+    if (IRONMULE_W4_ABL != 0 && sink == 0x9E3779B9u) out[lane] = 1.f;  // never true in practice; keeps sink's inputs
     float *o = out + (size_t)blockIdx.y * B * N;
 #pragma unroll
     for (int m = 0; m < MT; m++)
@@ -1805,8 +1837,14 @@ int launch_d(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     const int per = (nb + ksplit - 1) / ksplit;
     const int splits = (nb + per - 1) / per;
     dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
+    if constexpr (TYPE == TYPE_Q4_K && IRONMULE_W4_PIN > 0) {  // DK1: the whole carveout, so PIN alone sets blocks per SM
+        static bool once = (cudaFuncSetAttribute(w4d<WARPS, KS, NT, MT, MINB>, cudaFuncAttributePreferredSharedMemoryCarveout,
+                                                 100), true);
+        (void)once;
+    }
     if constexpr (TYPE == TYPE_Q4_K)
-        w4d<WARPS, KS, NT, MT, MINB><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
+        w4d<WARPS, KS, NT, MT, MINB><<<grid, WARPS * 32, IRONMULE_W4_PIN, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B,
+                                                                            per);
     else
         w4d6<WARPS, KS, NT, MT><<<grid, WARPS * 32, 0, s>>>(wr, xh, xs, splits == 1 ? y : part, N, K, B, per);
     if (splits > 1) {

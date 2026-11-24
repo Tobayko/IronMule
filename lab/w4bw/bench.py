@@ -5,6 +5,7 @@ of the real formats), 1 / 8 / 32 tokens; the best per shape in GB/s and in % of 
   python lab/w4bw/bench.py OUT_DIR [--tokens 1,8,32] [--source native/kernels/w4mma.cu]
 """
 import argparse
+import os
 import ctypes
 import json
 import subprocess
@@ -39,8 +40,11 @@ def random_blocks(kind, n, k, rng):
 def build(out: Path, arch: str, source: Path) -> Path:
     nvcc = nvcc_path()
     lib = out / f"w4_{source.stem}_sm{arch}.so"
+    if os.environ.get("W4_REUSE") and lib.exists() and (out / f"bwprobe_sm{arch}.so").exists():
+        return lib  # DK1: built beforehand (several builds compile in parallel)
     cmd = [nvcc, "-O3", "-std=c++17", f"-arch=sm_{arch}", "-shared", "-Xcompiler", "-fPIC", "--cudart", "shared",
            "--expt-relaxed-constexpr", "-I", str(source.parent), "-o", str(lib), str(source)]
+    cmd[1:1] = os.environ.get("W4_NVCC_FLAGS", "").split()  # DK1: e.g. -DIRONMULE_W4_ABL=2 -DIRONMULE_W4_PIN=39936
     if int(arch) < 80:  # T4W: Turing (Kaggle's T4) runs W4R through m16n8k8 and plain copies; MQ1 (Marlin) needs sm_80
         cmd.insert(1, "-DIRONMULE_NO_MQ1")
     subprocess.run(cmd, check=True)
@@ -107,7 +111,7 @@ def main():
                     err = float(np.linalg.norm(got - ref) / max(1e-30, np.linalg.norm(ref)))
                     if ks == 1 and v["ks"] % 10000 in range(0, 10000) and (v["ks"] // 10000) in (3, 8):
                         outs[(v["ks"] // 10000, v["ks"] % 10000, v["warps"], v["nt"])] = y.copy()  # v9 / PS, ksplit 1
-                    if err <= wk.ERROR_BOUND:
+                    if err <= wk.ERROR_BOUND or os.environ.get("W4_NO_CHECK"):  # DK1 ablations: wrong by design
                         rows.append((us.value, v["id"], ks, err, v))
             rows.sort(key=lambda r: r[0])
             plain = [r for r in rows if not r[4].get("pre")]
