@@ -75,7 +75,10 @@ def analyse(trace_json, label):
         if e.get("cat") in ("cuda_runtime", "cuda_driver") and FIRST_TIME.search(e.get("name", "")):
             api[e["name"]] += 1
             api_us[e["name"]] += e.get("dur", 0)
+    slow_api = sorted(((e.get("dur", 0), e.get("name", ""), round((e["ts"] - r0) / 1e3, 1)) for e in ev
+                       if e.get("cat") in ("cuda_runtime", "cuda_driver") and e.get("dur", 0) > 2000), reverse=True)[:12]
     out = {"label": label, "region_ms": round((r1 - r0) / 1e3, 2), "kernels": len(kern),
+           "api_over_2ms": [[round(d / 1e3, 1), n, at] for d, n, at in slow_api],
            "kernel_ms": round(sum(e["dur"] for e in kern) / 1e3, 2), "busy_ms": round(busy / 1e3, 2),
            "gaps_ms": round(sum(gaps) / 1e3, 2), "gaps_over_50us": sum(1 for g in gaps if g > 50),
            "largest_gaps_ms": [round(g / 1e3, 2) for g in sorted(gaps)[-5:]],
@@ -93,6 +96,8 @@ def main():
     ap.add_argument("out", type=Path)
     ap.add_argument("--waves", type=int, default=5)
     ap.add_argument("--profile", default="0,3")
+    ap.add_argument("--split", type=int, default=0, help="as the server's split bursts: the first N requests start the "
+                    "wave alone, the others are admitted 40 ms later (after the gathering window closed)")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     torch.zeros(1, device="cuda")  # CUPTI on the device
@@ -107,10 +112,22 @@ def main():
         jobs = [Job(e.tokenize(TPL.format(p)), 1) for p in prompts]
         label = f"wave{w}"
         t0 = time.monotonic()
+        def go():
+            if not a.split:
+                return e.run(jobs)
+            rest, began = list(jobs[a.split:]), time.monotonic()
+
+            def admit(free):
+                if rest and time.monotonic() - began > 0.04:
+                    got = rest[:free]
+                    del rest[:len(got)]
+                    return got
+                return []
+            return e.run(jobs[:a.split], admit=admit)
         if w in prof_waves:
             with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
                 with record_function(label):
-                    e.run(jobs)
+                    go()
                 torch.cuda.synchronize()
             path = a.out / f"{label}.trace.json"
             prof.export_chrome_trace(str(path))
@@ -119,7 +136,7 @@ def main():
             print("GPU " + json.dumps(res), flush=True)
             path.unlink()  # large; the summary is kept
         else:
-            e.run(jobs)
+            go()
         t1 = time.monotonic()
         calls = []
         for line in open(trace):
