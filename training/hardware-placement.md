@@ -38,11 +38,11 @@ export MODEL="$PWD/smollm2-135m.gguf"
 
 The initial campaign compares an empty queue and one request ahead. Subsequent campaigns can measure recurring foreground backlogs at the same request lengths. Only an observed and measured queue configuration is eligible for learned routing. The workload planner caps fixtures at 4,096 prompt characters and 128 output tokens. Read throughput and long-context tails from a separate serving benchmark with representative concurrent traffic. A deployment with more work waiting still serves through the reference and the per-worker Pilot.
 
-An earlier token-count-qualified workload transition was exercised on two separately qualified configurations of the same CPU. The first campaign kept the reference when output lengths differed. After 32 short requests the policy retrained, passed both comparison rounds and routed a subsequent foreground request to the three-thread worker. The two holdout completion-time ratios were 0.550 and 0.530. That result applies to these short CPU fixtures. [Measurements and reproduction](../docs/LAB.md#2026-11-23-hardware-placement-on-a-linux-cpu)
+On one Linux CPU with independent one- and three-thread workers, an initial campaign rejected faster routes that changed some answers. After 32 short foreground requests arrived four at a time, IronMule independently learned the new queues, trained both candidates and selected the native latency model. The two fresh rounds used 48.68% and 55.47% of the shortest-queue completion time. Every chosen route matched the visible reference response and stop reason. A subsequent real request used the qualified route. The figures apply to these short SmolLM2-135M CPU fixtures. [Measurements and reproduction](../docs/LAB.md#2026-11-24-training-during-short-idle-windows-on-a-cpu-server)
 
 ## Training time
 
-An earlier complete local CPU run with SmolLM2-135M took **79 seconds** with a cached quality gate, including **75 seconds** of idle calibration. Replaying its trace through the C++ trainer and holdout took **0.54 ms**. [Measured trace](../lab/placement/results/smollm2-135m-cpu.json)
+On a four-core CPU quota with SmolLM2-135M, a cold run took **2 min 40 s** with an already-built backend, local weights and an empty controller state. This included **68 s** of measurement after starting the worker. With two CPU configurations and cached worker gates, the first campaign took **98 s** and retraining after a burst of short requests took **70 s**. Offline fitting and scoring of the final two-worker trace took **0.82 ms** with the native library already built. [Two-worker trace](../lab/placement/results/smollm2-cpu-reward-burst-v3.json) · [CPU measurements](../docs/LAB.md#2026-11-24-training-during-short-idle-windows-on-a-cpu-server)
 
 A campaign uses **40 × number of workers** timed worker measurements. Each includes the extra load request in loaded cases. The first 24 sets fit the policy and the final 16 sets qualify it. The native fit and scoring run on a CPU core. Device time is spent running the GGUF. Build, download and the per-worker startup quality gates have their own cost.
 
@@ -59,7 +59,7 @@ ironmule hardware estimate --devices 2 --seconds-per-arm 8 --startup-minutes 20.
 ironmule hardware estimate --seconds-per-worker 4 60 --startup-minutes 20.35
 ironmule hardware estimate --trace /path/to/current-placement-trace.json
 ironmule hardware benchmark
-ironmule hardware train --trace lab/placement/results/smollm2-135m-cpu.json --output ./placement-report.json
+ironmule hardware train --trace lab/placement/results/smollm2-cpu-reward-burst-v3.json --output ./placement-report.json
 ```
 
 The first command gives about 32 minutes for that particular input. The asymmetric estimate gives roughly 64 minutes including startup. A live trace estimates the time needed for its remaining cases. The benchmark times the latency fit on 4,096 synthetic records. The train command retrains and replays the included real CPU trace offline. To train on your machine, substitute the trace path printed by your calibration. Online activation uses the local trace and recomputes its holdout comparison when restored. A changing topology, driver or kernel/quality binding starts a different trace. The earlier neural Pilot's teacher/PPO run took 47 minutes on two Kaggle T4s. The earlier RunPod A100 Qwen3-32B session spent 1,221 seconds in startup. They measure different jobs. [Pilot training](../docs/AGENT.md) · [A100 session and CPU calibration](../docs/LAB.md)
