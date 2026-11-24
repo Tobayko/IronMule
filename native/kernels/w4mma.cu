@@ -786,7 +786,8 @@ int launch_p(const uint8_t *wr, const half *xh, const float *xs, float *y, float
 // DK1 (2026-11-24, lab only): IRONMULE_W4_ABL removes one part of v9 (w4d) to locate its limit; wrong results by design,
 // never set in a product build. 1: weights streamed, no x, no dequantisation, no mma; 2: every super-block reads the
 // first super-block's weights again (loads issued, served from L2, no DRAM stream; x, dequantisation and mma real);
-// 3: x read from the first sub-block only (weights and math real); 4: no mma (weights, x and dequantisation real).
+// 3: x read from the first sub-block only (weights and math real); 4: no mma (weights, x and dequantisation real);
+// 5: no dequantisation (raw nibble words into the mma; weights, x and mma real).
 // IRONMULE_W4_PIN: dynamic shared memory per block, so that an ablation with fewer registers keeps the full kernel's
 // blocks per SM.
 #ifndef IRONMULE_W4_ABL
@@ -889,6 +890,11 @@ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__
                     const uint32_t wd = wget(b.q[m], 2 * j + h);
 #pragma unroll
                     for (int t = 0; t < 2; t++) {
+                        if constexpr (IRONMULE_W4_ABL == 5) {  // raw nibble words into the mma: no dequantisation
+                            a[m][t][h] = t ? wd >> 4 : wd;
+                            a[m][t][2 + h] = t ? wd >> 12 : wd >> 8;
+                            continue;
+                        }
                         const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
                         const uint32_t p0 = __byte_perm(v, k64, 0x4140), p1 = __byte_perm(v, k64, 0x4342);
                         a[m][t][h] = h2_bits(__hfma2(__hsub2(bits_h2(p0), h1024), s2, m2));
@@ -1839,7 +1845,9 @@ int launch_d(const uint8_t *wr, const half *xh, const float *xs, float *y, float
     dim3 grid((((N + 15) / 16 + MT - 1) / MT + TILES - 1) / TILES, splits);
     if constexpr (TYPE == TYPE_Q4_K && IRONMULE_W4_PIN > 0) {  // DK1: the whole carveout, so PIN alone sets blocks per SM
         static bool once = (cudaFuncSetAttribute(w4d<WARPS, KS, NT, MT, MINB>, cudaFuncAttributePreferredSharedMemoryCarveout,
-                                                 100), true);
+                                                 100),
+                            cudaFuncSetAttribute(w4d<WARPS, KS, NT, MT, MINB>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                 IRONMULE_W4_PIN), true);
         (void)once;
     }
     if constexpr (TYPE == TYPE_Q4_K)
