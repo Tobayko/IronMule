@@ -1,0 +1,13 @@
+== memory
+               total        used        free      shared  buff/cache   available
+Mem:            2015         141         957          33         916        1821
+== worker 8643 before:
+minflt 605838 majflt 0 utime 5509 stime 1603
+== after first wave:
+minflt 608321 majflt 0 utime 5811 stime 1679
+{"label": "S4", "engine": "ironmule", "repeat": 0, "width": 32, "tok_s": 275.49, "wall_s": 3.717, "ttft_p50_ms": 2660.8, "ttft_p95_ms": 2672.5, "ttft_max_ms": 2675.0, "tokens": 1024, "prompt_tokens": 
+== after two more waves (other prompts):
+minflt 612062 majflt 0 utime 6428 stime 1825
+{"label": "S4b", "engine": "ironmule", "repeat": 0, "width": 32, "tok_s": 262.1, "wall_s": 3.907, "ttft_p50_ms": 2862.2, "ttft_p95_ms": 2874.4, "ttft_max_ms": 2875.2, "tokens": 1024, "prompt_tokens": 
+{"label": "S4b", "engine": "ironmule", "repeat": 1, "width": 32, "tok_s": 268.95, "wall_s": 3.807, "ttft_p50_ms": 2767.4, "ttft_p95_ms": 2781.9, "ttft_max_ms": 2782.1, "tokens": 1024, "prompt_tokens":
+S4-DONE

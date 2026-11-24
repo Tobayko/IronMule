@@ -120,15 +120,16 @@ GATHER_BURST_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_QUIET_MS
 # prefill of 217 ms) and the other 31 behind it, 2 of 3 waves on pod 22. For GATHER_BURST_MEMORY_S after a group of
 # several prompts, a lone arrival waits with the burst's window, once: if no other arrives, the memory is cleared.
 GATHER_BURST_MEMORY_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MEMORY_S", 30))
-# PK1-C (2026-11-24): the service hands a burst over in two parts, the first one to three requests as a new group and
-# the rest as joins 3-42 ms later (A100 pod 32: its 32 HTTP requests admitted over about 100 ms); with the 25 ms
-# quiet gap the window closed between them in 7 of 9 32-client waves and the rest waited for a second prefill
-# (+0.03 to +0.27 s a wave). Within GB1's memory the window now expects as many requests as the last wave held at
-# its peak: while fewer have come it waits for GATHER_EXPECT_QUIET_S of quiet (within the burst limit), and it ends
-# at once when they are all there (an 8-client wave no longer waits the 25 ms after its eighth). IRONMULE_GGML_PK1C=0
-# turns it off.
-PK1C = os.environ.get("IRONMULE_GGML_PK1C", "1") != "0"
-GATHER_EXPECT_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_EXPECT_QUIET_MS", 60)) / 1000
+# PK1-C (2026-11-24, opt-in IRONMULE_GGML_PK1C=1): the service hands a burst over in two parts, the first one to
+# three requests as a new group and the rest as joins 3 to over 60 ms later (A100 pod 32: its 32 HTTP requests admitted
+# over about 100 ms); with the 25 ms quiet gap the window closed between them in about half the 32-client waves and
+# the rest waited for a second prefill. Within GB1's memory the window then expects as many requests as the last run
+# held at its peak: while fewer have come it waits for GATHER_EXPECT_QUIET_S of quiet (within the burst limit), and it
+# ends at once when they are all there. Measured: one prefill call in 10 of 10 later 32-client waves against 6 of 10
+# without it, but no wave-time gain resolved against the packed call's own spread, and a lone request within the
+# memory waits up to the burst limit; so it stays off by default.
+PK1C = os.environ.get("IRONMULE_GGML_PK1C", "0") == "1"
+GATHER_EXPECT_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_EXPECT_QUIET_MS", 120)) / 1000
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default

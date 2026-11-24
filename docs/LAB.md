@@ -3796,3 +3796,70 @@ to 0.57-0.77 s. In IronMule's waves the prefill up to the last first token is 70
 part 27-28 %, and the prefill alone varies by about 0.2 s between server starts. Next, by share of the wave: the
 prefill, first its spread (one traced HTTP wave per start: gathering, packing and the packed call apart), then the
 packed call itself.
+
+### 2026-11-24, A100 pod 32: PF2, the prefill and its spread between server starts; PK1-C (gathering window) measured, opt-in
+RunPod A100 SXM4 80 GB (community, 1.398 h, about 1.94 USD; balance afterwards 42.47 USD), Qwen3-32B Q4_K_M, the final
+PD1 state (PD1 on with the 8-row rule, RF1 off), one state directory for every start (the first ran the quality gate
+and the W4R tuning, the others reused both). Sessions `lab/pf2/a100_pf2.sh` and `lab/pf2/a100_pk1c.sh`; raw data in
+`lab/pk1/results/pod32` (engine traces, client timelines, service logs, nvidia-smi every 200 ms, CUPTI summaries).
+New trace fields (only with `IRONMULE_GGML_TRACE`, clock reads where calls return anyway): each native call's host
+batch build, llama_decode and readback; when the engine made each request; the gathering window's start and end; a
+start's stages and choices. `lab/pf2/balance.py` lays every wave out as one chain on one time axis.
+
+Reference (PD1 final) over HTTP, the same prompts at the same position in every start and in vLLM, tok/s:
+
+| | 32 clients, first wave | 32 clients, later waves | 8 clients (facts) |
+| --- | --- | --- | --- |
+| IronMule S1 (first start, 1,300 s) | 202.6 | 275.2 / 279.7 | 171.2 / 182.3 (18/18) |
+| IronMule S2 (reused, 91 s) | 178.4 | 267.3 / 276.8 | 171.7 / 183.9 (18/18) |
+| IronMule S3 (reused, 85 s) | 279.2 | 265.4 / 262.4 | 170.0 / 181.6 (18/18) |
+| vLLM (141 s) | 210.7 | 278.8 / 277.5 | 186.2 / 187.3 (18/18) |
+
+- Saving needed for +10 % over vLLM, wave by wave (IronMule wave - vLLM wave / 1.10, same prompts): 0.30-0.55 s in
+  the later waves (0.380 / 0.304, 0.490 / 0.346, 0.519 / 0.549 s). PD1's 26 ms are inside every IronMule number above;
+  the spread between starts and waves (later waves 3.65-3.90 s) is larger than that and is not read as a gain of
+  anything.
+- A start's stages, every engine of a start (the serving one and the gate's children): warm-up 0.3-2.4 s, argmax check
+  0.15 s, W4R step measurement 17.5-18.9 s, PK2 calibration 21-24 s, Pilot 1.2-1.9 s. The choices were the same in
+  every start: PK2 from 128 rows, W4R for 1-8 / 16 / 24 / 32 rows.
+- The chain of a later wave (no split): burst 20-25 ms, through the service to the engine 36-147 ms, gathering 25-37
+  ms, the packed prefill call 2.41-2.49 s for about 7,400 rows (host batch build 5-13 ms, readback 0.4-1.7 ms; the
+  rest inside llama_decode), first token at the client 26-33 ms after it, the decode part 1.01-1.05 s.
+- Inside the packed call (CUPTI, a separate engine process with the server's settings; 7,632 prompt tokens): 2.37-2.40
+  s of kernels in a 2.46-2.48 s region: cuBLAS fp16 GEMMs 1.84-1.90 s, Q4_K / Q6_K dequantisation 0.115 s, SWIGLU 0.10,
+  norms 0.09, attention 0.08, RoPE 0.03, activation conversion 0.026, KV writes 0.018; gaps 58-64 ms, host time before
+  the first kernel 21-22 ms. First-time work in the first wave after the start: 2 cudaMalloc and 2 cudaFree (18 ms),
+  nothing else. During server prefills the SM clock sat at 1,245-1,410 MHz with the software power cap (400 W) active.
+- Split bursts: in 7 of the 9 32-client waves of S1-S3 the gathering window closed with 1-4 requests and the others
+  waited for a second prefill call (a first call of 31-483 ms, then 16-108 ms until the second). Cause, from the
+  service's log: the client sends 32 requests within 20-25 ms; the service admits the first eight 10-26 ms apart and
+  the rest within 1 ms each (admits over about 100 ms), starts a group with the first one to three and forwards the
+  others as joins 3 to over 60 ms after it; the engine's window (25 ms of quiet in a burst) closes in between. At 8
+  clients the window held in 5 of 6 waves.
+- Slow first waves: in S1 and S2 the first wave's large prefill call took 3.71 and 4.03 s instead of about 2.4 s; the
+  GPU ran about 0.6 s, then idled 1.2-2.0 s in the middle of the call (utilisation 0-1 %, about 88 W), then finished:
+  host-side waiting inside llama_decode, between the passes of a packed call. Not in S3's or S4's first wave, not in
+  two separate engine processes (one with the server's split), no major page faults in S4's worker (the pod had 2 TB
+  of memory). The same signature recurred twice in later waves of the A/B below (3.16 and 3.03 s calls). Cause open.
+- vLLM's first wave was slow too (4.86 s against 3.67-3.69 s afterwards).
+
+PK1-C (`IRONMULE_GGML_PK1C=1`, opt-in): within GB1's burst memory the gathering window expects as many requests as
+the last run held at its peak; while fewer have come it waits for a longer quiet gap (inside the 150 ms burst limit)
+and it ends at once when they are all there; a run that held several requests renews the burst memory. Three A/Bs on
+the same pod, server starts alternating, the PF2 state reused, six (first: three) 32-client waves and two 8-client
+waves per start, facts 18/18 in every one:
+- 60 ms expected quiet, first form: c1's window lost its memory after a split first wave (GB1 cleared it on a lone
+  arrival although the rest joined); fixed (the run's end renews it).
+- 60 ms after the fix: the window held where the joins came within 60 ms; in other waves the rest came more than 60
+  ms after the first request (`gathered 1 expect 32` after exactly 60 ms).
+- 120 ms: later 32-client waves in one prefill call 10 of 10 with PK1-C against 6 of 10 without; mean wave 3.788 s
+  (3.733 s without one wave with a 3.03 s call) against 3.765 s, time to the last first token 2.770 (2.715) against
+  2.741 s; 8-client waves 1.480 / 1.361 and 1.531 / 1.376 against 1.522 / 1.404 and 1.455 / 1.400 s. The packed call
+  of the same size itself took 2.37-2.64 s from wave to wave, more than the 33-320 ms a split costs, so no wave-time
+  gain is resolved. A lone request within the memory (the benchmark's warm-up request) waited the full 150 ms.
+- So PK1-C stays off by default (expected quiet 120 ms when on). The split is solved as a mechanism, the throughput
+  gain is not shown, and +10 % over vLLM is not reached.
+
+Next, by share of the wave: the packed prefill call (2.4-2.6 s of a 3.65-3.90 s wave; cuBLAS GEMMs 1.84-1.90 s of it),
+first its spread of about 0.25 s between waves of the same size (the power cap and clocks above are the first
+suspect; observed, not tested), then the host-side pause that turns some calls into 3.0-4.0 s.

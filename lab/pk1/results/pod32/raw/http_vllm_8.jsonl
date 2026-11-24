@@ -1,0 +1,3 @@
+{"label": "vllmq", "engine": "vllm", "warmup_s": 0.184}
+{"label": "vllmq", "engine": "vllm", "repeat": 0, "width": 8, "tok_s": 186.24, "wall_s": 1.375, "ttft_p50_ms": 840.4, "ttft_p95_ms": 843.2, "ttft_max_ms": 843.2, "tokens": 256, "prompt_tokens": 1908, "texts": "76d7f8e8ec64aff6", "quality": "18/18", "quality_misses": []}
+{"label": "vllmq", "engine": "vllm", "repeat": 1, "width": 8, "tok_s": 187.25, "wall_s": 1.367, "ttft_p50_ms": 836.3, "ttft_p95_ms": 838.4, "ttft_max_ms": 838.4, "tokens": 256, "prompt_tokens": 1908, "texts": "7aca9cd8e18d09b3", "quality": "18/18", "quality_misses": []}

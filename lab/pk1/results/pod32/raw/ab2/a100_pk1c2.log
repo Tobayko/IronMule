@@ -1,0 +1,78 @@
+== 21:24:21 d91f508 PK1-C: a run that held several requests renews the burst memory; balance.py reads the new gathered note
+== 21:25:51 r1 (PK1C=0) startup 90 s
+r1 0.225
+r1 (0, 32, 276.66, 3.701, 2629.0, 2638.7, None, None)
+r1 (1, 32, 234.33, 4.37, 3340.1, 3355.3, None, None)
+r1 (2, 32, 278.32, 3.679, 2641.2, 2654.2, None, None)
+r1 (3, 32, 272.07, 3.764, 2724.6, 2736.7, None, None)
+r1 (4, 32, 252.11, 4.062, 2997.6, 3008.9, None, None)
+r1 (5, 32, 271.79, 3.768, 2715.9, 2730.7, None, None)
+r1q 0.139
+r1q (0, 8, 168.65, 1.518, 800.0, 802.7, '18/18', [])
+r1q (1, 8, 182.46, 1.403, 787.5, 790.7, '18/18', [])
+== 21:27:57 k1 (PK1C=1) startup 85 s
+k1 0.231
+k1 (0, 32, 273.29, 3.747, 2657.2, 2670.7, None, None)
+k1 (1, 32, 263.77, 3.882, 2759.9, 2772.6, None, None)
+k1 (2, 32, 271.77, 3.768, 2693.7, 2708.1, None, None)
+k1 (3, 32, 272.06, 3.764, 2718.9, 2734.0, None, None)
+k1 (4, 32, 275.96, 3.711, 2667.6, 2681.0, None, None)
+k1 (5, 32, 274.46, 3.731, 2687.4, 2700.4, None, None)
+k1q 0.174
+k1q (0, 8, 174.93, 1.463, 811.1, 814.3, '18/18', [])
+k1q (1, 8, 185.22, 1.382, 764.4, 767.3, '18/18', [])
+== 21:30:08 r2 (PK1C=0) startup 90 s
+r2 0.229
+r2 (0, 32, 280.97, 3.645, 2559.3, 2573.2, None, None)
+r2 (1, 32, 268.62, 3.812, 2741.5, 2756.7, None, None)
+r2 (2, 32, 272.52, 3.758, 2705.5, 2717.5, None, None)
+r2 (3, 32, 274.6, 3.729, 2692.8, 2707.7, None, None)
+r2 (4, 32, 273.39, 3.746, 2711.7, 2727.1, None, None)
+r2 (5, 32, 277.28, 3.693, 2650.3, 2663.5, None, None)
+r2q 0.143
+r2q (0, 8, 166.88, 1.534, 853.1, 856.5, '18/18', [])
+r2q (1, 8, 182.37, 1.404, 792.2, 794.5, '18/18', [])
+== 21:32:14 k2 (PK1C=1) startup 85 s
+k2 0.231
+k2 (0, 32, 271.6, 3.77, 2694.6, 2707.6, None, None)
+k2 (1, 32, 267.58, 3.827, 2708.6, 2721.2, None, None)
+k2 (2, 32, 272.94, 3.752, 2685.4, 2697.2, None, None)
+k2 (3, 32, 274.92, 3.725, 2675.3, 2686.5, None, None)
+k2 (4, 32, 282.65, 3.623, 2571.0, 2586.7, None, None)
+k2 (5, 32, 276.36, 3.705, 2632.2, 2645.4, None, None)
+k2q 0.173
+k2q (0, 8, 162.28, 1.578, 875.7, 881.8, '18/18', [])
+k2q (1, 8, 186.54, 1.372, 762.4, 764.4, '18/18', [])
+r1 32 0 3.6978 2.6497 [(30, 31), (1464, 586), (6135, 1949)] {'start_after_t0': 0.0147, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+r1 32 1 4.3652 3.3651 [(7435, 3155)] {'start_after_t0': 0.12, 'jobs_at_start': 3, 'jobs_gathered': 32, 'windows': 1}
+r1 32 2 3.6748 2.6637 [(7434, 2499)] {'start_after_t0': 0.0922, 'jobs_at_start': 5, 'jobs_gathered': 32, 'windows': 1}
+r1 32 3 3.7599 2.7465 [(7422, 2567)] {'start_after_t0': 0.1014, 'jobs_at_start': 2, 'jobs_gathered': 32, 'windows': 1}
+r1 32 4 4.0543 3.0203 [(441, 220), (6964, 2689)] {'start_after_t0': 0.0396, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+r1 32 5 3.7634 2.7385 [(30, 32), (7392, 2524)] {'start_after_t0': 0.0361, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+r1 8 0 1.516 0.8051 [(30, 31), (1847, 734)] {'start_after_t0': 0.0248, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+r1 8 1 1.4014 0.7912 [(1884, 719)] {'start_after_t0': 0.0394, 'jobs_at_start': 8, 'jobs_gathered': 8, 'windows': 1}
+k1 32 0 3.7418 2.6877 [(474, 294), (7155, 2265)] {'start_after_t0': 0.0473, 'jobs_at_start': 2, 'jobs_gathered': 2, 'windows': 1}
+k1 32 1 3.8772 2.7823 [(28, 31), (7381, 2567)] {'start_after_t0': 0.0257, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+k1 32 2 3.763 2.7181 [(56, 83), (7358, 2467)] {'start_after_t0': 0.0572, 'jobs_at_start': 2, 'jobs_gathered': 2, 'windows': 1}
+k1 32 3 3.7602 2.7405 [(7391, 2545)] {'start_after_t0': 0.1166, 'jobs_at_start': 3, 'jobs_gathered': 32, 'windows': 1}
+k1 32 4 3.7066 2.6917 [(7415, 2489)] {'start_after_t0': 0.1046, 'jobs_at_start': 3, 'jobs_gathered': 32, 'windows': 1}
+k1 32 5 3.7265 2.7095 [(7393, 2486)] {'start_after_t0': 0.1454, 'jobs_at_start': 4, 'jobs_gathered': 32, 'windows': 1}
+k1 8 0 1.4617 0.8162 [(1878, 741)] {'start_after_t0': 0.0394, 'jobs_at_start': 8, 'jobs_gathered': 8, 'windows': 1}
+k1 8 1 1.3806 0.7683 [(1884, 714)] {'start_after_t0': 0.0447, 'jobs_at_start': 8, 'jobs_gathered': 8, 'windows': 1}
+r2 32 0 3.6402 2.583 [(30, 34), (7599, 2381)] {'start_after_t0': 0.0479, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+r2 32 1 3.8072 2.7646 [(441, 219), (6981, 2402)] {'start_after_t0': 0.0529, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+r2 32 2 3.7501 2.7282 [(7435, 2527)] {'start_after_t0': 0.1175, 'jobs_at_start': 3, 'jobs_gathered': 32, 'windows': 1}
+r2 32 3 3.725 2.7168 [(7412, 2507)] {'start_after_t0': 0.1297, 'jobs_at_start': 4, 'jobs_gathered': 32, 'windows': 1}
+r2 32 4 3.7418 2.7372 [(7402, 2529)] {'start_after_t0': 0.1203, 'jobs_at_start': 3, 'jobs_gathered': 32, 'windows': 1}
+r2 32 5 3.6892 2.6713 [(7424, 2484)] {'start_after_t0': 0.1183, 'jobs_at_start': 6, 'jobs_gathered': 32, 'windows': 1}
+r2 8 0 1.5322 0.8593 [(441, 218), (1435, 589)] {'start_after_t0': 0.0348, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+r2 8 1 1.4024 0.7947 [(1884, 719)] {'start_after_t0': 0.0433, 'jobs_at_start': 8, 'jobs_gathered': 8, 'windows': 1}
+k2 32 0 3.7659 2.7247 [(30, 33), (2385, 897), (5214, 1697)] {'start_after_t0': 0.0261, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+k2 32 1 3.8221 2.7297 [(28, 33), (7427, 2518)] {'start_after_t0': 0.0294, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+k2 32 2 3.7466 2.7082 [(441, 220), (6999, 2338)] {'start_after_t0': 0.039, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+k2 32 3 3.7203 2.6969 [(7424, 2501)] {'start_after_t0': 0.1239, 'jobs_at_start': 3, 'jobs_gathered': 32, 'windows': 1}
+k2 32 4 3.6182 2.5945 [(7405, 2409)] {'start_after_t0': 0.1317, 'jobs_at_start': 5, 'jobs_gathered': 32, 'windows': 1}
+k2 32 5 3.6994 2.6553 [(27, 33), (7388, 2478)] {'start_after_t0': 0.029, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+k2 8 0 1.5756 0.8827 [(441, 216), (1434, 633)] {'start_after_t0': 0.0186, 'jobs_at_start': 1, 'jobs_gathered': 1, 'windows': 1}
+k2 8 1 1.3707 0.7657 [(1884, 715)] {'start_after_t0': 0.0412, 'jobs_at_start': 8, 'jobs_gathered': 8, 'windows': 1}
+== 21:32:55 A100-PK1C-DONE
