@@ -21,6 +21,8 @@ export IRONMULE_GGML_BINDINGS=$T LLAMA_CPP_LIB_PATH=$T/vendor/llama.cpp/build/bi
 E="IRONMULE_GGML_PACK=1 IRONMULE_GGML_UBATCH=8192 IRONMULE_CUDA_GRAPHS_ROWS=32"
 M=/models/Qwen3-32B-Q4_K_M.gguf
 stamp() { echo "== $(date +%H:%M:%S) $*"; }
+pack() { (cd $W && tar czf /work/pd1.tgz --exclude='*.so' --exclude='st_*' --exclude='w4/*.json' *.json *.log *.jsonl *.env w4/*.table 2>/dev/null); }
+trap pack EXIT
 stamp "$(git log --oneline -1); patches: $(ls $T/vendor/llama.cpp/.ironmule-* | xargs -n1 basename | tr '\n' ' ')"
 nvidia-smi --query-gpu=name,clocks.max.sm,clocks.max.mem,power.limit,driver_version --format=csv,noheader
 
