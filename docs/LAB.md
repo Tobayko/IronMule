@@ -3560,3 +3560,34 @@ path (another configuration wins, so another summation order). At 32 rows that i
 small matrices were estimated to leave, about 2.7 % of a 30.1 ms step and about 25 ms of a 3.8 s wave. Next: v13 in
 the served step behind a switch, the step at 8 / 24 / 32 rows with and without it. Not yet in llama.cpp's graph.
 [measurements](../lab/pk1/results/pod27/a100-qkv-isolated.json)
+
+### 2026-11-24, A100 pod 28: QK1 (q, k, v in one launch) in the served decode step -- no gain, HTTP skipped
+RunPod A100 SXM4 80 GB (community, 0.42 h, about 0.58 USD), Qwen3-32B Q4_K_M, build with qk1, session
+`lab/w4bw/a100_qkv.sh`. The isolated measurement repeated pod 27 (per step 3.32 -> 2.78 ms at 8 rows, 3.74 -> 3.10 at
+16, 4.53 -> 3.49 at 24, 4.78 -> 4.00 at 32). The served decode step (engine, the pod's own W4R table, CUDA graphs up to
+32 rows, rounds off / on / off / on, median step):
+
+| rows | QKV off | QKV on |
+| ---: | --- | --- |
+| 8 | 20.615 / 20.626 ms | 20.681 / 20.682 ms |
+| 24 | 26.588 / 26.582 ms | 26.475 / 26.435 ms |
+| 32 | 30.500 / 30.522 ms | 30.595 / 30.533 ms |
+
+Answers with QKV on: 189 of 192 equal to the first off round (off rounds 192 / 192). The 32-row gain stayed within the
+spread, so by the rule fixed before the run no HTTP run. Kernel profile of 16 steps at 32 rows (CUPTI, per step):
+q 2.11 ms (64 calls), k and the Q4_K v 1.18 ms (96), prep_x 1.19, reduce_split 0.50; with QKV on the fused q + k 2.72 ms
+(63 calls), 33 separate 1024-row calls 0.41 ms, prep_x 1.40, reduce_split 0.28; all kernels 28.66 against 28.62 ms.
+- The group took q and k in 63 of 64 layers but never the Q4_K v: in those 32 layers v's output shares memory with a
+  tensor between q and v (QK1's overlap check), so v ran alone; and the fused path did not leave its prepared x for
+  PK3, so those v calls prepared x again (+0.21 ms a step).
+- The isolated benchmark overstated the separate path: under CUDA graphs q, k and v take 3.29 ms a step, not 4.78; a
+  1024-row call takes 12.2 us, not 17-19 (launches on a stream outside a graph carry gaps the graph does not have).
+  The small matrices' 9 % of the bandwidth was largely that.
+- With v grouped and x shared the step would gain at most about 0.4 ms (1.3 %), about 13 ms of a 3.8 s wave: not
+  worth more work. QK1 stays opt-in (`IRONMULE_KG_QKV=1`), off by default.
+- Where a 32-row step's 28.7 ms of kernels go (QKV off): gate / up 9.35 ms (128 calls, already about 56 % of the
+  bandwidth), down 5.74 (Q6_K 3.20, Q4_K 2.54), o 2.25, q 2.11, k / v 1.55 (Q4_K 1.18, Q6_K 0.37), prep_x 1.19,
+  reduce_split 0.50, output 0.48, SwiGLU 0.42; matmuls about 21.5 ms. A gate / up group would not change gate / up's
+  own efficiency (each already fills the GPU), so it is not the next experiment either; the matmul kernels themselves
+  at 32 rows (gate / up, down) are.
+[session](../lab/pk1/results/pod28/a100-pod28-session.log) · [profile](../lab/pk1/results/pod28/a100-pod28-profile.log)
