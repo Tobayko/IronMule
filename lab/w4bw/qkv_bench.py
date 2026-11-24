@@ -54,6 +54,10 @@ def main():
     lib.im_w4_qkv_variant_count.restype = ctypes.c_int
     lib.im_w4_qkv_variant.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
     lib.im_w4_qkv_bench.restype = ctypes.c_int
+    P = ctypes.c_void_p  # every pointer declared: ctypes passes an undeclared int as 32 bits
+    lib.im_w4_qkv_bench.argtypes = [ctypes.c_int, P, P, P, ctypes.c_long, P, ctypes.c_long, P, P, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_double),
+                                    ctypes.POINTER(ctypes.c_double), P, P]
     vs = wk.variants(lib)
     fvs = []
     for i in range(lib.im_w4_qkv_variant_count()):
@@ -90,7 +94,8 @@ def main():
                     continue
                 for ks in (1, 2, 4):
                     us_sep, us_f = ctypes.c_double(), ctypes.c_double()
-                    rc = lib.im_w4_qkv_bench(n, w_host, wbytes, Ns, K, x.ctypes.data, B, sep_v, sep_k, fv["id"], ks,
+                    rc = lib.im_w4_qkv_bench(n, ctypes.cast(w_host, P), ctypes.cast(wbytes, P), ctypes.cast(Ns, P), K,
+                                             x.ctypes.data, B, ctypes.cast(sep_v, P), ctypes.cast(sep_k, P), fv["id"], ks,
                                              copies, a.reps, ctypes.byref(us_sep), ctypes.byref(us_f),
                                              y_sep.ctypes.data, y_fused.ctypes.data)
                     if rc:
