@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/work/IronMule/lab/adm2/verdict.py", line 121, in <module>
+    main()
+  File "/work/IronMule/lab/adm2/verdict.py", line 117, in main
+    {"pick": pick, "arm": arm, "final": final}[a.op](a)
+  File "/work/IronMule/lab/adm2/verdict.py", line 43, in pick
+    w32, w8 = waves(a.paired32), waves(a.paired8)
+                                 ^^^^^^^^^^^^^^^^
+  File "/work/IronMule/lab/adm2/verdict.py", line 17, in waves
+    return [json.loads(line) for line in open(path) if line.startswith('{"arm"')]
+                                         ^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/work/ps1/paired_A_8.jsonl'
