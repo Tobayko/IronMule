@@ -900,13 +900,29 @@ def library_source(table: dict[str, Any]) -> str:
             + f'static const char *TABLE_JSON = "{text}";\n' + LIBRARY)
 
 
-def nvcc_path() -> str | None:
-    found = shutil.which("nvcc")
-    if found:
-        return found
-    for path in sorted(glob.glob("/usr/local/cuda*/bin/nvcc"), reverse=True):
-        return path
+def cuda_compiler_for(architectures) -> str | None:
+    """Select an installed compiler that can emit native code for every requested card."""
+    roots = [os.environ.get(key) for key in ("CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH")]
+    paths = [os.environ.get("CUDACXX"), shutil.which("nvcc"), *(str(Path(r) / "bin/nvcc") for r in roots if r),
+             *sorted(glob.glob("/usr/local/cuda*/bin/nvcc"), reverse=True)]
+    targets = {"sm_" + cc for cc in architectures}
+    for path in dict.fromkeys(p for p in paths if p):
+        path = shutil.which(path)
+        if not path:
+            continue
+        if not targets:
+            return path
+        try:
+            codes = subprocess.check_output([path, "--list-gpu-code"], text=True, stderr=subprocess.DEVNULL, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if targets.issubset(codes.split()):
+            return path
     return None
+
+
+def nvcc_path() -> str | None:
+    return cuda_compiler_for([gpu["cc"] for gpu in _visible_cuda_devices()])
 
 
 def _visible_cuda_devices() -> list[dict[str, Any]]:
@@ -958,9 +974,9 @@ def fingerprint() -> dict[str, Any]:
 
 
 def compile_cuda(source: str, out: Path, arch: str, include: Path | None = None) -> None:
-    nvcc = nvcc_path()
+    nvcc = cuda_compiler_for([arch])
     if nvcc is None:
-        raise RuntimeError("no nvcc: KG1 needs the CUDA toolkit")
+        raise RuntimeError(f"no installed nvcc generates native code for sm_{arch}")
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=out.parent) as scratch:
         src = Path(scratch) / "kernel.cu"

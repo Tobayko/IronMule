@@ -16,7 +16,7 @@ from typing import Any, Iterator
 from .errors import (BackendUnavailable, EngineLimitExceeded, InvalidRequest, StateError,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .serving_policy import ServingLog, ServingPolicy, load_policy
-from .types import MAX_OUTPUT_TOKENS, GenerationRequest, ModelSpec
+from .types import MAX_OUTPUT_TOKENS, GenerationRequest, ModelSpec, model_catalog
 
 STABILITY_LOG = "stability-log.jsonl"  # STAB1: admission, groups, ends, worker exits; bounded like the serving log
 MAX_RESTARTS, RESTART_WINDOW_S = 3, 600.0  # STAB1: a fourth worker loss within ten minutes stops recovery
@@ -113,6 +113,10 @@ class _Session:
     order_values: dict | None = None  # AG2, replay only: the recorded limit and prediction it is sorted by
 
 
+def _is_foreground(session):
+    return not getattr(session.request, "hardware_probe", False)
+
+
 class ProductService:
     """One loaded reference model with bounded FIFO admission.
 
@@ -150,6 +154,7 @@ class ProductService:
         self.spec = spec
         self._pending: queue.Queue = queue.Queue(maxsize=self.settings["max_pending"])
         self._sessions: dict[str, _Session] = {}
+        self._hardware_probes = 0
         # A session removed from the stdlib queue has acquired one queue task.
         # Keep it here, rather than putting it back, so each acquisition has
         # exactly one matching task_done().
@@ -323,6 +328,10 @@ class ProductService:
         with self._lock:
             return len(self._sessions)
 
+    def foreground_outstanding(self) -> int:
+        with self._lock:
+            return len(self._sessions) - self._hardware_probes
+
     def holds(self, request_id: str) -> bool:
         """HW1: whether this request id is admitted here and not yet retired."""
         with self._lock:
@@ -457,12 +466,7 @@ class ProductService:
             agent.reason = "the agent failed while learning; the reference schedule serves"
 
     def models(self) -> list[dict[str, Any]]:
-        specs = list(self.store.models())
-        if self.spec is not None and self.spec not in specs:  # GG4: a GGUF served on its own is not registered
-            specs.append(self.spec)
-        return [{"id": spec.model_id, "object": "model", "owned_by": "local",
-                 "revision": spec.revision, "loaded": self.spec == spec and self.health()["ready"]}
-                for spec in specs]
+        return model_catalog(self.store.models(), self.spec, self.health()["ready"])
 
     def stream(self, request: GenerationRequest) -> Iterator[dict[str, Any]]:
         # Validate direct Python callers as well as the HTTP boundary. No
@@ -499,6 +503,8 @@ class ProductService:
                 session = None
             if session is not None:
                 self._sessions[request.request_id] = session
+                if request.hardware_probe:
+                    self._hardware_probes += 1
                 queued = self._pending.qsize() + len(self._carry)
                 replay = getattr(self, "_replay_state", None)
                 if replay is not None:  # RSI3-LIVE-P2: real demand cancels replay the moment it is admitted
@@ -806,15 +812,8 @@ class ProductService:
         first_seconds = (session.first_ns - session.submitted_ns) / 1e9 if session.first_ns is not None else None
         dispatch = session.dispatched_ns
         queue_seconds = (dispatch - session.submitted_ns) / 1e9 if dispatch is not None else None
-        # PF1: the request's own times on the monotonic clock the engine trace and the client use (seconds)
-        self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
-                  error=session.error, tokens=session.tokens,
-                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed,
-                  t_submit=session.submitted_ns / 1e9,
-                  t_dispatch=None if dispatch is None else dispatch / 1e9,
-                  t_first=None if session.first_ns is None else session.first_ns / 1e9, t_end=session.end_ns / 1e9)
         with self._lock:
-            if session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
+            if _is_foreground(session) and session.outcome == "ok" and elapsed > 0 and session.tokens > 0:
                 self._live_samples.append({
                     "at": time.time(), "completion_tokens": session.tokens,
                     "tokens_per_second": session.tokens / elapsed,
@@ -825,9 +824,19 @@ class ProductService:
                     if dispatch is not None and session.first_ns is not None else None,
                     "first_to_end_ms": (session.end_ns - session.first_ns) / 1e6 if session.first_ns is not None else None,
                 })
-            self._sessions.pop(session.request.request_id, None)
+            retired = self._sessions.pop(session.request.request_id, None)
+            if retired is not None and not _is_foreground(retired):
+                self._hardware_probes -= 1
             self._active.discard(session.request.request_id)
         self._pending.task_done()
+        # A consumer observing the terminal record can now see the retired request in the counters.
+        # PF1: the request's own times on the monotonic clock the engine trace and the client use (seconds)
+        self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
+                  error=session.error, tokens=session.tokens,
+                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed,
+                  t_submit=session.submitted_ns / 1e9,
+                  t_dispatch=None if dispatch is None else dispatch / 1e9,
+                  t_first=None if session.first_ns is None else session.first_ns / 1e9, t_end=session.end_ns / 1e9)
 
     def _queued(self) -> tuple[int, list[tuple[int, GenerationRequest]]]:
         """Waiting requests and the oldest eight as (submitted_ns, request): metadata for RSI3-LIVE."""
@@ -1177,7 +1186,7 @@ class ProductService:
         self._emit(session, RequestCancelled("request cancelled"))
         session.outcome = "cancelled"
         with self._lock:
-            self._cancelled += 1
+            self._cancelled += _is_foreground(session)
 
     def _consume_events(self, session: _Session, events: Iterator[dict[str, Any]]) -> None:
         """Validate and deliver one request's frames from either backend path."""
@@ -1240,16 +1249,17 @@ class ProductService:
                                    "prompt_tokens": done.get("prompt_tokens", prompt_tokens),
                                    "completion_tokens": done.get("completion_tokens", generated),
                                    "queue_ns": dispatched - session.submitted_ns,
+                                   "ttft_ns": session.first_ns - session.submitted_ns if session.first_ns else None,
                                    "service_ns": time.monotonic_ns() - session.submitted_ns}):
             raise RequestCancelled("response delivery interrupted")
         with self._lock:
-            self._completed += 1
+            self._completed += _is_foreground(session)
             self._unproven_restarts = 0  # STAB3: a served request proves the worker serving now
         session.outcome = "ok"
         session.tokens = int(done.get("completion_tokens", generated) or 0)
         session.prompt_tokens = int(done.get("prompt_tokens", prompt_tokens) or 0)
         session.end_ns = time.monotonic_ns()
-        if self.serving_log is not None:
+        if self.serving_log is not None and _is_foreground(session):
             end = time.monotonic_ns()
             self.serving_log.append({
                 "arrive": session.submitted_ns / 1e9, "start": dispatched / 1e9,
@@ -1264,7 +1274,7 @@ class ProductService:
             if session.cancelled.is_set():
                 self._emit(session, RequestCancelled("request cancelled"))
                 with self._lock:
-                    self._cancelled += 1
+                    self._cancelled += _is_foreground(session)
                 return
             remaining = None if session.deadline is None else session.deadline - time.monotonic()
             if remaining is not None and remaining <= 0:
@@ -1283,7 +1293,7 @@ class ProductService:
             else:
                 self._emit(session, exc)
                 with self._lock:
-                    self._failed += 1
+                    self._failed += _is_foreground(session)
         except Exception:
             if session.cancelled.is_set():
                 self._finish_cancelled(session, stream, terminal_seen=session.terminal_seen)
@@ -1292,7 +1302,7 @@ class ProductService:
                 # their bodies or persist them as metadata.
                 self._emit(session, BackendUnavailable("model worker failed"))
                 with self._lock:
-                    self._failed += 1
+                    self._failed += _is_foreground(session)
         finally:
             if stream is not None:
                 try:
@@ -1315,7 +1325,7 @@ class ProductService:
                 elif item.deadline is not None and item.deadline <= now:
                     self._emit(item, RequestTimeout("request expired in queue"))
                     with self._lock:
-                        self._failed += 1
+                        self._failed += _is_foreground(item)
                     handled.add(item.request.request_id)
                 else:
                     live.append(item)
@@ -1360,7 +1370,7 @@ class ProductService:
                     else:
                         self._emit(item, exc)
                         with self._lock:
-                            self._failed += 1
+                            self._failed += _is_foreground(item)
                     handled.add(item.request.request_id)
         except Exception:
             # Dispatch happened as one unit: never conceal a failed batch by
@@ -1373,7 +1383,7 @@ class ProductService:
                 else:
                     self._emit(item, BackendUnavailable("model worker failed"))
                     with self._lock:
-                        self._failed += 1
+                        self._failed += _is_foreground(item)
 
     def _deliver(self, item: _Session, frames: Iterator[dict[str, Any]], handled: set[str]) -> None:
         """One grouped request's frames to its caller, with the single path's error handling."""
@@ -1387,7 +1397,7 @@ class ProductService:
             else:
                 self._emit(item, exc)
                 with self._lock:
-                    self._failed += 1
+                    self._failed += _is_foreground(item)
         handled.add(item.request.request_id)
 
     def _stream_batch(self, live: list[_Session], timeout: float | None, handled: set[str]) -> None:
@@ -1506,7 +1516,7 @@ class ProductService:
             with self._lock:
                 self._last_batch_size = len(live) + len(joined)
                 self._batch_count += 1
-                self._joined += len(joined)
+                self._joined += sum(_is_foreground(item) for item in joined)
         finally:
             for item in list(unheard.values()):  # the run failed before they streamed: they report it too
                 consume(unheard.pop(item.request.request_id))

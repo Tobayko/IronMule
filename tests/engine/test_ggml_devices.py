@@ -274,3 +274,33 @@ def test_stock_or_independent_gate_failure_never_admits_or_retries(monkeypatch, 
     with pytest.raises(InvalidRequest, match='reference: out_of_memory'):
         cli._qualify_ggml_kernels('model.gguf', 'model.gguf', tmp_path)
     assert calls == ['/local/candidate.so', None]
+
+
+def test_unsupported_w4_tries_the_general_cuda_generator(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from ironmule import ggml_binary, kernel_gen, w4_kernels
+    from ironmule_product import cli
+
+    monkeypatch.setattr(engine, "available", lambda: None)
+    monkeypatch.setattr(engine, "gpu_layers", lambda: -1)
+    monkeypatch.setattr(engine, "cuda_kernel_device", lambda: True)
+    monkeypatch.setattr(ggml_binary, "cuda_kg1_hook", lambda: True)
+    monkeypatch.setattr(kernel_gen, "compute_capability", lambda: "120")
+    def unsupported(*args, **kwargs):
+        raise RuntimeError("toolkit cannot build this candidate")
+    monkeypatch.setattr(w4_kernels, "ensure", unsupported)
+    monkeypatch.setattr(kernel_gen, "ensure", lambda *a, **k: "/generic.so")
+    libraries = []
+    def check(*args):
+        libraries.append(os.environ["IRONMULE_KG_LIB"])
+        return {"passes": True}
+    monkeypatch.setattr(cli, "_qualify_ggml_kernels", check)
+    monkeypatch.setenv("IRONMULE_KG_LIB", "")
+    monkeypatch.setenv("IRONMULE_GGML_SEQS", "1")
+    monkeypatch.setenv("IRONMULE_W4", "1")
+    monkeypatch.setenv("IRONMULE_KG", "1")
+    args = SimpleNamespace(gguf=tmp_path / "model.gguf", draft_gguf=None, speculate="off", agent="on", model=None)
+    spec = SimpleNamespace(snapshot_path=args.gguf, revision="pinned")
+    result = cli._local_ggml_options(args, spec, SimpleNamespace(root=tmp_path))
+    assert result["ggml_kernel_library"] == "/generic.so" and libraries == ["/generic.so"]

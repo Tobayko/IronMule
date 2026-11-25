@@ -1,5 +1,8 @@
 # The IronMule agent
 
+For GGUF, `ironmule serve --gguf MODEL --placement auto` qualifies CPU and accelerator workers on this host. Its C++17 latency planner and contextual bandit compete on separate local measurements before the last two hardware rounds qualify a route. Foreground arrivals take priority over idle work. [Training and workload qualification](../training/hardware-placement.md)
+
+
 The project's main goal (BACKLOG, "The main goal"): an agent that decides on its own how the model's requests
 run on the hardware, keeps learning by reinforcement learning while it serves, decides in microseconds, and
 serves a decision only after it proved a gain on the machine it runs on. Learning updates the Pilot, the scheduler

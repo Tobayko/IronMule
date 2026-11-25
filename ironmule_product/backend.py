@@ -79,7 +79,7 @@ class MLXWorkerClient:
                  dense_width: int | None = None, cpu_blas: str | None = None,
                  cpu_threads: int | None = None, speculate: bool = False, ggml_gguf: str | None = None,
                  ggml_gate: dict[str, Any] | None = None, ggml_kernel_library: str | None = None,
-                 ggml_sequences: int | None = None) -> None:
+                 ggml_sequences: int | None = None, ggml_worker_env: dict[str, str] | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
@@ -96,6 +96,7 @@ class MLXWorkerClient:
             raise ValueError("the ggml engine serves only after its quality gate passed (GG1)")
         if ggml_sequences is not None and (type(ggml_sequences) is not int or ggml_sequences < 1):
             raise ValueError("ggml_sequences must be a positive integer")
+        self.ggml_worker_env = dict(ggml_worker_env or {})
         self.ggml_sequences = ggml_sequences
         self.ggml_kernel_library = ggml_kernel_library
         self.ggml_gguf, self.ggml_gate = ggml_gguf, ggml_gate
@@ -276,7 +277,7 @@ class MLXWorkerClient:
                 payload = request.as_dict()
                 payload.pop("request_id", None)
                 GenerationRequest.from_payload(payload, exact=True)
-                commands.append(request.as_dict())
+                commands.append(request.worker_payload())
             _bounded_json_line({"type": "generate_batch", "batch_id": "batch-" + "b" * 32,
                                 "requests": commands, "variant": self.execution_variant,
                                 "trace_prompt_identity": self.trace_prompt_identity})
@@ -520,6 +521,7 @@ class MLXWorkerClient:
             })
             if self.cuda_device is not None:
                 environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device
+            environment.update(self.ggml_worker_env)
             if self.ggml_kernel_library is not None:
                 environment["IRONMULE_KG_LIB"] = self.ggml_kernel_library
             if self.ggml_sequences is not None:
@@ -805,7 +807,7 @@ class MLXWorkerClient:
             raise ValueError("timeout must be None or finite and positive")
         batch_id = "batch-" + uuid.uuid4().hex
         command = {"type": "generate_batch", "batch_id": batch_id,
-                   "requests": [request.as_dict() for request in request_list],
+                   "requests": [request.worker_payload() for request in request_list],
                    "variant": self.execution_variant, "trace_prompt_identity": self.trace_prompt_identity}
         try:
             _bounded_json_line(command)
@@ -851,7 +853,7 @@ class MLXWorkerClient:
                     token_counts[request.request_id] = 0
                     prompt_counts[request.request_id] = None
                 self._send({"type": "join_batch", "batch_id": batch_id,
-                            "requests": [request.as_dict() for request, _ in fresh]}, deadline)
+                            "requests": [request.worker_payload() for request, _ in fresh]}, deadline)
 
             # The operation flag is protected by the lock, but inference is
             # not: close() must remain able to acquire the lock and terminate
@@ -1029,7 +1031,7 @@ class MLXWorkerClient:
             raise ValueError("timeout must be None or finite and positive")
         if cancel is not None and not isinstance(cancel, threading.Event):
             raise TypeError("cancel must be threading.Event or None")
-        command = {"type": "generate", **request.as_dict(), "variant": variant,
+        command = {"type": "generate", **request.worker_payload(), "variant": variant,
                    "trace_forwards": trace_forwards, "trace_prompt_identity": self.trace_prompt_identity}
         try:
             _bounded_json_line(command)

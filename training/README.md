@@ -1,5 +1,7 @@
 # Training and measuring the agent
 
+For GGUF device placement, train and replay the C++17 controller through `ironmule hardware calibrate`. The same measurement loop runs in a live server during idle periods. [Hardware controller training and RunPod/Kaggle estimates](hardware-placement.md)
+
 This folder holds what trains, simulates and measures the IronMule agent ([docs/AGENT.md](../docs/AGENT.md)).
 The agent itself ships in `ironmule_product/`. Nothing here is imported by the product.
 

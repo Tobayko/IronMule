@@ -239,6 +239,31 @@ def admission_learning(value):
     return result
 
 
+def placement_learning(value, devices):
+    """Expose routing progress without local device identifiers, trace paths or worker errors."""
+    phases = ("paused", "waiting_for_idle", "waiting_for_spare_capacity", "waiting_for_refresh",
+              "recalibrating", "measuring", "training", "qualified", "reference",
+              "reference_after_failed_measurements", "withdrawn_after_latency_drift", "withdrawn_after_worker_failure")
+    if not isinstance(value, dict) or value.get("phase") not in phases:
+        return None
+    methods = ("shortest_queue", "latency_model", "reward_policy")
+    result = {"phase": value["phase"], "probing": value.get("probing") is True,
+              "method": value.get("method") if value.get("method") in methods else None}
+    for key in ("paired_trials", "target_trials", "remaining_idle_seconds", "interruptions"):
+        if (reading := number(value.get(key))) is not None:
+            result[key] = reading
+    last = value.get("last_decision")
+    if isinstance(last, dict) and isinstance(last.get("worker"), str) and isinstance(devices, list):
+        for i, worker in enumerate(devices, start=1):
+            if isinstance(worker, dict) and worker.get("placement_target") == last["worker"]:
+                kind = worker.get("device")
+                result["last_worker"] = f"{kind.upper()} {i}" if kind in ("cpu", "gpu") else f"Worker {i}"
+                if last.get("reason") in (*methods, "preferred_worker_full"):
+                    result["last_reason"] = last["reason"]
+                break
+    return result
+
+
 def runtime(service):
     if service is None:
         return {"status": "detached", "samples": []}
@@ -273,7 +298,8 @@ def runtime(service):
             "schedule_order": schedule.get("order") if schedule.get("order") in ("fifo", "sjf") else None,
             "workers": len(shards), "live_windows": number(agent.get("live_windows")),
             "decision_us": number(group_agent.get("decision_us")), "gate": gate if type(gate) is bool else None,
-            "admission_learning": admission_learning(ggml.get("admission_learning"))}
+            "admission_learning": admission_learning(ggml.get("admission_learning")),
+            "placement": placement_learning(health.get("placement"), health.get("devices"))}
 
 
 def snapshot(service: Any, path: Path):

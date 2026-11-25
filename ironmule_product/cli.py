@@ -261,9 +261,14 @@ def _ggml_agent_plan(width: dict[str, Any], root: Any, flash_only: bool = False)
 def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
     # Qualification sets these inputs for its subprocesses. Keep the results on
     # their worker; a later server in this process must see the caller's settings.
-    previous = {key: os.environ.get(key) for key in ("IRONMULE_KG_LIB", "IRONMULE_GGML_SEQS")}
+    tuned_env = ("IRONMULE_W4_TABLE", "IRONMULE_GGML_PACK", "IRONMULE_GGML_UBATCH", "IRONMULE_CUDA_GRAPHS_ROWS")
+    previous = {key: os.environ.get(key) for key in ("IRONMULE_KG_LIB", "IRONMULE_GGML_SEQS", *tuned_env)}
     try:
-        return _measure_ggml_options(args, spec, store, pinned=pinned)
+        result = _measure_ggml_options(args, spec, store, pinned=pinned)
+        changes = {key: os.environ[key] for key in tuned_env if os.environ.get(key) != previous[key] and key in os.environ}
+        if changes:
+            result["ggml_worker_env"] = changes
+        return result
     finally:
         for key, value in previous.items():
             if value is None:
@@ -352,8 +357,12 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
                 # the engine may route through cuBLAS (PK2), in micro-batches of up to 8192 rows
                 from ironmule.w4_kernels import ensure as ensure_w4
 
-                got = ensure_w4(str(Path(args.gguf).resolve()), Path(store.root) / "kernels" / "w4",
-                                log=lambda *a, **k: None)
+                try:
+                    got = ensure_w4(str(Path(args.gguf).resolve()), Path(store.root) / "kernels" / "w4",
+                                    log=lambda *a, **k: None)
+                except Exception as exc:  # a new architecture may still support the general CUDA generator
+                    print(json.dumps({"w4_fallback": f"{type(exc).__name__}: {exc}"[:300]}), flush=True)
+                    got = None
                 if got is not None:
                     library = got[0]
                     os.environ["IRONMULE_W4_TABLE"] = str(got[1])
@@ -444,17 +453,29 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
 
 def _pinned_ggml_options(device: str, args, spec: ModelSpec, store: ProductStore) -> dict:
     """Return only this card's measured options; the driver's visibility is set before process startup."""
+    from .placement_devices import worker_environment
+    environment = worker_environment(device)
     options = {k: getattr(args, k) for k in ("gguf", "draft_gguf", "speculate", "agent", "model")}
-    payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root)}
+    payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root), "pinned": device not in ("cpu", "local")}
+    if device.startswith("rocm:"):
+        payload.update(pinned=False, rocm_bus=device.removeprefix("rocm:"))
     child = subprocess.run([sys.executable, "-m", "ironmule_product.pinned_ggml"],
-                           env={**os.environ, "CUDA_VISIBLE_DEVICES": device},
+                           env={**os.environ, **environment},
                            input=json.dumps(payload, default=str), text=True, stdout=subprocess.PIPE)
     if child.returncode:
-        raise InvalidRequest(f"GGUF qualification failed on CUDA device {device}")
-    return json.loads(child.stdout.strip().splitlines()[-1])
+        raise InvalidRequest(f"GGUF qualification failed on worker {device}")
+    try:
+        result = json.loads(child.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError) as exc:
+        raise InvalidRequest(f"GGUF worker {device} returned no readable qualification") from exc
+    if device.startswith("rocm:"):
+        result["ggml_gate"]["placement_rocm_bus"] = payload["rocm_bus"]
+    if device in ("cpu", "local") or device.startswith("rocm:"):
+        result["ggml_worker_env"] = {**environment, **result.get("ggml_worker_env", {})}
+    return result
 
 
-def serve(argv: list[str]) -> int:
+def serve(argv: list[str], *, calibration_minutes: float | None = None) -> int:
     parser = _parser("serve", "Serve a registered local model through the OpenAI-compatible API.")
     choice = parser.add_mutually_exclusive_group()  # one of --model, --no-model or --gguf (GG4), checked below
     choice.add_argument("--model", help="registered model to keep loaded")
@@ -518,11 +539,14 @@ def serve(argv: list[str]) -> int:
                         help="with --learning: the same learner without model rollouts (comparison arm)")
     parser.add_argument("--no-replay", action="store_true",
                         help="with --learning: no idle replay qualification (an external harness qualifies, P3)")
-    parser.add_argument("--agent", choices=("off", "on"), default="off",
+    parser.add_argument("--agent", choices=("off", "on"), default=None,
                         help="AG1: the IronMule agent decides each group's order and width, learns what this "
                              "machine's groups cost from every request, trains a schedule while idle and serves it "
                              "only after it beat the incumbent in a replayed comparison on this server. Never "
                              "changes an answer; one worker; not with --learning or --dispatch-policy")
+    parser.add_argument("--placement", choices=("reference", "auto"), default="reference",
+                        help="auto: qualify CPU and GPU workers for this GGUF, compare request placement on the "
+                             "hardware while idle, and use the native latency model where it wins")
     parser.add_argument("--gpus", default=None, metavar="all|0,1",
                         help="HW1: one model worker per listed CUDA GPU (`all`: every GPU this machine shows), "
                              "each request on the GPU with the shortest queue. Each worker loads the whole model; "
@@ -545,6 +569,10 @@ def serve(argv: list[str]) -> int:
                              "unchanged, and only when no tune profile is stored; `reference` keeps the engine's "
                              "default knobs")
     args = parser.parse_args(argv)
+    auto_place = args.placement == "auto"
+    if auto_place and (not args.gguf or args.gpus or args.dispatch_policy or args.learning != "off"):
+        parser.error("--placement auto selects workers for --gguf and owns request placement")
+    args.agent = args.agent or ("on" if auto_place else "off")
     if args.model is None and not args.no_model and args.gguf is None:
         parser.error("one of --model, --no-model or --gguf is required")
     if args.no_model and args.gguf is not None:
@@ -585,7 +613,10 @@ def serve(argv: list[str]) -> int:
     from .service import ProductService
 
     store = ProductStore(args.state_dir)
-    store.settings()
+    if auto_place:
+        store.setup("server", only_if_missing=True)
+    else:
+        store.settings()
     backend = service = server = agent_setup = None
     ggml_options: dict[str, Any] = {}
     lease = None
@@ -630,6 +661,12 @@ def serve(argv: list[str]) -> int:
             if args.gpus is not None:
                 from .device_pool import cuda_devices, select_devices
                 devices = select_devices(args.gpus, cuda_devices())
+            if auto_place:
+                from .placement_devices import candidates
+                devices = candidates(Path(args.gguf).stat().st_size,
+                                     Path(args.draft_gguf).stat().st_size if args.draft_gguf else 0)
+                if not devices:
+                    raise InvalidRequest("available CPU/GPU memory is too small for this GGUF and its working set")
             if len(devices) > 1 and args.learning != "off":
                 raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
             if args.engine == "route" and len(devices) > 1:  # only the agent chooses `route`
@@ -648,7 +685,16 @@ def serve(argv: list[str]) -> int:
                 else:
                     # A process can initialize CUDA only once: pin before importing the bindings or probing.
                     for device in devices:
-                        ggml_options[device] = _pinned_ggml_options(device, args, spec, store)
+                        try:
+                            ggml_options[device] = _pinned_ggml_options(device, args, spec, store)
+                        except InvalidRequest as exc:
+                            if not auto_place:
+                                raise
+                            print(json.dumps({"placement_skipped": device, "reason": str(exc)}), flush=True)
+                    if auto_place:
+                        devices = list(ggml_options)
+                        if not devices:
+                            raise InvalidRequest("no placement worker passed this GGUF's hardware quality gate")
 
             def make_backend(device=devices[0]):
                 # SP2: speculation on the stacked engine where asked. SP2-H (2026-11-10) did not pass its bound, so
@@ -656,8 +702,9 @@ def serve(argv: list[str]) -> int:
                 speculate = args.engine == "dense" and args.speculate == "context"
                 if args.engine == "ggml":
                     # MG2: with --gpus each worker sees one GPU and offloads every layer to it (data parallel)
+                    cuda_device = None if device in (None, "cpu", "local") or device.startswith("rocm:") else device
                     return MLXWorkerClient(spec, thinking=not args.no_thinking, execution_variant="current_engine",
-                                           cuda_device=device, **ggml_options[device])
+                                           cuda_device=cuda_device, **ggml_options[device])
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        cpu_blas=None if args.cpu_blas == "stock" else args.cpu_blas,
@@ -681,6 +728,18 @@ def serve(argv: list[str]) -> int:
                     label = device if device is not None else "0"
                     return start_paths(store, spec, [single, stacked], [f"{label}:single", f"{label}:stacked"],
                                        ProductService, PolicyRouter.from_setup(agent_setup)), None
+                if auto_place:
+                    from .device_pool import start_pool
+                    from .placement import Placement
+                    pool = start_pool(store, spec, devices, make_backend, ProductService, allow_partial=True)
+                    try:
+                        pool.hardware_placement = Placement(pool, ggml_options, store.root)
+                    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                        pool.hardware_placement_error = f"{type(exc).__name__}: {exc}"[:300]
+                        print(json.dumps({"placement_reference": pool.hardware_placement_error}), flush=True)
+                    for device, reason in pool.start_failures.items():
+                        print(json.dumps({"placement_skipped": device, "reason": reason}), flush=True)
+                    return pool, None
                 if len(devices) > 1:
                     from .device_pool import start_pool
                     return start_pool(store, spec, devices, make_backend, ProductService), None
@@ -730,7 +789,7 @@ def serve(argv: list[str]) -> int:
         elif spec is not None and args.agent == "on" and args.engine == "ggml":
             # AG10: the ggml engine batches continuously and reuses sequences; its own agent (in the worker) learns,
             # dreams and switches its width and attention; the group agent (AG1) would price the wrong engine
-            plan = (ggml_options[devices[0]].get("ggml_gate") or {}).get("agent")
+            plan = (ggml_options[getattr(service, "devices", devices)[0]].get("ggml_gate") or {}).get("agent")
             print(json.dumps({"agent": {"serving": "the ggml engine's own agent (AG10)" if plan else
                                         "the ggml engine's measured width (SEQ1)",
                                         "configurations": sorted((plan or {}).get("configs", {}))}}), flush=True)
@@ -789,6 +848,9 @@ def serve(argv: list[str]) -> int:
             from .lab_switch import start as lab_switch
 
             lab_switch()
+        if calibration_minutes is not None:
+            from .placement_training import wait_for_calibration
+            return wait_for_calibration(service, calibration_minutes)
         server = create_server(service, host=args.host, port=args.port,
                                api_key=os.environ.get(args.api_key_env),
                                tls_cert=args.tls_cert, tls_key=args.tls_key)

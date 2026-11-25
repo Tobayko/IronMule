@@ -470,7 +470,7 @@ def _stop_ids(engine_bridge: Any, tokenizer: Any) -> set[int]:
 
 def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], max_tokens: int,
                    prompt_tokens: int, holder: dict[str, Any], consume: Any,
-                   boundaries: list[int] | None = None) -> dict[str, Any] | None:
+                   boundaries: list[int] | None = None, *, hardware_probe: bool = False) -> dict[str, Any] | None:
     """SERVE6: hand the engine's tokens to ``consume`` as it reads them back, detokenized the way
     mlx-lm streams, and return the terminal frame ``consume`` produced.
 
@@ -505,8 +505,10 @@ def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], ma
         except Exception as exc:  # raised after the engine returns, never inside its executor
             state["error"] = exc
 
-    result = (engine_bridge.generate(prompt_ids, max_tokens, on_token=on_token) if boundaries is None else
-              engine_bridge.generate(prompt_ids, max_tokens, on_token=on_token, boundaries=boundaries))
+    options = {"boundaries": boundaries} if boundaries is not None else {}
+    if hardware_probe:
+        options["hardware_probe"] = True
+    result = engine_bridge.generate(prompt_ids, max_tokens, on_token=on_token, **options)
     holder["result"] = result
     if "error" in state:
         raise state["error"]
@@ -642,7 +644,8 @@ def _generate(
                     streamed = {}
                     boundaries = _turn_boundaries(tokenizer, messages, prompt_ids) if CHAT_REUSE else None
                     terminal = _engine_stream(engine_bridge, tokenizer, list(prompt_ids), max_tokens,
-                                              prompt_tokens, streamed, consume, boundaries)
+                                              prompt_tokens, streamed, consume, boundaries,
+                                              hardware_probe=command.get("hardware_probe") is True)
                     streamed["plan"] = "chat_turns" if boundaries is not None else None
                 elif variant == "automatic":
                     if automatic_runtime is None:
@@ -992,6 +995,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
         messages_by_id = {request.get("request_id"): request.get("messages") for request in requests} \
             if rendered_override is None else {}
 
+        probe_ids = {r["request_id"] for r in requests if r.get("hardware_probe") is True}
+
         def cuts_for(row: tuple[str, list[int], int]) -> list[int] | None:
             return (_turn_boundaries(tokenizer, messages_by_id[row[0]], row[1])
                     if live and CHAT_REUSE and messages_by_id.get(row[0]) else None)
@@ -1025,6 +1030,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                         _emit(_rejected(batch_id, error))
                         continue
                     messages_by_id[row[0]] = request.get("messages")
+                    if request.get("hardware_probe") is True:
+                        probe_ids.add(row[0])
                     if row[0] in all_ids:
                         raise ValueError("duplicate request id")
                     with lock:
@@ -1105,7 +1112,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
                                                    lock, tokenizer, eos=stop_ids, terminal=terminal_for(row))
                     joined.append(row)
-                    fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row), cancelled_for(row[0])))
+                    member = (row[1], row[2], streams[row[0]].on_token, cuts_for(row), cancelled_for(row[0]))
+                    fresh.append((*member, True) if row[0] in probe_ids else member)
                 return fresh
 
             def cancelled_for(request_id: str):
@@ -1125,6 +1133,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                                                        **({"admit": admit,  # RSI3-LIVE-P2: stop on cancel
                                                            "cancelled": [cancelled_for(row[0]) for row in active]}
                                                           if live else {}),
+                                                       **({"hardware_probes": [row[0] in probe_ids for row in active]}
+                                                          if probe_ids else {}),
                                                        **({"boundaries": turns}
                                                           if any(cut is not None for cut in turns) else {}))
                            if active else [])
