@@ -1,0 +1,2 @@
+finite True on_vs_concat 0.0 on_vs_off 0.47098827362060547 top1_equal 8 of 8 tokens_equal_on_off True prefill_s 0.6680424869991839 0.21455988695379347
+PS1_OK 1
