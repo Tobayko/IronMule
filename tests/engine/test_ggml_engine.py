@@ -1600,3 +1600,27 @@ def test_dh2_delivers_every_token_in_order_and_the_last_from_the_engine_thread(m
         pass
     else:
         raise AssertionError("a delivery error is raised by close()")
+
+
+def test_dh2_a_failed_token_delivery_fails_the_run(monkeypatch):
+    """Codex review on #57: the emitter's error was swallowed (the check of sys.exc_info() ran inside its own
+    except); a run whose intermediate token delivery failed now raises it."""
+    import pytest
+
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "DH2", True)
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.gpu_layers = 1
+    calls = []
+
+    def emit(token):
+        calls.append(token)
+        if len(calls) == 2:  # an intermediate token, delivered on the emitter thread
+            raise ZeroDivisionError("delivery failed")
+
+    job = Job([1, 2, 3], 5)
+    job.emit = emit
+    with pytest.raises(ZeroDivisionError):
+        engine.run([job])

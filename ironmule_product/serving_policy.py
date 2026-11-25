@@ -142,12 +142,13 @@ class ServingLog:
         self._writing = False
         self._ready = threading.Condition()
         self._thread: threading.Thread | None = None
+        self._closed = False  # ADM2: after close() lines are written on the caller's thread
         if self.deferred:
             _DEFERRED.add(self)
 
     def append(self, record: dict[str, Any]) -> None:
         line = json.dumps(record, sort_keys=True) + "\n"
-        if self.deferred and _ADM2:  # ADM2: the writer thread takes it
+        if self.deferred and _ADM2 and not self._closed:  # ADM2: the writer thread takes it
             with self._ready:
                 self._waiting.append(line.encode("utf-8"))
                 if self._thread is None:
@@ -181,11 +182,23 @@ class ServingLog:
             while self._waiting or self._writing:
                 self._ready.wait(0.05)
 
+    def close(self) -> None:
+        """ADM2: write every waiting line, then stop and join the writer thread; later lines are written directly."""
+        with self._ready:
+            self._closed = True
+            self._ready.notify_all()
+            thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join()
+
     def _write_behind(self) -> None:
         while True:
             with self._ready:
-                while not self._waiting:
+                while not self._waiting and not self._closed:
                     self._ready.wait()
+                if not self._waiting:  # closed and drained
+                    self._ready.notify_all()
+                    return
                 lines, self._waiting = self._waiting, []
                 self._writing = True
             try:

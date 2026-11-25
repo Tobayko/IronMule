@@ -1554,6 +1554,6 @@ class ProductService:
             except queue.Empty:
                 break
         for log in (self.stability_log, self.serving_log):  # ADM2: every line written behind is in its file
-            flush = getattr(log, "flush", None)
-            if callable(flush):
-                flush()
+            stop = getattr(log, "close", None) or getattr(log, "flush", None)  # and its writer thread stopped
+            if callable(stop):
+                stop()

@@ -154,3 +154,23 @@ def test_adm2_a_deferred_log_writes_the_same_lines_in_order_and_flushes_on_read(
     monkeypatch.setattr(sp, "_ADM2", False)  # IRONMULE_ADM2=0: written on the caller's thread, after what waits
     capped.append(rows[0])
     assert capped.read()[-1]["arrive"] == 0 and not capped._waiting
+
+
+def test_adm2_close_writes_every_line_and_stops_the_writer_thread(tmp_path):
+    """Codex review on #57: a deferred log's writer waited forever; close() drains it, joins the thread, and later
+    lines are written directly."""
+    import json
+    import threading
+
+    from ironmule_product.serving_policy import ServingLog
+
+    log = ServingLog(tmp_path, deferred=True)
+    for k in range(5):
+        log.append({"k": k})
+    thread = log._thread
+    assert thread is not None
+    log.close()
+    assert not thread.is_alive() and log._thread is None
+    log.append({"k": 5})  # after close: on the caller's thread
+    assert not any(t.name == "ironmule-log-writer" and t.is_alive() and t is thread for t in threading.enumerate())
+    assert [json.loads(line)["k"] for line in log.path.read_text().splitlines()] == [0, 1, 2, 3, 4, 5]

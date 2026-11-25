@@ -2188,11 +2188,12 @@ class GgmlEngine:
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
             if emitter is not None:  # DH2: every token delivered before the run returns
+                failing = sys.exc_info()[0] is not None  # an engine error already on its way out wins
                 try:
                     emitter.close()
                 except BaseException:
-                    if sys.exc_info()[0] is None:
-                        raise
+                    if not failing:
+                        raise  # a failed token delivery fails the run
         if cohort is not None:
             started, group = cohort
             if all(j.reason in ("eos", "length") and started < j.first_ns <= j.finished_ns for j in group):
