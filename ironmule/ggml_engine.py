@@ -206,6 +206,10 @@ class PassCosts:
 # about 7,500 rows); the rows point into one contiguous sequence-id array of the engine's own. "0" keeps the loop.
 BF1 = os.environ.get("IRONMULE_GGML_BF1", "1") != "0"
 BF1_ROWS = 64
+# DH1 (diagnostics, with the trace only): IRONMULE_GGML_STEPPROF=1 notes the median host time of each part of a run's
+# full-width decode steps (pilot and admission, selection, drafts and rows, the native call, observers, accepting and
+# streaming the tokens, the rest) as one "# stepprof" line per run
+STEPPROF = os.environ.get("IRONMULE_GGML_STEPPROF") == "1"
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default
 TRACE = os.environ.get("IRONMULE_GGML_TRACE", "")
@@ -1671,8 +1675,22 @@ class GgmlEngine:
         if scope is not None:
             scope.begin()
         peak = 0  # PK1-C
+        prof = {} if STEPPROF and TRACE else None  # DH1 (trace only): host time of each part of a step
+        marks = [time.perf_counter()]
+        steps_prof: list[dict[str, float]] = []
+
+        def mark(name: str) -> None:
+            if prof is not None:
+                now = time.perf_counter()
+                prof[name] = prof.get(name, 0.0) + now - marks[0]
+                marks[0] = now
         try:
             while True:
+                if prof is not None:  # DH1: the step that ended here (decode-only steps of full width are kept)
+                    mark("tail")
+                    if prof.pop("_keep", 0):
+                        steps_prof.append(dict(prof))
+                    prof.clear()
                 if self.pilot is not None:  # PI1: threads, running cap, prompt budget and drafting for this step
                     ctx = (sum(len(j.ids) + len(j.tokens) for j in active.values()) / len(active)) if active else 0.0
                     decision = self.pilot.decide(len(active), len(pending), sum(len(j.ids) for j in pending), ctx)
@@ -1748,6 +1766,7 @@ class GgmlEngine:
                         if local is not None and local < budget and sum(len(j.ids) for j in pending) > local:
                             budget = local
                             self.admission_budget_hits += 1
+                mark("pilot_admit")
                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
@@ -1804,6 +1823,7 @@ class GgmlEngine:
                     break
                 # One call per step, as llama-server batches: every active request's last token and its drafts, and
                 # the prompts of the requests that start now (beyond one call's tokens, the rest go first on their own).
+                mark("select")
                 order = sorted(active)
                 offers = []
                 modelled: dict[int, list[int]] = {}
@@ -1978,9 +1998,13 @@ class GgmlEngine:
                             threads = learning.choose(ctx, self.pilot.load.foreign, threads, len(order))
                     if threads != self.threads:
                         self.set_threads(threads)
+                mark("offers_rows")
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
                 seconds = time.perf_counter() - started
+                mark("native")
+                if prof is not None and not fresh and not batched and len(rows) == len(order) >= 8:
+                    prof["_keep"] = 1
                 for sq, held in fillers:  # KG3: the placeholders leave nothing behind
                     self.L.llama_memory_seq_rm(self.memory, sq, held, -1)
                 if self.policy is not None and decode_rows and not batched:  # a prompt in the call is not a step's price
@@ -1989,6 +2013,7 @@ class GgmlEngine:
                     # Gap fillers execute in the decode batch and carry no request prompt.
                     self.observer(len(rows) - prompt_rows, prompt_rows,
                                   sum(len(j.ids) + len(j.tokens) for j in active.values()), seconds)
+                mark("observe")
                 self.steps += 1
                 at = produced = 0
                 for seq, (drafts, bucket), k, r in zip(order, offers, ks, real):
@@ -2017,12 +2042,17 @@ class GgmlEngine:
                     active[seq] = job
                     take(seq, job, picks[at])
                     at += 1
+                mark("accept_take")
                 if self.pool is not None:  # SP1: what every running sequence's cells hold now
                     with self._lock:
                         for seq, job in active.items():
                             self.pool.sync(seq, job.full_context(), job.limit - len(job.tokens),
                                            length=len(job.ids) + len(job.tokens) - 1)
         finally:
+            if steps_prof and TRACE:  # DH1: medians over this run's full-width decode steps, ms
+                parts = sorted({k for d in steps_prof for k in d})
+                trace_note("stepprof " + json.dumps({"steps": len(steps_prof), **{
+                    k: round(1000 * statistics.median(d.get(k, 0.0) for d in steps_prof), 3) for k in parts}}))
             if peak > 1:  # PK1-C: a burst's size; a lone request between bursts leaves the memory as it was
                 self._burst_peak = peak
                 # and the burst memory itself: a window that caught only the burst's first request cleared it (GB1's
