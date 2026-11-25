@@ -127,14 +127,14 @@ Pod 37's logits files of the GPU check (2 x 19 MB) are not in the repository; th
 
 ## Open points
 
-1. **No robust margin.** 1.1002 with starts at 1.105 and 1.095. A repeat on another pod may land below 1.10. The
+1. **No robust margin.** ([#53](https://github.com/Tobayko/IronMule/issues/53)) 1.1002 with starts at 1.105 and 1.095. A repeat on another pod may land below 1.10. The
    next lever must bring tens of milliseconds a wave, measured with the same rule.
-2. **Slower first wave after a start.** 105 ms over the target line in pod 37 (admission ends at 51-60 ms instead
+2. **Slower first wave after a start.** ([#54](https://github.com/Tobayko/IronMule/issues/54)) 105 ms over the target line in pod 37 (admission ends at 51-60 ms instead
    of 25-30; 16-24 ms more between the batch decision and the prefill call; prompt rows without a kept prefix). It
    does not set the median today but costs margin.
-3. **Decode step.** 31 calls of 31.3 ms against vLLM's about 23 ms; the matmul kernels at 32 rows (gate/up, down)
+3. **Decode step.** ([#56](https://github.com/Tobayko/IronMule/issues/56)) 31 calls of 31.3 ms against vLLM's about 23 ms; the matmul kernels at 32 rows (gate/up, down)
    are the known lever (pod 28 profile).
-4. **PK6 cache miss.** If a reader of a skipped tensor misses PK3's fp16 copy, the process aborts
+4. **PK6 cache miss.** ([#55](https://github.com/Tobayko/IronMule/issues/55)) If a reader of a skipped tensor misses PK3's fp16 copy, the process aborts
    (`GGML_ABORT("PK6: ...")`) instead of computing on unwritten memory: correct but it ends the worker. It did not
    happen on pod 37 (189 skips a graph, no abort). A reader in another graph split would not be seen by the index;
    with full GPU offload the model is one split. A fallback that recomputes the f32 values (or disables PK6 for the
