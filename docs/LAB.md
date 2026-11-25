@@ -3987,3 +3987,63 @@ and 0.27 s (wave 2) at 32 clients, and 0.17-0.21 s at 8 clients. Supported reser
 path (40-60 ms, both widths), the PX1 row limit (about 30 ms where 3 passes are at stake), the GEMM algorithm or
 workspace (0.03-0.06 s); together still below the remaining gap, so a larger mechanism is needed (the decode part of
 the wave, about 1.0 s, and the first waves' 2-pass prefill).
+
+### 2026-11-25, before the pod: where the 32-client wave loses time outside the GPU -- ADM1, ADM2, BF1, PX2
+Maintainer work towards +10 % over vLLM at 32 clients (reference 584ec37: IronMule 285.3, vLLM 279.1 tok/s on pod 33;
+remaining gap 0.15-0.27 s a wave). Local analysis of pod 33's raw data and a local reproduction; no GPU time.
+
+One wave on one time axis (`lab/adm1/anatomy.py`, `lab/adm1/tail.py`; pod 33, PX1 arms, 32 clients, ms from the first
+send; the client sends all 32 requests within 17-25 ms):
+
+| part | P1 / P2 waves | ideal |
+| --- | --- | --- |
+| first send to the large prefill call | 142-185 (unsplit waves) | about 30 |
+| large prefill call | 2,221-2,368 | -- |
+| prefill end to first decode call | 6-9 | -- |
+| 31 decode steps, start to start | 31.0-31.8 a step (native call 29.8-30.5) | -- |
+| last decode call's end to the last response's end | 47-85 | a few |
+
+- Admission (`lab/adm1/adm.py` over the stability log): the service admitted the burst over 80-128 ms, its first
+  requests 10-30 ms apart. Every chat request ran `ProductService.health()` (the optimizer status and the settings,
+  read under file locks) and appended to the stability log with pathlib's exists, stat and open, on the Python path
+  that 32 HTTP threads, the scheduler and the worker's reader share. Local reproduction (`lab/adm1/stub_server.py`:
+  the real HTTP server, ProductService, scheduler and join path, a stub worker; the benchmark's own client): the burst
+  reached the worker over 40-45 ms on 4 cores, 15-18 ms with the server pinned to one core (contention for the GIL,
+  not work alone). The 4-core container is not the pod; the pod had 192-256 visible cores.
+- The wave's end: the engine finished all 32 requests 10-13 ms after its last call (`# job` end times), but the
+  service read their done frames 1.6 ... 52-85 ms after it (`member_done`), each request's last chunk 0.5 ms before.
+  Every finished request costs about five log lines (member_done, http, end, the serving log, and the frames' JSON)
+  and two thread hand-offs on the same contended path. Stub: removing the logs halved the tail (30 -> 15 ms).
+- Host batch build of the large prefill call: 6-16 ms (`b=` in the trace), a Python loop over ctypes arrays.
+- PX1's fixed limit against a cost decision, offline over pods 32/33's 48 large HTTP calls (`lab/adm1/px2_offline.py`,
+  the fitted pass costs below): PX1 already evened nearly every fragmented call (6-14 passes to 2); a cost decision
+  adds 1 ms a call on average (one call 42 ms). The 30 ms expected for PX2 holds for the in-process repeat 1 (5
+  passes, 99 rows), not for the benchmark's HTTP waves.
+- Pass costs fitted over 186 calls of pods 32/33 (pause calls out): a pass under PK2's 128-row threshold 16.5 ms +
+  0.98 ms a row, a cuBLAS pass 91 ms + 0.287 ms a row (residual median 11.6 ms).
+
+Changes, each with its own switch (all on by default until the pod decides; `IRONMULE_LAB_SWITCH` flips them inside
+one server start for paired waves):
+- ADM1 (`IRONMULE_ADM1`): a chat request asks `ProductService.ready()` (the same answer as health()["ready"], no
+  file reads); log lines are appended with one open, fstat and write. Stub: last request at the worker 41 -> 20 ms.
+- ADM2 (`IRONMULE_ADM2`): the stability and serving logs are written behind by one thread per log, every waiting
+  line in one call; `read()`, `flush_logs()` and the service's close flush. Stub, with ADM1: tail 30 -> 19 ms.
+- BF1 (`IRONMULE_GGML_BF1`): calls of 64 rows or more fill llama.cpp's batch with numpy copies (the rows point into
+  one contiguous sequence-id array; llama.cpp's own arrays are given back before its free). Same tokens (CPU build,
+  Qwen3-0.6B, 18 calls of 64+ rows); 500 rows 0.23 -> 0.07 ms on the container.
+- PX2 (`IRONMULE_GGML_PX2`): a packed engine times one-sequence passes of 1, 8, 16, 32, 127, 128, 256 and 1,024 rows
+  at its start (logits on the last row only) and prices a split as the sum of its passes' interpolated times; every
+  kept-prefix level of the group is priced with the passes it would really make, the cheapest taken when it saves
+  2 ms. Without the measurement PX1's fixed limit decides.
+
+Larger lever, chosen by the remaining milliseconds (not more than three candidates):
+
+| mechanism | evidenced share of a wave | expected net saving | effort | decisive test |
+| --- | --- | --- | --- | --- |
+| server path: admission and wave end (ADM1 + ADM2) | 110-150 ms before the prefill, 45-80 ms after the last call | 80-150 ms (stub 79 -> 39 ms) | low | paired waves in one server start |
+| one large prefill pass instead of two (matmuls over all rows, attention per pass shape) | 91 ms a cuBLAS pass | about 90 ms | high (llama.cpp graph and KV views) | engine prefill of the benchmark mix |
+| decode host time between native calls | 1.0-1.5 ms x 31 steps | 15-30 ms | medium | decode period at 32 rows |
+
+Speculative decoding stays out: the verification path was measured already (pod 17: 64 rows 56.4 ms = 1.86 x a
+32-row step; draft acceptance 0.66 at k = 1), which leaves no reserve at 32 clients. The server path is chosen: the
+largest block with the smallest effort, and its pieces are measured per wave on the pod.

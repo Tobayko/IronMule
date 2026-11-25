@@ -14,7 +14,7 @@ tl, tr = sys.argv[1], sys.argv[2]
 waves = defaultdict(list)
 for line in open(tl):
     r = json.loads(line)
-    if r["width"] == 32:
+    if r["width"] == int(sys.argv[3] if len(sys.argv) > 3 else 32):
         waves[r["wave_start"]].append(r)
 calls, gathered = [], []
 for line in open(tr):
@@ -32,7 +32,7 @@ for w0, rs in sorted(waves.items()):
     dec = [c for c in cs if c[2] <= 64 and pre and c[0] > pre[-1][0]]
     g = [x for x in gathered if t0 - 0.05 <= x <= (pre[-1][0] if pre else end)]
     gaps = [b[0] - a[0] for a, b in zip(dec, dec[1:])]
-    row = {"wave_ms": round(1e3 * (end - t0)), "last_send": round(1e3 * (max(r["t_send"] for r in rs) - t0)),
+    row = {"label": rs[0].get("label"), "wave_ms": round(1e3 * (end - t0)), "last_send": round(1e3 * (max(r["t_send"] for r in rs) - t0)),
            "gathered": round(1e3 * (g[-1] - t0)) if g else None,
            "prefill_calls": [(round(1e3 * (c[0] - t0)), round(1e3 * c[1]), c[2]) for c in pre],
            "prefill_end_to_first_decode": round(1e3 * (dec[0][0] - pre[-1][0] - pre[-1][1]), 1) if dec else None,
