@@ -1445,3 +1445,98 @@ def test_pk2_m_mix_calibration_times_half_short_half_long_prompts(monkeypatch):
     out, lengths, tried = calibrate("mix")
     assert lengths == [33] * 4 + [444] * 4 and out["rows"] == 4 * 33 + 4 * 444
     assert out["calibration"] == "mix" and 128 in tried
+
+
+def _pod_pass_costs():
+    """PX2: pass costs shaped as pods 32/33's 186 packed calls fit (16.5 ms + 0.98 ms a row under PK2's 128-row cuBLAS
+    threshold, 91 ms + 0.287 ms a row from it on), at the sizes the engine measures."""
+    from ironmule.ggml_engine import PassCosts
+
+    small = lambda r: (16.45 + 0.978 * r) / 1000  # noqa: E731
+    big = lambda r: (91.15 + 0.2869 * r) / 1000  # noqa: E731
+    return PassCosts({1: small(1), 8: small(8), 16: small(16), 32: small(32), 127: small(127), 128: big(128),
+                      256: big(256), 1024: big(1024)})
+
+
+def test_px2_prices_the_passes_each_kept_prefix_level_would_make(monkeypatch):
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job, split_shapes
+
+    monkeypatch.setattr(ge, "UBATCH", 8192)
+    assert split_shapes({0: 33, 1: 25, 2: 33, 3: 444, 4: 436}, 8192) == [125, 8, 24, 806, 8]
+    costs = _pod_pass_costs()
+    assert abs(costs(6576) - (91.15 + 0.2869 * 6576) / 1000) < 1e-6  # beyond the largest size: its slope
+
+    def engine_with_costs():
+        engine, fed, removed = _stub_engine(seqs=32)
+        engine.batch_cap, engine.px1, engine.pass_costs = 16384, True, costs
+        return engine, removed
+
+    # the benchmark's later waves: 16 short and 16 long prompts, template prefixes of 0-12 tokens per stream; every
+    # stream is cut to the lowest level, 0 here, so that the group runs as 2 passes
+    keeps = [3, 11, 12, 3, 11, 12, 0, 12, 3, 11, 12, 3, 11, 12, 3, 11] * 2
+    group = [(i, Job(list(range(33 if i < 16 else 444)), 2), keeps[i]) for i in range(32)]
+    engine, removed = engine_with_costs()
+    assert ge.split_passes({s: len(j.ids) - k for s, j, k in group}, 8192) > 2
+    evened = engine._even_reuse(group)
+    assert {keep for _, _, keep in evened} == {0} and len({s for s, _, _ in removed}) == 30
+    assert ge.split_passes({s: len(j.ids) - k for s, j, k in evened}, 8192) == 2
+
+    # 80 rows for 2 passes saved: the fixed limit (64) refuses them, the measured costs take them (3 passes of 60-80
+    # rows cost about 264 ms, one of 300 rows about 177 ms)
+    three = [(0, Job(list(range(100)), 2), 0), (1, Job(list(range(100)), 2), 80), (2, Job(list(range(100)), 2), 0)]
+    engine, removed = engine_with_costs()
+    assert split_shapes({s: len(j.ids) - k for s, j, k in three}, 8192) == [60, 80, 80]
+    assert [keep for _, _, keep in engine._even_reuse(three)] == [0, 0, 0] and removed == [(1, -1, -1)]
+    engine, removed = engine_with_costs()
+    engine.pass_costs = None  # the safe fallback: the fixed limit decides, and refuses
+    assert engine._even_reuse(three) == three and removed == []
+
+    # a large reusable prefix (a shared 1,000-token system prompt): the level that keeps it is chosen, not the lowest
+    big = [(0, Job(list(range(1100)), 2), 1000), (1, Job(list(range(1100)), 2), 1012),
+           (2, Job(list(range(1100)), 2), 1000), (3, Job(list(range(1100)), 2), 0)]
+    engine, removed = engine_with_costs()
+    evened = engine._even_reuse(big)
+    assert [keep for _, _, keep in evened] == [1000, 1000, 1000, 0] and removed == [(1, 1000, -1)]
+
+    # unequal prompt lengths whose split cutting cannot shorten: nothing is recomputed
+    uneven = [(0, Job(list(range(40)), 2), 5), (1, Job(list(range(400)), 2), 0)]
+    engine, removed = engine_with_costs()
+    assert engine._even_reuse(uneven) == uneven and removed == []
+
+    # 200 rows for one large pass saved: by the measured costs worth it (91 ms against 57 ms), by the fixed limit not
+    far = [(0, Job(list(range(300)), 2), 0), (1, Job(list(range(300)), 2), 200)]
+    engine, removed = engine_with_costs()
+    assert [keep for _, _, keep in engine._even_reuse(far)] == [0, 0]
+    engine, removed = engine_with_costs()
+    engine.pass_costs = ge.PassCosts({1: 0.020, 8: 0.021, 256: 0.020 + 0.5, 1024: 0.020 + 2.0})  # rows are dear here
+    assert engine._even_reuse(far) == far and removed == []
+
+
+def test_px2_measures_passes_of_its_own_sizes_with_logits_on_the_last_row(monkeypatch):
+    import types
+
+    from ironmule import ggml_engine as ge
+
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.seq_ctx = engine.batch_cap = 2048
+    engine.batch = types.SimpleNamespace(token=[0] * 2048, pos=[0] * 2048, n_seq_id=[0] * 2048, logits=[0] * 2048,
+                                         seq_id=[[0] for _ in range(2048)], n_tokens=0)
+    engine.L.llama_vocab_bos = lambda vocab: 1
+    one = engine.L.llama_get_logits_ith
+    engine.L.llama_get_logits_ith = lambda ctx, i: one(ctx, 0)  # the stub holds 64 logit rows
+    asked: list[list[int]] = []
+    real = engine._decode
+
+    def decode(rows, **kw):
+        asked.append([i for i, row in enumerate(rows) if row[3]])
+        return real(rows, **kw)
+    engine._decode = decode
+    engine.pk2 = {"min_rows": 128}
+    costs = engine.measure_pass_costs(repeats=1)
+    sizes = [r for r, _ in costs.points]
+    assert sizes == [1, 8, 16, 32, 127, 128, 256, 1024]  # small, both sides of the cuBLAS threshold, two large
+    measured = [rows for rows in asked if len(fed[asked.index(rows)]) in sizes]
+    assert all(rows == [len(fed[asked.index(rows)]) - 1] for rows in measured)  # logits on the last row only
+    engine.seq_ctx = engine.batch_cap = 64  # no room for the sizes: PX1's fixed limit decides
+    assert engine.measure_pass_costs(repeats=1) is None

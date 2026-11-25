@@ -38,6 +38,9 @@ END_OF_TURN = ("<end_of_turn>", "<|eot_id|>", "<|im_end|>", "<|end|>")
 _PROTOCOL_OUT = sys.stdout
 
 
+_TRACE = bool(os.environ.get("IRONMULE_GGML_TRACE"))
+
+
 def _trace_note(label: str) -> None:
     """A marker in the engine's IRONMULE_GGML_TRACE file (diagnostics, off by default)."""
     if os.environ.get("IRONMULE_GGML_TRACE"):
@@ -412,6 +415,8 @@ def _receiver(
             return
         if command.get("type") == "join_batch":
             JOINS.put(command)  # SERVE8: taken by the running batch, not queued behind it
+            if _TRACE:  # ADM1 (trace only): when a join reached the worker
+                _trace_note(f"join read {len(command.get('requests') or ())}")
             continue
         if command.get("type") == "cancel":
             request_id = command.get("request_id")
@@ -1017,6 +1022,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                         registered.append(row[0])
                     all_ids.append(row[0])
                     rows.append(row)
+                if _TRACE:  # ADM1 (trace only): rendered and handed to the engine
+                    _trace_note(f"join rendered {len(join['requests'])}")
 
         stop_ids = _stop_ids(engine_bridge, tokenizer)
 
@@ -1388,6 +1395,13 @@ def _run_generation(
 
 
 def main(argv: list[str] | None = None) -> int:
+    if os.environ.get("IRONMULE_LAB_SWITCH"):  # diagnostics: paired A/B switches (ironmule_product/lab_switch.py)
+        try:
+            from ironmule_product.lab_switch import start as lab_switch
+
+            lab_switch()
+        except ImportError:
+            pass
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--spec", required=True)
     parser.add_argument("--execution-variant", choices=sorted(WORKER_VARIANTS), default="reference")

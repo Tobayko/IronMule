@@ -152,6 +152,9 @@ def _held_group(service: ProductService, requests: list[GenerationRequest], gate
 
 
 def _log(store: ProductStore) -> list[dict]:
+    from ironmule_product.serving_policy import flush_logs
+
+    flush_logs()  # ADM2: the service writes its log behind
     return [json.loads(line) for line in (store.root / STABILITY_LOG).read_text().splitlines()]
 
 

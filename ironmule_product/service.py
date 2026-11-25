@@ -169,8 +169,9 @@ class ProductService:
         # RSI4: the scheduling policy (default = SERVE8) and the log `ironmule dream` learns it from.
         root = getattr(store, "root", None)
         self.policy = load_policy(root) if root is not None else ServingPolicy()
-        self.serving_log = ServingLog(root) if root is not None else None
-        self.stability_log = ServingLog(root, 4 << 20, STABILITY_LOG) if root is not None else None
+        # ADM2: both written behind by their own thread, every waiting line in one call
+        self.serving_log = ServingLog(root, deferred=True) if root is not None else None
+        self.stability_log = ServingLog(root, 4 << 20, STABILITY_LOG, deferred=True) if root is not None else None
         self._identity = _identity_of(backend)  # a replacement must match it
         self._restarts: list[float] = []
         self._thread = threading.Thread(target=self._run, name="ironmule-scheduler", daemon=True)
@@ -300,6 +301,12 @@ class ProductService:
             result["knobs"] = {"source": engine.get("profile_source"), "values": engine["selected_knobs"],
                                "class_a": class_a_knobs(engine["selected_knobs"]) is not None}
         return result
+
+    def ready(self) -> bool:
+        """ADM1: health()["ready"] alone, without the optimizer status and the rest of the report (no file reads)."""
+        with self._lock:
+            return bool(not self._closed.is_set() and self._backend_ready()
+                        and (getattr(self, "_idle_busy", False) or (self.backend is not None and self.backend.ready)))
 
     def live_samples(self) -> list[dict]:
         """Recent completed real requests, limited to timings and counts."""
@@ -1546,3 +1553,7 @@ class ProductService:
                 self._pending.task_done()
             except queue.Empty:
                 break
+        for log in (self.stability_log, self.serving_log):  # ADM2: every line written behind is in its file
+            flush = getattr(log, "flush", None)
+            if callable(flush):
+                flush()

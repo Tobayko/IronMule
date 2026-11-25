@@ -140,14 +140,23 @@ UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # The recomputed tokens are computed as in any prefill. A100 pod 33 (one process, 12 ABBA pairs): 7 passes to 2 for 99
 # rows, prefill -95 ms in every pair; HTTP over two starts per arm: 32-client wave median -96 ms, first token p50 -105
 # ms, facts 18/18. On by default; IRONMULE_GGML_PX1=0 turns it off.
+# PX2 (2026-11-25): the fixed row limit becomes a cost decision. A packed engine on one KV stream per sequence times
+# native passes of its own sizes at its start (one sequence, logits on the last row only: 1, 8, 16, 32 rows, both sides
+# of PK2's cuBLAS threshold and two large sizes), and prices a split as the sum of its passes' interpolated times. Every
+# kept-prefix level of the group (cut every longer prefix to it) is priced with the passes it would really make, and
+# the cheapest is taken when it saves at least PX2_MARGIN_MS. Pods 32/33's calls fit 16.5 ms + 0.98 ms a row for passes
+# under 128 rows and 91 ms + 0.287 ms a row above (186 calls): repeat 1's 99 rows for 3 passes saved were refused by
+# the fixed limit and are worth about 45 ms. Without the measurement (or IRONMULE_GGML_PX2=0) the fixed limit decides.
 PX1 = os.environ.get("IRONMULE_GGML_PX1", "1") != "0"
 PX1_ROWS = int(os.environ.get("IRONMULE_GGML_PX1_ROWS", 32))
+PX2 = os.environ.get("IRONMULE_GGML_PX2", "1") != "0"
+PX2_MARGIN_S = float(os.environ.get("IRONMULE_GGML_PX2_MARGIN_MS", 2)) / 1000
 
 
-def split_passes(seq_rows: dict[int, int], n_ubatch: int) -> int:
-    """PX1: how many passes llama.cpp's sequential split_equal makes of a packed call ({sequence id: rows})."""
+def split_shapes(seq_rows: dict[int, int], n_ubatch: int) -> list[int]:
+    """PX1: the rows of every pass llama.cpp's sequential split_equal makes of a packed call ({sequence id: rows})."""
     left = {s: r for s, r in seq_rows.items() if r > 0}
-    passes = 0
+    shapes = []
     while left:
         ids = sorted(left)
         run = [ids[0]]
@@ -160,8 +169,43 @@ def split_passes(seq_rows: dict[int, int], n_ubatch: int) -> int:
             left[s] -= step
             if left[s] <= 0:
                 del left[s]
-        passes += 1
-    return passes
+        shapes.append(step * len(run))
+    return shapes
+
+
+def split_passes(seq_rows: dict[int, int], n_ubatch: int) -> int:
+    """PX1: how many passes llama.cpp's sequential split_equal makes of a packed call ({sequence id: rows})."""
+    return len(split_shapes(seq_rows, n_ubatch))
+
+
+class PassCosts:
+    """PX2: seconds of one native pass of `rows` rows on this machine, interpolated between measured sizes ({rows:
+    seconds}); beyond the largest one, extended with the slope of the last two."""
+
+    def __init__(self, points: dict[int, float]):
+        self.points = sorted((int(r), float(t)) for r, t in points.items() if r > 0 and t > 0)
+        if len(self.points) < 2:
+            raise ValueError("pass costs need at least two measured sizes")
+
+    def __call__(self, rows: int) -> float:
+        pts = self.points
+        if rows <= pts[0][0]:
+            return pts[0][1]
+        for (r0, t0), (r1, t1) in zip(pts, pts[1:]):
+            if rows <= r1:
+                return t0 + (t1 - t0) * (rows - r0) / (r1 - r0)
+        (r0, t0), (r1, t1) = pts[-2], pts[-1]
+        return t1 + max(0.0, (t1 - t0) / (r1 - r0)) * (rows - r1)
+
+    def split(self, shapes: Sequence[int]) -> float:
+        return sum(self(r) for r in shapes)
+
+
+# BF1 (2026-11-25): a native call of BF1_ROWS rows or more fills llama.cpp's batch with numpy array copies instead of a
+# Python loop over its ctypes arrays (A100 pods 32/33: 13-16 ms of host batch build before every 32-client prefill of
+# about 7,500 rows); the rows point into one contiguous sequence-id array of the engine's own. "0" keeps the loop.
+BF1 = os.environ.get("IRONMULE_GGML_BF1", "1") != "0"
+BF1_ROWS = 64
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default
 TRACE = os.environ.get("IRONMULE_GGML_TRACE", "")
@@ -707,6 +751,11 @@ class GgmlEngine:
             self.kg = self.measure_kg(KG_LIB)
         trace_note("init measure_pk2 begin")
         self.pk2: dict[str, Any] = self.measure_pk2() if PK2_AUTO and getattr(self, "pack", False) else {}
+        self.pass_costs: PassCosts | None = None
+        if (PX1 and PX2 and getattr(self, "pack", False) and self.gpu_layers and model is None
+                and not getattr(self, "settings", {}).get("kv_unified", True)):
+            trace_note("init measure_passes begin")
+            self.pass_costs = self.measure_pass_costs()
         trace_note("init measure_padding begin")
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
@@ -852,6 +901,42 @@ class GgmlEngine:
         return {"min_rows": chosen, "reason": reason, "rows": sum(len(job.ids) for _, job, _ in group),
                 "calibration": "mix" if mix else "equal",
                 "burst_ms": {str(t): round(1000 * v, 1) for t, v in med.items()}}
+
+    def measure_pass_costs(self, repeats: int = 3) -> PassCosts | None:
+        """PX2: the seconds of one native pass of t prompt rows (one sequence after a 64-token prefix, logits on its
+        last row only, as a prefill pass asks), median of `repeats` after one warm call, for small passes (1-32 rows),
+        both sides of PK2's cuBLAS threshold and two large passes. None where it cannot be measured; PX1's fixed limit
+        then decides."""
+        threshold = int((getattr(self, "pk2", None) or {}).get("min_rows") or 0)
+        room = min(self.seq_ctx, getattr(self, "batch_cap", self.seq_ctx)) - 64 - 8
+        large = max(256, 2 * threshold)
+        counts = {1, 8, 16, 32, large, 4 * large}
+        if threshold > 33:
+            counts |= {threshold - 1, threshold}
+        counts = sorted(t for t in counts if t <= room)
+        if len(counts) < 4:
+            return None
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        points: dict[int, float] = {}
+        try:
+            self._clear()
+            self._decode([(bos, j, 0, j == 63) for j in range(64)])
+            for t in counts:
+                times = []
+                for _ in range(repeats + 1):
+                    started = time.perf_counter()
+                    self._decode([(bos, 64 + j, 0, j == t - 1) for j in range(t)])
+                    times.append(time.perf_counter() - started)
+                    self.L.llama_memory_seq_rm(self.memory, 0, 64, -1)
+                points[t] = sorted(times[1:])[len(times[1:]) // 2]
+            costs = PassCosts(points)
+        except Exception:  # noqa: BLE001 - PX1's fixed limit decides without it
+            return None
+        finally:
+            self._clear()
+        if TRACE:
+            trace_note("pass_costs " + json.dumps({str(r): round(1000 * t, 2) for r, t in points.items()}))
+        return costs
 
     def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:
         """KG1: the step for 1-8 tokens (KG4: and 16, 24, 32) with the generated kernels on and off (alternating, median
@@ -1051,6 +1136,7 @@ class GgmlEngine:
         self.seqs, self.seq_ctx = seqs, seq_ctx
         self.batch_cap = max(logical, self.max_rows)
         self.batch = L.llama_batch_init(self.batch_cap, 0, seqs)
+        self._bf1 = self._bf1_views(self.batch, self.batch_cap)
         self.policy = StepPolicy(self.max_rows) if self.speculate else None
         if self.speculate and COLLECTIVE and getattr(self, "collective", None) is None:
             from .speculation import CollectiveIndex
@@ -1204,11 +1290,40 @@ class GgmlEngine:
             return out
         return self._decode_once(rows, evict=evict)
 
+    def _bf1_views(self, batch: Any, cap: int) -> dict[str, Any] | None:
+        """BF1: numpy views of the batch's arrays, and one contiguous sequence-id array the rows point into."""
+        import ctypes
+
+        np = self.np
+        try:
+            # llama.cpp's own per-row arrays (their addresses: an indexed pointer is a view of its slot), given back
+            # before its free
+            own = [ctypes.cast(batch.seq_id[i], ctypes.c_void_p).value for i in range(cap)]
+            seq = np.zeros(cap, dtype=np.int32)
+            base = seq.ctypes.data
+            kind = type(batch.seq_id[0])
+            for i in range(cap):
+                batch.seq_id[i] = ctypes.cast(base + 4 * i, kind)
+            return {"own": own, "seq": seq,
+                    "token": np.ctypeslib.as_array(batch.token, shape=(cap,)),
+                    "pos": np.ctypeslib.as_array(batch.pos, shape=(cap,)),
+                    "n_seq": np.ctypeslib.as_array(batch.n_seq_id, shape=(cap,)),
+                    "logits": np.ctypeslib.as_array(batch.logits, shape=(cap,))}
+        except Exception:  # noqa: BLE001 - the per-row loop fills it
+            return None
+
     def _decode_once(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         b = self._batch_for(len(rows))
-        for i, (token, pos, seq, logits) in enumerate(rows):
-            b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
-            b.seq_id[i][0] = seq
+        views = getattr(self, "_bf1", None)
+        if views is not None and BF1 and len(rows) >= BF1_ROWS:  # BF1: a large call's rows in four array copies
+            n = len(rows)
+            table = self.np.array(rows, dtype=self.np.int64).reshape(n, 4)
+            views["token"][:n], views["pos"][:n], views["seq"][:n] = table[:, 0], table[:, 1], table[:, 2]
+            views["n_seq"][:n], views["logits"][:n] = 1, table[:, 3]
+        else:
+            for i, (token, pos, seq, logits) in enumerate(rows):
+                b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
+                b.seq_id[i][0] = seq
         built = time.monotonic_ns() if TRACE else 0  # PF2 (trace only)
         am = getattr(self, "_argmax_only", None)
         if am is not None:  # AM1: only each output row's argmax leaves the GPU
@@ -1371,7 +1486,8 @@ class GgmlEngine:
         return picks
 
     def _even_reuse(self, group: list[tuple[int, Job, int]]) -> list[tuple[int, Job, int]]:
-        """PX1: the same kept prefix in every stream of a packed group, when that saves llama.cpp passes."""
+        """PX1: cut the kept prefixes of a packed group to one level, when that saves llama.cpp passes; PX2: the level
+        whose passes the measured pass costs price lowest (recomputed rows included)."""
         on = getattr(self, "px1", PX1)
         if (not on and not TRACE) or len(group) < 2:
             return group
@@ -1380,25 +1496,46 @@ class GgmlEngine:
         if low == max(keeps) or sum(len(job.ids) - keep for _, job, keep in group) > self.batch_cap:
             return group  # nothing to even out, or the group spans several calls (each split on its own)
         ubatch = UBATCH or 512
-        now = split_passes({seq: len(job.ids) - keep for seq, job, keep in group}, ubatch)
-        even = split_passes({seq: len(job.ids) - low for seq, job, _ in group}, ubatch)
-        extra = sum(keep - low for keep in keeps)
-        trace_note(f"px1 passes {now} even {even} extra {extra} on {int(bool(on))}")
-        if not on or even >= now or extra > PX1_ROWS * (now - even):
+
+        def shapes_at(level: int) -> list[int]:
+            return split_shapes({seq: len(job.ids) - min(keep, level) for seq, job, keep in group}, ubatch)
+
+        now_shapes = shapes_at(max(keeps))
+        now = len(now_shapes)
+        costs = getattr(self, "pass_costs", None)
+        if costs is not None and getattr(self, "px2", PX2):
+            now_s = costs.split(now_shapes)
+            level, best_s = max(keeps), now_s
+            for candidate in sorted(set(keeps))[:-1]:  # every lower level the group's own prefixes offer
+                cost = costs.split(shapes_at(candidate))
+                if cost < best_s:
+                    level, best_s = candidate, cost
+            even = len(shapes_at(level))
+            extra = sum(max(0, keep - level) for keep in keeps)
+            take = level < max(keeps) and now_s - best_s >= PX2_MARGIN_S
+            trace_note(f"px1 passes {now} even {even} extra {extra} on {int(bool(on))} level {level} "
+                       f"cost_ms {1000 * now_s:.1f} {1000 * best_s:.1f} model px2")
+        else:
+            level = low
+            even = split_passes({seq: len(job.ids) - low for seq, job, _ in group}, ubatch)
+            extra = sum(keep - low for keep in keeps)
+            take = even < now and extra <= PX1_ROWS * (now - even)
+            trace_note(f"px1 passes {now} even {even} extra {extra} on {int(bool(on))}")
+        if not on or not take:
             return group
         out = []
         for seq, job, keep in group:
-            if keep > low:
-                if low == 0 or not self.L.llama_memory_seq_rm(self.memory, seq, low, -1):
+            if keep > level:
+                if level == 0 or not self.L.llama_memory_seq_rm(self.memory, seq, level, -1):
                     self.L.llama_memory_seq_rm(self.memory, seq, -1, -1)
-                    if low > 0:  # the stream could not be cut at `low`: it starts empty, the rest stay even
+                    if level > 0:  # the stream could not be cut at `level`: it starts empty, the rest stay even
                         self.reused_tokens -= keep
                         job.reused = 0
                         out.append((seq, job, 0))
                         continue
-                self.reused_tokens -= keep - low
-                job.reused = low
-            out.append((seq, job, low))
+                self.reused_tokens -= keep - level
+                job.reused = level
+            out.append((seq, job, min(keep, level)))
         self.px1_evened = getattr(self, "px1_evened", 0) + 1
         return out
 
@@ -1940,7 +2077,10 @@ class GgmlEngine:
                                   "prompts": self.prefill_batch_prompts, "rows": self.prefill_batch_rows},
                 **({"pack": {"calls": self.pack_calls, "prompts": self.pack_prompts, "rows": self.pack_rows,
                              "ubatch": UBATCH or 512, "batch": self.batch_cap,
-                             "pk2": getattr(self, "pk2", {})}} if self.pack else {}),
+                             "pk2": getattr(self, "pk2", {}),
+                             "px1_evened": getattr(self, "px1_evened", 0),
+                             **({"pass_ms": {str(r): round(1000 * t, 2) for r, t in self.pass_costs.points}}
+                                if getattr(self, "pass_costs", None) is not None else {})}} if self.pack else {}),
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
@@ -1972,6 +2112,14 @@ class GgmlEngine:
     def close_context(self) -> None:
         """Free the context, its KV cache, batch and thread pool; the loaded model stays."""
         if getattr(self, "batch", None) is not None:
+            views = getattr(self, "_bf1", None)
+            if views is not None:  # BF1: llama.cpp frees the per-row sequence arrays it allocated
+                import ctypes
+
+                kind = type(self.batch.seq_id[0])
+                for i, address in enumerate(views["own"]):
+                    self.batch.seq_id[i] = ctypes.cast(address, kind)
+                self._bf1 = None
             self.L.llama_batch_free(self.batch)
             self.batch = None
         if getattr(self, "_threadpool", None) and getattr(self, "ctx", None):

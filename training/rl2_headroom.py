@@ -3575,6 +3575,9 @@ def analyse_ag5r(report: dict[str, Any], log: list[dict[str, Any]] | None = None
 def _ag5r_judge(report: dict[str, Any]) -> dict[str, Any]:
     """The end-of-run analysis with the stability log the run just wrote (rev 2: the analysis needs it)."""
     path = (DIAGNOSTICS / "ironmule-state" / "stability-log.jsonl") if DIAGNOSTICS is not None else None
+    from ironmule_product.serving_policy import flush_logs
+
+    flush_logs()  # ADM2: the lines this process wrote behind
     return analyse_ag5r(report, _read_jsonl(path) if path is not None else None)
 
 

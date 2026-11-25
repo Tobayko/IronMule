@@ -785,6 +785,10 @@ def serve(argv: list[str]) -> int:
             service.idle_task = IdleTuner(service, spec, lambda: MLXWorkerClient(
                 spec, execution_variant="current_engine", chat_reuse=args.chat_reuse,
                 thinking=not args.no_thinking, cuda_device=devices[0]), cuda_device=devices[0])
+        if os.environ.get("IRONMULE_LAB_SWITCH"):  # diagnostics: paired A/B switches (lab_switch.py)
+            from .lab_switch import start as lab_switch
+
+            lab_switch()
         server = create_server(service, host=args.host, port=args.port,
                                api_key=os.environ.get(args.api_key_env),
                                tls_cert=args.tls_cert, tls_key=args.tls_key)

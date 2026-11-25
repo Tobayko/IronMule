@@ -139,6 +139,9 @@ class World:
 
 def _rows(path: Path) -> list[dict]:
     """A JSON-lines file another process or thread is appending to: its complete lines only."""
+    from ironmule_product.serving_policy import flush_logs
+
+    flush_logs()  # ADM2: the service writes its log behind
     if not path.exists():
         return []
     text = path.read_text()

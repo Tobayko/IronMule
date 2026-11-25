@@ -10,6 +10,7 @@ from __future__ import annotations
 from http import HTTPStatus
 import ipaddress
 import json
+import os
 import re
 import secrets
 import socket
@@ -28,6 +29,12 @@ from .types import GenerationRequest, MAX_REQUEST_BYTES
 
 
 _SOCKET_TIMEOUT_SECONDS = 15.0
+# ADM1 (2026-11-25): a chat request asks the service whether it is ready through its `ready()` (the same answer as
+# health()["ready"]), not through the whole health report. health() reads the optimizer status and the settings under
+# file locks; on the A100 pods every one of a 32-client burst's requests did that on the serialised Python path before it
+# was admitted, and the burst that the client sent within 20-25 ms was admitted over about 110 ms. "0" restores the
+# health() call.
+_ADM1 = os.environ.get("IRONMULE_ADM1", "1") != "0"
 _MAX_ERROR_MESSAGE = 512
 _MAX_WORKERS = 64
 _DECIMAL = re.compile(r"^[0-9]+$")
@@ -403,6 +410,9 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         return GenerationRequest.from_payload(payload, exact=True)
 
     def _service_ready(self) -> bool:
+        ready = getattr(self.server.service, "ready", None) if _ADM1 else None
+        if callable(ready):  # ADM1
+            return ready() is True
         result = self.server.service.health()
         return isinstance(result, dict) and result.get("ready") is True
 

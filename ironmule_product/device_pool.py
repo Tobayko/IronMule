@@ -95,6 +95,9 @@ class _DeviceLog:
     def append(self, record: dict[str, Any]) -> None:
         self._log.append({**record, "device": self._device})
 
+    def flush(self) -> None:  # ADM2
+        self._log.flush()
+
 
 class DevicePool:
     """The `ProductService` surface the HTTP server uses, over one service per device."""
@@ -115,10 +118,10 @@ class DevicePool:
         self._lock = threading.Lock()  # placement only; each device's service keeps its own
         root = getattr(self.store, "root", None)
         if root is not None:
-            shared = ServingLog(root, 4 << 20, STABILITY_LOG)
+            shared = ServingLog(root, 4 << 20, STABILITY_LOG, deferred=True)  # ADM2
             for shard, device in zip(self.shards, self.devices):
                 shard.stability_log = _DeviceLog(shared, device)
-                shard.serving_log = ServingLog(root, name=f"serving-log.cuda-{device}.jsonl")
+                shard.serving_log = ServingLog(root, name=f"serving-log.cuda-{device}.jsonl", deferred=True)
 
     def attach(self, dispatch: Any) -> None:
         """LD1: place by the learned policy, and let each device order and size its groups by it."""
@@ -198,6 +201,10 @@ class DevicePool:
 
     def cancel(self, request_id: str) -> bool:
         return any(shard.cancel(request_id) for shard in self.shards)
+
+    def ready(self) -> bool:
+        """ADM1: health()["ready"] alone: whether any shard is ready."""
+        return any(shard.ready() for shard in self.shards)
 
     def health(self) -> dict[str, Any]:
         healths = [shard.health() for shard in self.shards]
