@@ -255,14 +255,17 @@ BF1_ROWS = 64
 # call into one: every projection and row-wise operation runs once over all prompt rows, attention per rectangle with
 # its own mask and streams. The second large pass of a 32-client wave (about 68 ms of fixed cost a cuBLAS pass on A100
 # pod 34) goes, and so does the reason to cut kept prefixes: PX1/PX2 keep every stream's own prefix while it is on.
-# The native library reads IRONMULE_PS1 on every call; "0" restores separate passes.
-PS1 = os.environ.get("IRONMULE_PS1", "1") != "0"
+# The native library reads IRONMULE_PS1 on every call. A100 pod 35: one process with fixed shapes -89.9 ms a 32-client
+# wave (10 of 10), 8 clients -50 ms; but in paired HTTP waves 3 of 16 merged prefills took about 0.45 s more (the
+# compute buffer regrown at a new maximum, the start's warm-up did not cover every shape), so the rule kept it out
+# (-82.5 ms median, 5 of 8 rounds). Off by default; "1" turns it on.
+PS1 = os.environ.get("IRONMULE_PS1", "0") == "1"
 os.environ["IRONMULE_PS1"] = "1" if PS1 else "0"
 # DH2 (2026-11-25): during decoding, the tokens' delivery (the worker's detokenizer and stream frames, about 0.6 ms for
 # 32 requests a step on A100 pod 34) runs on an emitter thread while the next native call runs (ctypes releases the
 # GIL there), instead of between two calls. Order per request is kept; the run waits for the emitter before it
-# returns. "0" delivers on the engine thread.
-DH2 = os.environ.get("IRONMULE_GGML_DH2", "1") != "0"
+# returns. A100 pod 35, paired 32-client waves: no gain (+13.8 and -0.6 ms medians), so off by default; "1" turns it on.
+DH2 = os.environ.get("IRONMULE_GGML_DH2", "0") == "1"
 # DH1 (diagnostics, with the trace only): IRONMULE_GGML_STEPPROF=1 notes the median host time of each part of a run's
 # full-width decode steps (pilot and admission, selection, drafts and rows, the native call, observers, accepting and
 # streaming the tokens, the rest) as one "# stepprof" line per run
