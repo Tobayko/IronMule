@@ -19,12 +19,12 @@ def main():
     p.add_argument("--steps", type=int, default=8)
     p.add_argument("--seqs", type=int, default=8)
     a = p.parse_args()
-    e = GgmlEngine(a.gguf, seqs=a.seqs, seq_ctx=1024, speculate=False, flash_attn=True)
+    e = GgmlEngine(a.gguf, seqs=a.seqs, seq_ctx=2048, speculate=False, flash_attn=True)
     text = " ".join(f"Site {1000 + j} measured {20 + j % 60} units, next {j * 7 % 13}." for j in range(400))
     ids = e.tokenize(text)
-    lengths = [33, 25, 33, 140, 133, 140, 33, 120][:a.seqs]
-    keeps = [3, 11, 0, 3, 12, 0, 5, 7][:a.seqs]
-    prompts = [ids[k * 37:k * 37 + n] for k, n in enumerate(lengths)]
+    lengths = ([33, 25, 33, 140, 133, 140, 33, 120] * 4)[:a.seqs]
+    keeps = ([3, 11, 0, 3, 12, 0, 5, 7, 1, 9, 2, 6, 4, 10, 8, 0] * 2)[:a.seqs]
+    prompts = [ids[k * 13:k * 13 + n] for k, n in enumerate(lengths)]
     e._clear()
     for s, (pr, kp) in enumerate(zip(prompts, keeps)):  # the kept prefixes, as an earlier request left them
         if kp:

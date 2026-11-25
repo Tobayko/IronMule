@@ -17,7 +17,7 @@
 >     while (i < ubatches.size()) {
 >         size_t   j = i;
 >         uint32_t n = 0;
->         while (j < ubatches.size() && n + ubatches[j].n_tokens <= n_ubatch && ubatches[j].embd == nullptr) {
+>         while (j < ubatches.size() && n + ubatches[j].n_tokens <= n_ubatch && ubatches[j].embd == nullptr && j - i < 16) {
 >             n += ubatches[j].n_tokens;
 >             ++j;
 >         }
