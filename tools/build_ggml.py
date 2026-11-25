@@ -93,7 +93,8 @@ PATCH_SETS = {
     # attention per rectangle); off unless IRONMULE_PS1=1
     "ps1": ([(f"src/{name}", f"{name}.diff") for name in ("llama-batch.h", "llama-kv-cache-unified.h",
                                                          "llama-kv-cache-unified.cpp", "llama-graph.h",
-                                                         "llama-graph.cpp", "llama-context.cpp")], []),  # after tl1
+                                                         "llama-graph.cpp", "llama-context.cpp")]
+            + [("ggml/src/ggml-alloc.c", "ggml-alloc.c.diff")], []),  # after tl1
 }
 
 

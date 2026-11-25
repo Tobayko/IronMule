@@ -1,0 +1,13 @@
+751a752,763
+>             // PS1 (IronMule, 2026-11-25): a merged prefill's per-rectangle masks make the compute buffer's need vary
+>             // from call to call; regrowing it by the exact need freed and allocated it again whenever a new maximum
+>             // came (A100 pod 35: 0.45 s more for 5 of 13 merged 32-client prefills). An existing buffer grows to
+>             // 1.5 times the need, so that later calls of similar shape fit.
+>             const char * ps1 = getenv("IRONMULE_PS1");
+>             if (ps1 && ps1[0] == '1' && cur_size > 0) {
+>                 new_size = new_size + new_size/2;
+>             }
+>             if (getenv("IRONMULE_PS1_LOG")) {
+>                 fprintf(stderr, "ps1: %s compute buffer %.1f -> %.1f MiB\n", ggml_backend_buft_name(galloc->bufts[i]),
+>                         cur_size / 1024.0 / 1024.0, new_size / 1024.0 / 1024.0);
+>             }

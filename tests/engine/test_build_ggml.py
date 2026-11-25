@@ -21,7 +21,8 @@ def test_patch_sets_are_complete_and_well_formed():
         for target, diff in diffs:
             text = (tool.PATCHES / name / diff).read_text()
             assert target.startswith(("ggml/src/ggml-cpu/", "ggml/src/ggml-cuda/", "src/llama-context.cpp", "src/unicode.cpp",
-                                      "src/llama-batch.h", "src/llama-kv-cache-unified.", "src/llama-graph."))
+                                      "src/llama-batch.h", "src/llama-kv-cache-unified.", "src/llama-graph.",
+                                      "ggml/src/ggml-alloc.c"))
             assert re.match(r"^\d+(,\d+)?[acd]\d+(,\d+)?$", text.splitlines()[0])  # a normal diff hunk header
         for header, target in headers:
             assert (tool.PATCHES / name / header).is_file() and target.endswith(header)
