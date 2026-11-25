@@ -105,6 +105,8 @@ Tested model families include Qwen 3, Gemma 3, Llama 3 and Mistral. Backend, mod
 
 ### Qwen3-32B on one A100 against vLLM
 
+> **Handover:** the current A100 state, defaults, reproduction, evidence and open points are in [docs/HANDOVER_A100.md](docs/HANDOVER_A100.md).
+
 On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`, and vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin on the same pod, one after the other. Both servers used the same HTTP client, prompts and seeds, with 32-token answers (2026-11-25, pod 37; IronMule's default build over two server starts, every wave counted).
 
 | Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, every wave) | vLLM 0.11.0, AWQ-Marlin |
@@ -112,7 +114,7 @@ On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B thro
 | 8 | median 195.6 (four waves) | 189.4 (median of two) |
 | 32 | 297.1 / 313.2 / 306.0 / 297.3 / 303.2 / 307.5 | 278.7 / 276.7 / 276.9 |
 
-- At 32 clients IronMule is 10.0% ahead (median 304.6 against 276.9 tok/s), just at the +10% goal (per server start 10.5% and 9.5%). At 8 clients IronMule leads by 3.3%. vLLM gives its first tokens earlier (median 1.8 against 2.3 s at 32 clients). On pod 36 the same comparison gave +9.2%, on pod 35 +7.7%.
+- At 32 clients IronMule is 10.0% ahead (median 304.6 against 276.9 tok/s), just at the +10% goal (per server start 10.5% and 9.5%). At 8 clients IronMule leads by 3.3%. vLLM gives its first tokens earlier (median 1.8 against 2.3 s at 32 clients). With the default of the time, pod 36 gave +9.2% (PS1 without PK6) and pod 35 +7.7% (PS1 off).
 - Both servers answered 18/18 factual check questions in every run, and IronMule passed its own perplexity quality gate on this machine.
 - On an earlier pod (pod 17) the two were level at 32 clients (292.2 against 292.6) and IronMule was level to 93% ahead for one client, depending on the prompt (it drafts from the context). [Pod 37](docs/LAB.md#2026-11-25-a100-pod-37-pk6-kept----3046-against-2769-toks-at-32-clients-1002--the-10--reached-by-its-rule) · [Pod 36](docs/LAB.md#2026-11-25-a100-pod-36-ps1s-slow-prefills-attributed-and-removed-ps1a-ps1-on-by-default-92--against-vllm) · [Pod 35](docs/LAB.md#2026-11-25-a100-pod-35-ps1-measured--90-ms-a-wave-in-one-process-outliers-over-http-rejected-by-the-rule-dh2-no-gain-77--against-vllm) · [Pod 34](docs/LAB.md#2026-11-25-a100-pod-34-adm1-and-adm2-kept----3121-against-2934-toks-at-32-clients-64--10--not-reached)
 

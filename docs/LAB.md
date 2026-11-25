@@ -4368,7 +4368,9 @@ stability logs, vLLM; the logits files of E left out, their comparison is in `pk
 
 - K against vLLM: 1.1002 (+10.02 %), the fixed criterion (>= 1.10) met; gap -0.3 ms a median wave (K 3.3615 s, vLLM
   3.698 s / 1.10 = 3.3618 s); by position 105.5 / -40.1 / -23.8 ms. The margin is nil: per start K1 1.105, K2 1.095.
-  R against vLLM on this pod 1.090 (pod 36: 1.056; pods differ by several percent for both engines). K against R
+  R against vLLM on this pod 1.090. Correction (2026-11-25, after the entry): pod 37's R had PS1 on, pod 36's R had
+  it off, so pod 36's 1.056 is not the comparable value and the two do not show a pod-to-pod spread; the comparable
+  previous default is pod 36's S, 1.092 against vLLM (300.0 / 274.8). K against R
   +0.9 % at 32 clients, +1.0 % at 8 clients; first-token p50 -32 ms. Not repeated (the rule allows one run).
 - First and later waves: K's first waves 297.1 / 297.3 (3.447 / 3.444 s), later 303.2-313.2 (3.270-3.377 s); R's
   first 293.7 / 293.4, later 299.8-308.5. The median is set by later waves, as before.
