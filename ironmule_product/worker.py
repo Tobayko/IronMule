@@ -826,14 +826,18 @@ class _DetokenizerPool:
                  else type(tokenizer))
         self._build = lambda: plain.detokenizer.fget(tokenizer)
         self._free: list[Any] = []
+        self._lock = threading.Lock()  # DH2: streams release on the engine's emitter thread, admissions acquire here
 
     def acquire(self) -> Any:
-        detokenizer = self._free.pop() if self._free else self._build()
+        with self._lock:
+            detokenizer = self._free.pop() if self._free else None
+        detokenizer = detokenizer if detokenizer is not None else self._build()
         detokenizer.reset()
         return detokenizer
 
     def release(self, detokenizer: Any) -> None:
-        self._free.append(detokenizer)
+        with self._lock:
+            self._free.append(detokenizer)
 
     def prepare(self, count: int) -> None:
         """GG2: build `count` detokenizers now, at the worker's start. Built on demand, the first block of eight

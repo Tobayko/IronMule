@@ -1,0 +1,8 @@
+55a56,62
+> 
+>     // PS1 (IronMule, 2026-11-25): a ubatch merged from the rectangular ubatches (segments) that one decode call's
+>     // sequential split_equal made: their tokens in order. The KV cache places and masks every segment as before; the
+>     // graph runs the projections once over all rows and attention per segment. Null for an ordinary ubatch.
+>     std::shared_ptr<std::vector<llama_ubatch>> ps1_segs;
+> 
+>     bool ps1() const { return ps1_segs != nullptr && ps1_segs->size() > 1; }

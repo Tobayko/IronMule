@@ -1393,6 +1393,8 @@ def test_px1_a_packed_group_keeps_the_same_prefix_when_that_saves_passes(monkeyp
     from ironmule import ggml_engine as ge
     from ironmule.ggml_engine import Job, split_passes
 
+    monkeypatch.setenv("IRONMULE_PS1", "0")  # PX1 decides only where the passes stay separate
+
     # llama.cpp's sequential split: equal lengths in consecutive streams make one pass, unequal ones several
     assert split_passes({0: 30, 1: 30, 2: 30}, 8192) == 1
     assert split_passes({0: 30, 1: 22, 2: 30}, 8192) == 3  # after 22, streams 0 and 2 are no longer consecutive
@@ -1461,6 +1463,8 @@ def _pod_pass_costs():
 def test_px2_prices_the_passes_each_kept_prefix_level_would_make(monkeypatch):
     from ironmule import ggml_engine as ge
     from ironmule.ggml_engine import Job, split_shapes
+
+    monkeypatch.setenv("IRONMULE_PS1", "0")
 
     monkeypatch.setattr(ge, "UBATCH", 8192)
     assert split_shapes({0: 33, 1: 25, 2: 33, 3: 444, 4: 436}, 8192) == [125, 8, 24, 806, 8]
@@ -1540,3 +1544,48 @@ def test_px2_measures_passes_of_its_own_sizes_with_logits_on_the_last_row(monkey
     assert all(rows == [len(fed[asked.index(rows)]) - 1] for rows in measured)  # logits on the last row only
     engine.seq_ctx = engine.batch_cap = 64  # no room for the sizes: PX1's fixed limit decides
     assert engine.measure_pass_costs(repeats=1) is None
+
+
+def test_ps1_keeps_every_kept_prefix_since_the_passes_share_one_call(monkeypatch):
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setenv("IRONMULE_PS1", "1")
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.batch_cap, engine.px1, engine.pass_costs = 8192, True, _pod_pass_costs()
+    group = [(0, Job(list(range(33)), 2), 3), (1, Job(list(range(33)), 2), 11), (2, Job(list(range(444)), 2), 3),
+             (3, Job(list(range(444)), 2), 11)]
+    assert engine._even_reuse(group) == group and removed == []  # nothing recomputed
+    monkeypatch.setenv("IRONMULE_PS1", "0")
+    assert [keep for _, _, keep in engine._even_reuse(group)] == [3, 3, 3, 3]  # separate passes: PX2 evens them
+
+
+def test_dh2_delivers_every_token_in_order_and_the_last_from_the_engine_thread(monkeypatch):
+    import threading
+
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "DH2", True)
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.gpu_layers = 1
+    seen: dict[int, list[tuple[int, bool]]] = {0: [], 1: []}
+    main = threading.get_ident()
+    jobs = []
+    for k in range(2):
+        job = Job([1, 2, 3 + k], 5)
+        job.emit = (lambda k: lambda token: seen[k].append((token, threading.get_ident() == main)))(k)
+        jobs.append(job)
+    out = engine.run(jobs)
+    assert [j.tokens for j in out] == [[7] * 5, [7] * 5]
+    assert [t for t, _ in seen[0]] == [7] * 5 and [t for t, _ in seen[1]] == [7] * 5  # all delivered, in order
+    assert seen[0][-1][1] and seen[1][-1][1]  # the last token (and its done frame) on the engine thread
+    assert not all(on_main for on_main, in [(m,) for _, m in seen[0][:-1]])  # the others on the emitter
+
+    broken = ge._Emitter()
+    broken.put(lambda token: 1 / 0, 7)
+    try:
+        broken.close()
+    except ZeroDivisionError:
+        pass
+    else:
+        raise AssertionError("a delivery error is raised by close()")

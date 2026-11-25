@@ -4105,3 +4105,42 @@ missing solution is a prefill whose matmuls run once over all rows of both passe
 per-stream shapes (a llama.cpp graph and KV-view change), worth about 68 ms; with the remaining decode host time
 (about 20 ms) and wave end (about 15 ms) that still leaves the decode step itself, 30.0 ms at 32 rows against
 vLLM's 22.7 ms step period, as the lever that closes the rest.
+
+### 2026-11-25, before pod 35: the starting point, PS1 (one native pass for a packed prefill) and DH2 prepared
+Starting point, two configurations (Qwen3-32B Q4_K_M, A100 SXM4 80 GB, pod 34):
+- Measured over HTTP as "F" (+6.4 % against vLLM, 312.1 against 293.4 tok/s): `IRONMULE_ADM1=1 IRONMULE_ADM2=1
+  IRONMULE_GGML_BF1=1 IRONMULE_GGML_PX2=0`, everything else at its 11f00e4 default.
+- The 11f00e4 default: ADM1, ADM2, BF1 and PX2 on. PX2 was measured on top of F only in paired waves (-9.2 ms, 11 of
+  12), not in the fresh-start HTTP benchmark. Gap of F to vLLM / 1.10, paired by position: 174 / 109 / 95 ms.
+  Pod 35's reference arm R is this default; its final arm runs the default build with nothing set by environment.
+
+PS1 (`native/ggml_patches/ps1`, every build; `IRONMULE_PS1`, read by the native library on every call, set by the engine
+from its own default): llama.cpp's KV cache (unified-cache class, multi-stream mode) merges the rectangular ubatches
+that one decode call's sequential split made into one ubatch, after `prepare()` placed every rectangle as before. The
+graph then runs embedding, norms, projections, RoPE, FFN and the output once over all rows; attention runs per
+rectangle on its rows of Q (a contiguous slice), its streams' K / V views and its own mask (filled after every
+rectangle's cells were placed, so a stream split over two rectangles sees its earlier tokens and not its later ones).
+With flash attention the rectangles write their outputs into one tensor of all rows (the FA results are views of it,
+no copy); `IRONMULE_PS1_CONCAT=1` joins them with `ggml_concat` instead (diagnostics). Attention work is the same as
+with separate passes (the same rectangles); the merged ubatch never exceeds n_ubatch; graphs are not reused across it.
+Merging needs an untransposed V cache (flash attention) and `ggml_set_rows`; elsewhere nothing changes. With PS1 on,
+PX1/PX2 no longer cut kept prefixes: the trace notes the prefix rows kept, the rows computed and the rectangles.
+- CPU build, Qwen3-0.6B Q4_K_M, 8 KV streams with prompts of 25-140 tokens and kept prefixes of 0-12, one packed call
+  of 616 rows (merged into 6 + 2 rectangles at n_ubatch 512) and 8 decode steps (`lab/ps1/check.py`): logits of every
+  output row bit-identical to separate passes (max |diff| 0.0), with the view and the concat variant; tokens equal.
+- The patch applies to a fresh 0.3.16 tree with every other patch (CPU and CUDA sets).
+- Hypothesis for the GPU, to be confirmed: one cuBLAS pass of fixed cost (about 68 ms on pod 34, mostly the Q4_K ->
+  fp16 dequantisation per pass) less a wave, and the 60-160 template rows PX1/PX2 recompute kept instead.
+
+DH2 (`IRONMULE_GGML_DH2`, GPU engines): during a run the tokens' delivery (the worker's `_BatchStream.on_token`:
+detokenizer, frame, queue; 0.53-0.68 ms a 32-row step on pod 34) goes to an emitter thread that runs while the next
+native call holds no GIL, in order per request; a request's last token (its done frame reads engine state) is
+delivered on the engine thread after the emitter drained; the run drains it before it returns. The worker's
+detokenizer pool takes a lock. Upper bound about 0.6 ms x 31 steps = 19 ms a wave.
+
+The decode path from logits to token, checked first (pod 33 TL1 timestamps, 205 calls of 32 rows): AM1 already picks
+the argmax on the GPU and copies one index per output row; inside the native call 0.10 ms split, 0.21 ms inputs
+(the KQ mask), 0.61 ms graph launch, 28.84 ms waiting for the GPU and the copy; after it 0.75 ms of Python (DH1). No
+further logit transfer to remove; DH2 takes the largest part that can overlap without a new graph structure.
+
+Session `lab/ps1/a100_ps1.sh` with its rules fixed in the file before the pod.

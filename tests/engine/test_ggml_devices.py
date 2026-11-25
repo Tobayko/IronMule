@@ -69,7 +69,7 @@ def test_hip_build_uses_local_upstream_backend_and_excludes_cuda_patches(monkeyp
     monkeypatch.setattr(build_ggml, "patch", lambda tree, names: calls.append(names) or names)
     monkeypatch.setattr(build_ggml, "run", lambda cmd, **kw: calls.append(cmd))
     build_ggml.main(["--dest", str(tmp_path), "--rocm", "gfx1100,gfx942"])
-    assert calls[0] == ["fa1", "row1", "am1", "tk1", "tl1"]  # tk1 (the tokenizer) is not CUDA code
+    assert calls[0] == ["fa1", "row1", "am1", "tk1", "tl1", "ps1"]  # tk1 (the tokenizer) is not CUDA code
     assert "-DGGML_HIP=ON" in calls[1] and "-DAMDGPU_TARGETS=gfx1100;gfx942" in calls[1]
     assert "-DGGML_CUDA=ON" not in calls[1]
     with pytest.raises(SystemExit):

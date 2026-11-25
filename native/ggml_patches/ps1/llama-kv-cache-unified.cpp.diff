@@ -1,0 +1,154 @@
+9a10
+> #include <cstdlib>
+515a517,523
+>         if (n_stream > 1 && ubatches.size() > 1 && supports_set_rows && !v_trans) {  // PS1 (IronMule)
+>             const char * ps1 = getenv("IRONMULE_PS1");  // read per call: a lab switch may flip it while serving
+>             if (ps1 && ps1[0] == '1') {
+>                 ps1_merge(ubatches, sinfos, n_ubatch);
+>             }
+>         }
+> 
+522a531,626
+> void llama_kv_cache_unified::ps1_merge(std::vector<llama_ubatch> & ubatches, slot_info_vec_t & sinfos, uint32_t n_ubatch) {
+>     std::vector<llama_ubatch> out_ub;
+>     slot_info_vec_t           out_si;
+> 
+>     size_t i = 0;
+>     while (i < ubatches.size()) {
+>         size_t   j = i;
+>         uint32_t n = 0;
+>         while (j < ubatches.size() && n + ubatches[j].n_tokens <= n_ubatch && ubatches[j].embd == nullptr) {
+>             n += ubatches[j].n_tokens;
+>             ++j;
+>         }
+>         if (j <= i + 1) {  // a lone rectangle (or one that does not fit with the next) stays as it is
+>             out_ub.push_back(std::move(ubatches[i]));
+>             out_si.push_back(std::move(sinfos[i]));
+>             ++i;
+>             continue;
+>         }
+> 
+>         auto segs  = std::make_shared<std::vector<llama_ubatch>>();
+>         auto udata = std::make_shared<llama_ubatch::data_t>();
+>         udata->token   .reserve(n);
+>         udata->pos     .reserve(n);
+>         udata->n_seq_id.reserve(n);
+>         udata->seq_id  .reserve(n);
+>         udata->output  .reserve(n);
+>         udata->seq_idx .resize(LLAMA_MAX_SEQ, -1);
+> 
+>         slot_info merged = {
+>             /*.s0   =*/ LLAMA_MAX_SEQ,
+>             /*.s1   =*/ 0,
+>             /*.strm =*/ { },
+>             /*.idxs =*/ { },
+>         };
+> 
+>         for (size_t k = i; k < j; ++k) {
+>             const auto & ub = ubatches[k];
+>             udata->token   .insert(udata->token   .end(), ub.token,    ub.token    + ub.n_tokens);
+>             udata->pos     .insert(udata->pos     .end(), ub.pos,      ub.pos      + ub.n_tokens);
+>             udata->n_seq_id.insert(udata->n_seq_id.end(), ub.n_seq_id, ub.n_seq_id + ub.n_tokens);
+>             udata->seq_id  .insert(udata->seq_id  .end(), ub.seq_id,   ub.seq_id   + ub.n_tokens);
+>             udata->output  .insert(udata->output  .end(), ub.output,   ub.output   + ub.n_tokens);
+>             for (uint32_t s = 0; s < ub.n_seqs_unq; ++s) {
+>                 const llama_seq_id sid = ub.seq_id_unq[s];
+>                 if (udata->seq_idx[sid] < 0) {
+>                     udata->seq_idx[sid] = 0;
+>                     udata->seq_id_unq.push_back(sid);
+>                 }
+>             }
+>             merged.s0 = std::min(merged.s0, sinfos[k].s0);
+>             merged.s1 = std::max(merged.s1, sinfos[k].s1);
+>             merged.ps1_segs.push_back(std::move(sinfos[k]));
+>             segs->push_back(std::move(ubatches[k]));
+>         }
+>         std::sort(udata->seq_id_unq.begin(), udata->seq_id_unq.end());
+>         for (size_t s = 0; s < udata->seq_id_unq.size(); ++s) {
+>             udata->seq_idx[udata->seq_id_unq[s]] = (int32_t) s;
+>         }
+> 
+>         llama_ubatch res {
+>             /*.b_equal_seqs =*/ (*segs)[0].b_equal_seqs,
+>             /*.n_tokens     =*/ n,
+>             /*.n_seq_tokens =*/ (*segs)[0].n_seq_tokens,
+>             /*.n_seqs       =*/ (*segs)[0].n_seqs,
+>             /*.n_seqs_unq   =*/ (uint32_t) udata->seq_id_unq.size(),
+> 
+>             /*.token        =*/ udata->token.data(),
+>             /*.embd         =*/ nullptr,
+>             /*.pos          =*/ udata->pos.data(),
+>             /*.n_seq_id     =*/ udata->n_seq_id.data(),
+>             /*.seq_id       =*/ udata->seq_id.data(),
+>             /*.seq_id_unq   =*/ udata->seq_id_unq.data(),
+>             /*.seq_idx      =*/ udata->seq_idx.data(),
+>             /*.output       =*/ udata->output.data(),
+>             /*.data         =*/ std::move(udata),
+>         };
+>         res.ps1_segs = std::move(segs);
+> 
+>         static const bool ps1_log = getenv("IRONMULE_PS1_LOG") != nullptr;
+>         if (ps1_log) {
+>             fprintf(stderr, "ps1: merged %zu segments, %u rows:", j - i, n);
+>             for (const auto & seg : *res.ps1_segs) {
+>                 fprintf(stderr, " %ux%u", seg.n_seqs_unq, seg.n_tokens/std::max<uint32_t>(1, seg.n_seqs_unq));
+>             }
+>             fprintf(stderr, "\n");
+>         }
+> 
+>         out_ub.push_back(std::move(res));
+>         out_si.push_back(std::move(merged));
+>         i = j;
+>     }
+> 
+>     ubatches = std::move(out_ub);
+>     sinfos   = std::move(out_si);
+> }
+> 
+1222a1327,1345
+>     if (ubatch->ps1()) {  // PS1: every segment's rows at its offset
+>         GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
+>         int64_t * data = (int64_t *) dst->data;
+>         const auto & segs = *ubatch->ps1_segs;
+>         size_t off = 0;
+>         for (size_t g = 0; g < segs.size(); ++g) {
+>             const auto & si = sinfo.ps1_segs[g];
+>             GGML_ASSERT(segs[g].n_tokens == (int64_t) si.size()*si.n_stream());
+>             for (uint32_t s = 0; s < si.n_stream(); ++s) {
+>                 const int64_t offs = si.strm[s]*get_size();
+>                 for (uint32_t i = 0; i < si.size(); ++i) {
+>                     data[off + s*si.size() + i] = offs + si.idxs[s][i];
+>                 }
+>             }
+>             off += segs[g].n_tokens;
+>         }
+>         return;
+>     }
+> 
+1242a1366,1371
+>     if (ubatch->ps1()) {  // PS1: every segment's rows at its offset (the V cache is not transposed with FA)
+>         GGML_ASSERT(!v_trans && "PS1 needs flash attention (an untransposed V cache)");
+>         set_input_k_idxs(dst, ubatch, sinfo);
+>         return;
+>     }
+> 
+2338c2467,2474
+<     kv->apply_ubatch(sinfos[i_cur], ubatches[i_cur]);
+---
+>     if (ubatches[i_cur].ps1()) {  // PS1: every segment in order, as the separate ubatches were
+>         const auto & segs = *ubatches[i_cur].ps1_segs;
+>         for (size_t g = 0; g < segs.size(); ++g) {
+>             kv->apply_ubatch(sinfos[i_cur].ps1_segs[g], segs[g]);
+>         }
+>     } else {
+>         kv->apply_ubatch(sinfos[i_cur], ubatches[i_cur]);
+>     }
+2368a2505,2512
+> }
+> 
+> ggml_tensor * llama_kv_cache_unified_context::get_k_seg(ggml_context * ctx, int32_t il, size_t g) const {
+>     return kv->get_k(ctx, il, n_kv, sinfos[i_cur].ps1_segs.at(g));
+> }
+> 
+> ggml_tensor * llama_kv_cache_unified_context::get_v_seg(ggml_context * ctx, int32_t il, size_t g) const {
+>     return kv->get_v(ctx, il, n_kv, sinfos[i_cur].ps1_segs.at(g));

@@ -89,6 +89,11 @@ PATCH_SETS = {
     "gr4": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after em1
     "qk1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr4
     "pd1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after qk1
+    # PS1 (2026-11-25): one decode call's rectangular ubatches merged into one (projections once over all rows,
+    # attention per rectangle); off unless IRONMULE_PS1=1
+    "ps1": ([(f"src/{name}", f"{name}.diff") for name in ("llama-batch.h", "llama-kv-cache-unified.h",
+                                                         "llama-kv-cache-unified.cpp", "llama-graph.h",
+                                                         "llama-graph.cpp")], []),
 }
 
 
@@ -200,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1", "tl1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1", "tl1", "ps1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

@@ -154,6 +154,49 @@ PX2 = os.environ.get("IRONMULE_GGML_PX2", "1") != "0"
 PX2_MARGIN_S = float(os.environ.get("IRONMULE_GGML_PX2_MARGIN_MS", 2)) / 1000
 
 
+class _Emitter:
+    """DH2: calls each `emit(token)` in the order given, on one thread, while the engine thread runs native calls."""
+
+    def __init__(self) -> None:
+        import queue
+
+        self._queue: "queue.SimpleQueue[Any]" = queue.SimpleQueue()
+        self.error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, name="ironmule-emitter", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            if isinstance(item, threading.Event):  # drain(): everything before it is delivered
+                item.set()
+                continue
+            emit, token = item
+            try:
+                emit(token)
+            except BaseException as exc:  # noqa: BLE001 - raised by close() on the engine thread
+                if self.error is None:
+                    self.error = exc
+
+    def put(self, emit: Callable[[int], Any], token: int) -> None:
+        self._queue.put((emit, token))
+
+    def drain(self) -> None:
+        """Return once every token handed over so far is delivered."""
+        done = threading.Event()
+        self._queue.put(done)
+        done.wait()
+
+    def close(self) -> None:
+        """Every token handed over is delivered once this returns; the first delivery error is raised here."""
+        self._queue.put(None)
+        self._thread.join()
+        if self.error is not None:
+            raise self.error
+
+
 def split_shapes(seq_rows: dict[int, int], n_ubatch: int) -> list[int]:
     """PX1: the rows of every pass llama.cpp's sequential split_equal makes of a packed call ({sequence id: rows})."""
     left = {s: r for s, r in seq_rows.items() if r > 0}
@@ -208,6 +251,18 @@ class PassCosts:
 # 34: -33.1 ms a 32-client wave together). "0" keeps the loop.
 BF1 = os.environ.get("IRONMULE_GGML_BF1", "1") != "0"
 BF1_ROWS = 64
+# PS1 (2026-11-25): with one KV stream per sequence, llama.cpp (patch ps1) merges the rectangular ubatches of one packed
+# call into one: every projection and row-wise operation runs once over all prompt rows, attention per rectangle with
+# its own mask and streams. The second large pass of a 32-client wave (about 68 ms of fixed cost a cuBLAS pass on A100
+# pod 34) goes, and so does the reason to cut kept prefixes: PX1/PX2 keep every stream's own prefix while it is on.
+# The native library reads IRONMULE_PS1 on every call; "0" restores separate passes.
+PS1 = os.environ.get("IRONMULE_PS1", "1") != "0"
+os.environ["IRONMULE_PS1"] = "1" if PS1 else "0"
+# DH2 (2026-11-25): during decoding, the tokens' delivery (the worker's detokenizer and stream frames, about 0.6 ms for
+# 32 requests a step on A100 pod 34) runs on an emitter thread while the next native call runs (ctypes releases the
+# GIL there), instead of between two calls. Order per request is kept; the run waits for the emitter before it
+# returns. "0" delivers on the engine thread.
+DH2 = os.environ.get("IRONMULE_GGML_DH2", "1") != "0"
 # DH1 (diagnostics, with the trace only): IRONMULE_GGML_STEPPROF=1 notes the median host time of each part of a run's
 # full-width decode steps (pilot and admission, selection, drafts and rows, the native call, observers, accepting and
 # streaming the tokens, the rest) as one "# stepprof" line per run
@@ -1497,6 +1552,12 @@ class GgmlEngine:
         on = getattr(self, "px1", PX1)
         if (not on and not TRACE) or len(group) < 2:
             return group
+        if os.environ.get("IRONMULE_PS1") == "1":  # PS1: one pass whatever the prefixes; keep them all
+            if TRACE:
+                keeps = [keep for _, _, keep in group]
+                trace_note(f"px1 ps1 keep {sum(keeps)} rows {sum(len(job.ids) - k for _, job, k in group)} "
+                           f"passes {split_passes({seq: len(job.ids) - k for seq, job, k in group}, UBATCH or 512)}")
+            return group
         keeps = [keep for _, _, keep in group]
         low = min(keeps)
         if low == max(keeps) or sum(len(job.ids) - keep for _, job, keep in group) > self.batch_cap:
@@ -1613,6 +1674,7 @@ class GgmlEngine:
         admission_observer = getattr(self, "admission_observer", None)
         cohort = None
         active: dict[int, Job] = {}
+        emitter = _Emitter() if DH2 and self.gpu_layers else None  # DH2
 
         def finish(seq: int, job: Job, reason: str, keep: bool = True) -> None:
             job.reason, job.finished_ns = reason, time.monotonic_ns()
@@ -1658,7 +1720,12 @@ class GgmlEngine:
             if job.first_ns == 0:
                 job.first_ns = time.monotonic_ns()
             if job.emit is not None:
-                job.emit(token)
+                if emitter is not None and not self.eog(token) and len(job.tokens) < job.limit:
+                    emitter.put(job.emit, token)  # DH2: delivered while the next native call runs
+                else:
+                    if emitter is not None:  # a request's last token (its done frame reads the engine) goes from
+                        emitter.drain()  # this thread, after every earlier token
+                    job.emit(token)
             if self.eog(token):
                 finish(seq, job, "eos")
                 return True
@@ -2064,6 +2131,12 @@ class GgmlEngine:
                 scope.end()
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
+            if emitter is not None:  # DH2: every token delivered before the run returns
+                try:
+                    emitter.close()
+                except BaseException:
+                    if sys.exc_info()[0] is None:
+                        raise
         if cohort is not None:
             started, group = cohort
             if all(j.reason in ("eos", "length") and started < j.first_ns <= j.finished_ns for j in group):

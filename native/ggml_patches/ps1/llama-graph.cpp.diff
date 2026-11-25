@@ -1,0 +1,80 @@
+300a301,308
+>     if (!ps1_masks.empty()) {  // PS1: each segment's mask from its own rectangle, after every segment was placed
+>         GGML_ASSERT(ubatch->ps1() && ubatch->ps1_segs->size() == ps1_masks.size());
+>         for (size_t g = 0; g < ps1_masks.size(); ++g) {
+>             mctx->set_input_kq_mask(ps1_masks[g], &(*ubatch->ps1_segs)[g], cparams.causal_attn);
+>         }
+>         return;
+>     }
+> 
+316a325,326
+>     res &= ps1_masks.empty() && !params.ubatch.ps1(); // PS1: a merged ubatch builds its own graph
+> 
+1420a1431,1441
+>         if (ubatch.ps1()) {  // PS1: one mask per segment
+>             for (const auto & seg : *ubatch.ps1_segs) {
+>                 const auto ns = cparams.kv_unified ? 1 : seg.n_seqs_unq;
+>                 ggml_tensor * m = ggml_new_tensor_4d(ctx0, GGML_TYPE_F32, n_kv, GGML_PAD(seg.n_tokens/ns, GGML_KQ_MASK_PAD), 1, ns);
+>                 ggml_set_input(m);
+>                 inp->ps1_masks.push_back(m);
+>                 inp->ps1_masks_cnv.push_back(cparams.flash_attn ? ggml_cast(ctx0, m, GGML_TYPE_F16) : m);
+>             }
+>             inp->self_kq_mask     = inp->ps1_masks[0];
+>             inp->self_kq_mask_cnv = inp->ps1_masks_cnv[0];
+>         } else {
+1424a1446
+>         }
+1467a1490,1537
+>     ggml_tensor * cur = nullptr;
+> 
+>     if (!inp->ps1_masks.empty()) {
+>         // PS1: attention per segment over its rows of Q (contiguous, segment after segment) and its streams' K / V;
+>         // with flash attention every segment writes its output into one tensor of all rows, without a copy
+>         const auto & segs = *ubatch.ps1_segs;
+>         const int64_t n_rows = q_cur->ne[2];
+>         const int64_t n_head = q_cur->ne[1];
+>         const int64_t d_v    = hparams.n_embd_head_v;
+>         const char *  concat = getenv("IRONMULE_PS1_CONCAT");  // diagnostics: the outputs joined by ggml_concat
+>         const bool    fa_ok  = cparams.flash_attn && kq_b == nullptr && v_mla == nullptr && (mctx_cur->get_n_kv() % 256 == 0)
+>                                && !(concat && concat[0] == '1');
+> 
+>         ggml_tensor * all = fa_ok ? ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, d_v*n_head, n_rows) : nullptr;
+> 
+>         int64_t off = 0;
+>         for (size_t g = 0; g < segs.size(); ++g) {
+>             const int64_t rows = segs[g].n_tokens;
+>             ggml_tensor * q = ggml_view_3d(ctx0, q_cur, q_cur->ne[0], q_cur->ne[1], rows, q_cur->nb[1], q_cur->nb[2], off*q_cur->nb[2]);
+>             ggml_tensor * k = mctx_cur->get_k_seg(ctx0, il, g);
+>             ggml_tensor * v = mctx_cur->get_v_seg(ctx0, il, g);
+> 
+>             if (fa_ok) {
+>                 const auto n_stream = k->ne[3];
+>                 q = ggml_reshape_4d(ctx0, q, q->ne[0], q->ne[1], q->ne[2]/n_stream, n_stream);
+>                 q = ggml_permute(ctx0, q, 0, 2, 1, 3);
+>                 k = ggml_permute(ctx0, k, 0, 2, 1, 3);
+>                 v = ggml_permute(ctx0, v, 0, 2, 1, 3);
+>                 ggml_tensor * fa = ggml_flash_attn_ext(ctx0, q, k, v, inp->ps1_masks_cnv[g], kq_scale, hparams.f_max_alibi_bias,
+>                                                        hparams.attn_soft_cap ? hparams.f_attn_logit_softcapping : 0.0f);
+>                 ggml_flash_attn_ext_set_prec(fa, GGML_PREC_F32);
+>                 GGML_ASSERT(ggml_nbytes(fa) == (size_t) rows*all->nb[1]);
+>                 // the output lives in `all` at this segment's rows; `all` is a source so that it is allocated first
+>                 fa->view_src  = all;
+>                 fa->view_offs = off*all->nb[1];
+>                 fa->src[GGML_MAX_SRC - 1] = all;
+>                 ggml_build_forward_expand(gf, fa);
+>             } else {
+>                 ggml_tensor * part = build_attn_mha(q, k, v, kq_b, inp->ps1_masks_cnv[g], v_mla, nullptr, kq_scale);
+>                 cur = cur == nullptr ? part : ggml_concat(ctx0, cur, part, 1);
+>             }
+>             off += rows;
+>         }
+>         GGML_ASSERT(off == n_rows);
+>         if (fa_ok) {
+>             cur = ggml_view_2d(ctx0, all, all->ne[0], all->ne[1], all->nb[1], 0);
+>         }
+>     } else {
+1472c1542,1543
+<     ggml_tensor * cur = build_attn_mha(q, k, v, kq_b, kq_mask, v_mla, nullptr, kq_scale);
+---
+>     cur = build_attn_mha(q, k, v, kq_b, kq_mask, v_mla, nullptr, kq_scale);
+>     }
