@@ -1,0 +1,6 @@
+579a580,584
+>         // IronMule PS1: a merged prefill's per-layer attention output (written by the segments' flash attention,
+>         // named "ps1_all") is allocated when its first reader runs and freed after its last, not for the whole graph
+>         if (strncmp(leaf->name, "ps1_all", 7) == 0) {
+>             continue;
+>         }

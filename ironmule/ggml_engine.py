@@ -260,8 +260,12 @@ BF1_ROWS = 64
 # compute buffer regrown at a new maximum, the start's warm-up did not cover every shape), so the rule kept it out
 # (-82.5 ms median, 5 of 8 rounds). Off by default; "1" turns it on.
 PS1 = os.environ.get("IRONMULE_PS1", "0") == "1"
+# Pod 36 attributed the 0.45 s: ggml-alloc placed every layer's merged attention output with the graph's leafs, so all
+# 64 were live at once (2.1 MB a row), and each new largest call reallocated the compute buffer (14.0 -> 18.7 GB, 0.38 s
+# of host time in the free and the allocation). Patch set ps1a allocates it at its first reader; the buffer then stays
+# at its start-up size and no warm-up is needed.
 # PS1's start-up prefill (ps1_warm_up): "2" one merged call of the full micro-batch, "1" the pod 35 run 3 form, "0" none
-PS1_WARM = os.environ.get("IRONMULE_PS1_WARM", "2")
+PS1_WARM = os.environ.get("IRONMULE_PS1_WARM", "0")
 os.environ["IRONMULE_PS1"] = "1" if PS1 else "0"
 # DH2 (2026-11-25): during decoding, the tokens' delivery (the worker's detokenizer and stream frames, about 0.6 ms for
 # 32 requests a step on A100 pod 34) runs on an emitter thread while the next native call runs (ctypes releases the

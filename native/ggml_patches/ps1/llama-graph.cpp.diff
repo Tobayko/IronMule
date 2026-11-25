@@ -24,7 +24,7 @@
 >         } else {
 1424a1446
 >         }
-1467a1490,1537
+1467a1490,1548
 >     ggml_tensor * cur = nullptr;
 > 
 >     if (!inp->ps1_masks.empty()) {
@@ -39,8 +39,12 @@
 >                                && !(concat && concat[0] == '1');
 > 
 >         ggml_tensor * all = fa_ok ? ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, d_v*n_head, n_rows) : nullptr;
+>         if (all) {
+>             ggml_format_name(all, "ps1_all-%d", il);  // ggml-alloc allocates it at its first reader (patch set ps1a)
+>         }
 > 
 >         int64_t off = 0;
+>         ggml_tensor * prev = nullptr;  // the previous segment's output (a view of `all`)
 >         for (size_t g = 0; g < segs.size(); ++g) {
 >             const int64_t rows = segs[g].n_tokens;
 >             ggml_tensor * q = ggml_view_3d(ctx0, q_cur, q_cur->ne[0], q_cur->ne[1], rows, q_cur->nb[1], q_cur->nb[2], off*q_cur->nb[2]);
@@ -61,6 +65,12 @@
 >                 fa->view_src  = all;
 >                 fa->view_offs = off*all->nb[1];
 >                 fa->src[GGML_MAX_SRC - 1] = all;
+>                 // ggml-alloc releases a view's source only when the view is read by a later node; the segment outputs
+>                 // are not read (the layer reads `all`), so without this chain every layer's `all` stayed allocated to
+>                 // the end of the graph (2.1 MB a row for Qwen3-32B). The extra source orders nothing new and is not
+>                 // read by the kernel.
+>                 fa->src[GGML_MAX_SRC - 2] = prev;
+>                 prev = fa;
 >                 ggml_build_forward_expand(gf, fa);
 >             } else {
 >                 ggml_tensor * part = build_attn_mha(q, k, v, kq_b, inp->ps1_masks_cnv[g], v_mla, nullptr, kq_scale);
@@ -71,9 +81,10 @@
 >         GGML_ASSERT(off == n_rows);
 >         if (fa_ok) {
 >             cur = ggml_view_2d(ctx0, all, all->ne[0], all->ne[1], all->nb[1], 0);
+>             cur->src[GGML_MAX_SRC - 1] = prev;
 >         }
 >     } else {
-1472c1542,1543
+1472c1553,1554
 <     ggml_tensor * cur = build_attn_mha(q, k, v, kq_b, kq_mask, v_mla, nullptr, kq_scale);
 ---
 >     cur = build_attn_mha(q, k, v, kq_b, kq_mask, v_mla, nullptr, kq_scale);
