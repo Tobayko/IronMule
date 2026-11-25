@@ -1,0 +1,29 @@
+23c23,29
+< struct ironmule_tl1_ub { int64_t t0, build, inputs, compute, out; int ntok, nseq, reused; };
+---
+> struct ironmule_tl1_ub { int64_t t0, build, inputs, compute, out; int ntok, nseq, reused; int64_t graph = 0, cpu = 0; std::string shape; };
+> // TL2 (IronMule, diagnostics, 2026-11-25): the calling thread's CPU time, beside the wall-clock stamps
+> static int64_t ironmule_tl2_cpu_us() {
+>     struct timespec ts;
+>     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+>     return (int64_t) ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+> }
+804c810,818
+<     if (tl1) { ironmule_tl1_cur = {ggml_time_us(), 0, 0, 0, 0, (int) ubatch.n_tokens, (int) ubatch.n_seqs_unq, 0}; }
+---
+>     if (tl1) {
+>         ironmule_tl1_cur = {ggml_time_us(), 0, 0, 0, 0, (int) ubatch.n_tokens, (int) ubatch.n_seqs_unq, 0};
+>         ironmule_tl1_cur.cpu = ironmule_tl2_cpu_us();
+>         if (ubatch.ps1()) {  // TL2: the merged ubatch's rectangles, streams x tokens per stream
+>             for (const auto & seg : *ubatch.ps1_segs) {
+>                 ironmule_tl1_cur.shape += std::to_string(seg.n_seqs_unq) + "x" + std::to_string(seg.n_tokens/std::max<uint32_t>(1, seg.n_seqs_unq)) + ",";
+>             }
+>         }
+>     }
+818a833
+>         if (tl1) ironmule_tl1_cur.graph = ggml_time_us();
+1282a1298
+>             ironmule_tl1_cur.cpu = ironmule_tl2_cpu_us() - ironmule_tl1_cur.cpu;
+1347a1364,1365
+>             // TL2: graph build (of build), thread CPU time over the ubatch, the merged ubatch's rectangles
+>             fprintf(f, ":%" PRId64 ":%" PRId64 ":%s", u.graph ? u.graph - u.t0 : 0, u.cpu, u.shape.empty() ? "-" : u.shape.c_str());

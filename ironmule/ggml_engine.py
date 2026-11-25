@@ -260,6 +260,8 @@ BF1_ROWS = 64
 # compute buffer regrown at a new maximum, the start's warm-up did not cover every shape), so the rule kept it out
 # (-82.5 ms median, 5 of 8 rounds). Off by default; "1" turns it on.
 PS1 = os.environ.get("IRONMULE_PS1", "0") == "1"
+# PS1's start-up prefill (ps1_warm_up): "2" one merged call of the full micro-batch, "1" the pod 35 run 3 form, "0" none
+PS1_WARM = os.environ.get("IRONMULE_PS1_WARM", "2")
 os.environ["IRONMULE_PS1"] = "1" if PS1 else "0"
 # DH2 (2026-11-25): during decoding, the tokens' delivery (the worker's detokenizer and stream frames, about 0.6 ms for
 # 32 requests a step on A100 pod 34) runs on an emitter thread while the next native call runs (ctypes releases the
@@ -820,7 +822,7 @@ class GgmlEngine:
                 and not getattr(self, "settings", {}).get("kv_unified", True)):
             trace_note("init measure_passes begin")
             self.pass_costs = self.measure_pass_costs()
-            if os.environ.get("IRONMULE_PS1") == "1":
+            if os.environ.get("IRONMULE_PS1") == "1" and PS1_WARM != "0":
                 self.ps1_warm_up()
         trace_note("init measure_padding begin")
         self.pad_to: dict[int, int] = {}
@@ -1012,10 +1014,22 @@ class GgmlEngine:
         bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
         cap = min(getattr(self, "batch_cap", self.seq_ctx), UBATCH or 512)
         n = self.seqs
-        step = max(1, (2 * cap // max(1, n) - 40) // max(1, n - 1))
-        lengths = [min(self.seq_ctx - 8, 40 + step * s) for s in range(n)]
-        while sum(lengths) > cap and lengths[-1] > 41:
-            lengths = [max(1, x - 1) if x > 40 else x for x in lengths]
+        if PS1_WARM == "1":  # the pod 35 run 3 form: 32 lengths, two merged calls of 16 rectangles
+            step = max(1, (2 * cap // max(1, n) - 40) // max(1, n - 1))
+            lengths = [min(self.seq_ctx - 8, 40 + step * s) for s in range(n)]
+            while sum(lengths) > cap and lengths[-1] > 41:
+                lengths = [max(1, x - 1) if x > 40 else x for x in lengths]
+        else:  # PS1_WARM "2": one merged call of n_ubatch rows in at most 16 rectangles (pairs of streams alike)
+            pairs = max(1, min(16, n // 2))
+            per = [1 + k for k in range(pairs)]  # rising lengths, scaled to fill the call
+            scale = cap / (2 * sum(per))
+            lengths = []
+            for s in range(n):
+                k = min(s // 2, pairs - 1)
+                lengths.append(max(1, min(self.seq_ctx - 8, int(per[k] * scale))))
+            short = cap - sum(lengths)  # the rest to the last pair, alike, so it stays one rectangle
+            lengths[-2] = max(1, min(self.seq_ctx - 8, lengths[-2] + short // 2))
+            lengths[-1] = max(1, min(self.seq_ctx - 8, lengths[-1] + short - short // 2))
         rows = [(bos, j, s, j == lengths[s] - 1) for s in range(n) for j in range(lengths[s])]
         try:
             self._clear()

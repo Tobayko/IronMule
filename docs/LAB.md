@@ -4192,3 +4192,36 @@ data in `lab/pk1/results/pod35/raw` (`run1`, `run2`, `run3`, `h`).
   later ones. The missing piece is a merged graph whose memory need does not depend on the rectangles (one mask
   tensor of fixed size for all of them, or the compute buffer reserved for the largest merged shape at the start),
   measured on the GPU first; then the same rule again.
+
+### 2026-11-25, before pod 36: what the slow PS1 prefills have in common, TL2, and the start-up warm-up of the full micro-batch
+From pod 35's raw data (local, no GPU time). Every merged 32-client prefill of runs 1 and 3 and of the H stage, in the
+order the server ran them (rows = the merged call's prompt rows; "max before" = the largest merged call of the process
+so far, the start's warm-up included):
+
+| call | rows | max before | prefill |
+| --- | ---: | ---: | --- |
+| run 3 S0 (first PS1 wave) | 6,943 | about 6,100 (warm-up: 32 lengths merged as 16 + 16) | 2,599 ms, slow |
+| run 3 S1 | 7,423 | 6,943 | 2,778 ms, slow |
+| run 3 S2 | 7,382 | 7,423 | 2,308 ms |
+| run 3 S7 | 7,423 | 7,423 | 2,310 ms |
+| run 3 SD6 | 7,435 | 7,423 | 2,825 ms, slow |
+| H P1 / P2, first wave | 7,629 | about 6,100 | 2,817 / 2,813 ms, slow |
+| H P1 / P2, later waves | 7,344-7,373 | 7,629 | 2,266-2,278 ms |
+
+Every slow call, the first waves after a start and the later ones alike, was the process's first merged call above all
+earlier ones; no call below the maximum was slow (the same 7,423 rows ran in 2,778 and 2,310 ms). The reference never
+exceeds 6,576 rows in a pass after its start and had no such call. So both cases have one trigger in these data; what
+grows there, and where the 0.45-0.55 s go, is not shown by them (no TL1 ran on pod 35).
+
+Prepared for the pod:
+- TL2 (`native/ggml_patches/tl2`, `tl2c`; diagnostics, nothing without `IRONMULE_TL1` / `IRONMULE_TL2`): the TL1 line
+  of every ubatch adds the graph's construction apart from the scheduler's allocation, the thread's CPU time and a
+  merged ubatch's rectangles; every compute-buffer reallocation (ggml-alloc) and every CUDA pool growth (VMM:
+  cuMemCreate / cuMemMap / cuMemSetAccess; legacy: cudaMalloc) is written with its sizes and host microseconds.
+- `lab/ps1/growth.py`: one engine process, packed prefills of 8, 16, 16, 24, 24, 32, 32, 24, 32 fresh prompts (every
+  rise a new maximum, every repeat a known shape), TL1/TL2 per wave, CUPTI for chosen waves (PF2's summary: kernels,
+  busy time, gaps, first-time CUDA API calls).
+- `IRONMULE_PS1_WARM` (with PS1 on): "2" (default) one merged call of the full micro-batch in 16 rectangles at the
+  start, the largest merged call the engine can make (8,192 rows; CPU build: one merge of 16 rectangles, checked);
+  "1" run 3's form; "0" none. PS1 stays off by default.
+- Session `lab/ps1/a100_ps1b.sh`, stages d1 / d2 / d3 / h, rules in the file.

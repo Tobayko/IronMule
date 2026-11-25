@@ -1,0 +1,12 @@
+286a287,289
+> // TL2 (IronMule, diagnostics): defined in ggml-alloc.c; writes a line only with IRONMULE_TL2
+> extern "C" void ironmule_tl2_note(const char * what, size_t from, size_t to, int64_t us);
+> 
+356a360
+>         const int64_t tl2_t0 = ggml_time_us();
+359a364
+>         ironmule_tl2_note("cuda_pool_leg", pool_size - look_ahead_size, pool_size, ggml_time_us() - tl2_t0);
+428a434
+>             const int64_t tl2_t0 = ggml_time_us();
+461a468
+>             ironmule_tl2_note("cuda_pool_vmm", pool_size - reserve_size, pool_size, ggml_time_us() - tl2_t0);

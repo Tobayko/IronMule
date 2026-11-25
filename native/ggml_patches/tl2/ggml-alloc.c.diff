@@ -1,0 +1,24 @@
+11a12,30
+> // TL2 (IronMule, diagnostics, 2026-11-25): with IRONMULE_TL2 naming a file, one line per growth of a compute buffer
+> // (here) or of a CUDA memory pool (ggml-cuda.cu): monotonic microseconds, what grew, old and new bytes, and the host
+> // microseconds the growth took. Nothing without the variable.
+> GGML_API void ironmule_tl2_note(const char * what, size_t from, size_t to, int64_t us) {
+>     static FILE * f = NULL;
+>     static int tried = 0;
+>     if (!tried) {
+>         tried = 1;
+>         const char * path = getenv("IRONMULE_TL2");
+>         if (path && *path) {
+>             f = fopen(path, "a");
+>         }
+>     }
+>     if (f) {
+>         fprintf(f, "A %lld %s %zu %zu %lld\n", (long long) ggml_time_us(), what, from, to, (long long) us);
+>         fflush(f);
+>     }
+> }
+> 
+755a775
+>             const int64_t tl2_t0 = ggml_time_us();
+757a778
+>             ironmule_tl2_note(ggml_backend_buft_name(galloc->bufts[i]), cur_size, new_size, ggml_time_us() - tl2_t0);

@@ -94,6 +94,10 @@ PATCH_SETS = {
     "ps1": ([(f"src/{name}", f"{name}.diff") for name in ("llama-batch.h", "llama-kv-cache-unified.h",
                                                          "llama-kv-cache-unified.cpp", "llama-graph.h",
                                                          "llama-graph.cpp", "llama-context.cpp")], []),  # after tl1
+    # TL2 (2026-11-25, diagnostics): with IRONMULE_TL1 / IRONMULE_TL2, graph build apart from allocation, thread CPU
+    # time and a merged ubatch's rectangles per ubatch; every compute-buffer and CUDA-pool growth with its host time
+    "tl2": ([("src/llama-context.cpp", "llama-context.cpp.diff"), ("ggml/src/ggml-alloc.c", "ggml-alloc.c.diff")], []),
+    "tl2c": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pd1
 }
 
 
@@ -205,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1", "tl1", "ps1"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1", "tl1", "ps1", "tl2"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1", "tl2c"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")
