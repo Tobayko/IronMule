@@ -1,0 +1,25 @@
+{"arm": "F", "round": 0, "pos": 0, "seed": 20261233, "width": 32, "wave_start": 656604.856037993, "tok_s": 310.47, "wall_s": 3.2982, "ttft_p50_ms": 2315.5, "ttft_max_ms": 2322.9, "tokens": 1024}
+{"arm": "FP", "round": 0, "pos": 1, "seed": 20261334, "width": 32, "wave_start": 656608.456022453, "tok_s": 310.83, "wall_s": 3.2944, "ttft_p50_ms": 2280.7, "ttft_max_ms": 2287.5, "tokens": 1024}
+{"arm": "FP", "round": 1, "pos": 0, "seed": 20262242, "width": 32, "wave_start": 656612.052085863, "tok_s": 312.55, "wall_s": 3.2763, "ttft_p50_ms": 2285.3, "ttft_max_ms": 2291.9, "tokens": 1024}
+{"arm": "F", "round": 1, "pos": 1, "seed": 20262343, "width": 32, "wave_start": 656615.630112855, "tok_s": 311.79, "wall_s": 3.2843, "ttft_p50_ms": 2283.6, "ttft_max_ms": 2290.4, "tokens": 1024}
+{"arm": "F", "round": 2, "pos": 0, "seed": 20263251, "width": 32, "wave_start": 656619.2165081, "tok_s": 310.11, "wall_s": 3.302, "ttft_p50_ms": 2291.0, "ttft_max_ms": 2298.6, "tokens": 1024}
+{"arm": "FP", "round": 2, "pos": 1, "seed": 20263352, "width": 32, "wave_start": 656622.820289219, "tok_s": 310.49, "wall_s": 3.298, "ttft_p50_ms": 2309.9, "ttft_max_ms": 2316.2, "tokens": 1024}
+{"arm": "FP", "round": 3, "pos": 0, "seed": 20264260, "width": 32, "wave_start": 656626.419932818, "tok_s": 312.6, "wall_s": 3.2757, "ttft_p50_ms": 2287.1, "ttft_max_ms": 2292.9, "tokens": 1024}
+{"arm": "F", "round": 3, "pos": 1, "seed": 20264361, "width": 32, "wave_start": 656629.997296591, "tok_s": 311.18, "wall_s": 3.2907, "ttft_p50_ms": 2307.1, "ttft_max_ms": 2314.0, "tokens": 1024}
+{"arm": "F", "round": 4, "pos": 0, "seed": 20265269, "width": 32, "wave_start": 656633.589941645, "tok_s": 310.25, "wall_s": 3.3005, "ttft_p50_ms": 2317.1, "ttft_max_ms": 2322.9, "tokens": 1024}
+{"arm": "FP", "round": 4, "pos": 1, "seed": 20265370, "width": 32, "wave_start": 656637.192365211, "tok_s": 311.2, "wall_s": 3.2905, "ttft_p50_ms": 2294.1, "ttft_max_ms": 2300.9, "tokens": 1024}
+{"arm": "FP", "round": 5, "pos": 0, "seed": 20266278, "width": 32, "wave_start": 656640.784847454, "tok_s": 312.24, "wall_s": 3.2795, "ttft_p50_ms": 2282.5, "ttft_max_ms": 2288.5, "tokens": 1024}
+{"arm": "F", "round": 5, "pos": 1, "seed": 20266379, "width": 32, "wave_start": 656644.366325408, "tok_s": 311.9, "wall_s": 3.2831, "ttft_p50_ms": 2291.3, "ttft_max_ms": 2296.8, "tokens": 1024}
+{"arm": "F", "round": 6, "pos": 0, "seed": 20267287, "width": 32, "wave_start": 656647.951754906, "tok_s": 310.65, "wall_s": 3.2963, "ttft_p50_ms": 2290.3, "ttft_max_ms": 2302.3, "tokens": 1024}
+{"arm": "FP", "round": 6, "pos": 1, "seed": 20267388, "width": 32, "wave_start": 656651.549697471, "tok_s": 312.54, "wall_s": 3.2764, "ttft_p50_ms": 2284.7, "ttft_max_ms": 2292.8, "tokens": 1024}
+{"arm": "FP", "round": 7, "pos": 0, "seed": 20268296, "width": 32, "wave_start": 656655.129541663, "tok_s": 311.09, "wall_s": 3.2917, "ttft_p50_ms": 2302.1, "ttft_max_ms": 2310.3, "tokens": 1024}
+{"arm": "F", "round": 7, "pos": 1, "seed": 20268397, "width": 32, "wave_start": 656658.724525749, "tok_s": 309.32, "wall_s": 3.3105, "ttft_p50_ms": 2312.1, "ttft_max_ms": 2319.5, "tokens": 1024}
+{"arm": "F", "round": 8, "pos": 0, "seed": 20269305, "width": 32, "wave_start": 656662.337383363, "tok_s": 310.16, "wall_s": 3.3015, "ttft_p50_ms": 2302.9, "ttft_max_ms": 2308.7, "tokens": 1024}
+{"arm": "FP", "round": 8, "pos": 1, "seed": 20269406, "width": 32, "wave_start": 656665.940654625, "tok_s": 312.92, "wall_s": 3.2724, "ttft_p50_ms": 2288.1, "ttft_max_ms": 2295.1, "tokens": 1024}
+{"arm": "FP", "round": 9, "pos": 0, "seed": 20270314, "width": 32, "wave_start": 656669.514638009, "tok_s": 311.09, "wall_s": 3.2917, "ttft_p50_ms": 2292.2, "ttft_max_ms": 2298.9, "tokens": 1024}
+{"arm": "F", "round": 9, "pos": 1, "seed": 20270415, "width": 32, "wave_start": 656673.107993293, "tok_s": 312.71, "wall_s": 3.2746, "ttft_p50_ms": 2288.1, "ttft_max_ms": 2294.4, "tokens": 1024}
+{"arm": "F", "round": 10, "pos": 0, "seed": 20271323, "width": 32, "wave_start": 656676.684297669, "tok_s": 312.96, "wall_s": 3.2719, "ttft_p50_ms": 2280.3, "ttft_max_ms": 2286.4, "tokens": 1024}
+{"arm": "FP", "round": 10, "pos": 1, "seed": 20271424, "width": 32, "wave_start": 656680.257897334, "tok_s": 313.78, "wall_s": 3.2634, "ttft_p50_ms": 2281.1, "ttft_max_ms": 2287.2, "tokens": 1024}
+{"arm": "FP", "round": 11, "pos": 0, "seed": 20272332, "width": 32, "wave_start": 656683.822930095, "tok_s": 313.62, "wall_s": 3.2651, "ttft_p50_ms": 2281.8, "ttft_max_ms": 2287.9, "tokens": 1024}
+{"arm": "F", "round": 11, "pos": 1, "seed": 20272433, "width": 32, "wave_start": 656687.389669949, "tok_s": 312.37, "wall_s": 3.2781, "ttft_p50_ms": 2295.7, "ttft_max_ms": 2302.0, "tokens": 1024}
+{"summary": {"F": {"waves": 12, "tok_s_median": 310.91499999999996, "wall_s_median": 3.2935, "ttft_p50_median_ms": 2293.5}, "FP": {"waves": 12, "tok_s_median": 312.39, "wall_s_median": 3.27795, "ttft_p50_median_ms": 2286.2, "paired_wall_ms_vs_F": {"median": -9.2, "faster_rounds": 11, "rounds": 12}}}}

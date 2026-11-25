@@ -1,0 +1,8 @@
+== 11:41:15 E0 startup 90 s
+SUMMARY {"F": {"waves": 12, "tok_s_median": 310.91499999999996, "wall_s_median": 3.2935, "ttft_p50_median_ms": 2293.5}, "FP": {"waves": 12, "tok_s_median": 312.39, "wall_s_median": 3.27795, "ttft_p50_median_ms": 2286.2, "paired_wall_ms_vs_F": {"median": -9.2, "faster_rounds": 11, "rounds": 12}}}
+# stepprof {"steps": 31, "accept_take": 0.677, "native": 29.967, "observe": 0.007, "offers_rows": 0.045, "pilot_admit": 0.068, "select": 0.002, "tail": 0.001} 656676.367907
+# stepprof {"steps": 31, "accept_take": 0.633, "native": 30.229, "observe": 0.008, "offers_rows": 0.047, "pilot_admit": 0.084, "select": 0.002, "tail": 0.001} 656679.941316
+# stepprof {"steps": 31, "accept_take": 0.53, "native": 29.977, "observe": 0.007, "offers_rows": 0.045, "pilot_admit": 0.069, "select": 0.002, "tail": 0.001} 656683.505944
+# stepprof {"steps": 31, "accept_take": 0.612, "native": 30.0, "observe": 0.006, "offers_rows": 0.044, "pilot_admit": 0.067, "select": 0.002, "tail": 0.001} 656687.074918
+# stepprof {"steps": 31, "accept_take": 0.567, "native": 30.006, "observe": 0.006, "offers_rows": 0.045, "pilot_admit": 0.069, "select": 0.002, "tail": 0.001} 656690.651966
+== 11:42:55 A100-E-DONE

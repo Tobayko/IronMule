@@ -4047,3 +4047,61 @@ Larger lever, chosen by the remaining milliseconds (not more than three candidat
 Speculative decoding stays out: the verification path was measured already (pod 17: 64 rows 56.4 ms = 1.86 x a
 32-row step; draft acceptance 0.66 at k = 1), which leaves no reserve at 32 clients. The server path is chosen: the
 largest block with the smallest effort, and its pieces are measured per wave on the pod.
+
+### 2026-11-25, A100 pod 34: ADM1 and ADM2 kept -- 312.1 against 293.4 tok/s at 32 clients (+6.4 %), +10 % not reached
+RunPod A100 SXM4 80 GB (secure cloud: no community stock; 2.19 USD/h, 0.794 h, about 1.74 USD; balance afterwards
+39.60 USD; 192 visible cores, power limit 500 W), Qwen3-32B Q4_K_M, builds d371f98 (code) and c4001f6 (session), phase E with DH1 at b1f33ea,
+vLLM 0.11.0 AWQ-Marlin. Session `lab/adm2/a100_adm2.sh`, scope, rules and a 2.5 h watchdog fixed before the pod (not
+reached, not changed); phase E (`lab/adm2/a100_e.sh`) was added inside the same limit. Raw data in
+`lab/pk1/results/pod34/raw`. No profiler in any timed wave.
+
+Paired waves in one server start (`lab/adm2/paired.py`, `IRONMULE_LAB_SWITCH`; rotated order, prompts of their own
+per wave, one discarded wave per width), 32 clients, wave seconds and the paired difference to the round's reference:
+
+| phase | arm | median wave | tok/s | paired vs reference | first token p50 | 8 clients (4 rounds) |
+| --- | --- | ---: | ---: | --- | ---: | --- |
+| A1 | R (584ec37: ADM1, ADM2, PX2, BF1 off) | 3.418 s (3.318-3.549) | 299.6 | -- | 2,406 ms | 1.334 s, 18/18 |
+| A1 | A (ADM1) | 3.288 s (3.269-3.307) | 311.5 | -138.7 ms, 8 of 8 | 2,300 ms | 1.347 s, 18/18 |
+| A1 | P (PX2) | 3.419 s (3.320-3.534) | 299.5 | -45.1 ms, 5 of 8 | 2,397 ms | 1.341 s, 18/18 |
+| A1 | AP | 3.290 s (3.266-3.306) | 311.3 | -132.2 ms, 8 of 8 | 2,307 ms | 1.332 s, 18/18 |
+| A2 | B = A | 3.312 s | 309.2 | -- | 2,311 ms | 1.413 s, 18/18 |
+| A2 | C = A + ADM2 + BF1 | 3.276 s | 312.6 | -33.1 ms, 8 of 8 | 2,296 ms | 1.410 s (-3.8 ms, 4 of 4), 18/18 |
+| E | F = C | 3.294 s | 310.9 | -- | 2,294 ms | -- |
+| E | F + PX2 | 3.278 s | 312.4 | -9.2 ms, 11 of 12 | 2,286 ms | -- |
+
+- By the rule A passed, P did not (5 of 8; its waves spread like R's), AP's saving was smaller than A's: B = A. C
+  passed against B. Without ADM1 the 32-client waves spread over 0.23 s (split bursts); with it over 0.04 s.
+- Admission and the wave's end (`lab/adm1/anatomy.py`, the fresh starts below): the large prefill call started
+  27-61 ms after the first send with F against 58-116 ms with R (pod 33: 142-185 ms); the last response ended
+  20-41 ms after the last native call (pod 33: 47-85 ms; R on this pod: 16-39 ms).
+- PX2's pass costs on this pod (ms, one sequence): 1 / 8 / 16 / 32 rows 19.4 / 21.1-23.0 / 21.9-23.5 / 28.9-29.2,
+  127 rows 125.0-125.7, 128 rows (cuBLAS) 121.4-121.7, 256 rows 146.8-147.7, 1,024 rows 382.7-383.3: about 68 ms
+  fixed and 0.31 ms a row for a cuBLAS pass. PX2 stays on (rule: not 10 ms slower; phase E: -9.2 ms).
+- Decode host time (DH1, `IRONMULE_GGML_STEPPROF`, medians of 31 full-width steps per wave, F): native call
+  29.97-30.23 ms, accepting and streaming the 32 tokens 0.53-0.68 ms, pilot and admission 0.07, rows 0.045, the
+  rest below 0.01; start to start 30.8-31.0 ms. At most about 20 ms a wave is left there.
+
+HTTP, the existing benchmark, fresh server starts alternating reference / final, then vLLM, the same prompts at the
+same positions (median over all 32-client waves, first waves included, as fixed before the pod):
+
+| 32 clients | wave 0 | wave 1 | wave 2 | median tok/s | first token p50 |
+| --- | --- | --- | --- | ---: | ---: |
+| R1 / R2 | 280.96 / 297.87 | 301.61 / 302.92 | 309.33 / 303.29 | 302.3 | 2,363 ms |
+| F1 / F2 (ADM1, ADM2, BF1) | 300.77 / 301.92 | 311.80 / 312.36 | 314.35 / 312.44 | 312.1 | 2,284 ms |
+| vLLM | 288.69 | 293.50 | 293.41 | 293.4 | 1,843 ms (max 2.78-2.83 s) |
+
+- F against vLLM: 1.064x (+6.4 %); F against R: +3.25 %. Remaining gap to vLLM's wave / 1.10: 108 ms (median wave
+  3.281 against 3.173 s); by position 174 / 109 / 95 ms. IronMule's slowest first token is earlier than vLLM's
+  (2.28-2.41 against 2.78-2.83 s), its median later (vLLM's chunked prefill hands out first tokens in groups).
+- 8 clients: F 186.9 against R 183.1 tok/s (+2.0 %; waves 1.395 / 1.346 / 1.390 / 1.350 against 1.439 / 1.358 /
+  1.456 / 1.359 s), vLLM 195.3 (F 4.3 % behind). Facts 18/18 in every start of every server.
+- Not run: the diagnostic py-spy of the worker (ptrace refused in this container, `Permission denied`).
+
+Where the 108 ms remain (F, later waves: about 30 ms to the prefill, 2,236 ms prefill, 8 ms, 31 x 31.0 ms decode, 22
+ms to the last response): no server-side block of that size is left. The largest single item is the second large
+prefill pass of every wave (short prompts in one pass, long ones in a second, as llama.cpp's split over one KV
+stream per sequence requires): about 68 ms of fixed cost (dequantisation and per-pass work) measured here. The
+missing solution is a prefill whose matmuls run once over all rows of both passes while attention keeps the two
+per-stream shapes (a llama.cpp graph and KV-view change), worth about 68 ms; with the remaining decode host time
+(about 20 ms) and wave end (about 15 ms) that still leaves the decode step itself, 30.0 ms at 32 rows against
+vLLM's 22.7 ms step period, as the lever that closes the rest.

@@ -147,6 +147,7 @@ UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
 # the cheapest is taken when it saves at least PX2_MARGIN_MS. Pods 32/33's calls fit 16.5 ms + 0.98 ms a row for passes
 # under 128 rows and 91 ms + 0.287 ms a row above (186 calls): repeat 1's 99 rows for 3 passes saved were refused by
 # the fixed limit and are worth about 45 ms. Without the measurement (or IRONMULE_GGML_PX2=0) the fixed limit decides.
+# A100 pod 34, paired 32-client waves on top of ADM1/ADM2/BF1: -9.2 ms (11 of 12 rounds); on by default.
 PX1 = os.environ.get("IRONMULE_GGML_PX1", "1") != "0"
 PX1_ROWS = int(os.environ.get("IRONMULE_GGML_PX1_ROWS", 32))
 PX2 = os.environ.get("IRONMULE_GGML_PX2", "1") != "0"
@@ -203,7 +204,8 @@ class PassCosts:
 
 # BF1 (2026-11-25): a native call of BF1_ROWS rows or more fills llama.cpp's batch with numpy array copies instead of a
 # Python loop over its ctypes arrays (A100 pods 32/33: 13-16 ms of host batch build before every 32-client prefill of
-# about 7,500 rows); the rows point into one contiguous sequence-id array of the engine's own. "0" keeps the loop.
+# about 7,500 rows); the rows point into one contiguous sequence-id array of the engine's own (kept with ADM2 on A100 pod
+# 34: -33.1 ms a 32-client wave together). "0" keeps the loop.
 BF1 = os.environ.get("IRONMULE_GGML_BF1", "1") != "0"
 BF1_ROWS = 64
 # DH1 (diagnostics, with the trace only): IRONMULE_GGML_STEPPROF=1 notes the median host time of each part of a run's

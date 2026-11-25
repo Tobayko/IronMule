@@ -116,7 +116,8 @@ _ADM1 = os.environ.get("IRONMULE_ADM1", "1") != "0"
 # worker's reader and the scheduler share; on the A100 pods the 32 done frames of a wave's last step were read over
 # 50-85 ms after the engine had finished them in 10-13 ms. The lines and their order are those `append` writes; a
 # reader in this process sees them after `flush()` (`read()` and `close()` flush), another process within
-# milliseconds. "0" writes every line on its caller's thread, as before.
+# milliseconds. A100 pod 34, paired waves on top of ADM1 (with BF1): 32-client wave -33.1 ms (8 of 8 rounds). "0" writes
+# every line on its caller's thread, as before.
 _ADM2 = os.environ.get("IRONMULE_ADM2", "1") != "0"
 _DEFERRED: "weakref.WeakSet[ServingLog]" = weakref.WeakSet()
 
