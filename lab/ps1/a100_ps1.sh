@@ -128,7 +128,7 @@ grep stepprof $W/trace_S0.txt | tail -3
 stop_im
 cp $ST/stability-log.jsonl $W/stability-log-S0.jsonl
 
-if [ $PS1_OK = 1 ]; then
+if [ $PS1_OK = 1 ] && [ "${SKIP_E:-0}" != 1 ]; then  # run 3 of pod 35 skipped it: run 1 measured it already
   stamp "E: engine A/B, R against S"
   LIB=$(ls -t $ST/kernels/w4/*.so | head -1); TAB=$(ls -t $ST/kernels/w4/*.table | head -1)
   env IRONMULE_GGML_PACK=1 IRONMULE_GGML_UBATCH=8192 IRONMULE_CUDA_GRAPHS_ROWS=32 IRONMULE_KG_LIB=$LIB IRONMULE_W4_TABLE=$TAB \

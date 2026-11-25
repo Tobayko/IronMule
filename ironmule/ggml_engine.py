@@ -817,6 +817,8 @@ class GgmlEngine:
                 and not getattr(self, "settings", {}).get("kv_unified", True)):
             trace_note("init measure_passes begin")
             self.pass_costs = self.measure_pass_costs()
+            if os.environ.get("IRONMULE_PS1") == "1":
+                self.ps1_warm_up()
         trace_note("init measure_padding begin")
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
@@ -998,6 +1000,29 @@ class GgmlEngine:
         if TRACE:
             trace_note("pass_costs " + json.dumps({str(r): round(1000 * t, 2) for r, t in points.items()}))
         return costs
+
+    def ps1_warm_up(self) -> None:
+        """PS1: one packed prefill of the most rectangles a call merges (every stream a different length), so that the
+        compute buffer reaches its size for merged calls at the start. A100 pod 35: merged prefills whose rectangles
+        changed from call to call regrew the buffer at every new maximum (about 0.45 s each, 5 of 13 32-client waves).
+        Nothing of it stays in the cache."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        cap = min(getattr(self, "batch_cap", self.seq_ctx), UBATCH or 512)
+        n = self.seqs
+        step = max(1, (2 * cap // max(1, n) - 40) // max(1, n - 1))
+        lengths = [min(self.seq_ctx - 8, 40 + step * s) for s in range(n)]
+        while sum(lengths) > cap and lengths[-1] > 41:
+            lengths = [max(1, x - 1) if x > 40 else x for x in lengths]
+        rows = [(bos, j, s, j == lengths[s] - 1) for s in range(n) for j in range(lengths[s])]
+        try:
+            self._clear()
+            started = time.perf_counter()
+            self._decode(rows)
+            trace_note(f"ps1 warm_up rows {len(rows)} ms {1000 * (time.perf_counter() - started):.1f}")
+        except Exception:  # noqa: BLE001 - only the buffer's first growth moves into serving
+            pass
+        finally:
+            self._clear()
 
     def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:
         """KG1: the step for 1-8 tokens (KG4: and 16, 24, 32) with the generated kernels on and off (alternating, median
