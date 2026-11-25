@@ -37,3 +37,20 @@ def test_the_switch_file_sets_the_named_switches_and_nothing_without_the_variabl
     monkeypatch.setattr(sp, "_ADM2", False)
     time.sleep(0.1)
     assert sp._ADM2 is False  # stopped: it no longer sets anything
+
+
+def test_ps1_and_pk6_reach_the_environment_the_native_library_reads(tmp_path, monkeypatch):
+    import os
+
+    import ironmule.ggml_engine as ge
+
+    monkeypatch.setattr(ls, "_started", False)
+    monkeypatch.setattr(ge, "PK6", False)
+    monkeypatch.setattr(ge, "PS1", True)
+    monkeypatch.setenv("IRONMULE_PK6", "0")
+    monkeypatch.setenv("IRONMULE_PS1", "1")
+    ls._apply({"PK6": 1, "PS1": 0})
+    assert ge.PK6 is True and os.environ["IRONMULE_PK6"] == "1"
+    assert ge.PS1 is False and os.environ["IRONMULE_PS1"] == "0"
+    ls._apply({"PK6": 0})
+    assert ge.PK6 is False and os.environ["IRONMULE_PK6"] == "0" and os.environ["IRONMULE_PS1"] == "0"

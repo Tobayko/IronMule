@@ -102,6 +102,9 @@ PATCH_SETS = {
     # first reader instead of with the graph's leafs; without it all 64 layers' outputs were live together (2.1 MB a
     # row on Qwen3-32B), the compute buffer grew 5.1 -> 18.7 GB and every new largest call reallocated it (0.38 s)
     "ps1a": ([("ggml/src/ggml-alloc.c", "ggml-alloc.c.diff")], []),  # after tl2
+    # PK6 (2026-11-25): in a cuBLAS prompt step, SwiGLU and FU1's add + RMS norm skip the f32 writes only matmuls
+    # taking PK3's fp16 copy would read; IRONMULE_PK6=1 (read at every graph) turns it on
+    "pk6": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after tl2c
 }
 
 
@@ -213,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = dest / args.rocm
     source = fetch(dest)
     tree = source / "vendor" / "llama.cpp"
-    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1", "tl1", "ps1", "tl2", "ps1a"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1", "tl2c"] if args.cuda else []))
+    applied = [] if args.no_patches else patch(tree, ["fa1", "row1", "am1", "tk1", "tl1", "ps1", "tl2", "ps1a"] + (["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1", "tl2c", "pk6"] if args.cuda else []))
     lib = build(tree, args.cuda, args.jobs, args.rocm)
     print(f"\nbuilt with patches: {', '.join(applied) or 'none'}")
     print(f"export IRONMULE_GGML_BINDINGS={source}")

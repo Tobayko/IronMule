@@ -4296,3 +4296,38 @@ ratio 0.950, 4 of 4); 32-client first-token p50 ratio 0.969; facts 18/18 in both
 Default since this session: `IRONMULE_PS1=1`, `IRONMULE_PS1_WARM=0`, DH2 off, patch set ps1a in every build: the
 configuration measured as S. Next: the first wave's 35 ms before the prefill and its 65 ms of rows without a kept
 prefix are the largest single remainder (140 ms of the first wave's gap); the later waves are within 22 ms.
+
+### 2026-11-25, before pod 37: what sets the median wave, and two small levers (PK6, SV5)
+Starting point 02b285b (PS1 + ps1a, warm-up 0, DH2 off). Pod 36: 300.0 against vLLM's 274.8 tok/s; +10 % needs
+302.28 (+0.76 %), 25.7 ms a median wave. Local analysis of pod 36's raw data, no GPU time.
+
+- Which waves decide: the six 32-client waves sorted are 291.5 / 292.4 (the two first waves) / 299.6 / 300.5 / 301.2
+  / 301.5; the median is the mean of the third and fourth, both later waves. A faster first wave would not move it
+  unless it overtook them; the later waves need about 26 ms.
+- A later wave (3.39-3.42 s), from the client timeline, the engine trace and the stability log: first send to the
+  prefill call 39-49 ms; prefill 2,288-2,305 ms; to the first decode call 8 ms; 31 decode calls of 31.3 ms (980 ms)
+  and 30 gaps of 1.0-1.2 ms (28-37 ms); after the last call 28-48 ms (the 32 done frames handled about one a
+  millisecond; locally 0.85 ms a frame, mostly thread hand-offs, frames of 7.8 KB; no small fix found).
+- Before the prefill (later waves): the client's last request is sent at 14-17 ms, admitted at 25-30 ms; the worker
+  receives 11-31 of the requests as one join at 30-36 ms and renders them one by one in 7-12 ms (the batch's first
+  requests already go through SV4's batched rendering, joins did not), then 3-5 ms to the call. In the first wave the
+  admission ends later (51-60 ms) and 16-24 ms more pass between the decision and the call (a first-time cost there).
+- The prefill (pod 36 CUPTI, 5,724 rows): GEMM 1,431 of 1,757 ms of kernels (about 250 TFLOPS, 89 % of the
+  clock-adjusted peak), SwiGLU 78, norms 66 (the fused add + RMS norm 42), attention 61, weight dequantisation 59,
+  rope 26, activation conversion 20, KV writes 13 ms. Lever A as asked: a cuBLAS algorithm or workspace choice stays an
+  unmeasured 30-60 ms (pod 32's estimate); a dead write in two of the bandwidth-bound kernels is a sure one.
+
+Prepared (each with its own switch, read while running, so the lab switch can pair them in one server):
+- PK6 (`native/ggml_patches/pk6`, `IRONMULE_PK6=1`): PK4 makes SwiGLU and FU1's add + RMS norm write an fp16 copy
+  for the next matmul besides their f32 result; in a prefill the matmuls (Q4_K / Q6_K, more than 64 rows: KG1's
+  libraries decline them, PK2 sends them to cuBLAS) read only the copy. The f32 write is skipped when every reader of
+  the tensor in the graph is such a matmul and nothing in between (matmul, GLU, ADD) can replace PK3's copy; a matmul
+  that still misses the copy of a skipped tensor aborts instead of reading unwritten memory. Values unchanged (the
+  floats are not read); one GPU split holds the whole model (pod 36: 2 splits, the other the CPU input). Expected
+  about -40 ms a later wave (SwiGLU 14 -> 10 bytes an element, -29 ms; the norm about 18 -> 14, -12 ms, at 7,390
+  rows), if both kernels stay bandwidth-bound. Not compiled locally (no nvcc here); the CPU build is unaffected.
+- SV5 (`IRONMULE_SV5=1`, worker): a join of several requests goes through SV4's batched rendering, checked equal to
+  one-by-one rendering the first time. Locally 30 benchmark prompts 7.2-7.4 -> 3.3-3.6 ms; expected about -5 ms.
+- Session `lab/pk6/a100_pk6.sh` (stages e, d, h; rules in the file): E checks PK6's logits on the GPU (must be equal)
+  and its skips, and times it in one engine process (8 ABBA pairs); D pairs R / PK6 / SV5 / both in one server
+  start; H alternates fresh starts R1 K1 K2 R2, then vLLM.

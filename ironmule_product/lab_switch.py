@@ -3,7 +3,8 @@
 With IRONMULE_LAB_SWITCH naming a JSON file, a daemon thread in the server and one in its ggml worker read the file
 whenever it changes (polled every 20 ms) and set the named switches of this process: "ADM1", "ADM2" (the service's
 admission path and its logs), "PX2", "BF1" (the ggml engine's packed-prefill decision and batch fill), "PS1" (one
-native pass for a packed prefill) and "DH2" (token delivery during the next native call). Paired waves
+native pass for a packed prefill), "PK6" (no dead f32 writes in a cuBLAS prefill), "SV5" (a join's requests rendered as a
+batch) and "DH2" (token delivery during the next native call). Paired waves
 can then alternate the arms with the same server, worker, KV state and clocks; separate server starts had spread the
 32-client prefill by about 0.25 s (A100 pod 32, PF2), more than the arms' effects. Every switch keeps its own default
 until the file names it. Nothing reads the file without the variable.
@@ -29,6 +30,8 @@ def _apply(values: dict[str, Any]) -> None:
              "PX2": [("ironmule.ggml_engine", "PX2")],
              "BF1": [("ironmule.ggml_engine", "BF1")],
              "PS1": [("ironmule.ggml_engine", "PS1")],
+             "PK6": [("ironmule.ggml_engine", "PK6")],
+             "SV5": [],
              "DH2": [("ironmule.ggml_engine", "DH2")]}
     for key, targets in flags.items():
         if key not in values:
@@ -38,8 +41,10 @@ def _apply(values: dict[str, Any]) -> None:
             if mod is not None:
                 setattr(mod, name, bool(values[key]))
         applied[key] = bool(values[key])
-        if key == "PS1":  # the native library reads its switch from the environment on every call
-            os.environ["IRONMULE_PS1"] = "1" if values[key] else "0"
+        if key in ("PS1", "PK6", "SV5"):  # read from the environment on every call / graph / join
+            value = "1" if values[key] else "0"
+            if os.environ.get(f"IRONMULE_{key}") != value:  # set only on a change: the engine thread reads it
+                os.environ[f"IRONMULE_{key}"] = value
 
 
 def _watch(path: str) -> None:

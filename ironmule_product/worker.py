@@ -735,6 +735,11 @@ def _render_rows(requests: list[Any], model_id: str, tokenizer: Any, batch_id: s
 _BATCH_RENDER: dict[int, bool] = {}  # SV4: per tokenizer, whether the batched rendering was checked equal
 
 
+def _sv5_on() -> bool:
+    """SV5 (2026-11-25): joins rendered as a batch; read at every join, so the lab switch can flip it."""
+    return os.environ.get("IRONMULE_SV5", "0") == "1"
+
+
 def _render_many(tokenizer: Any, requests: list[Any]) -> list[list[int]] | None:
     """SV4 (2026-11-23): every request's prompt ids in one chat-template call and one batched tokenization (32
     requests took about 105 ms one by one on an A100 pod's CPU, before the group's prefill). The first time per
@@ -1005,9 +1010,14 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     continue  # it arrived after its own batch ended; the client hands such a request back
                 if not isinstance(join.get("requests"), list):
                     raise ValueError("invalid join")
-                for request in join["requests"]:
+                # SV5: a join of several requests rendered like the batch's first requests (SV4's one template call
+                # and batched tokenization, checked equal to one by one); in a 32-client burst most requests arrive
+                # as one join of 25-31 (A100 pod 36: 7-12 ms one by one, before the prefill)
+                rendered = _render_many(tokenizer, join["requests"]) if _sv5_on() else None
+                for index, request in enumerate(join["requests"]):
                     try:
-                        row = _render_engine_request(request, model_id, tokenizer, allow_stream=True, limit=limit)
+                        row = _render_engine_request(request, model_id, tokenizer, allow_stream=True, limit=limit,
+                                                     ids=rendered[index] if rendered else None)
                     except RequestTooLong as error:  # rejected alone; the run goes on
                         if error.request_id in all_ids:
                             raise ValueError("duplicate request id") from None

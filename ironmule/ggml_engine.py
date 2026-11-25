@@ -268,6 +268,13 @@ PS1 = os.environ.get("IRONMULE_PS1", "1") == "1"
 # PS1's start-up prefill (ps1_warm_up): "2" one merged call of the full micro-batch, "1" the pod 35 run 3 form, "0" none
 PS1_WARM = os.environ.get("IRONMULE_PS1_WARM", "0")
 os.environ["IRONMULE_PS1"] = "1" if PS1 else "0"
+# PK6 (2026-11-25): in a prompt step on the cuBLAS path the native library skips the f32 writes of SwiGLU and of the
+# fused add + RMS norm whose only readers are matmuls taking the fp16 copy the producer writes anyway (PK4), so about
+# 4 of 14 and 4 of 18 bytes an element of two bandwidth-bound kernels go (A100 pod 36 profile: 78 + 42 ms at 5,724
+# rows). Values unchanged: the skipped floats are not read. Read by the native library at every graph; off until
+# measured ("1" turns it on).
+PK6 = os.environ.get("IRONMULE_PK6", "0") == "1"
+os.environ["IRONMULE_PK6"] = "1" if PK6 else "0"
 # DH2 (2026-11-25): during decoding, the tokens' delivery (the worker's detokenizer and stream frames, about 0.6 ms for
 # 32 requests a step on A100 pod 34) runs on an emitter thread while the next native call runs (ctypes releases the
 # GIL there), instead of between two calls. Order per request is kept; the run waits for the emitter before it
