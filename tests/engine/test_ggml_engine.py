@@ -1520,7 +1520,6 @@ def test_px2_prices_the_passes_each_kept_prefix_level_would_make(monkeypatch):
 def test_px2_measures_passes_of_its_own_sizes_with_logits_on_the_last_row(monkeypatch):
     import types
 
-    from ironmule import ggml_engine as ge
 
     engine, fed, removed = _stub_engine(seqs=4)
     engine.seq_ctx = engine.batch_cap = 2048
