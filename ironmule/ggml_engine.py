@@ -258,8 +258,9 @@ BF1_ROWS = 64
 # The native library reads IRONMULE_PS1 on every call. A100 pod 35: one process with fixed shapes -89.9 ms a 32-client
 # wave (10 of 10), 8 clients -50 ms; but in paired HTTP waves 3 of 16 merged prefills took about 0.45 s more (the
 # compute buffer regrown at a new maximum, the start's warm-up did not cover every shape), so the rule kept it out
-# (-82.5 ms median, 5 of 8 rounds). Off by default; "1" turns it on.
-PS1 = os.environ.get("IRONMULE_PS1", "0") == "1"
+# (-82.5 ms median, 5 of 8 rounds). On by default since pod 36 (with ps1a below): paired 32-client waves -80.8 ms (8 of
+# 8 rounds), 8 clients -53 ms, facts 18/18, fresh starts 300.0 against 290.3 tok/s; "0" turns it off.
+PS1 = os.environ.get("IRONMULE_PS1", "1") == "1"
 # Pod 36 attributed the 0.45 s: ggml-alloc placed every layer's merged attention output with the graph's leafs, so all
 # 64 were live at once (2.1 MB a row), and each new largest call reallocated the compute buffer (14.0 -> 18.7 GB, 0.38 s
 # of host time in the free and the allocation). Patch set ps1a allocates it at its first reader; the buffer then stays

@@ -4225,3 +4225,74 @@ Prepared for the pod:
   start, the largest merged call the engine can make (8,192 rows; CPU build: one merge of 16 rectangles, checked);
   "1" run 3's form; "0" none. PS1 stays off by default.
 - Session `lab/ps1/a100_ps1b.sh`, stages d1 / d2 / d3 / h, rules in the file.
+
+### 2026-11-25, A100 pod 36: PS1's slow prefills attributed and removed (PS1a), PS1 on by default, +9.2 % against vLLM
+Maintainer session on one RunPod A100 SXM4 80 GB (secure cloud, US-WA-1, 32 vCPU; the community tier had no stock),
+Qwen3-32B Q4_K_M GGUF, vLLM 0.11.0 with the official AWQ checkpoint (AWQ-Marlin). Build: cdd45ad's patch sets plus
+PS1a below (the pod's tree was rebuilt in place after D1; 605bfef holds the same files). DH2 off in every arm.
+Raw data: `lab/pk1/results/pod36/` (`ps1b_all.tgz`: every stage, TL1/TL2, traces, HTTP rows, vLLM; `d1.tgz`, `d2.tgz`,
+`ps1b_d1.log`). Cost 1.45 h at 2.19 USD/h, 3.18 USD; pod deleted, watchdog (2.5 h) not reached.
+
+**D1, the attribution** (`lab/ps1/growth.py`, one engine process, waves of 8, 16, 16, 24, 24, 32, 32, 24, 32 fresh
+prompts, one packed prefill each, TL1/TL2 on). PS1 without the start's warm-up, the first call of each new size:
+
+| call | rows | prefill | TL1: build (graph / allocation) | TL2 | GPU wait (out) |
+| --- | ---: | ---: | --- | --- | ---: |
+| first 32-request call | 7,632 | 2,761.5 ms | 386.8 ms (0.96 / 385.8) | CUDA0 compute buffer 14.02 -> 18.69 GB, 384.7 ms | 1,271 ms |
+| the same shape again | 7,632 | 2,372.6 ms | 2.3 ms | none | 1,270 ms |
+| first 24-request call | 5,724 | 1,797.7 ms | 11.2 ms | 9.35 -> 14.02 GB, 9.1 ms | 955 ms |
+
+The whole extra time of the slow call is the scheduler's allocation: ggml-alloc freeing the 14 GB compute buffer and
+allocating 18.7 GB (host time, 23 ms of it CPU; GPU execution unchanged, launch 1,088 against 1,085 ms). The buffer
+grew by 2.2 MB for every merged row (5.15, 9.35, 14.02, 18.69 GB at 1,908 / 3,816 / 5,724 / 7,632 rows), 2.1 MB of it
+exactly 64 layers x 8,192 floats: every layer's attention output at once. `CUDA_MODULE_LOADING=EAGER` changed nothing
+(2,777 ms); CUPTI on the 24-request call showed one 851 ms stream synchronisation, the GPU's own work. The prepared
+warm-up (one merged call of 8,192 rows at the start, 2.47 s) removed the slow calls in D1, but in the first server
+start the start-up gate's W4R tuning then died with `out_of_memory` (SIGSEGV) next to the 18.7 GB buffer; that run
+was discarded (`d2_failed/`).
+
+The mechanism (ggml-alloc.c, `ggml_gallocr_alloc_graph_impl`): every graph leaf is allocated before the first node,
+for the whole graph. PS1's per-layer tensor that the segments' flash attention writes into (`ggml_new_tensor_2d`, no
+op) is a leaf, so all 64 were placed together. A first change (the segment outputs chained, so that their views
+release it) left the growth byte for byte unchanged; with PS1's concat fallback (no such tensor) the buffer did not
+grow at 3,816 rows (1,216 ms). **PS1a** (`native/ggml_patches/ps1a`, after tl2): a leaf named `ps1_all-<layer>` is
+not pre-allocated; ggml-alloc places it at its first reader (the allocator's parent loop already does that) and, with
+the chain, frees it after the layer's projection reads it. CPU build, Qwen3-0.6B, 16 streams with unequal prompts and
+kept prefixes: logits and tokens identical to PS1 off (max |difference| 0.0). A100, the same D1 waves: no compute-buffer
+growth after the start at all (TL2 lists only CUDA pool growths under 2 ms), first 32-request call 2,379 ms, its
+repeats 2,380 / 2,382 ms; the reference on the same calls 2,445 ms. The warm-up is no longer needed (default "0").
+
+**D2, the server** (PS1 on from the start, warm-up 0, trace, TL1, TL2; first start with the gate: 1,223 s, gate
+passed, W4R ratio 0.994; 62.1 GB after ready): after ready one CUDA pool growth (0.25 ms) and no compute-buffer
+growth; the allocation section of every merged call 0.7-3.3 ms. Every 32-client prefill after ready: S merged calls
+of up to 23 rectangles with kept prefixes 2,281-2,322 ms, R's two-pass calls 2,387-2,402 ms, the benchmark's first
+call (7,629 rows, no kept prefix yet) 2,359 ms. Paired R / S, 8 rounds of 32 clients: S -75.8 ms, 8 of 8.
+
+**D3, decisive** (fresh start, PS1 on, no trace; paired waves through the lab switch, the rule fixed in
+`lab/ps1/a100_ps1b.sh`): S -80.8 ms per paired 32-client wave, faster in 8 of 8 rounds; 8 clients -53.4 ms (wave
+ratio 0.950, 4 of 4); 32-client first-token p50 ratio 0.969; facts 18/18 in both arms. S kept.
+
+**H, fresh starts R1 S1 R2 S2 (trace on, as in every H), then vLLM.** Output tok/s, every wave, first waves included:
+
+| arm | 32 clients (wave 1 / 2 / 3, two starts) | median | first-token p50 | 8 clients (median, facts) |
+| --- | --- | ---: | ---: | --- |
+| S (PS1 + PS1a) | 292.4 / 300.5 / 301.2, 291.5 / 301.5 / 299.6 | 300.0 | 2,360 ms | 194.3, 18/18 x 4 |
+| R (PS1 off) | 284.3 / 289.2 / 291.4, 286.9 / 295.1 / 293.2 | 290.3 | 2,435 ms | 183.0, 18/18 x 4 |
+| vLLM | 276.5 / 273.0 / 274.8 | 274.8 | 2,049 ms | 187.3, 18/18 x 2 |
+
+- S against vLLM +9.2 % (300.0 against 274.8): +10 % not reached. Remaining gap: median S wave 3.413 s against vLLM's
+  3.726 s / 1.10 = 3.387 s, 25.7 ms; by position 139.7 / -8.0 / 21.7 ms. R against vLLM +5.6 %. S against R +3.3 %
+  at 32 clients, +6.1 % at 8 clients (8 clients: S ahead of vLLM by 3.7 %, R behind by 2.3 %).
+- Startup (85 s) and memory after ready (61,579 against 61,569 MiB) the same for S and R.
+- No slow call: every S prefill within 1.15 x its position's median (first 2,356 / 2,367, later 2,288-2,305 ms);
+  R's 2,370-2,435 ms.
+- Where S's first wave loses its 100 ms against its later waves (trace and client timeline): 35 ms from the first send
+  to the prefill call (79-84 against 39-49 ms) and 65 ms in the prefill (7,629 rows without a kept prefix against
+  about 7,390). Decode (31 calls, 1,016-1,032 ms) and the tail after the last call (28-48 ms) are the same in every
+  position. vLLM's first wave is not slower than its others.
+- The first start of a pod with PS1 now passes the gate; the 18.7 GB buffer was also what made the warm-up variant
+  fail it.
+
+Default since this session: `IRONMULE_PS1=1`, `IRONMULE_PS1_WARM=0`, DH2 off, patch set ps1a in every build: the
+configuration measured as S. Next: the first wave's 35 ms before the prefill and its 65 ms of rows without a kept
+prefix are the largest single remainder (140 ms of the first wave's gap); the later waves are within 22 ms.

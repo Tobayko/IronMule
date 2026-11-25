@@ -105,16 +105,16 @@ Tested model families include Qwen 3, Gemma 3, Llama 3 and Mistral. Backend, mod
 
 ### Qwen3-32B on one A100 against vLLM
 
-On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`, and vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin on the same pod, one after the other. Both servers used the same HTTP client, prompts and seeds, with 32-token answers (2026-11-25, pod 35; IronMule's default build over two server starts).
+On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`, and vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin on the same pod, one after the other. Both servers used the same HTTP client, prompts and seeds, with 32-token answers (2026-11-25, pod 36; IronMule's default build over two server starts, every wave counted).
 
 | Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, every wave) | vLLM 0.11.0, AWQ-Marlin |
 | ---: | ---: | ---: |
-| 8 | median 180.5 (four waves) | 186.5 (median of two) |
-| 32 | 295.4 / 300.4 / 300.0 / 293.1 / 301.9 / 301.8 | 279.3 / 278.8 / 274.4 |
+| 8 | median 194.3 (four waves) | 187.3 (median of two) |
+| 32 | 292.4 / 300.5 / 301.2 / 291.5 / 301.5 / 299.6 | 276.5 / 273.0 / 274.8 |
 
-- At 32 clients IronMule is 7.7% ahead (median 300.2 against 278.8 tok/s); the goal of +10% is not reached yet (72 ms a wave short). At 8 clients vLLM leads by 3.2%. On pod 34 the same comparison gave +6.4%.
+- At 32 clients IronMule is 9.2% ahead (median 300.0 against 274.8 tok/s); the goal of +10% is not reached yet (26 ms a wave short, most of it in the first wave after a start). At 8 clients IronMule leads by 3.7%. With PS1 (one native pass for a packed prefill) off, the same pod gave +5.6%; pod 35 gave +7.7%, pod 34 +6.4%.
 - Both servers answered 18/18 factual check questions in every run, and IronMule passed its own perplexity quality gate on this machine.
-- On an earlier pod (pod 17) the two were level at 32 clients (292.2 against 292.6) and IronMule was level to 93% ahead for one client, depending on the prompt (it drafts from the context). [Pod 35](docs/LAB.md#2026-11-25-a100-pod-35-ps1-measured--90-ms-a-wave-in-one-process-outliers-over-http-rejected-by-the-rule-dh2-no-gain-77--against-vllm) · [Pod 34](docs/LAB.md#2026-11-25-a100-pod-34-adm1-and-adm2-kept----3121-against-2934-toks-at-32-clients-64--10--not-reached)
+- On an earlier pod (pod 17) the two were level at 32 clients (292.2 against 292.6) and IronMule was level to 93% ahead for one client, depending on the prompt (it drafts from the context). [Pod 36](docs/LAB.md#2026-11-25-a100-pod-36-ps1s-slow-prefills-attributed-and-removed-ps1a-ps1-on-by-default-92--against-vllm) · [Pod 35](docs/LAB.md#2026-11-25-a100-pod-35-ps1-measured--90-ms-a-wave-in-one-process-outliers-over-http-rejected-by-the-rule-dh2-no-gain-77--against-vllm) · [Pod 34](docs/LAB.md#2026-11-25-a100-pod-34-adm1-and-adm2-kept----3121-against-2934-toks-at-32-clients-64--10--not-reached)
 
 On an earlier pod, before PK5, IronMule was 5% behind at 32 clients (252.5 against 265.9); pods differ by several percent for both servers, so only same-pod comparisons count. [Same-pod measurements](docs/LAB.md#2026-11-23-a100-speculative-decoding-with-a-batch-draft-model-sd1-and-vllm-on-the-same-pod-with-pk5) · [Earlier pod](docs/LAB.md#2026-11-22-a100-pk4-served-and-vllm-on-the-same-pod) · [Earlier A100 runs](docs/LAB.md#2026-11-22-a100-gr3-served-fu1-32-row-cuda-graphs-through-the-gate----level-with-vllm-at-32-clients)
 
