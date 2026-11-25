@@ -1559,15 +1559,16 @@ def test_ps1_keeps_every_kept_prefix_since_the_passes_share_one_call(monkeypatch
     assert [keep for _, _, keep in engine._even_reuse(group)] == [3, 3, 3, 3]  # separate passes: PX2 evens them
 
 
-def test_ps1_is_on_by_default_without_warm_up_and_dh2_off():
+def test_ps1_and_pk6_are_on_by_default_without_warm_up_dh2_and_sv5():
     import subprocess
     import sys
 
-    env = {k: v for k, v in os.environ.items() if k not in ("IRONMULE_PS1", "IRONMULE_PS1_WARM", "IRONMULE_GGML_DH2")}
-    code = ("import os; from ironmule import ggml_engine as g; "
-            "print(g.PS1, g.PS1_WARM, g.DH2, os.environ['IRONMULE_PS1'])")
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("IRONMULE_PS1", "IRONMULE_PS1_WARM", "IRONMULE_GGML_DH2", "IRONMULE_PK6", "IRONMULE_SV5")}
+    code = ("import os; from ironmule import ggml_engine as g; from ironmule_product import worker as w; "
+            "print(g.PS1, g.PS1_WARM, g.DH2, os.environ['IRONMULE_PS1'], g.PK6, os.environ['IRONMULE_PK6'], w._sv5_on())")
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True).stdout.split()
-    assert out == ["True", "0", "False", "1"]  # the configuration pod 36 measured
+    assert out == ["True", "0", "False", "1", "True", "1", "False"]  # the configuration pod 37 measured (K = PK6)
 
 
 def test_dh2_delivers_every_token_in_order_and_the_last_from_the_engine_thread(monkeypatch):

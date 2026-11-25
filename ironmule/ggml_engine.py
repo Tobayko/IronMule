@@ -271,9 +271,11 @@ os.environ["IRONMULE_PS1"] = "1" if PS1 else "0"
 # PK6 (2026-11-25): in a prompt step on the cuBLAS path the native library skips the f32 writes of SwiGLU and of the
 # fused add + RMS norm whose only readers are matmuls taking the fp16 copy the producer writes anyway (PK4), so about
 # 4 of 14 and 4 of 18 bytes an element of two bandwidth-bound kernels go (A100 pod 36 profile: 78 + 42 ms at 5,724
-# rows). Values unchanged: the skipped floats are not read. Read by the native library at every graph; off until
-# measured ("1" turns it on).
-PK6 = os.environ.get("IRONMULE_PK6", "0") == "1"
+# rows). Values unchanged: the skipped floats are not read. Read by the native library at every graph. On by default
+# since A100 pod 37: logits equal (max |difference| 0.0), 189 writes skipped a prefill graph, 7,632-row prefill
+# -28 ms (8 of 8 pairs); paired 32-client waves -38.8 ms (7 of 8); fresh starts 304.6 against vLLM's 276.9 tok/s.
+# "0" turns it off.
+PK6 = os.environ.get("IRONMULE_PK6", "1") == "1"
 os.environ["IRONMULE_PK6"] = "1" if PK6 else "0"
 # DH2 (2026-11-25): during decoding, the tokens' delivery (the worker's detokenizer and stream frames, about 0.6 ms for
 # 32 requests a step on A100 pod 34) runs on an emitter thread while the next native call runs (ctypes releases the

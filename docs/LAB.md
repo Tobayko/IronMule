@@ -4331,3 +4331,53 @@ Prepared (each with its own switch, read while running, so the lab switch can pa
 - Session `lab/pk6/a100_pk6.sh` (stages e, d, h; rules in the file): E checks PK6's logits on the GPU (must be equal)
   and its skips, and times it in one engine process (8 ABBA pairs); D pairs R / PK6 / SV5 / both in one server
   start; H alternates fresh starts R1 K1 K2 R2, then vLLM.
+
+### 2026-11-25, A100 pod 37: PK6 kept -- 304.6 against 276.9 tok/s at 32 clients (+10.02 %), the +10 % reached by its rule
+Maintainer session on one RunPod A100 SXM4 80 GB (secure, US-WA-1, 32 vCPU; community without stock), Qwen3-32B
+Q4_K_M GGUF, vLLM 0.11.0 with the official AWQ checkpoint (AWQ-Marlin). Build 0d6d69d (patch sets up to tl2c, ps1a and
+pk6). Reference R = 02b285b's default (PS1 + ps1a, warm-up 0, DH2 off). Session `lab/pk6/a100_pk6.sh`, rules fixed in
+it before the pod. Raw data: `lab/pk1/results/pod37/` (`pk6_all.tgz`: every stage, HTTP rows, timelines, traces of H,
+stability logs, vLLM; the logits files of E left out, their comparison is in `pk6_e.log`). Cost: about 0.62 h at
+2.19 USD/h, 1.36 USD (balance 33.45 -> 32.09); pod deleted, watchdog (2.5 h) not reached.
+
+- E, engine without server: `lab/ps1/check.py` with 32 streams of unequal prompts and kept prefixes (2,466 rows),
+  PK6 off / on: logits of every output row and greedy tokens identical (max |difference| 0.0); 189 f32 writes skipped
+  in every prefill graph (64 SwiGLU, the fused add + norm of 63 FFN and 62 attention inputs). `lab/pk6/engine_ab.py`,
+  8 ABBA pairs of 32 fresh benchmark prompts (7,632 rows, one PS1 call, 31 decode steps): prefill 2,342.8 -> 2,314.1
+  ms (-27.9 ms, 8 of 8), wave -29.2 ms (8 of 8), tokens equal in 8 of 8 pairs. Less than the 40 ms estimated from the
+  kernels' bytes.
+- D, one server start (first start with the gate: 1,229 s; 62.0 GB after ready), paired waves through the lab
+  switch, 8 rounds of 32 clients, 4 of 8 with the factual check, no trace:
+
+| arm | 32 clients: paired wave vs R | rounds faster | 8-client wave ratio | first-token p50 ratio | facts |
+| --- | ---: | ---: | ---: | ---: | --- |
+| P (PK6) | -38.8 ms | 7 / 8 | 1.015 | 0.991 | 18/18 |
+| V (SV5) | -15.7 ms | 5 / 8 | -- | -- | 18/18 |
+| C (PK6 + SV5) | -27.1 ms | 6 / 8 | 1.008 | 0.996 | 18/18 |
+
+  Rule: P passes, C passes with less saving than P, so K = P. SV5 is not kept (off by default); its effect stays
+  within the spread of paired waves.
+- H, fresh starts R1 K1 K2 R2 (order turned around in the middle), engine trace on as in every H, then vLLM. Output
+  tok/s, every wave:
+
+| arm | 32 clients, waves 1 / 2 / 3 of each start | median | first-token p50 | 8 clients (median, facts) |
+| --- | --- | ---: | ---: | --- |
+| K (PS1 + PK6) | 297.1 / 313.2 / 306.0, 297.3 / 303.2 / 307.5 | 304.6 | 2,321 ms | 195.6, 18/18 x 4 |
+| R (PS1) | 293.7 / 308.5 / 304.6, 293.4 / 299.8 / 304.0 | 301.9 | 2,353 ms | 193.7, 18/18 x 4 |
+| vLLM | 278.7 / 276.7 / 276.9 | 276.9 | 1,823 ms | 189.4, 18/18 x 2 |
+
+- K against vLLM: 1.1002 (+10.02 %), the fixed criterion (>= 1.10) met; gap -0.3 ms a median wave (K 3.3615 s, vLLM
+  3.698 s / 1.10 = 3.3618 s); by position 105.5 / -40.1 / -23.8 ms. The margin is nil: per start K1 1.105, K2 1.095.
+  R against vLLM on this pod 1.090 (pod 36: 1.056; pods differ by several percent for both engines). K against R
+  +0.9 % at 32 clients, +1.0 % at 8 clients; first-token p50 -32 ms. Not repeated (the rule allows one run).
+- First and later waves: K's first waves 297.1 / 297.3 (3.447 / 3.444 s), later 303.2-313.2 (3.270-3.377 s); R's
+  first 293.7 / 293.4, later 299.8-308.5. The median is set by later waves, as before.
+- Prefills (traces): K's later waves 2,240-2,252 ms, R's 2,270-2,284 ms (-30 ms); first waves K2 2,326 ms in one call,
+  R 2,353 / 2,360 ms; K1's first wave came in two calls (2,382 + 5,247 rows, 782 + 1,585 ms: early arrivals started
+  alone), which is why the slow-call list marks K2's single first call against a median of split calls; no call
+  regrew the compute buffer or stood out within one start.
+- Startup 80-86 s and memory after ready 61,573 MiB for both arms.
+
+Default since this session: PS1 + ps1a + PK6 (`IRONMULE_PK6=1`), warm-up 0, DH2 off, SV5 off: the configuration
+measured as K. What limits the margin: the first wave after a start (105 ms over the target line, its admission and
+the prompt rows without a kept prefix) and the decode step (31 calls of 31.3 ms against vLLM's about 23 ms).
