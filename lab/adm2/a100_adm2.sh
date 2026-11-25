@@ -77,7 +77,7 @@ bench() {  # url engine model label width repeats [extra]
 im() { bench http://127.0.0.1:8002 ironmule gguf/Qwen3-32B-Q4_K_M "$@"; }
 
 stamp "S0: first start (gate, tuning) with the lab switch"
-echo "$REF" > $SW
+echo "{}" > $SW  # nothing named while the engine starts: PX2 measures its pass costs, defaults hold
 serve S0 IRONMULE_LAB_SWITCH=$SW
 grep -o '"pass_ms": {[^}]*}' $W/serve_S0.log | head -1
 grep "pass_costs" $W/trace_S0.txt | tail -1
