@@ -4144,3 +4144,51 @@ the argmax on the GPU and copies one index per output row; inside the native cal
 further logit transfer to remove; DH2 takes the largest part that can overlap without a new graph structure.
 
 Session `lab/ps1/a100_ps1.sh` with its rules fixed in the file before the pod.
+
+### 2026-11-25, A100 pod 35: PS1 measured (-90 ms a wave in one process, outliers over HTTP: rejected by the rule), DH2 no gain; +7.7 % against vLLM
+RunPod A100 SXM4 80 GB (secure: no community stock; 2.19 USD/h, 1.263 h, 2.77 USD; balance afterwards 36.69 USD; 128
+visible cores, 400 W), Qwen3-32B Q4_K_M, vLLM 0.11.0 AWQ-Marlin. Session `lab/ps1/a100_ps1.sh` (rules fixed in it
+before the pod), watchdog at 2.5 h (not reached, not changed). Three runs inside the limit, each reason recorded; raw
+data in `lab/pk1/results/pod35/raw` (`run1`, `run2`, `run3`, `h`).
+- Run 1, C: the first GPU check ran out of graph objects (`GGML_ASSERT(obj_new)`: 8 rectangles x 64 layers above
+  llama.cpp's 8 nodes a tensor). Fixed (24 with `IRONMULE_PS1=1`, at most 16 rectangles merged; 13f23c5), rebuilt on
+  the pod. Then, 8 KV streams, 616 rows of unequal prompt and kept-prefix lengths: PS1 against the concat variant
+  bit-identical (max |diff| 0.0: the in-place outputs are right on CUDA), against separate passes max |logit diff|
+  0.47 (MMQ against cuBLAS for the small passes), top-1 8 of 8, tokens equal; the call 0.670 -> 0.215 s.
+- Run 1, E (one process, the benchmark's prompts after a primer, 10 rotated rounds, no profiler): PS1 -89.9 ms a
+  32-client wave in 10 of 10 rounds (wall 3.319 -> 3.227 s, prefill 2,380 -> 2,287 ms), prompt rows 7,472 -> 7,373,
+  rows reused 160 -> 259, answers identical in 315 of 320.
+- Run 1, A (paired HTTP waves, one start, lab switch): PS1 +50.6 ms (3 of 8); 5 of 13 merged prefills took 2.83-2.86 s
+  instead of 2.29-2.32 s (the same row counts ran both ways). Suspected: the compute buffer regrown at every new
+  maximum, since each rectangle's mask makes the need depend on the shape. Run 2 let an existing buffer grow to 1.5x
+  its need (ggml-alloc.c): the worker crashed with SIGSEGV at its first request; withdrawn, not investigated further.
+  Run 3 grows the buffer at the engine's start with one merged prefill of 32 different lengths (8,165 rows, 2.57 s).
+- Run 3, A (8 rounds of 32 clients, 4 of 8; arms on top of the 11f00e4 default):
+
+| arm | median wave | paired vs R | first token p50 | 8 clients: paired vs R | facts |
+| --- | ---: | --- | ---: | --- | --- |
+| R | 3.455 s | -- | 2,464 ms | -- | 18/18 |
+| S (PS1) | 3.383 s | -82.5 ms, 5 of 8 | 2,398 ms | -49.9 ms, 4 of 4 (first token 697 against 770 ms) | 18/18 |
+| D (DH2) | 3.462 s | +0.6 ms, 4 of 8 | 2,452 ms | +24.1 ms | 18/18 |
+| SD | -- | -68.7 ms, 7 of 8 | -- | -- | 18/18 |
+
+  3 of 16 merged 32-client prefills still took 0.45-0.55 s more (2,599 / 2,778 / 2,825 ms; 7,423 rows ran in 2,310 ms
+  in another wave), not decreasing over the rounds; the cause is not shown. By the rule S failed (5 of 8), D failed,
+  and SD may only be taken when both pass: F = R. PS1 and DH2 are off by default now.
+- H (fresh starts, the existing benchmark, first waves included), replacing the script's H once F = R: R (PS1, DH2 off:
+  the default after this pod) against P (PS1 and DH2 on), then vLLM:
+
+| 32 clients | waves (tok/s) | median | vs vLLM | gap to vLLM / 1.10 (median wave; by position) |
+| --- | --- | ---: | ---: | --- |
+| R | 295.37 / 300.38 / 299.99, 293.11 / 301.93 / 301.78 | 300.2 | +7.7 % | 72 ms; 148 / 61 / 10 ms |
+| P | 261.11 / 304.65 / 304.75, 262.91 / 300.16 / 305.47 | 302.4 | +8.5 % | 47 ms; 576 / 47 / -37 ms |
+| vLLM | 279.34 / 278.81 / 274.40 | 278.8 | -- | -- |
+
+  8 clients: R 180.5, P 189.2, vLLM 186.5 tok/s; first token p50 at 32: R 2,411, P 2,369, vLLM 1,607 ms (vLLM's slowest
+  first token is later); facts 18/18 everywhere. P's first wave after a start is 0.5 s slower (the merged prefill's
+  first shapes), its later waves are 1.6-1.7 % faster than R's and at position 2 above +10 % over vLLM.
+- What blocks +10 % now: PS1 saves about 90 ms a wave where its prefill runs as expected, which is most of the
+  remaining 72 ms; it fails on the merged prefills that take 0.45-0.55 s more, the first after a start and some
+  later ones. The missing piece is a merged graph whose memory need does not depend on the rectangles (one mask
+  tensor of fixed size for all of them, or the compute buffer reserved for the largest merged shape at the start),
+  measured on the GPU first; then the same rule again.

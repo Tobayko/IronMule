@@ -5,7 +5,7 @@
   <a id="ironmule"></a>
   <h1>IronMule · Local LLM inference server</h1>
 
-  <p><strong>A 4-bit GGUF against vLLM's AWQ-Marlin on the same A100: 6.4% ahead at 32 concurrent users, up to 93% ahead for a single chat. Your local inference server called. It wants its GPU back.</strong></p>
+  <p><strong>A 4-bit GGUF against vLLM's AWQ-Marlin on the same A100: 6-8% ahead at 32 concurrent users, up to 93% ahead for a single chat. Your local inference server called. It wants its GPU back.</strong></p>
 
   <p>IronMule serves GGUF on NVIDIA CUDA GPUs and CPUs, and MLX models on Apple Silicon (Metal), with its own CUDA kernels and a learned scheduler.</p>
 
@@ -27,7 +27,7 @@
 
 Stop renting a cloud to serve your own model. IronMule is a self-hosted LLM server with its own CUDA kernels on NVIDIA GPUs and its own scheduler on every machine it runs on. It answers through an OpenAI-compatible chat API with streaming and concurrent requests.
 
-On one A100 it serves Qwen3-32B from a Q4_K_M GGUF 6.4% faster than vLLM's AWQ-Marlin at 32 concurrent users on the same machine (after level to 3% behind in seven earlier same-machine comparisons), and ahead of it for a single chat. At eight clients vLLM still leads, by 4.3%. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
+On one A100 it serves Qwen3-32B from a Q4_K_M GGUF 6.4-7.7% faster than vLLM's AWQ-Marlin at 32 concurrent users on the same machine (two pods; level to 3% behind in seven earlier same-machine comparisons), and ahead of it for a single chat. At eight clients vLLM still leads, by 3-4%. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
 
 | Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, three repeats) | vLLM 0.11.0, AWQ-Marlin (three repeats) |
 | ---: | ---: | ---: |
@@ -105,16 +105,16 @@ Tested model families include Qwen 3, Gemma 3, Llama 3 and Mistral. Backend, mod
 
 ### Qwen3-32B on one A100 against vLLM
 
-On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`, and vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin on the same pod, one after the other. Both servers used the same HTTP client, prompts and seeds, with 32-token answers (2026-11-25, pod 34; IronMule over two server starts).
+On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`, and vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin on the same pod, one after the other. Both servers used the same HTTP client, prompts and seeds, with 32-token answers (2026-11-25, pod 35; IronMule's default build over two server starts).
 
 | Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, every wave) | vLLM 0.11.0, AWQ-Marlin |
 | ---: | ---: | ---: |
-| 8 | 183.5 / 190.1 / 183.7 / 190.0 | 195.6 / 194.9 |
-| 32 | 300.8 / 311.8 / 314.4 / 301.9 / 312.4 / 312.4 | 288.7 / 293.5 / 293.4 |
+| 8 | median 180.5 (four waves) | 186.5 (median of two) |
+| 32 | 295.4 / 300.4 / 300.0 / 293.1 / 301.9 / 301.8 | 279.3 / 278.8 / 274.4 |
 
-- At 32 clients IronMule is 6.4% ahead (median 312.1 against 293.4 tok/s); the goal of +10% is not reached yet (108 ms a wave short). At 8 clients vLLM leads by 4.3%.
+- At 32 clients IronMule is 7.7% ahead (median 300.2 against 278.8 tok/s); the goal of +10% is not reached yet (72 ms a wave short). At 8 clients vLLM leads by 3.2%. On pod 34 the same comparison gave +6.4%.
 - Both servers answered 18/18 factual check questions in every run, and IronMule passed its own perplexity quality gate on this machine.
-- On an earlier pod (pod 17) the two were level at 32 clients (292.2 against 292.6) and IronMule was level to 93% ahead for one client, depending on the prompt (it drafts from the context). [Pod 34](docs/LAB.md#2026-11-25-a100-pod-34-adm1-and-adm2-kept----3121-against-2934-toks-at-32-clients-64--10--not-reached)
+- On an earlier pod (pod 17) the two were level at 32 clients (292.2 against 292.6) and IronMule was level to 93% ahead for one client, depending on the prompt (it drafts from the context). [Pod 35](docs/LAB.md#2026-11-25-a100-pod-35-ps1-measured--90-ms-a-wave-in-one-process-outliers-over-http-rejected-by-the-rule-dh2-no-gain-77--against-vllm) · [Pod 34](docs/LAB.md#2026-11-25-a100-pod-34-adm1-and-adm2-kept----3121-against-2934-toks-at-32-clients-64--10--not-reached)
 
 On an earlier pod, before PK5, IronMule was 5% behind at 32 clients (252.5 against 265.9); pods differ by several percent for both servers, so only same-pod comparisons count. [Same-pod measurements](docs/LAB.md#2026-11-23-a100-speculative-decoding-with-a-batch-draft-model-sd1-and-vllm-on-the-same-pod-with-pk5) · [Earlier pod](docs/LAB.md#2026-11-22-a100-pk4-served-and-vllm-on-the-same-pod) · [Earlier A100 runs](docs/LAB.md#2026-11-22-a100-gr3-served-fu1-32-row-cuda-graphs-through-the-gate----level-with-vllm-at-32-clients)
 
