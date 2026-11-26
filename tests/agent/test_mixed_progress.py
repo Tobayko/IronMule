@@ -174,3 +174,20 @@ def test_w4_screen_uses_only_whole_calibrated_shapes_within_the_stock_margin():
     assert selection["allowed_shapes"] == [[12, 32, 256]]
     assert selection["estimated_bytes"] <= selection["budget_bytes"]
     assert choose(inventory, 100, 99)["allowed_shapes"] == []
+
+
+def test_shared_markers_belong_to_the_measured_http_window():
+    from lab.pk6.mixed_progress.pool_score import markers
+
+    wave = {
+        "width": 1,
+        "repeat": 0,
+        "seed": 1,
+        "requests": [{"t_send": 10.0, "t_done": 11.0}],
+    }
+    (count,) = markers(
+        "# shared_budget from=128 to=1024 queued=4 9.5\n"
+        "# shared_budget from=128 to=1024 queued=4 10.25",
+        [wave],
+    )
+    assert count["changes"] == 1
