@@ -18,7 +18,8 @@ from training.native_evidence import COST_JOURNAL, ROOT, bounded, patch, persist
 
 SCHEMA = "ironmule.portable-qwen-restart.v1"
 TRIAL = ("context.json", "aa-0.json", "aa-1.json", "stale.json", "missing.json", "receipt.json", "stale-receipt.json",
-         *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")), "result.json")
+         *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")),
+         *(f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")), "result.json")
 RELEASE = ("release-activate.json", "release-run.json", "release-exercise.json", "target-check.json", "rollback-exercise.json")
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
@@ -161,19 +162,24 @@ def experiences(root, source):
                reason="reuse_recent_device_bound_mask_on_repeat_start", observations=order["evidence"],
                qualification_contract=order["contract"], authorship="IronMule selected the observed startup phase",
                uncertainty="Historical phases and local mask observations guide selection. Their timings do not establish a gain.")
-    samples = [n for n in TRIAL if n.startswith(("ref-", "cand-", "aa-")) or n in ("missing.json", "stale.json")]
+    samples = [n for n in TRIAL if n.startswith(("ref-", "cand-", "aa-", "facts-")) or n in ("missing.json", "stale.json")]
     for name in samples:
         if name not in files:
             continue
         row = read(folder / name)
         label = name.split(".", 1)[0]
-        candidate = label.startswith("cand-") or name in ("missing.json", "stale.json")
+        hit = label.startswith(("cand-", "facts-cand-"))
+        candidate = hit or name in ("missing.json", "stale.json")
         try:
-            seed = restart_trial.SEED if name.startswith("aa-") or name in ("missing.json", "stale.json") else restart_trial.SEED + int(label.split("-")[1])
+            seed = restart_trial.SEED
+            if label.startswith("facts-"):
+                seed += 100 + int(label.rsplit("-", 1)[1])
+            elif label.startswith(("ref-", "cand-")):
+                seed += int(label.rsplit("-", 1)[1])
             expected = summary["candidate_sha256"] if candidate else order["source_sha256"]
             restart_trial.validate(row, seed, expected_source=expected)
             restart_trial.verify_binding(row, order)
-            trusted = row["reused"] == label.startswith("cand-")
+            trusted = row["reused"] == hit
         except (KeyError, TypeError, ValueError, ZeroDivisionError):
             trusted = False
         timings = []
@@ -186,7 +192,12 @@ def experiences(root, source):
                    metrics=timings, cold_to_first_batch_s=row.get("cold_s"), initialized_s=row.get("initialized_s"),
                    broker_elapsed_s=row.get("broker_elapsed_s"), peak_rss_kib=row.get("peak_rss_kib"),
                    device_used_bytes=row.get("device_used_bytes"), profile_reused=row.get("reused"),
-                   quality={"graded_correct": sum(row.get("facts", []))}, authorship="Isolated target evaluator",
+                   quality={"graded_correct": sum(row.get("facts", [])),
+                            "factual_first_batches": [{"wall_s": b.get("wall_s"), "completed_s": b.get("completed_s"),
+                                                       "ttft_p95_s": max(b.get("ttfts_s") or [0]) or None,
+                                                       "correct": sum(b.get("correct", []))} for b in row.get("factual_first", [])]},
+                   serving_factual_timing=row.get("factual_timing"), mapped_cuda_libraries=row.get("cuda_vendor"),
+                   startup_prices=row.get("startup_prices"), authorship="Isolated target evaluator",
                    uncertainty="A single arm cannot establish a causal startup or serving advantage.")
     result = read(folder / "result.json") if "result.json" in files else {}
     reply = read(folder / "response.json") if "response.json" in files else {}

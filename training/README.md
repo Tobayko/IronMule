@@ -397,3 +397,17 @@ a different CPU thread policy for those calls benefits completed requests. The c
 a separate four-thread rule to the existing six-pair quality, throughput, TTFT and memory check.
 [Attribution](../lab/autonomous/results/runpod-epyc-pilot/prefill-attribution.json) ·
 [Bound order](../lab/autonomous/results/runpod-epyc-pilot/prefill-order.json)
+
+The repeat-start source trial archives both local mask observations, the original Python source,
+the hosted function replacement and its exact patch. On subsequent exports the private campaign
+can deliver A/A controls, missing/stale-receipt checks, six cold/warm pairs, two separate factual-first
+pairs, scoped deployment and rollback observations. Every arm includes its startup duration, returned
+work and pinned runtime. The portable exporter independently replays a reported passing gate.
+
+```sh
+python -m training.restart_evidence --state "$RESTART_STATE" \
+  --observations "$PREVIOUS_ORDER" "$CANONICAL_ORDER" --destination lab/autonomous/results/a100-restart
+```
+
+Repeat the command as the target delivers evidence. Once the two original observations are archived,
+`--observations` can be omitted. A shallow checkout can supply the original `ggml_engine.py` with `--reference`.
