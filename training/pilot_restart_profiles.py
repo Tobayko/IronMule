@@ -134,7 +134,7 @@ def select(checkpoint, receipt, *, family, cache_ready, active, previous=False, 
         if len(data) > 1 << 20 or hashlib.sha256(data).hexdigest() != expected_sha256:
             raise ValueError("checkpoint digest differs")
         q = receipt["qualification"]
-        if receipt["adapter"] not in ("qwen-restart", "qwen-ordered-pk2") or q["passed"] is not True:
+        if receipt["adapter"] != "qwen-restart" or q["passed"] is not True:
             raise ValueError("unqualified restart release")
         with np.load(io.BytesIO(data), allow_pickle=False) as saved:
             if str(saved["schema"]) != SCHEMA or str(saved["scope"]) != binding(receipt["order"], q):

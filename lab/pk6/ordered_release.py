@@ -23,6 +23,7 @@ from training.code_trial import read, save
 from training.trial_release import require, switch_lock
 
 ADAPTER="qwen-ordered-pk2"
+release.ADAPTERS[ADAPTER]=("8cf0a3106f09a3338eb53c28047af7e36fc7b340","GgmlEngine.measure_pk2")
 ROOT=Path(__file__).resolve().parents[2]
 FOLDER=ROOT/"lab/autonomous/results/a100-dynamic-calibration"
 
@@ -34,6 +35,9 @@ def evaluator():
 
 
 def qualification(archive):
+    require(release.checksum(ROOT/"lab/pk6/ordered_grade.py")=="0ecfc27e3b29e57722a70150b45aaac7138c30c4616bdee0b01057f862940f49"
+            and release.checksum(FOLDER/"ordered/protocol.json")=="421ba29c5c877437eebcb5fa61d9290d1aed443c61d7376738babd0a44e972eb",
+            "different prospective thresholds or scorer")
     verdict=grade.grade(archive)
     require(verdict["status"]=="qualified","source failed the ordered target gate")
     ref=read(archive/"aa-0.json")
@@ -153,9 +157,24 @@ def deliver(args):
     started=time.monotonic()
     receipt=release.pinned(args.state,args.pin)
     selected=release.selected(args.state,args.pin)
-    decision=pilot.select(args.weights,receipt,family="factual-first-18" if args.facts_first else "mixed-first-32",
-                          cache_ready=True,active=selected=="candidate",ablate_weights=args.ablate,
-                          expected_sha256=args.weights_pin)
+    decision_start=time.perf_counter()
+    family="factual-first-18" if args.facts_first else "mixed-first-32"
+    try:
+        data=args.weights.read_bytes()
+        require(len(data)<1<<20 and hashlib.sha256(data).hexdigest()==args.weights_pin
+                and receipt["adapter"]==ADAPTER, "different registered source or weights")
+        with np.load(io.BytesIO(data),allow_pickle=False) as model:
+            require(str(model["schema"])==pilot.SCHEMA and str(model["scope"])==pilot.binding(receipt["order"],receipt["qualification"]),
+                    "unbound checkpoint")
+            tag="prior" if args.ablate else "head"
+            networks=[[model[f"{tag}{i}_{k}"] for k in pilot.PARAMS] for i in range(3)]
+            support=family=="mixed-first-32" or bool(model["holdout_admitted"])
+            allowed=pilot.NAMES if selected=="candidate" else ("reference",)
+            decision=pilot.Pilot.startup_profile(networks,pilot.features(family),pilot.NAMES,allowed,"reference",
+                                                in_support=support,margin_error=float(model["margin"]))
+    except (OSError,ValueError,KeyError,TypeError,EOFError):
+        decision={"profile":"reference","reason":"unavailable qualified startup model"}
+    decision.update(cpu_ms=1000*(time.perf_counter()-decision_start),family=family,ablate_weights=args.ablate)
     arm=decision["profile"]
     prefix="ablation" if args.ablate else "selected"
     request_id=uuid.uuid4().hex

@@ -26,7 +26,6 @@ ADAPTERS = {
     "epyc-prefill": ("79ee889e679f38835df5f30e215215aa9d0c60d2", "GgmlEngine._prefill"),
     "epyc-prefill-matched-v2": ("79ee889e679f38835df5f30e215215aa9d0c60d2", "GgmlEngine._prefill"),
     "qwen-restart": ("33dc7bf544954f6c79a8a15536c0d6f5724b26a2", "GgmlEngine.__init__"),
-    "qwen-ordered-pk2": ("8cf0a3106f09a3338eb53c28047af7e36fc7b340", "GgmlEngine.measure_pk2"),
 }
 BOUND = ("reference_sha256", "candidate_sha256", "binding", "evaluator_sha256")
 

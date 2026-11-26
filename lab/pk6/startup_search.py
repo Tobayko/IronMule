@@ -9,7 +9,7 @@ from pathlib import Path
 
 from lab.pk6 import warm_result
 from training.code_author import hosted_proposal, read_request, read_response, write_once, PendingAuthor
-from training.code_trial import git, read
+from training.code_trial import read
 from training.experiment_planner import digest
 
 METHOD_PATH = "ironmule/ggml_engine.py"
@@ -75,8 +75,17 @@ def rank(directory, measurements, source):
             "selected": selected, "uncertainty": "Two complete starts on one machine. Sensitivity is a projection. Prefix measurements can select a different winner; prior sampling failed at full-worker scale."}
 
 
+def baseline_source():
+    # A shallow checkout can reconstruct the PR61 tree's engine from the qualified PR60 program archive.
+    from training.restart_evidence import candidate_bytes
+    folder = ROOT / "lab/autonomous/results/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3"
+    request_id, request = read_request(folder)
+    return candidate_bytes((folder/"reference-source.txt").read_text(),request,read(folder/"order.json"),
+                           read_response(folder,request_id)).decode()
+
+
 def commission(directory, observations, out):
-    source = git("show", warm_result.SOURCE + ":" + METHOD_PATH, cwd=ROOT) + "\n"
+    source = baseline_source()
     forecast = rank(directory, observations, source)
     out.mkdir(parents=True, exist_ok=True)
     write_once(out / "forecast.json", forecast)
@@ -110,7 +119,7 @@ def materialize(folder):
     """Rebuild the exact, attributed source artifact from the immutable Git parent and reply."""
     order = read(folder / "order.json")
     request_id, request = read_request(folder / "author")
-    source = git("show", order["base_commit"] + ":" + METHOD_PATH, cwd=ROOT) + "\n"
+    source = baseline_source()
     if (order["base_commit"] != warm_result.SOURCE or order != request["order"]
             or hashlib.sha256(source.encode()).hexdigest() != order["source_sha256"]
             or digest({k:v for k,v in order.items() if k != "order_id"}) != order["order_id"]):

@@ -1013,6 +1013,9 @@ def build(root=ROOT) -> Iterator[dict]:
             yield from prefill_experiment(root, source, digest)
         elif source == "lab/autonomous/results/a100-portfolio-shadow/result.json":
             yield from portfolio_observations(root, source, digest)
+        elif source == "lab/autonomous/results/a100-dynamic-calibration/protocol.json":
+            from training.dynamic_calibration_evidence import experiences
+            yield from experiences(root, source, digest)
         elif source == "lab/autonomous/results/a100-pr57-warm-repeat/protocol.json":
             yield from warm_http_repeat(root, source, digest)
         elif (path.parent == root / "lab/autonomous/results/a100-vllm-awq-current-fixed128-r2"
