@@ -26,6 +26,14 @@
     "response.json": {
       "original_sha256": "4f4095b97ccc713318d0d9f7ddb8359f774827a654277bad835836263654fc5a",
       "sha256": "2a210ba1e17c9b659f2de31251ebacb521dcc9b86b5bd363f9b3a39c60ecc49f"
+    },
+    "runtime-framework.json": {
+      "original_sha256": "a29f89f0bde26f5d56b646d3435b6e2acf7943cdf239f58d409eae0bb2024878",
+      "sha256": "a29f89f0bde26f5d56b646d3435b6e2acf7943cdf239f58d409eae0bb2024878"
+    },
+    "staging-attempts.json": {
+      "original_sha256": "2420a5594683b37fb577b26606b1fe978975a5ebcf8c1edb81d48c4e206d6c57",
+      "sha256": "2420a5594683b37fb577b26606b1fe978975a5ebcf8c1edb81d48c4e206d6c57"
     }
   },
   "order_id": "4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7",

@@ -441,3 +441,27 @@ wheel's OpenBLAS 0.3.34.237.2, and one BLAS thread. The command also rechecks th
 withdrawal, including the original failed reference calibration, and independently grades the
 first successful reference process after restart. The original raw responses and failed
 broker log remain in the order directory.
+
+### Archive a calibration-sampling trial over PR 60
+
+The control host can capture each stage of an attributed follow-up trial in a portable bundle.
+The command rebuilds the PR 60 method from its original source and Codex response, reproduces
+the planner's order from the two prospective measurements, and checks the bytes returned by
+the second author. Run it again as the registered evaluator writes further receipts. Earlier
+receipts and failed stages retain their original digests.
+
+```sh
+python -m training.sampling_evidence export "$SAMPLING_STATE"
+order=4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7
+python -m training.sampling_evidence replay "lab/autonomous/results/a100-calibration-sampling/trial-$order"
+python -m training.experience_archive build --output /tmp/ironmule-experience.jsonl
+```
+
+An unfinished trial replays with `qualified: null`. A terminal result checks its raw arm
+digests and all available paired work. The central archive keeps per-width source sampling
+telemetry distinct from counts collected by the independent instrumented screen. A published
+variant further requires the qualification, fresh remeasurement, active receipt and actual
+same-work rollback for the corresponding stages. While the lease is active, use
+`--cost-phase author-request`, `after-verdict` or `after-release` with
+`--target "$TARGET_CONFIG"` to retain the cumulative provider observation. The shared final
+journal is in `lab/rp/results/campaign-costs.json` after teardown.

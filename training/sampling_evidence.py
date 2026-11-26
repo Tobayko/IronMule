@@ -5,18 +5,28 @@ import argparse
 import ast
 import fcntl
 import json
+import math
 import os
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import textwrap
 import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
-from lab.pk1 import followup_contract as rules, followup_release, followup_trial as trial
+from lab.pk1 import followup_contract as rules
+from lab.pk1 import followup_release
+from lab.pk1 import followup_trial as trial
 from training import restart_evidence as prior
-from training.code_author import read_request, read_response, write_once
+from training.code_author import digest, read_request, read_response, write_once
 from training.code_trial import read, save
-from training.native_evidence import COST_JOURNAL, ROOT, bounded, patch, persist_assets, sha
+from training.native_evidence import (
+    COST_JOURNAL,
+    ROOT,
+    bounded,
+    patch,
+    persist_assets,
+    sha,
+)
 from training.trial_release import require
 
 SCHEMA = "ironmule.portable-sampling-trial.v1"
@@ -26,7 +36,7 @@ FRESH = tuple(f"fresh-{tag}-{seed}{suffix}.json" for seed in (97051, 97052)
 RELEASE = ("activate.json", "run.json", "exercise.json", "target-check.json")
 COST_PHASES = ("author-request", "after-verdict", "after-release")
 COST_FILES = tuple(f"cost-{phase}.json" for phase in COST_PHASES)
-NAMES = {"runtime-framework.json", *COST_FILES, "order.json", "decision.json", "request.json", "response.json", "candidate.diff", "outcome.json",
+NAMES = {"runtime-framework.json", "staging-attempts.json", *COST_FILES, "order.json", "decision.json", "request.json", "response.json", "candidate.diff", "outcome.json",
          "control.json", *TRIAL, *FRESH, *RELEASE}
 
 
@@ -60,6 +70,69 @@ def author_bytes(order, source, request, definition=None):
                + "".join(lines[func.end_lineno:])).encode()
     compile(content, trial.PATH, "exec")
     return content
+
+
+def verify_release(evidence, args, order, parent, candidate):
+    from training import scoped_release as release
+
+    require("control.json" in evidence, "release evidence absent a merged control receipt")
+    control = args.checkout.parent / "release/deployment/control.json"
+    control.parent.mkdir(parents=True)
+    control.write_bytes(evidence["control.json"])
+    checksum = sha(evidence["control.json"])
+    verified = followup_release.approved(args)
+    followup_release.register_receipt(order, args.checkout, control, checksum)
+    receipt = release.pinned(control.parent.parent, checksum)
+    require(verified == receipt["qualification"] and verified["candidate_sha256"] == sha(candidate),
+            "different paired source qualification or scoped publication")
+    if "target-check.json" in evidence:
+        from lab.pk1.followup_target import serving_metrics
+
+        ctx = trial.context(args)
+        scores = []
+        baseline = None
+        for seed, factual in ((97051, False), (97052, True)):
+            arms = {}
+            for label in ("reference", "candidate"):
+                name = f"fresh-{label}-{seed}.json"
+                row = json.loads(evidence[name])
+                outer = json.loads(evidence[name[:-5] + "-dispatch.json"])
+                trial.validate(row, label, seed, ctx, parent, factual)
+                charged = outer["outside_arm_s"]
+                require(outer["arm_sha256"] == sha(evidence[name]) and math.isfinite(outer["elapsed_s"])
+                        and charged == max(0., outer["elapsed_s"] - row["broker_elapsed_s"]), "incorrect fresh release dispatch cost")
+                arms[label] = {**row, "broker_to_process_s": row["broker_to_process_s"] + charged,
+                               "broker_elapsed_s": row["broker_elapsed_s"] + charged}
+            scores.append(trial.scores(arms["reference"], arms["candidate"]))
+            if not factual:
+                baseline = serving_metrics(arms["reference"])
+        check = json.loads(evidence["target-check.json"])
+        expected = {**{k: verified[k] for k in release.BOUND},
+                    "passed": trial.gate(scores[:1], scores[1:], verified["metrics"]["aa_spread"]),
+                    "metrics": {"mixed": scores[0], "factual": scores[1], "reference": baseline, "raw_sha256": {n: sha(evidence[n]) for n in FRESH}}}
+        require(check == expected and expected["passed"], "fresh release gate differs from all four target processes")
+    if "activate.json" in evidence:
+        selection = json.loads(evidence["activate.json"])
+        if selection["arm"] == "candidate":
+            require("target-check.json" in evidence and selection["receipt_sha256"] == checksum and selection["withdrawn"] is False
+                    and selection["target_check_sha256"] == sha(evidence["target-check.json"]) and selection["pr"] == receipt["publication"]["pr"],
+                    "activation was not bound to successful fresh measurements")
+        else:
+            require(selection["arm"] == "reference" and selection["withdrawn"] is True, "unrecognized release outcome")
+    if "run.json" in evidence:
+        row = json.loads(evidence["run.json"])
+        if row["arm"] == "candidate":
+            require("activate.json" in evidence and json.loads(evidence["activate.json"])["arm"] == "candidate"
+                    and row["source_sha256"] == verified["candidate_sha256"] and row["graded_correct"] == 18
+                    and row["cold_performance_completions"] == row["warm_performance_completions"] == 32
+                    and row["elapsed_through_validated_work_s"] >= row["full_worker_wall_s"] > 0, "unverified activated work")
+    if "exercise.json" in evidence:
+        exercise = json.loads(evidence["exercise.json"])
+        before, after = exercise["before"], exercise["after"]
+        require(exercise["passed"] is True and exercise["receipt_sha256"] == checksum
+                and before["arm"] == "candidate" and after["arm"] == "reference" and before["work_sha256"] == after["work_sha256"]
+                and before["source_sha256"] == verified["candidate_sha256"] and after["source_sha256"] == verified["reference_sha256"]
+                and before["seed"] == after["seed"] == 97053, "rollback does not restore matching real work")
 
 
 def verify(order, evidence, data, local, *, inbox=None):
@@ -110,16 +183,34 @@ def verify(order, evidence, data, local, *, inbox=None):
     if "result.json" in evidence:
         result = read(args.trial / "result.json")
         require(type(result["passed"]) is bool and source is not None, "unbound terminal outcome")
+        require(result["schema"] == "ironmule.followup-trial.v1" and "context.json" in evidence
+                and result["context"] == read(args.trial / "context.json")
+                and result["artifacts"] == {n: sha(evidence[n]) for n in TRIAL if n != "result.json" and n in evidence},
+                "terminal result refers to different or missing target measurements")
         if result["passed"]:
             trial.qualification(args)
-        elif "summary" in result:
+        elif result.get("summary") is not None:
             require(trial.proof(args) == result["summary"] and result["summary"]["passed"] is False,
                     "negative threshold comparison differs from the raw pairs")
         verdict = result["passed"]
-    if "control.json" in evidence:
-        ctl = json.loads(evidence["control.json"])
-        require(verdict is True and ctl["order"] == order and ctl["qualification"]["candidate_sha256"] == sha(source)
-                and ctl["qualification"]["reference_sha256"] == sha(reference), "unqualified or different sampling publication")
+    if any(n in evidence for n in ("control.json", *RELEASE, *FRESH)):
+        require(verdict is True, "publication requires a positive qualification")
+        verify_release(evidence, args, order, read(parent / "control.json"), source)
+    if "outcome.json" in evidence:
+        outcome = json.loads(evidence["outcome.json"])
+        stage = outcome["stage"]
+        require(outcome.get("order") == order["order_id"] and stage in ("unchanged", "rejected", "withdrawn", "active"), "unbound final decision")
+        if stage == "unchanged":
+            require(source == reference, "changed code reported as no change")
+        elif stage == "rejected":
+            require(verdict is False, "rejection absent target verdict")
+        elif stage == "active":
+            require(all(n in evidence for n in RELEASE) and outcome["receipt_sha256"] == sha(evidence["control.json"])
+                    and outcome["work"] == json.loads(evidence["run.json"]) and outcome["rollback"] == json.loads(evidence["exercise.json"]),
+                    "completed release absent measured work and rollback")
+        else:
+            require(verdict is True and "control.json" in evidence and any(n in evidence and json.loads(evidence[n]).get("arm") != "candidate"
+                    for n in ("activate.json", "run.json")), "missing persisted target withdrawal")
     return reference, source, verdict, rationale
 
 
@@ -142,6 +233,17 @@ def export(state, data):
                 and all(not Path(n).is_absolute() and ".." not in Path(n).parts for n in framework["framework"]), "different target framework scope")
         entries["runtime-framework.json"] = json.dumps({"campaign_sha256": sha(raw), "source": sha(source), "order": order["order_id"],
                               "framework": framework["framework"]}, ensure_ascii=False, indent=2).encode() + b"\n"
+    if "runtime-framework.json" in entries and (state / "preflight").is_dir():
+        attempts = []
+        for file in sorted((state / "preflight").glob("*.json")):
+            raw = bounded(file)
+            attempt = json.loads(raw)
+            require(attempt["source"] == sha(source) and attempt["order"] == order["order_id"] and file.stem == digest(attempt)
+                    and set(attempt["framework"]) == set(framework["framework"]), "different staging attempt")
+            attempts.append({"identity": file.stem, "raw_sha256": sha(raw), "framework": attempt["framework"],
+                             "admitted": attempt == framework})
+        require(sum(t["admitted"] for t in attempts) == 1, "missing uniquely admitted staging preflight")
+        entries["staging-attempts.json"] = json.dumps(attempts, indent=2).encode() + b"\n"
     if source is not None:
         if candidate.is_file():
             require(bounded(candidate) == source, "worker actually received different candidate bytes")
@@ -170,6 +272,20 @@ def replay(folder, data):
     return {"order_id": index["order_id"], "candidate_sha256": index["candidate_sha256"], "qualified": verdict, "checked_files": len(inputs)}
 
 
+def sampling_status(row):
+    """Distinguish counted native invocations from telemetry collected outside the timed path."""
+    state = row["sampling"]["observed"]["startup"]
+    telemetry = state.get("telemetry")
+    calls = state["calls"]
+    counts = telemetry.get("counts") if telemetry else None
+    return {"widths": len(state["prices"]), "mode": telemetry["mode"] if telemetry else "unmodified reference",
+            "reason": telemetry.get("reason") if telemetry else None,
+            "source_reported_warmup_calls": sum(pair[0] for pair in counts.values()) if counts else None,
+            "source_reported_measured_calls": sum(pair[1] for pair in counts.values()) if counts else None,
+            "independently_witnessed_native_calls": sum(calls.values()) if calls else None,
+            "screen": row["sampling"]["screen"]}
+
+
 def experiences(root, source):
     from training.experience_archive import record
 
@@ -195,7 +311,7 @@ def experiences(root, source):
                     note=index["rationale"], uncertainty="Return of a proposed source change does not measure a speedup.")
     if "context.json" in files:
         ctx = read(folder / "context.json")
-        for name in TRIAL:
+        for name in (*TRIAL, *(n for n in FRESH if not n.endswith("-dispatch.json"))):
             if name not in files:
                 continue
             row = read(folder / name)
@@ -203,7 +319,7 @@ def experiences(root, source):
                 continue
             label = row["source_label"]
             try:
-                trial.validate(row, label, row["seed"], ctx, parent, name.startswith("facts-"), name.startswith("screen-"))
+                trial.validate(row, label, row["seed"], ctx, parent, name.startswith("facts-") or name.endswith("-97052.json"), name.startswith("screen-"))
                 valid, error = True, None
             except (KeyError, IndexError, ValueError, TypeError) as exc:
                 valid, error = False, str(exc)[:260]
@@ -211,9 +327,27 @@ def experiences(root, source):
                         software={"source": row["source_sha256"], "evaluator": ctx["evaluator"]}, workload={"seed": row["seed"], "arm": label},
                         metrics=[{"cold_s": row["cold_s"], "warm_s": row["warm"]["wall_s"], "broker_elapsed_s": row["broker_elapsed_s"],
                                   "warm_ttft_p95_s": sorted(row["warm"]["ttfts_s"])[30] if len(row["warm"]["ttfts_s"]) == 32 else None,
-                                  "peak_rss_kib": row["peak_rss_kib"], "sampling": row.get("sampling")}],
+                                  "peak_rss_kib": row["peak_rss_kib"], "sampling": sampling_status(row) if row.get("sampling") else None}],
                         quality={"graded_correct": sum(row["facts"]), "cold_completed": row["cold"]["completed"], "warm_completed": row["warm"]["completed"]},
                         error=error, authorship="Independent target evaluator", uncertainty="Single GPU arm; see the complete source gate for a causal score.")
+        names = [(f"{name}-reference-{seed}.json", f"{name}-candidate-{seed}.json", name)
+                 for name, seeds in (("mixed", rules.MIXED), ("facts", rules.FACTS), ("fresh", (97051, 97052))) for seed in seeds]
+        for reference, candidate, family in names:
+            if reference not in files or candidate not in files:
+                continue
+            off, on = (read(folder / n) for n in (reference, candidate))
+            try:
+                for label, row in (("reference", off), ("candidate", on)):
+                    trial.validate(row, label, row["seed"], ctx, parent, family == "facts" or family == "fresh" and row["seed"] == 97052)
+                trial.scores(off, on)
+                matched = True
+            except (KeyError, ValueError, TypeError, IndexError):
+                matched = False
+            yield entry("calibration_sampling_paired_work", candidate, provenance="measured",
+                        reason="matched_complete_work" if matched else "unmatched_or_unverified_pair",
+                        reference_sha256=files[reference]["sha256"], candidate_sha256=files[candidate]["sha256"],
+                        workload={"family":family, "seed":on["seed"]}, matched=matched, metrics=[sampling_status(r) for r in (off, on)],
+                        uncertainty="Timed workers report sampling counts. Only the separate instrumented screen counts native invocations.")
     for name in COST_FILES:
         if name in files:
             cost = read(folder / name)
@@ -223,7 +357,7 @@ def experiences(root, source):
         checked = replay(folder, data)
         verdict = read(folder / "result.json")
         yield entry("calibration_sampling_code_verdict", "result.json", provenance="reported", reason=verdict.get("reason", "complete prospective gate"),
-                    decision=checked["qualified"], metrics=[verdict.get("summary", {}).get("metrics", {})],
+                    decision=checked["qualified"], metrics=[(verdict.get("summary") or {}).get("metrics", {})],
                     references=files, authorship="IronMule with independent frozen target evaluator",
                     uncertainty="Only a separate merged, bound and freshly activated release may serve.")
 

@@ -29,6 +29,8 @@ RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
 HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "product-gate-reference.json", "product-gate-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
               "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json", "live-ready.json")
+# The frozen stock gate broker allows sixteen child calls per arm.
+STOCK_STAGES = tuple(f"http-stock-{arm}-{i}.json" for arm in ("reference", "candidate") for i in range(16))
 COST_PHASES = ("during-qualification", "after-verdict", "after-release", "after-product")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 PLANS = ("replan-after-product.json", "replan-after-product-declined.json")
@@ -225,6 +227,26 @@ def product_assets(state, order, verified, assets, *, attempt=None, checkout=Non
                     or json.loads(previous).get("passes") is not False):
                 raise ValueError("stock-sequence retry differs from the prior rejected explicit width")
             for arm in ("reference", "candidate"):
+                from lab.pk1 import restart_gate_broker as broker
+                import ast
+
+                partial = work / f"gate-devices-{arm}.partial.json"
+                final = work / f"gate-devices-{arm}.json"
+                recorded = final if final.is_file() else partial
+                if recorded.is_file():
+                    stages = json.loads(bounded(recorded))
+                    scripts = {node.targets[0].id: broker.fingerprint(ast.literal_eval(node.value))
+                               for node in ast.parse(assets["reference-source.txt"]).body
+                               if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+                               and node.targets[0].id in (*broker.STAGES, *broker.WIDTH_STAGES)}
+                    if len(stages) > 16:
+                        raise ValueError("stock gate exceeded its child bound")
+                    for i, entry in enumerate(stages):
+                        if (entry["code_sha256"] != scripts[entry["stage"]] or entry["default_sequences"] != 8
+                                or entry["gpu_layers"] != 999 or entry["provider"] != "cuda" or type(entry["child_status"]) is not int):
+                            raise ValueError("unexpected stock width stage or hardware")
+                        public = {"arm": arm, "index": i, "source_sha256": verified[arm + "_sha256"], "device_receipt": entry}
+                        assets[f"http-stock-{arm}-{i}.json"] = json.dumps(public, indent=2).encode() + b"\n"
                 intermediate = f"product-gate-{arm}.json"
                 if intermediate not in raw:
                     continue
@@ -497,7 +519,7 @@ def product_attempts(folder):
         index = read(path)
         if (index["schema"] != "ironmule.portable-product-attempt.v1" or index["attempt"] != out.name or index["order_id"] != folder.name
                 or index["control_sha256"] != base["control.json"]["sha256"] or index["head_sha256"] != base["startup-head.npz"]["sha256"]
-                or not set(index["files"]) <= {*("http-" + n for n in HTTP_FILES), *PLANS, "cost-after-product.json", "tokenizer-preflight.json", "stock-reference-diagnostic.json"}
+                or not set(index["files"]) <= {*("http-" + n for n in HTTP_FILES), *STOCK_STAGES, *PLANS, "cost-after-product.json", "tokenizer-preflight.json", "stock-reference-diagnostic.json"}
                 or any(sha(bounded(out / n)) != row["sha256"] for n, row in index["files"].items())):
             raise ValueError("product attempt scope or captured bytes differ")
         yield out
@@ -543,6 +565,13 @@ def product_rows(root, folder, files, key, context):
         return record(kind, str((folder / name).relative_to(root)), files[name]["sha256"], kind, key, **context,
                       attempt=folder.name if folder.name.startswith("product-v") else "product-v1", **values)
 
+    for name in STOCK_STAGES:
+        if name in files:
+            item = read(folder / name)
+            row = item["device_receipt"]
+            yield emit("restart_product_stock_stage", name, provenance="measured", reason=row["stage"], arm=item["arm"],
+                       observation=item, authorship="Original product gate in a restricted CUDA process",
+                       uncertainty="Child device and process exit only. Product performance requires the separate paired HTTP gate.")
     for name in PLANS:
         if name in files:
             plan = read(folder / name)

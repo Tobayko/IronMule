@@ -6,6 +6,26 @@
       "original_sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73",
       "sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73"
     },
+    "http-stock-reference-0.json": {
+      "original_sha256": "27178f02252999b3042bb9d2be2228f154ac2b333f25d245e9fdf9902c1248c0",
+      "sha256": "27178f02252999b3042bb9d2be2228f154ac2b333f25d245e9fdf9902c1248c0"
+    },
+    "http-stock-reference-1.json": {
+      "original_sha256": "f51371be981066f2e873494e7e791a47d7c0d3b52b4518bdebf68c6688610be1",
+      "sha256": "f51371be981066f2e873494e7e791a47d7c0d3b52b4518bdebf68c6688610be1"
+    },
+    "http-stock-reference-2.json": {
+      "original_sha256": "b3f18be6487174eb9d9b3ccc9653baaaa7588d7520d15eb3e4662f30820d14e1",
+      "sha256": "b3f18be6487174eb9d9b3ccc9653baaaa7588d7520d15eb3e4662f30820d14e1"
+    },
+    "http-stock-reference-3.json": {
+      "original_sha256": "b457df2b1c0d2ed53441b291490a8a7519a6083f2501a7711ba08e96335891d8",
+      "sha256": "b457df2b1c0d2ed53441b291490a8a7519a6083f2501a7711ba08e96335891d8"
+    },
+    "http-stock-reference-4.json": {
+      "original_sha256": "1e6592e3fee10b11573dd119c91eb4b91cd876f47960a63eb125b43cc8a5ea1a",
+      "sha256": "1e6592e3fee10b11573dd119c91eb4b91cd876f47960a63eb125b43cc8a5ea1a"
+    },
     "http-trained-head.json": {
       "original_sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37",
       "sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37"
