@@ -87,6 +87,10 @@
       "original_sha256": "e3a15bae6463e41b6674b8f08a915c2b0627b40baa95a75c312f05d7d8cfd138",
       "sha256": "e3a15bae6463e41b6674b8f08a915c2b0627b40baa95a75c312f05d7d8cfd138"
     },
+    "http-geometry.json": {
+      "original_sha256": "0c32618fff227866aaa666d043ae5f02bccc02433cb1cd43274f5af4e6496ba0",
+      "sha256": "0c32618fff227866aaa666d043ae5f02bccc02433cb1cd43274f5af4e6496ba0"
+    },
     "missing.json": {
       "original_sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4",
       "sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4"
@@ -146,6 +150,14 @@
     "reference-source.txt": {
       "original_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
       "sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5"
+    },
+    "release-activate.json": {
+      "original_sha256": "910ed323464532a6cd5615681571325f7bbbf4e9c68466aab2a6fd80e72cf822",
+      "sha256": "910ed323464532a6cd5615681571325f7bbbf4e9c68466aab2a6fd80e72cf822"
+    },
+    "release-run.json": {
+      "original_sha256": "765725615d98e80a888f7ba968ac1691efb604a3df0299e4c3af285a0a0e9421",
+      "sha256": "765725615d98e80a888f7ba968ac1691efb604a3df0299e4c3af285a0a0e9421"
     },
     "request.json": {
       "original_sha256": "3cd45547ab5b5b3baa9ed9ae1bdba76151a9b5bef12986c1155e5043ff82fe88",

@@ -21,7 +21,8 @@ SCHEMA = "ironmule.portable-qwen-restart.v1"
 TRIAL = ("context.json", "aa-0.json", "aa-1.json", "stale.json", "missing.json", "receipt.json", "stale-receipt.json",
          *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")),
          *(f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")), "result.json")
-RELEASE = ("release-activate.json", "release-run.json", "release-exercise.json", "target-check.json", "rollback-exercise.json")
+RELEASE = ("release-activate.json", "release-run.json", "release-exercise.json", "target-check.json", "rollback-exercise.json", "automatic-withdrawal.json")
+PILOT_ARMS = ("pilot-initial.json", "pilot-trained.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
@@ -32,7 +33,7 @@ COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
 NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "startup-fit.json", "startup-head.npz", "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
-         "qualified.json", "control.json", "replan-after-product.json", *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
+         "qualified.json", "control.json", "replan-after-product.json", "pilot-comparison.json", *PILOT_ARMS, *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
 
 
 def manifest(path):
@@ -108,6 +109,41 @@ def checkpoint_assets(state, order, verified, assets):
         raise ValueError("startup head is not bound to the measured training and held-out families")
     assets["startup-fit.json"] = bounded(state / "startup-fit.json")
     assets["startup-head.npz"] = weights
+
+
+def verify_withdrawal(assets, order, verified):
+    row = json.loads(assets["automatic-withdrawal.json"])
+    first, second = row["incompatible"], row["restarted_with_fresh_cache"]
+    actual = [r["result"] for r in (first, second)]
+    if (row["schema"] != "ironmule.qwen-automatic-withdrawal.v1" or row["passed"] is not True or row["order"] != order["order_id"]
+            or row["receipt_sha256"] != sha(assets["control.json"]) or row["valid_cache_sha256"] != sha(assets["receipt.json"])
+            or row["prior"]["arm"] != "candidate" or row["withdrawal"]["arm"] != "reference" or not row["withdrawal"]["withdrawn"]
+            or row["main_selection"]["arm"] != "candidate" or row["main_selection"]["withdrawn"]
+            or first["pid"] == second["pid"] or actual[0]["work_sha256"] != actual[1]["work_sha256"]
+            or any(r["arm"] != "reference" or r["source_sha256"] != verified["reference_sha256"] or r["cache_used"]
+                   or (r["graded_correct"], r["cold_performance_completions"], r["warm_performance_completions"]) != (18, 32, 32)
+                   for r in actual)):
+        raise ValueError("automatic withdrawal evidence differs from bound source, scope or completed work")
+
+
+def pilot_serving_assets(state, verified, assets):
+    from lab.rp import restart_pilot_campaign
+    from training import scoped_release
+
+    pin = sha(assets["control.json"])
+    receipt = scoped_release.pinned(state / "release", pin)
+    if receipt["qualification"] != verified:
+        raise ValueError("pilot serving source differs from verified evaluation")
+    folder = state / "native-pilot"
+    for n in PILOT_ARMS:
+        if (folder / n).is_file():
+            assets[n] = bounded(folder / n)
+    if (folder / "comparison.json").is_file():
+        expected = restart_pilot_campaign.assess([json.loads(assets[n]) for n in PILOT_ARMS], receipt, pin, sha(assets["startup-head.npz"]))
+        comparison = bounded(folder / "comparison.json")
+        if expected != json.loads(comparison):
+            raise ValueError("trained pilot serving comparison differs from the source-bound work")
+        assets["pilot-comparison.json"] = comparison
 
 
 def product_assets(state, order, verified, assets):
@@ -266,6 +302,10 @@ def export(args):
                     from lab.pk1 import restart_release
                     verified = restart_release.approved(check)
                     checkpoint_assets(state, order, verified, assets)
+                    if "automatic-withdrawal.json" in assets:
+                        verify_withdrawal(assets, order, verified)
+                    if (state / "native-pilot").is_dir():
+                        pilot_serving_assets(state, verified, assets)
                     if (state / "product").is_dir():
                         product_assets(state, order, verified, assets)
                 else:
@@ -326,6 +366,19 @@ def experiences(root, source):
                    initialization="Three independently seeded heads trained from random weights on CPU",
                    authorship="IronMule fitted and replayed the CPU startup controller",
                    uncertainty=fit["uncertainty"])
+    if "automatic-withdrawal.json" in files:
+        withdrawal = read(folder / "automatic-withdrawal.json")
+        yield emit("restart_automatic_withdrawal", "automatic-withdrawal.json", reason=withdrawal["withdrawal"]["reason"],
+                   decision=withdrawal["passed"], observed=withdrawal,
+                   authorship="Target release runner in two fresh processes under a shadow selection",
+                   uncertainty="Tests an expired cache receipt on this source and device.")
+    if "pilot-comparison.json" in files:
+        comparison = read(folder / "pilot-comparison.json")
+        arms = [read(folder / n) for n in PILOT_ARMS]
+        yield emit("restart_pilot_actual_serving", "pilot-comparison.json", reason="matched_admission_initial_and_trained",
+                   decision=comparison["same_work_policy_changed_source"], actual_work=[r["work"] for r in arms],
+                   metrics=[comparison], actions=[r["selection"] for r in arms], authorship="IronMule CPU pilot on the scoped A100 release",
+                   uncertainty="These two process runs distinguish the policy action. Relative timing is judged in the separate counterbalanced gate.")
     if "replan-after-product.json" in files:
         plan = read(folder / "replan-after-product.json")
         yield emit("restart_post_product_plan", "replan-after-product.json", provenance="simulated", reason="next_source_experiment",
