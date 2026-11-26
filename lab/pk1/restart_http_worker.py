@@ -32,7 +32,22 @@ def main(argv):
         # Use its full evidence for the exact requested settings, even if autotuning prefers another.
         with open(os.devnull, "w") as sink:
             os.dup2(sink.fileno(), 1)
-        report = ge.gate(gguf, gguf, cache=Path.cwd() / "gate")
+        from ironmule import ggml_gate_diagnostics as diagnostics
+        original_failure = diagnostics.failed_child
+
+        def capture_failure(stage, stderr, status=None, exception=None):
+            # A private worker-owned file keeps the exact failing child output; only the normal diagnostic is exported.
+            if isinstance(stderr, str) and stderr:
+                path = Path.cwd() / "gate-child-stderr.json"
+                with path.open("a", encoding="utf-8") as log:
+                    log.write(json.dumps({"stage": stage, "status": status, "stderr": stderr[-16384:]}) + "\n")
+            return original_failure(stage, stderr, status, exception)
+
+        diagnostics.failed_child = capture_failure
+        try:
+            report = ge.gate(gguf, gguf, cache=Path.cwd() / "gate")
+        finally:
+            diagnostics.failed_child = original_failure
         matching = [r for r in [*report.get("tried", []), report.get("streams")] if r
                     and r["settings"] == expected["settings"] and r.get("passes") is True]
         passed = report.get("passes") is True and bool(matching)
