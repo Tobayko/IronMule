@@ -80,7 +80,7 @@ def test_complete_native_control_dry_run_uses_measured_bytes_only(tmp_path, monk
     runtime = {name: trial.checksum(repo / name) for name in names}
     binding = {"fp": {"devices": ["fixture"]}, "native": {"sha256": "native"}, "engine": {},
                "gguf": release.QWEN32, "source_sha256": trial.checksum(source), "table_sha256": trial.checksum(table),
-               "w4_sha256": "reference", "serving_sources": runtime}
+               "w4_sha256": "reference", "serving_sources": runtime, "mask": {"tokens_served": [32], "q6k_tokens_served": [32]}}
     base = release.git("rev-parse", "HEAD", cwd=repo)
     profile = tmp_path / "order.profile.json"
     release.save(profile, {"binding": binding, "base_commit": base})
@@ -112,6 +112,11 @@ def test_complete_native_control_dry_run_uses_measured_bytes_only(tmp_path, monk
                  "model": release.QWEN32, "reference": "reference", "candidate": cand, "table": trial.checksum(table),
                  "evaluator_sha256": trial.checksum(trial.__file__), "measurements": [{"shape": [12, 512, 256, 32],
                  "variant": 1, "ksplit": 1, "arms": [{"relative_error": 0., "microseconds": 1.}] * 2}]})
+    frozen = {"mask_bits": trial.mask_bits(binding["mask"]), "padding": {},
+              "pilot_costs": {k: .1 for k in ("step_one", "row", "prefill_1k", "kv_1k")}, "pass_seconds": {}}
+    release.save(samples / "calibration.json", {"schema": trial.SCHEMA, "stage": "calibration",
+                 "model": release.QWEN32, "reference": "reference", "table": trial.checksum(table),
+                 "profile": frozen, "evaluator_sha256": context["harness"]})
     rows = []
     for i in range(6):
         seed = 92741 + i
@@ -119,7 +124,7 @@ def test_complete_native_control_dry_run_uses_measured_bytes_only(tmp_path, monk
         answers = [{"output_ids": [8], "answer": "fixture", "stop": "eos"}] * 32
         common = {"schema": trial.SCHEMA, "profiled": False, "pilot_decisions": 7, "facts": [True] * 18,
                   "binding": {"native": binding["native"], "fp": binding["fp"], "model_sha256": release.QWEN32,
-                              "flags": trial.FLAGS, "engine": {}, "runtime_sources": runtime},
+                              "flags": trial.FLAGS, "engine": {}, "runtime_sources": runtime, "profile": frozen},
                   "workload": {"seed": seed, "tokens": 32, "clients": 32, "context": 2048,
                                "warmup_waves": 1, "quality_cases": 18},
                   "quality_answers": factual, "answers": answers, "fact_digest": digest([[1]] * 18),
@@ -132,7 +137,7 @@ def test_complete_native_control_dry_run_uses_measured_bytes_only(tmp_path, monk
             release.save(samples / f"{label}-{i}.json", row)
             pair.append(row)
         rows.append(pair)
-    signed = ["build.json", "screen.json", *(f"{arm}-{i}.json" for i in range(6) for arm in ("ref", "cand"))]
+    signed = ["build.json", "screen.json", "calibration.json", *(f"{arm}-{i}.json" for i in range(6) for arm in ("ref", "cand"))]
     release.save(samples / "result.json", {"schema": trial.SCHEMA, **trial.judge_native(rows), "context": context,
                  "candidate": cand, "incumbent": "reference",
                  "measurements_sha256": {k: trial.checksum(samples / k) for k in signed}})

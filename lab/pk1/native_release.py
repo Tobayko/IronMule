@@ -75,10 +75,11 @@ def qualification(args):
     require(result["passed"] is True and result["schema"] == trial.SCHEMA and result["context"] == context
             and result["candidate"] == candidate and result["incumbent"] == binding["w4_sha256"],
             "missing positive bound decision")
-    names = ["build.json", "screen.json", *(f"{arm}-{i}.json" for i in range(PAIRS) for arm in ("ref", "cand"))]
+    names = ["build.json", "screen.json", "calibration.json", *(f"{arm}-{i}.json" for i in range(PAIRS) for arm in ("ref", "cand"))]
     require(result["measurements_sha256"] == {name: trial.checksum(directory / name) for name in names},
             "measurement receipt mismatch")
     score_screen(read(directory / "screen.json"), order, candidate, args.table)
+    frozen = trial.validate_calibration(read(directory / "calibration.json"), binding)
     pairs = []
     for i in range(PAIRS):
         ref, cand = (read(directory / f"{arm}-{i}.json") for arm in ("ref", "cand"))
@@ -86,6 +87,7 @@ def qualification(args):
             check_row(row, order, binary, 92741 + i)
         pairs.append((ref, cand))
     bound = pairs[0][0]["binding"]
+    require(bound["profile"] == frozen, "measured profile differs from frozen calibration")
     require(all(row["binding"] == bound for pair in pairs for row in pair), "target changed between observations")
     decision = trial.judge_native(pairs)
     require(decision["passed"] and all(result[k] == v for k, v in decision.items()), "independent paired gate failed")
@@ -164,7 +166,7 @@ def target_files(args, receipt, candidate):
 
 def measured(args, receipt, candidate, seed, dest):
     binary, expected = target_files(args, receipt, candidate)
-    row = trial.launch_arm(args, binary, seed, dest)
+    row = trial.launch_arm(args, binary, seed, dest, receipt["binding"]["profile"])
     check_row(row, receipt["order"], expected, seed)
     require(row["binding"] == receipt["binding"], "execution target differs from qualification")
     return row
