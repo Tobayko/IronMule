@@ -19,6 +19,10 @@
       "original_sha256": "3958274ce1c773953e5cd0fe35fef76621aebf22e4261f92a930cd8dceb2cdc7",
       "sha256": "3958274ce1c773953e5cd0fe35fef76621aebf22e4261f92a930cd8dceb2cdc7"
     },
+    "cost-after-verdict.json": {
+      "original_sha256": "637c3b93a91ef108f5b206932104a434ee5a2fd59e86ba11e4d1a8ee08dde234",
+      "sha256": "637c3b93a91ef108f5b206932104a434ee5a2fd59e86ba11e4d1a8ee08dde234"
+    },
     "cost-author-request.json": {
       "original_sha256": "b20beeaba346caa4cfa02ac37230d774f84613a15d931f1879a45c81281af288",
       "sha256": "b20beeaba346caa4cfa02ac37230d774f84613a15d931f1879a45c81281af288"
@@ -26,6 +30,22 @@
     "decision.json": {
       "original_sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb",
       "sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb"
+    },
+    "facts-candidate-96951.json": {
+      "original_sha256": "7f77dd6be4a44b706bb4da83003da7a018f421dbdcf37067ec3fadcb76bb125b",
+      "sha256": "7f77dd6be4a44b706bb4da83003da7a018f421dbdcf37067ec3fadcb76bb125b"
+    },
+    "facts-candidate-96952.json": {
+      "original_sha256": "d2c2ee153fdba0420c1ef1c8919e793bcd18c0508b0a49782d262799bc2a7866",
+      "sha256": "d2c2ee153fdba0420c1ef1c8919e793bcd18c0508b0a49782d262799bc2a7866"
+    },
+    "facts-reference-96951.json": {
+      "original_sha256": "7a103923aec7a13e9c7af03ab6bc6197a3a70dc4ef5da9e900e9a21d0b175437",
+      "sha256": "7a103923aec7a13e9c7af03ab6bc6197a3a70dc4ef5da9e900e9a21d0b175437"
+    },
+    "facts-reference-96952.json": {
+      "original_sha256": "cec77006a1ddfc123bedf07bf062ff94af4fe828ef2b979153b5714d4b680ed6",
+      "sha256": "cec77006a1ddfc123bedf07bf062ff94af4fe828ef2b979153b5714d4b680ed6"
     },
     "invalid-followup.json": {
       "original_sha256": "91c42acf8d7fc8ccf4c0625a7fe8836b639a7a67322e5dc38fd397449bc75d6e",
@@ -39,6 +59,22 @@
       "original_sha256": "0ac45f74379641c2dda317d72c05f578d22366a7daaf5839e14f1d2e7c80536b",
       "sha256": "0ac45f74379641c2dda317d72c05f578d22366a7daaf5839e14f1d2e7c80536b"
     },
+    "mixed-candidate-96853.json": {
+      "original_sha256": "814ceac42ff8cd4a5085399ff573a37aa512bd0844b5dc54a48cdc7a5ee8f563",
+      "sha256": "814ceac42ff8cd4a5085399ff573a37aa512bd0844b5dc54a48cdc7a5ee8f563"
+    },
+    "mixed-candidate-96854.json": {
+      "original_sha256": "b2c32bc08dc7be53b654d5161d94896aab8784ca2c5f85fd81c9502da4efd4f4",
+      "sha256": "b2c32bc08dc7be53b654d5161d94896aab8784ca2c5f85fd81c9502da4efd4f4"
+    },
+    "mixed-candidate-96855.json": {
+      "original_sha256": "39571b0f1ed6957fe68684dd71d528513a159f403461416b08b9ca146d9e1690",
+      "sha256": "39571b0f1ed6957fe68684dd71d528513a159f403461416b08b9ca146d9e1690"
+    },
+    "mixed-candidate-96856.json": {
+      "original_sha256": "7ca9ae3ba8117add81eaabc88b97f3da309976ac3b2a29492c9de5de6027f08b",
+      "sha256": "7ca9ae3ba8117add81eaabc88b97f3da309976ac3b2a29492c9de5de6027f08b"
+    },
     "mixed-reference-96851.json": {
       "original_sha256": "43cab16963afdbf147c57a560d7098bd9e7d92af9c54e340604e59991506942b",
       "sha256": "43cab16963afdbf147c57a560d7098bd9e7d92af9c54e340604e59991506942b"
@@ -47,9 +83,29 @@
       "original_sha256": "aca2cb2ecac72af8d7a5d39dcd7eca20ff4951043b31c18f5f40888f3b8ac3ca",
       "sha256": "aca2cb2ecac72af8d7a5d39dcd7eca20ff4951043b31c18f5f40888f3b8ac3ca"
     },
+    "mixed-reference-96853.json": {
+      "original_sha256": "4e180244f1f8c6841ad8e6b712aa15b79f8724f81f7a71a9ce6962d2dc2f7eda",
+      "sha256": "4e180244f1f8c6841ad8e6b712aa15b79f8724f81f7a71a9ce6962d2dc2f7eda"
+    },
+    "mixed-reference-96854.json": {
+      "original_sha256": "af3cb7cfed59747077b05730e6cafd1bbd7fad18ab691e375c2397b77e235957",
+      "sha256": "af3cb7cfed59747077b05730e6cafd1bbd7fad18ab691e375c2397b77e235957"
+    },
+    "mixed-reference-96855.json": {
+      "original_sha256": "fb52e225b4e3ade52d4ea4976ccbb976e73ab4b5feb9b786bf7c62299f266243",
+      "sha256": "fb52e225b4e3ade52d4ea4976ccbb976e73ab4b5feb9b786bf7c62299f266243"
+    },
+    "mixed-reference-96856.json": {
+      "original_sha256": "baf462424f1efce862767046e857cca14bb1aeed542616f9d21ff44df8f6ffc0",
+      "sha256": "baf462424f1efce862767046e857cca14bb1aeed542616f9d21ff44df8f6ffc0"
+    },
     "order.json": {
       "original_sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb",
       "sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb"
+    },
+    "outcome.json": {
+      "original_sha256": "a1f84d371e049008b0089d93d2397f0499063efe558ffce4af712b95b3b9638d",
+      "sha256": "195fc2773e9e42ddb17a68bd3b48fe6951f077e03204a9243d1faa6eb8468dc9"
     },
     "request.json": {
       "original_sha256": "b239acaccc10ca98e1a6fe0997c2551e508723d8e4bb2dcac98dcb72b62d2a28",
@@ -58,6 +114,10 @@
     "response.json": {
       "original_sha256": "4f4095b97ccc713318d0d9f7ddb8359f774827a654277bad835836263654fc5a",
       "sha256": "2a210ba1e17c9b659f2de31251ebacb521dcc9b86b5bd363f9b3a39c60ecc49f"
+    },
+    "result.json": {
+      "original_sha256": "9fa65d3edc3a8b2a05dc3a0665d9c21c5ac9efe10a2ff9a0c91e799cf4e0d21c",
+      "sha256": "9fa65d3edc3a8b2a05dc3a0665d9c21c5ac9efe10a2ff9a0c91e799cf4e0d21c"
     },
     "runtime-framework.json": {
       "original_sha256": "a29f89f0bde26f5d56b646d3435b6e2acf7943cdf239f58d409eae0bb2024878",
@@ -91,7 +151,7 @@
   "order_id": "4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7",
   "parent_order": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
   "pr60_source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
-  "qualified": null,
+  "qualified": false,
   "rationale": "The two blind A100 traces preserved the reference dispatch with two warm-ups and two fresh samples per width. Implement that registered sampler inside measure_padding only. The source and order pins, live parent W4 mask readback, original immutable cache receipt, current flags, affinity, context and time window constrain its use. Every accepted price is the median of two new real decodes. Expanded min/max intervals must select the same padding table for every admissible price vector. An ambiguous interval discards the attempted prices, clears KV and repeats the original complete local measurement from its original priming sequence; a missing, foreign, expired or incompatible profile goes directly to that full route. Actual sample counts include discarded work. No answer, price or dispatch table is embedded. In particular the observed tail savings are a forecast; the full hardware comparison, independently measured prices, quality, fallback and serving clocks determine whether this change is usable.",
   "rebuild": "Apply candidate.diff to the bound PR60 source, or reconstruct it from the immutable parent and author response.",
   "schema": "ironmule.portable-sampling-trial.v1"
