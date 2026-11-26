@@ -2,9 +2,21 @@
   "attempt": "product-v3",
   "control_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
   "files": {
+    "http-gate-devices-reference.json": {
+      "original_sha256": "5b6b0052010db8e054f756918996cd72f663b83cea27e5f56de206e05f6fe528",
+      "sha256": "5b6b0052010db8e054f756918996cd72f663b83cea27e5f56de206e05f6fe528"
+    },
+    "http-gate-reference.json": {
+      "original_sha256": "508e42527831ebda8f0655eab9f57ea3b9eb1c7bb205dc2f7225d6863030f16f",
+      "sha256": "508e42527831ebda8f0655eab9f57ea3b9eb1c7bb205dc2f7225d6863030f16f"
+    },
     "http-geometry.json": {
       "original_sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73",
       "sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73"
+    },
+    "http-product-gate-reference.json": {
+      "original_sha256": "c4bcd741926a81918a12c7356e4adef93c71f6e40a6bb743056bf9944bde3983",
+      "sha256": "c4bcd741926a81918a12c7356e4adef93c71f6e40a6bb743056bf9944bde3983"
     },
     "http-stock-reference-0.json": {
       "original_sha256": "27178f02252999b3042bb9d2be2228f154ac2b333f25d245e9fdf9902c1248c0",
@@ -25,6 +37,14 @@
     "http-stock-reference-4.json": {
       "original_sha256": "1e6592e3fee10b11573dd119c91eb4b91cd876f47960a63eb125b43cc8a5ea1a",
       "sha256": "1e6592e3fee10b11573dd119c91eb4b91cd876f47960a63eb125b43cc8a5ea1a"
+    },
+    "http-stock-reference-5.json": {
+      "original_sha256": "7c36aceb9a14518240e003dc0bab388396d52f89b7643f80f238ebae5190a9d6",
+      "sha256": "7c36aceb9a14518240e003dc0bab388396d52f89b7643f80f238ebae5190a9d6"
+    },
+    "http-stock-reference-6.json": {
+      "original_sha256": "e6455265aaef8fa0e30ddf9ae75fdc960b30e4bc7086be6cf697169d17e95452",
+      "sha256": "e6455265aaef8fa0e30ddf9ae75fdc960b30e4bc7086be6cf697169d17e95452"
     },
     "http-trained-head.json": {
       "original_sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37",

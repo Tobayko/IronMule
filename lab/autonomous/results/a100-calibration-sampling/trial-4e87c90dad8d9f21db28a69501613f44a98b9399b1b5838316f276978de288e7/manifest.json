@@ -3,9 +3,21 @@
   "candidate_sha256": "0054d06a2b58452ee9483858875d0c81f644b038e9a269ba9262728c2b16847d",
   "cost_journal": "lab/rp/results/campaign-costs.json",
   "files": {
+    "aa-0.json": {
+      "original_sha256": "c96a493aa0152f0afd1279198cd8360c233762be62aab47029080283ca0d20ef",
+      "sha256": "c96a493aa0152f0afd1279198cd8360c233762be62aab47029080283ca0d20ef"
+    },
+    "aa-1.json": {
+      "original_sha256": "4a29b626619b9a290b95fde7994f1819788b5b610048a44e747106635b843ecf",
+      "sha256": "4a29b626619b9a290b95fde7994f1819788b5b610048a44e747106635b843ecf"
+    },
     "candidate.diff": {
       "original_sha256": "e439145a8f87bc7ca4838bbc27f52ae3e1a8e996742fbfb4650ee6ac75d68316",
       "sha256": "e439145a8f87bc7ca4838bbc27f52ae3e1a8e996742fbfb4650ee6ac75d68316"
+    },
+    "context.json": {
+      "original_sha256": "3958274ce1c773953e5cd0fe35fef76621aebf22e4261f92a930cd8dceb2cdc7",
+      "sha256": "3958274ce1c773953e5cd0fe35fef76621aebf22e4261f92a930cd8dceb2cdc7"
     },
     "cost-author-request.json": {
       "original_sha256": "b20beeaba346caa4cfa02ac37230d774f84613a15d931f1879a45c81281af288",
@@ -30,6 +42,14 @@
     "runtime-framework.json": {
       "original_sha256": "a29f89f0bde26f5d56b646d3435b6e2acf7943cdf239f58d409eae0bb2024878",
       "sha256": "a29f89f0bde26f5d56b646d3435b6e2acf7943cdf239f58d409eae0bb2024878"
+    },
+    "sampling-parent-receipt.json": {
+      "original_sha256": "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89",
+      "sha256": "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89"
+    },
+    "sampling-profile.json": {
+      "original_sha256": "aa2e7959f654b142c1cb6077ba13ec9658dd1a9caed1aa5079d12cf93d304e06",
+      "sha256": "aa2e7959f654b142c1cb6077ba13ec9658dd1a9caed1aa5079d12cf93d304e06"
     },
     "staging-attempts.json": {
       "original_sha256": "2420a5594683b37fb577b26606b1fe978975a5ebcf8c1edb81d48c4e206d6c57",

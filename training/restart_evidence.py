@@ -243,7 +243,8 @@ def product_assets(state, order, verified, assets, *, attempt=None, checkout=Non
                         raise ValueError("stock gate exceeded its child bound")
                     for i, entry in enumerate(stages):
                         if (entry["code_sha256"] != scripts[entry["stage"]] or entry["default_sequences"] != 8
-                                or entry["gpu_layers"] != 999 or entry["provider"] != "cuda" or type(entry["child_status"]) is not int):
+                                or entry["gpu_layers"] != 999 or entry["provider"] != "cuda" or entry["device"] != order["binding"]["fp"]["gpu"]
+                                or type(entry["child_status"]) is not int):
                             raise ValueError("unexpected stock width stage or hardware")
                         public = {"arm": arm, "index": i, "source_sha256": verified[arm + "_sha256"], "device_receipt": entry}
                         assets[f"http-stock-{arm}-{i}.json"] = json.dumps(public, indent=2).encode() + b"\n"
@@ -565,6 +566,17 @@ def product_rows(root, folder, files, key, context):
         return record(kind, str((folder / name).relative_to(root)), files[name]["sha256"], kind, key, **context,
                       attempt=folder.name if folder.name.startswith("product-v") else "product-v1", **values)
 
+    for arm in ("reference", "candidate"):
+        name = f"http-product-gate-{arm}.json"
+        if name in files:
+            check = read(folder / name)
+            gate = read(folder / f"http-gate-{arm}.json")
+            yield emit("restart_product_arm_gate", name, reason=check.get("reason", "original_numeric_factual_width_gate"),
+                       arm=arm, decision=gate["passes"], observed_source=gate["source_sha256"],
+                       quality=gate.get("qualified_profile", {}).get("factual"), numeric_interval=gate.get("interval"),
+                       metrics=[{"calibration_s":gate.get("seconds"), "selected_width":gate.get("qualified_width", {}).get("sequences"),
+                                 "calibration_tokens_s_by_width":gate.get("qualified_width", {}).get("rates")}],
+                       uncertainty="These width-calibration rates are internal measurements. Product HTTP needs its own held-out work.")
     for name in STOCK_STAGES:
         if name in files:
             item = read(folder / name)
