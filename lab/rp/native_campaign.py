@@ -25,6 +25,17 @@ CONFIG_KEYS = {"pod_id", "framework", "checkout", "python", "env", "gguf",
                "reference_lib", "table", "worker_root", "state_root"}
 
 
+def wait_for_author_response(request_path, deadline):
+    """Wait locally for atomic delivery. The author adapter validates the reply on resume."""
+    response = Path(request_path).with_name("response.json")
+    while not response.is_file():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(1.0, remaining))
+    return True
+
+
 def lease(expected_id):
     from lab.rp import rp
     from lab.rp.accounting import held, limit, locked
@@ -389,6 +400,10 @@ def main():
     while True:
         outcome = cycle(args)
         print(json.dumps(outcome), flush=True)
+        if outcome["stage"] == "awaiting_author":
+            if wait_for_author_response(outcome["request"], until):
+                continue
+            return
         if outcome["stage"] in {"active", "withdrawn", "qualified", "rejected", "staged", "http_verified", "http_declined", "http_withdrawn", "http_lease_limit"} or time.monotonic() >= until:
             return
         time.sleep(max(0, min(10, until - time.monotonic())))

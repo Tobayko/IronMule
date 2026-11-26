@@ -24,6 +24,7 @@ from lab.rp.native_campaign import (
     shell,
     snapshot,
     upload,
+    wait_for_author_response,
 )
 from training import calibration_sampling, experience_archive
 from training.code_author import (
@@ -234,17 +235,21 @@ def main():
         record(state, decision, args.control)
         print(json.dumps(outcome))
         return
-    try:
-        candidate = author(decision, args.checkout, state, args.author, args.archive)
-    except PendingAuthor:
-        print(json.dumps({"stage": "awaiting author", "request": str(state / "authoring/author/request.json")}))
-        return
+    until = time.monotonic() + args.wait_seconds
+    while True:
+        try:
+            candidate = author(decision, args.checkout, state, args.author, args.archive)
+            break
+        except PendingAuthor:
+            request = state / "authoring/author/request.json"
+            print(json.dumps({"stage": "awaiting author", "request": str(request)}), flush=True)
+            if not wait_for_author_response(request, until):
+                return
     if candidate is None:
         outcome = {"stage": "unchanged", "order": decision["order_id"], "reason": read(state / "authoring/unchanged.json")["reason"]}
         write_once(state / "outcome.json", outcome)
         print(json.dumps(outcome))
         return
-    until = time.monotonic() + args.wait_seconds
     while True:
         result = cycle(args, decision, candidate)
         print(json.dumps(result), flush=True)

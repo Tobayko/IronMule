@@ -40,10 +40,12 @@ OPENBLAS_NUM_THREADS=1 python -m lab.rp.restart_campaign --config "$TARGET" \
 ```
 
 The subscription CLI requires working authorization to execute a Codex request. This campaign
-used the hosted Codex author. In that environment, select `--author hosted`, let the hosting
-worker fulfill the persisted request, and resume the same command. A repeated invocation
-validates the original evidence and reuses its recorded author output and completed target
-jobs. The RunPod lease and both watchdogs continue to enforce the campaign deadline.
+used the hosted Codex author. With `--author hosted --wait-seconds 7200`, the coordinator
+prints the pending request, waits for the hosting worker to deliver its response and resumes
+automatically within that window. With the default zero wait it returns the pending request
+immediately. A later invocation validates the original evidence and reuses the recorded
+author output and completed target jobs. The RunPod lease and both watchdogs continue to
+enforce the campaign deadline while the coordinator waits.
 
 On the owned Linux RunPod, stage the trusted framework, immutable reference checkout, model,
 bindings, exact local W4 kernel and table, dedicated worker UID and restricted worker directory.
@@ -250,7 +252,9 @@ PR 60 worker, with the identical trained startup head in both arms. The existing
 watchdogs, CPU/GPU measurement lock, numerical controls, source-bound PR checks, fresh target
 and rollback checks apply. The control host saves each complete worker receipt while polling.
 The signed-in subscription CLI can run unattended where its authorization works. The hosted
-worker used here consumes the pending request and resumes with the same state directory.
+worker used here consumes the pending request. Within the requested waiting window the
+coordinator picks up its atomic response and proceeds directly to evaluation. After a
+process restart, reuse the same state directory.
 
 ```sh
 data=lab/autonomous/results

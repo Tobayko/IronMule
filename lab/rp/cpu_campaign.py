@@ -606,7 +606,11 @@ def main():
             save(args.state / "campaign-outcome.json", result)
             print(json.dumps(result, sort_keys=True), flush=True)
             left = begin + args.wait_seconds - time.monotonic()
-            if (left <= 0 or result["stage"] in {"deferred", "awaiting Codex", "declined", "incomplete", "confounded", "unqualified", "waiting for target",
+            if result["stage"] == "awaiting Codex":
+                if transport.wait_for_author_response(result["request"], begin + args.wait_seconds):
+                    continue
+                return
+            if (left <= 0 or result["stage"] in {"deferred", "declined", "incomplete", "confounded", "unqualified", "waiting for target",
                                                  "rejected", "qualified", "published", "active", "withdrawn", "product declined", "product served", "product incomplete"}):
                 return
             time.sleep(min(15, left))

@@ -22,6 +22,7 @@ from lab.rp.native_campaign import (
     shell,
     snapshot,
     upload,
+    wait_for_author_response,
 )
 from training import scoped_release
 from training.code_author import PendingAuthor, consume_cli, write_once
@@ -472,6 +473,10 @@ def main():
     while True:
         outcome = cycle(a)
         print(json.dumps(outcome), flush=True)
+        if outcome["stage"] == "awaiting author":
+            if wait_for_author_response(outcome["request"], until):
+                continue
+            return
         if outcome["stage"] not in ("measuring", "activate", "run", "exercise", "pilot serving", "product gate-reference", "product gate-candidate", "product qualify", "product exercise", "product serve") or time.monotonic() >= until:
             return
         time.sleep(min(10, max(0, until - time.monotonic())))
