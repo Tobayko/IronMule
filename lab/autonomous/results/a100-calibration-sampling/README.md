@@ -93,3 +93,30 @@ OPENBLAS_NUM_THREADS=1 python -m lab.pk1.sampling_accounting \
   --data lab/autonomous/results --folder "$d/trial-$order" --out /tmp/ironmule-sampling-accounting.json
 cmp "$d/target-accounting.json" /tmp/ironmule-sampling-accounting.json
 ```
+
+## Retrospective complete-profile portfolio
+
+The later CPU-only study compared seven groupings of complete price vectors, always
+drawn from one original PR 60 worker. Two complete starts supplied donors and a
+separate two-start study set its width-one drift envelope. The terminal source trial
+offered six new mixed and two factual-first *unmodified reference* arms. No partial or
+full-fallback source variant entered the donor bank. The best numeric opportunity
+combined padding and pass prices. Forecasts and the fixed last-donor rule stayed
+within 2% in all eight test workers; the sentinel accepted five. The whole
+padding/pass/Pilot profile met that descriptive line in one of eight. Pilot prices
+therefore remain fresh in the new question. Discrete padding alone has no predictive
+advantage over the empty rule on this set. An older same-cache PR 60 cohort omitted
+full padding prices; its complete pass curves reached about 9.5% error and the
+individual pass sentinel abstained on every older start.
+
+After charging warmup, setup and the three ineligible sentinels, this sensitivity
+estimates 2.669 s per start before downstream graph effects and verification.
+The smaller direct 22-worker-only break-even is 300 starts. The active product has
+no measured future restart frequency. Its public timing metrics cannot report old
+prices as freshly measured.
+
+```sh
+OPENBLAS_NUM_THREADS=1 python -m training.calibration_portfolio --data lab/autonomous/results \
+  --control "$r/control.json" --out /tmp/ironmule-portfolio-prices.json
+cmp "$d/portfolio-research.json" /tmp/ironmule-portfolio-prices.json
+```
