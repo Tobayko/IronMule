@@ -217,14 +217,15 @@ class ScopedService(ProductService):
 
 
 @contextmanager
-def server(args, receipt, cand, gate, port=0):
+def server(args, receipt, cand, gate, port=0, *, inputs=None, settings=None, listen=True):
     from ironmule.gguf_tokenizer import gguf_model_id
 
     with ExitStack() as stack:
-        layout = stack.enter_context(isolated_inputs(args, receipt, cand))
+        layout = stack.enter_context((inputs or isolated_inputs)(args, receipt, cand))
         trusted = gate["kernel_profile"]
         require(trusted["kernel_sha256"] == layout.binary and trusted["flags"] == {k: layout.env[k] for k in FLAGS}
-                and gate["settings"] == receipt["binding"]["engine"], "HTTP quality receipt belongs to another arm")
+                and gate["settings"] == (receipt["binding"]["engine"] if settings is None else settings),
+                "HTTP quality receipt belongs to another arm")
         spec = ModelSpec(gguf_model_id(str(args.gguf)), "sha256:" + native_release.QWEN32, str(args.gguf), args.gguf.stat().st_size)
         client = ReleaseClient(spec, startup_timeout=args.timeout, execution_variant="current_engine", thinking=False,
                                engine_configuration="ggml", speculate=True, ggml_gguf=str(args.gguf),
@@ -238,11 +239,17 @@ def server(args, receipt, cand, gate, port=0):
         stack.callback(service.close)
         service.instance = {"arm": "cand" if cand else "ref", "binary": layout.binary, "pr": receipt["publication"]["pr"],
                             "order_id": receipt["order"]["order_id"]}
+        if source := getattr(layout, "source_sha256", None):
+            service.instance["source_sha256"] = source
         if run_tag := os.environ.get("IRONMULE_HTTP_WITNESS"):
             service.instance["broker_instance"] = run_tag
         service.reference_url = getattr(args, "reference_url", None)
         if service.reference_url:
             reference_endpoint(service.reference_url, spec.model_id, port)
+        if not listen:
+            service.listen_port = port
+            yield {"model_id": spec.model_id}, service, client
+            return
         http = create_server(service, host="127.0.0.1", port=port)
         service.listen_port = http.server_address[1]
         stack.callback(http.server_close)

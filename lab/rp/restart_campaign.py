@@ -106,6 +106,72 @@ def release(args, cfg, remote, check):
             "work": work, "rollback_test": proof["passed"]}
 
 
+def product(args, cfg, remote, check, active):
+    """Use the existing lease and ordinary HTTP broker only after the independent native release is active."""
+    from lab.pk1 import restart_http
+    from training import pilot_restart_profiles
+
+    local, state = args.state / "product", args.state
+    local.mkdir(exist_ok=True)
+    control = state / "release"
+    pod = lease(cfg["pod_id"])
+    pin = active["receipt_sha256"]
+    receipt = scoped_release.pinned(control, pin)
+    fit = pilot_restart_profiles.fit(SimpleNamespace(**vars(check), weights=state / "startup-head.npz",
+                                                      report=state / "startup-fit.json", seed=18471))
+    head_sha = fit["weights_sha256"]
+    require_hash = ["lab/pk1/restart_http.py", "lab/pk1/restart_http_worker.py", "lab/pk1/native_http.py",
+                    "lab/pk1/native_http_worker.py", "training/pilot_restart_profiles.py", "ironmule/pilot.py",
+                    "ironmule/ggml_profiles.py", "ironmule_product/backend.py", "ironmule_product/http_server.py"]
+    root = Path(__file__).resolve().parents[2]
+    paths = [PurePosixPath(cfg["framework"]) / k for k in require_hash]
+    hashes = shell(pod, shlex.join(["sha256sum", "--", *map(str, paths)])).splitlines()
+    if hashes != [f"{checksum(root / n)}  {p}" for n, p in zip(require_hash, paths, strict=True)]:
+        raise ValueError("different CPU head, product broker or release helper on target")
+    upload(pod, remote / "startup-head.npz", (state / "startup-head.npz").read_bytes())
+    geometry = local / "geometry.json"
+    write_once(geometry, restart_http.measured_geometry(check.trial))
+    geometry_sha = checksum(geometry)
+    upload(pod, remote / "geometry.json", geometry.read_bytes())
+    bound = restart_http.key_for(SimpleNamespace(receipt_sha256=pin, head_sha256=head_sha, geometry_sha256=geometry_sha), receipt)
+    evidence = remote / "active/deployment" / ("restart-http-" + bound)
+    files = ["gate-candidate.json", "gate-reference.json", "decision.json",
+             *(f"{arm}-{seed}.json" for seed in restart_http.SEEDS for arm in ("reference", "candidate"))]
+    snapshot(pod, evidence, files, local)
+    for op in ("qualify", "exercise", "serve"):
+        name = "product-" + op + ".json"
+        snapshot(pod, remote, [name], local)
+        if not (local / name).exists():
+            remaining = int(pod["deadline"] - time.time()) - 10
+            timeout = min(args.product_timeout, remaining)
+            if timeout < 60 or (op == "serve" and timeout < args.product_lifetime + 60):
+                return {"stage": "product lease limit", "order": active["order"], "pr": active["pr"], "pending": op}
+            common = ["--state", remote / "active", "--trial", remote / "trial", "--candidate-source", remote / "proposal.py",
+                      "--checkout", cfg["checkout"], "--worker-root", cfg["worker_root"], "--gguf", cfg["gguf"],
+                      "--reference-lib", cfg["reference_lib"], "--table", cfg["table"], "--receipt-sha256", pin,
+                      "--head", remote / "startup-head.npz", "--head-sha256", head_sha, "--port", args.product_port,
+                      "--geometry", remote / "geometry.json", "--geometry-sha256", geometry_sha,
+                      "--timeout", timeout, "--lifetime", args.product_lifetime]
+            route = ["--reference-url", args.product_reference_url] if args.product_reference_url else ["--dedicated"]
+            cmd = command(cfg, "lab.pk1.restart_http", [op, *common, *route])
+            dest = shlex.quote(str(remote / name))
+            job(pod, "product-restart-" + op + "-" + active["order"][:16], cmd + " > " + dest + ".tmp && mv " + dest + ".tmp " + dest)
+            return {"stage": "product " + op, "order": active["order"], "pr": active["pr"]}
+        value = read(local / name)
+        if op == "qualify":
+            if value.get("passed") is not True:
+                return {**active, "stage": "product declined", "product_result": value}
+            if restart_http.assess(local, receipt) != value:
+                raise ValueError("product verdict differs from exported HTTP holdouts")
+        elif op == "exercise":
+            if (value.get("passed") is not True or value["before"]["arm"] != "candidate" or value["after"]["arm"] != "reference"
+                    or value["before"]["work_sha256"] != value["after"]["work_sha256"]):
+                return {**active, "stage": "product withdrawn", "product_result": value}
+        elif value["arm"] != "candidate" or value["completions"][-1]["graded_correct"] != 18:
+            return {**active, "stage": "product retained reference", "product_result": value}
+    return {**active, "stage": "product verified", "product_result": value, "head": head_sha, "http_binding": bound}
+
+
 def cycle(args):
     cfg = read(args.config)
     if set(cfg) != CONFIG_KEYS or any(not PurePosixPath(cfg[k]).is_absolute() for k in CONFIG_KEYS - {"pod_id"}):
@@ -162,7 +228,8 @@ def cycle(args):
     verified = restart_trial.qualification(check)
     save(state / "qualified.json", verified)
     if getattr(args, "publish", False):
-        return release(args, cfg, remote, check)
+        active = release(args, cfg, remote, check)
+        return product(args, cfg, remote, check, active) if getattr(args, "serve_product", False) and active["stage"] == "active" else active
     return {"stage": "qualified", "order": key, "metrics": verified["metrics"]}
 
 
@@ -173,14 +240,23 @@ def main():
     p.add_argument("--stage-only", action="store_true")
     p.add_argument("--publish", action="store_true", help="publish a qualifying source and verify activation and rollback on its target")
     p.add_argument("--wait-seconds", type=int, default=0)
+    p.add_argument("--serve-product", action="store_true", help="gate the ordinary HTTP startup, then serve it with the trained CPU head")
+    p.add_argument("--product-reference-url", help="existing ordinary local product URL for other traffic")
+    p.add_argument("--product-dedicated", action="store_true", help="run a separate scoped product lane")
+    p.add_argument("--product-port", type=int, default=8232)
+    p.add_argument("--product-timeout", type=int, default=1800)
+    p.add_argument("--product-lifetime", type=int, default=120)
     a = p.parse_args()
+    if a.serve_product and (not a.publish or bool(a.product_reference_url) == a.product_dedicated
+            or not 1 <= a.product_port <= 65535 or not 1 <= a.product_timeout <= 3600 or not 1 <= a.product_lifetime <= 1800):
+        p.error("product use needs publication, one route, valid port and bounded lifetime")
     if not 0 <= a.wait_seconds <= 7200:
         p.error("invalid polling window")
     until = time.monotonic() + a.wait_seconds
     while True:
         outcome = cycle(a)
         print(json.dumps(outcome), flush=True)
-        if outcome["stage"] not in ("measuring", "activate", "run", "exercise") or time.monotonic() >= until:
+        if outcome["stage"] not in ("measuring", "activate", "run", "exercise", "product qualify", "product exercise", "product serve") or time.monotonic() >= until:
             return
         time.sleep(min(10, max(0, until - time.monotonic())))
 
