@@ -169,7 +169,11 @@ def product(args, cfg, remote, check, active):
                 return {**active, "stage": "product withdrawn", "product_result": value}
         elif value["arm"] != "candidate" or value["completions"][-1]["graded_correct"] != 18:
             return {**active, "stage": "product retained reference", "product_result": value}
-    return {**active, "stage": "product verified", "product_result": value, "head": head_sha, "http_binding": bound}
+    from training.restart_replan import replan
+
+    next_run = replan(state, checkout=args.checkout)
+    return {**active, "stage": "product verified", "product_result": value, "head": head_sha, "http_binding": bound,
+            "next_experiment": next_run["next"], "replan_sha256": checksum(state / "replan-after-product.json")}
 
 
 def cycle(args):
@@ -229,6 +233,11 @@ def cycle(args):
     save(state / "qualified.json", verified)
     if getattr(args, "publish", False):
         active = release(args, cfg, remote, check)
+        if getattr(args, "exercise_pilot", False) and active["stage"] == "active":
+            from lab.rp.restart_pilot_campaign import exercise
+            from training.pilot_restart_profiles import fit
+            fit(SimpleNamespace(**vars(check), weights=state / "startup-head.npz", report=state / "startup-fit.json", seed=18471))
+            active = exercise(args, cfg, remote, active)
         return product(args, cfg, remote, check, active) if getattr(args, "serve_product", False) and active["stage"] == "active" else active
     return {"stage": "qualified", "order": key, "metrics": verified["metrics"]}
 
@@ -238,6 +247,7 @@ def main():
     for name in ("config", "order", "checkout", "state"):
         p.add_argument("--" + name, required=True, type=Path)
     p.add_argument("--stage-only", action="store_true")
+    p.add_argument("--exercise-pilot", action="store_true", help="serve the same held-out native work under random and trained CPU weights")
     p.add_argument("--publish", action="store_true", help="publish a qualifying source and verify activation and rollback on its target")
     p.add_argument("--wait-seconds", type=int, default=0)
     p.add_argument("--serve-product", action="store_true", help="gate the ordinary HTTP startup, then serve it with the trained CPU head")
@@ -250,13 +260,15 @@ def main():
     if a.serve_product and (not a.publish or bool(a.product_reference_url) == a.product_dedicated
             or not 1 <= a.product_port <= 65535 or not 1 <= a.product_timeout <= 3600 or not 1 <= a.product_lifetime <= 1800):
         p.error("product use needs publication, one route, valid port and bounded lifetime")
+    if a.exercise_pilot and not a.publish:
+        p.error("the startup policy operates on a merged and activated release; pass --publish")
     if not 0 <= a.wait_seconds <= 7200:
         p.error("invalid polling window")
     until = time.monotonic() + a.wait_seconds
     while True:
         outcome = cycle(a)
         print(json.dumps(outcome), flush=True)
-        if outcome["stage"] not in ("measuring", "activate", "run", "exercise", "product qualify", "product exercise", "product serve") or time.monotonic() >= until:
+        if outcome["stage"] not in ("measuring", "activate", "run", "exercise", "pilot serving", "product qualify", "product exercise", "product serve") or time.monotonic() >= until:
             return
         time.sleep(min(10, max(0, until - time.monotonic())))
 
