@@ -370,6 +370,11 @@ requalification and a failed comparison withdraws the offset. After a restart, s
 Inspect `thread_learning` under the Pilot status for model updates, installed offsets and the last timing ratios.
 These results concern decode time. End-to-end throughput and first-token latency need a separate serving comparison.
 
+An optional scratch-trained Pilot thread head can propose an action for the idle comparison and choose a
+locally qualified action on real decode steps. The checkpoint is bound to the CPU, model, Pilot and engine
+geometry. The live status reports how often its choice was qualified and how often the reference served.
+[Collecting paired profiles, fitting and exercising the candidate](../training/README.md#fitting-the-pilot-thread-head-from-paired-cpu-decode)
+
 *Scope (owner goal 2026-11-16, BACKLOG PI3).* The Pilot runs on the CPU; the model it steers is to run perfectly on
 the GPU. Since PI3 (2026-11-16) an engine on a GPU takes the GPU weights: trained from scratch in dream world v7, built
 from a T4's measured costs (LAB.md, PI3 probe), they keep the running cap at its maximum and a prompt budget of 128

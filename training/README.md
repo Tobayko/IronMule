@@ -176,3 +176,42 @@ measured on the hardware it claims, and its protocol was fixed before its data.
 | `t4-g12-v` | 2 x T4, Gemma 3 12B `native`, Dolly, limit 256 | AG2 V-G12 (replaced before its data by KB2) |
 
 A new protocol gets a new profile on fresh seeds. A test checks that no two profiles share a seed.
+
+## Fitting the Pilot thread head from paired CPU decode
+
+The GGUF per-step Pilot can test a freshly trained thread head in its existing idle qualification loop.
+This experiment covers plain decode on the local GGML CPU backend. Each action changes the thread count
+of an otherwise fixed decode call. Context, row count, the shipped Pilot's base decision and foreign CPU
+load identify the regime. Other decisions continue through their existing qualified paths.
+
+From an activated IronMule environment, source the CPU backend's env file and set `MODEL` to the pinned
+SmolLM2-135M-Instruct-Q4_K_M GGUF described in [hardware-placement.md](hardware-placement.md).
+Use a directory on local storage for the following files.
+
+```bash
+export OPENBLAS_NUM_THREADS=1
+export IRONMULE_GGML_GPU_LAYERS=0
+mkdir -p pilot-run
+python -m training.pilot_threads collect --gguf "$MODEL" --state pilot-run/state --trials pilot-run/trials.json
+python -m training.pilot_threads fit --trials pilot-run/trials.json --weights pilot-run/threads.npz --report pilot-run/replay.json
+python -m training.pilot_threads exercise --gguf "$MODEL" --state pilot-run/state --weights pilot-run/threads.npz --report pilot-run/serving.json
+```
+
+Collection includes both orders of the available thread profiles on the same inputs, with eight greedy tokens per
+sequence and a digest of the generated IDs. Interrupted or unmatched series stay in the file and are excluded
+from fitting. A second collection with `--extend` adds a pass, preserving the first, on the same bound engine.
+The fit uses one CPU process, seed 20261126, two 128-unit tanh layers and eight scores for log speedup relative to
+the shipped Pilot's measured action. For four cores, some of the eight thread fractions denote the same action.
+Context bins 1–3 provide the first training sample, bins 4–5 add experience and bins 6–7 are held out. All widths,
+prompt repeats and arms for a bin stay together. The report compares the resulting frozen controller to the
+previous fit, the shipped Pilot, one thread and all threads. These are decode times for fixed work. Replay does
+not measure first-token latency or qualify deployment.
+
+`exercise` runs the native engine and its local idle gate on a bounded stream of requests, then times four
+counterbalanced complete generations. Its JSON includes first-token time, elapsed time, output equality,
+the number of qualified thread decisions and search plus warm-up cost. For a server configured with the
+same model, native binary, CPU and engine geometry, set `IRONMULE_PILOT_THREAD_CANDIDATE` to the checkpoint
+path and `IRONMULE_PILOT_LEARN=1`. During plain decode the candidate chooses between its locally qualified action
+and the shipped Pilot's thread count. A foreign checkpoint cannot propose actions. A fresh process rechecks
+the saved suggestions. Removing `IRONMULE_PILOT_THREAD_CANDIDATE` at restart restores the standard local
+thread learner. The GGUF weights and GPU kernels are separate from the controller checkpoint.

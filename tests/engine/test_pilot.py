@@ -211,3 +211,33 @@ def test_qualified_concurrent_thread_weights_are_local_to_load_and_width(tmp_pat
     assert learner.choose(96, 1.1, 3, 1) == 3
     assert learner.choose(96, 1.1, 3, 5) == 3
     assert learner.status()["model"]["observations"] == 3
+
+
+def test_scratch_thread_candidate_requires_local_replay_and_survives_foreign_checkpoint(tmp_path, monkeypatch):
+    from ironmule.pilot_learning import MIN_STEPS, ThreadLearning
+
+    monkeypatch.setattr(pl, "usable_cores", lambda: 4)
+    pilot = pl.Pilot(engine(), COSTS, max_cap=2, weights=weights(tmp_path))
+    e = types.SimpleNamespace(settings={}, seqs=2, seq_ctx=512, shared=False, cap=2, pilot=pilot)
+    try:
+        policy = ThreadLearning(e, tmp_path, "model", "base")
+        scratch = tmp_path / "candidate.npz"
+        # The only high logit selects three threads. The base has one.
+        with np.load(pilot.weights_path) as z:
+            np.savez(scratch, binding=policy.binding, version=1,
+                     **{k: z[k] for k in ("w1", "b1", "w2", "b2")},
+                     w3=np.zeros((8, 128), np.float32), b3=np.array([0, 0, 0, 0, 0, 8, 0, 0], np.float32))
+        monkeypatch.setenv("IRONMULE_PILOT_THREAD_CANDIDATE", str(scratch))
+        learner = ThreadLearning(e, tmp_path, "model", "base")
+        assert learner.thread_candidate is not None
+        monkeypatch.setattr(learner, "_probe", lambda ctx, base, n, seed, cancel: (0.7 if n == 3 else 1.0, (3, 1)))
+        for _ in range(MIN_STEPS):
+            assert learner.choose(90, 0, 1) == 1
+        learner.idle(lambda: False)
+        assert learner.candidate_status["threads"] == learner.choose(90, 0, 1) == 3
+        assert learner.choose(90, 1, 1) == 1
+        assert ThreadLearning(e, tmp_path, "model", "base").choose(90, 0, 1) == 1
+        other = ThreadLearning(e, tmp_path, "other-model", "base")
+        assert other.thread_candidate is None and not other.proposals
+    finally:
+        pilot.close()

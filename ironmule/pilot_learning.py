@@ -15,12 +15,14 @@ import os
 import statistics
 import tempfile
 import time
+from zipfile import BadZipFile
 from collections import Counter
 from pathlib import Path
 from typing import Callable
 
 from .ggml_engine import ENGINE_VERSION, machine_key
 from .hardware_policy import HardwarePolicy, SCHEMA
+from .pilot import OBS, THREAD_FRACTIONS, predict
 
 VERSION = 2
 BIN = 64
@@ -83,12 +85,70 @@ class ThreadLearning(ThreadPolicy):
                         self.proposals[key if source == self.path else key + ":1:0"] = offset
         except (OSError, ValueError, AttributeError):
             pass
+        self.thread_candidate = None
+        self.candidate_status = None
+        path = os.environ.get("IRONMULE_PILOT_THREAD_CANDIDATE")
+        if path:
+            self._load_candidate(Path(path))
         self.generation = 0
         self.last = None
 
+    def _load_candidate(self, path: Path) -> None:
+        import numpy as np
+
+        self.thread_candidate = None
+        try:
+            with np.load(path, allow_pickle=False) as checkpoint:
+                if int(checkpoint["version"]) != 1 or str(checkpoint["binding"]) != self.binding:
+                    raise ValueError("foreign binding or version")
+                weights = [checkpoint[k] for k in ("w1", "b1", "w2", "b2", "w3", "b3")]
+            shapes = [(128, OBS), (128,), (128, 128), (128,), (len(THREAD_FRACTIONS), 128), (len(THREAD_FRACTIONS),)]
+            if any(w.shape != shape or w.dtype != np.float32 or not np.isfinite(w).all()
+                   for w, shape in zip(weights, shapes)):
+                raise ValueError("invalid network")
+            self.thread_candidate = weights
+            self.candidate_status = {"state": "available for local trial", "trials": 0, "qualified_decisions": 0,
+                                     "reference_decisions": 0, "inference_us": 0.0}
+        except (OSError, KeyError, ValueError, EOFError, BadZipFile) as exc:
+            self.candidate_status = {"state": "unavailable", "reason": type(exc).__name__}
+
+    def choose(self, context: float, foreign: float, base: int, rows: int = 1) -> int:
+        allowed = super().choose(context, foreign, base, rows)
+        if self.thread_candidate is None:
+            return allowed
+        state = self.candidate_status
+        if allowed == base:
+            state["reference_decisions"] += 1
+            return base
+        # The model can switch between the current reference and the locally qualified
+        # alternative. Scores for other thread counts cannot authorize them for serving.
+        start = time.perf_counter_ns()
+        scores = predict(self.thread_candidate, self.pilot.features(rows, 0, 0, context))
+        picked = self.pilot.threads_for(int(scores.argmax()))
+        state["inference_us"] += (time.perf_counter_ns() - start) / 1000
+        if picked == allowed:
+            state["qualified_decisions"] += 1
+            return picked
+        state["reference_decisions"] += 1
+        return base
+
+    def _trial_actions(self, key, context, base, rows, actions):
+        ranked = self.policy.rank(key, actions)
+        if self.thread_candidate is None:
+            return ranked[:2]
+        # One learned proposal competes with the strongest existing search action.
+        # In plain decode all remaining scheduling knobs are already fixed for this call.
+        scores = predict(self.thread_candidate, self.pilot.features(rows, 0, 0, context))
+        threads = self.pilot.threads_for(int(scores.argmax()))
+        self.candidate_status.update(trials=self.candidate_status["trials"] + 1, regime=key, threads=threads)
+        if threads == base:
+            return ranked[:2]
+        return list(dict.fromkeys([threads] + ranked))[:2]
+
     def status(self):
         return {"version": VERSION, "binding": self.binding, "generation": self.generation,
-                "weights": dict(self.weights), "model": self.policy.status(), "last": self.last}
+                "weights": dict(self.weights), "model": self.policy.status(), "last": self.last,
+                **({"scratch_candidate": self.candidate_status} if self.candidate_status else {})}
 
     def _save(self) -> None:
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -124,7 +184,7 @@ class ThreadLearning(ThreadPolicy):
             cores = self.pilot.cores
             options = [base - 1, base + 1, max(1, base // 2), max(1, cores - self.replay_load), cores]
             actions = list(dict.fromkeys(n for n in options if 1 <= n <= cores and n != base))
-            for candidate in self.policy.rank(key, actions)[:2]:
+            for candidate in self._trial_actions(key, context + 16, base, self.replay_rows, actions):
                 run = trial(context + 16, base, candidate, 0, interrupted)
                 if run is None:
                     return

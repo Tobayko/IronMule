@@ -125,6 +125,13 @@ class CpuLoad:
         return self.foreign
 
 
+def predict(weights, features):
+    """Score Pilot actions on the CPU, also used for offline fitting and thread proposals."""
+    w1, b1, w2, b2, w3, b3 = weights
+    h = np.tanh(w1 @ np.asarray(features, dtype=np.float32) + b1)
+    return w3 @ np.tanh(w2 @ h + b2) + b3
+
+
 class Pilot:
     """The decision network and the features it reads. `engine` is a `GgmlEngine`; `costs` holds the step costs this
     machine measured at startup (seconds): `step_one` (one row), `row` (each further row), `prefill_1k` (1,000 prompt
@@ -202,19 +209,18 @@ class Pilot:
         f = self._features(running, queued, waiting_prompt_tokens, mean_ctx)
         self.last_fallback = False
         if self.w is None:
-            return self.apply(self.cur)
-        if not all(math.isfinite(v) and abs(v) <= 4.0 for v in f):  # outside what it was trained on: keep defaults
+            choice = self.cur
+        elif not all(math.isfinite(v) and abs(v) <= 4.0 for v in f):
             self.last_fallback = True
             self.out_of_range += 1
-            return self.apply([len(THREAD_FRACTIONS) - 1, len(CAPS) - 1, len(BUDGETS) - 1, 1])
-        w1, b1, w2, b2, w3, b3 = self.w
-        h = np.tanh(w1 @ np.array(f, dtype=np.float32) + b1)
-        h = np.tanh(w2 @ h + b2)
-        logits = (w3 @ h + b3).tolist()
-        choice = [max(range(b - a), key=lambda i, a=a: logits[a + i]) for a, b in _HEAD_SLICES]  # first maximum, as argmax
-        self.decide_us += (time.perf_counter() - started) * 1e6
+            choice = [len(THREAD_FRACTIONS) - 1, len(CAPS) - 1, len(BUDGETS) - 1, 1]
+        else:
+            logits = predict(self.w, f).tolist()
+            choice = [max(range(b - a), key=lambda i, a=a: logits[a + i]) for a, b in _HEAD_SLICES]
+        decision = self.apply(choice)
         self.decisions += 1
-        return self.apply(choice)
+        self.decide_us += (time.perf_counter() - started) * 1e6
+        return decision
 
     def apply(self, choice: list[int]) -> dict[str, Any]:
         self.cur = list(choice)
