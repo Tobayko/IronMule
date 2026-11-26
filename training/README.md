@@ -435,3 +435,9 @@ The measured phase selector for this first successful program used an engineer-d
 cache-replay protocol. Codex supplied the changed method. The learned head selected the
 qualified complete program when serving new work, after the original paired experiment.
 The ablation measures that final selection with identical admission and uncertainty gates.
+
+The bitwise weight replay was exercised with Python 3.12.14, NumPy 2.5.5, the Linux x86-64
+wheel's OpenBLAS 0.3.34.237.2, and one BLAS thread. The command also rechecks the automatic
+withdrawal, including the original failed reference calibration, and independently grades the
+first successful reference process after restart. The original raw responses and failed
+broker log remain in the order directory.
