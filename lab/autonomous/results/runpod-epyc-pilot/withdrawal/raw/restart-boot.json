@@ -1,0 +1,31 @@
+{
+  "head_available": true,
+  "pending_proposals": {
+    "1:2:4:4": 2,
+    "2:2:4:4": 1
+  },
+  "pid": 8049,
+  "status": {
+    "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+    "generation": 0,
+    "last": null,
+    "model": {
+      "last_update": null,
+      "negative_or_unresolved": 0,
+      "observations": 0,
+      "parameters": 0,
+      "schema": 1
+    },
+    "scratch_candidate": {
+      "inference_us": 0.0,
+      "qualified_decisions": 0,
+      "reference_decisions": 0,
+      "sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+      "state": "available for local trial",
+      "trials": 0
+    },
+    "thread_decision": null,
+    "version": 2,
+    "weights": {}
+  }
+}

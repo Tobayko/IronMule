@@ -1,0 +1,192 @@
+{
+  "attempt": "completed",
+  "commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "driver_sha256": "47fd19feb717654d439baf0c26b3bf5620751810138de550ce518c394c86d99a",
+  "elapsed_s": 136.49408644100185,
+  "foreign_load": {
+    "after_offsets": {
+      "1:2:4:4": 2,
+      "2:2:4:4": 1
+    },
+    "before_offsets": {
+      "1:2:4:4": 2
+    },
+    "fresh_verdict": true,
+    "last": {
+      "aa_spread": [
+        0.050497588525180145,
+        0.008351022907327891,
+        0.005228383179955005,
+        0.026909952288698046
+      ],
+      "candidate_threads": 3,
+      "key": "2:2:4:4",
+      "ratios": [
+        0.7163433001783908,
+        0.7295015798888064,
+        0.7044829989828194,
+        0.7335282826175415
+      ],
+      "result": "qualified"
+    },
+    "workers": 1
+  },
+  "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "head_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+  "live": {
+    "checkpoint_withdrawal": "served verified outputs with head unavailable",
+    "initially_served_qualified_decisions": 2,
+    "real_load_recheck": "qualified"
+  },
+  "new_resource_bookings_usd": 0,
+  "phases": [
+    {
+      "exit": 0,
+      "phase": "live",
+      "through_s": 75.24175305000972
+    },
+    {
+      "exit": 0,
+      "phase": "restart",
+      "through_s": 136.49408004793804
+    }
+  ],
+  "prior_sha256": "a546e61929e7f62c88b6f31cd898e76e9bfbbf2a4c17deff1cc5f05dfcbf68ca",
+  "private_archive": {
+    "bytes": 173432,
+    "sha256": "8e0656ef3fc14eaee0b5c736e110ecb5dfcb40f56fb7aec59f629c204360d621"
+  },
+  "restart": {
+    "fresh_qualification": {
+      "1:1:4:4": 3
+    },
+    "outcome": "qualified choices served",
+    "served_qualified_decisions": 4
+  },
+  "schema": "ironmule.epyc-withdrawal.v1.public",
+  "scope": "One pinned EPYC CPU, one GGUF, five stages on the same copy workload. The extra load qualified an additional context. Head withdrawal was deliberate.",
+  "source_files": {
+    "live-boot.json": {
+      "bytes": 698,
+      "sha256": "cd8197541174be2e3d74fb7bafadc376b6e990bacf00d245e490e6d21f3b6b6d"
+    },
+    "live-load_recheck.json": {
+      "bytes": 5470,
+      "sha256": "3720acfd1ed89e44881dbf29c5e116bc500dbc8e95fbb561e7c45b0f33188491"
+    },
+    "live-qualification.json": {
+      "bytes": 3852,
+      "sha256": "120739a6a1816ef34974022acc221820ab00531635a4a4eacb6dc6bbcbf626a9"
+    },
+    "live-result.json": {
+      "bytes": 160,
+      "sha256": "2cc9426cbcc9c446f1226ea3bc9b20ae22544b80d27a77c3582325490a5b8635"
+    },
+    "live-steady.json": {
+      "bytes": 15063,
+      "sha256": "97a49fa9a3a6970b01cc9a91c6fab39dd8d498120f867bb07f21b5d7e769dd1b"
+    },
+    "live-under_load.json": {
+      "bytes": 15812,
+      "sha256": "d27d6868f99545facdd3366e52808895c3d6d1aad5d5527887d6f509f4fe28d5"
+    },
+    "live-withdrawn.json": {
+      "bytes": 9169,
+      "sha256": "f998690b9300d6a9f18ceb1a86d0596364d52883fc8f4181a9e53c0569a82791"
+    },
+    "restart-boot.json": {
+      "bytes": 736,
+      "sha256": "785f92b1504c24851be89b52f7f7256e5f44fa28080ecb1e126c4562a64ac72e"
+    },
+    "restart-prequalification.json": {
+      "bytes": 14468,
+      "sha256": "91d6f1cec0f2c0ebfd0bb883132aa3555fef9a124d440b37ed2775ef8714db41"
+    },
+    "restart-qualification.json": {
+      "bytes": 3840,
+      "sha256": "efce27bc82f6b1d171857ea5ae3d48ee5ea49378e90c418e44b1e660c2d43a86"
+    },
+    "restart-result.json": {
+      "bytes": 128,
+      "sha256": "ac376c4c1279fb5e11b21b81f6b4d02a0141b7c033581573005e6102e0a43ab8"
+    },
+    "restart-steady.json": {
+      "bytes": 15837,
+      "sha256": "cb9e91fe2a10439b345bc332f39e65be8d28f14120bf2e3c1ec6539cb09c1ac4"
+    }
+  },
+  "stages": {
+    "live-steady": {
+      "active_offsets": {
+        "1:2:4:4": 2
+      },
+      "completed": 16,
+      "correct": 16,
+      "head_available": true,
+      "output_sha256": "6936c4eb544efd1de9a8778a24d0b93465f174a28d199c1fdd512acc3cc4f386",
+      "pid": 7995,
+      "qualified_decisions": 2,
+      "reference_counter": 6,
+      "serving_wall_s": 3.417118878,
+      "tokens": 48,
+      "ttft_p95_s": 1.185951287
+    },
+    "live-under_load": {
+      "active_offsets": {
+        "1:2:4:4": 2
+      },
+      "completed": 16,
+      "correct": 16,
+      "head_available": true,
+      "output_sha256": "6936c4eb544efd1de9a8778a24d0b93465f174a28d199c1fdd512acc3cc4f386",
+      "pid": 7995,
+      "qualified_decisions": 4,
+      "reference_counter": 4,
+      "serving_wall_s": 4.010766115,
+      "tokens": 48,
+      "ttft_p95_s": 1.181373714
+    },
+    "live-withdrawn": {
+      "active_offsets": {},
+      "completed": 16,
+      "correct": 16,
+      "head_available": false,
+      "output_sha256": "6936c4eb544efd1de9a8778a24d0b93465f174a28d199c1fdd512acc3cc4f386",
+      "pid": 7995,
+      "qualified_decisions": 0,
+      "reference_counter": 0,
+      "serving_wall_s": 3.426880429,
+      "tokens": 48,
+      "ttft_p95_s": 1.182314051
+    },
+    "restart-prequalification": {
+      "active_offsets": {},
+      "completed": 16,
+      "correct": 16,
+      "head_available": true,
+      "output_sha256": "6936c4eb544efd1de9a8778a24d0b93465f174a28d199c1fdd512acc3cc4f386",
+      "pid": 8049,
+      "qualified_decisions": 0,
+      "reference_counter": 8,
+      "serving_wall_s": 6.338199992,
+      "tokens": 48,
+      "ttft_p95_s": 2.225804425
+    },
+    "restart-steady": {
+      "active_offsets": {
+        "1:1:4:4": 3
+      },
+      "completed": 16,
+      "correct": 16,
+      "head_available": true,
+      "output_sha256": "6936c4eb544efd1de9a8778a24d0b93465f174a28d199c1fdd512acc3cc4f386",
+      "pid": 8049,
+      "qualified_decisions": 4,
+      "reference_counter": 4,
+      "serving_wall_s": 6.412011462,
+      "tokens": 48,
+      "ttft_p95_s": 2.291459747
+    }
+  },
+  "timing_scope": "Each stage sums its four measured full serving waves. Startup, qualification and the other phases are included in elapsed_s. Stage times are descriptive and not paired speed comparisons."
+}

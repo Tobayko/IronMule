@@ -1,0 +1,563 @@
+{
+  "completed": 16,
+  "correct": 16,
+  "digest": "6936c4eb544efd1de9a8778a24d0b93465f174a28d199c1fdd512acc3cc4f386",
+  "qualified_decisions": 2,
+  "reference_decisions": 6,
+  "state": {
+    "head_available": true,
+    "pending_proposals": {},
+    "pid": 7995,
+    "status": {
+      "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "generation": 1,
+      "last": {
+        "aa_spread": [
+          0.011668681921799023,
+          0.003655911190878997,
+          0.0036206730918107045,
+          0.01875775407867646
+        ],
+        "candidate_threads": 4,
+        "key": "1:2:4:4",
+        "ratios": [
+          0.5726764433767977,
+          0.5960739686643861,
+          0.6419144711344176,
+          0.5721577507814547
+        ],
+        "result": "qualified"
+      },
+      "model": {
+        "last_update": {
+          "accepted": true,
+          "prediction": 0.27737336528774426,
+          "reward": 0.5372120263906413,
+          "stage": "qualification"
+        },
+        "negative_or_unresolved": 1,
+        "observations": 3,
+        "parameters": 15,
+        "schema": 1
+      },
+      "scratch_candidate": {
+        "inference_us": 156.135,
+        "qualified_decisions": 2,
+        "reference_decisions": 149,
+        "regime": "1:2:4:4",
+        "sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+        "state": "available for local trial",
+        "threads": 4,
+        "trials": 1
+      },
+      "thread_decision": {
+        "choice": "reference",
+        "eligible_threads": [
+          1
+        ],
+        "profile": {
+          "backend": "ggml-cpu",
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "capacity": 4,
+          "draft_rows": 0,
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "operation": "plain_decode",
+          "padding_rows": 0,
+          "pending_requests": 0,
+          "prompt_rows": 0,
+          "sequence_context": 512,
+          "sequence_rows": 4,
+          "sequences": 4,
+          "settings": {
+            "flash_attn": false,
+            "kv_f32": false,
+            "kv_unified": false
+          },
+          "shared_cache": false,
+          "threads": 1
+        },
+        "qualification": null,
+        "reason": "no local qualification",
+        "reference_threads": 1,
+        "regime": "1:1:4:4",
+        "selection_us": null,
+        "uncertainty": "unknown"
+      },
+      "version": 2,
+      "weights": {
+        "1:2:4:4": 2
+      }
+    }
+  },
+  "waves": [
+    {
+      "answers": [
+        {
+          "answer": " green\nCopy",
+          "correct": true,
+          "output_ids": [
+            2654,
+            198,
+            32601
+          ],
+          "prompt_digest": "6cbc4be24be13e104cba5d3029323f6a59574fb277be903feb06a35da8923384",
+          "stop": "length",
+          "target": "green"
+        },
+        {
+          "answer": " black\nCopy",
+          "correct": true,
+          "output_ids": [
+            2632,
+            198,
+            32601
+          ],
+          "prompt_digest": "86c128c7f16bf8ee9d611cbf9a85136916739deb3438f172f1ed5a52d24e9839",
+          "stop": "length",
+          "target": "black"
+        },
+        {
+          "answer": " yellow\nCopy",
+          "correct": true,
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "prompt_digest": "b6a02076fa6ba7766ba3bed3372ff0230fbb394b637bd95f31d736366ae1153f",
+          "stop": "length",
+          "target": "yellow"
+        },
+        {
+          "answer": " white\nCopy",
+          "correct": true,
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "prompt_digest": "1a8e6aaaaf3b193a0fbd9ee8d5cb72e4e8ecba2c760e6ac51b895b01f5e2fee6",
+          "stop": "length",
+          "target": "white"
+        }
+      ],
+      "completed": 4,
+      "correct": 4,
+      "output_sha256": "35f74b957373f8ff88ae8b24a69b01efe3aec98132fec6f30675135cbeb1983b",
+      "phase": "short",
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 8,
+      "thread_choice": {
+        "choice": "reference",
+        "eligible_threads": [
+          2
+        ],
+        "profile": {
+          "backend": "ggml-cpu",
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "capacity": 4,
+          "draft_rows": 0,
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "operation": "plain_decode",
+          "padding_rows": 0,
+          "pending_requests": 0,
+          "prompt_rows": 0,
+          "sequence_context": 512,
+          "sequence_rows": 4,
+          "sequences": 4,
+          "settings": {
+            "flash_attn": false,
+            "kv_f32": false,
+            "kv_unified": false
+          },
+          "shared_cache": false,
+          "threads": 2
+        },
+        "qualification": null,
+        "reason": "outside measured workload",
+        "reference_threads": 2,
+        "regime": null,
+        "selection_us": null,
+        "uncertainty": "unknown"
+      },
+      "tokens": 12,
+      "ttfts_s": [
+        0.431193363,
+        0.110176358,
+        0.217218342,
+        0.322951832
+      ],
+      "wall_s": 0.473771676
+    },
+    {
+      "answers": [
+        {
+          "answer": " black\nCopy",
+          "correct": true,
+          "output_ids": [
+            2632,
+            198,
+            32601
+          ],
+          "prompt_digest": "99c162b96d50eb3ea7d40f848f53b89b9ca1fe0a650f9416fb46f48297a5761c",
+          "stop": "length",
+          "target": "black"
+        },
+        {
+          "answer": " yellow\nCopy",
+          "correct": true,
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "prompt_digest": "644f24f91aeeb70aa3802bbb3dd7fecf880ac760bb5340b2ada2a29765d7d996",
+          "stop": "length",
+          "target": "yellow"
+        },
+        {
+          "answer": " white\nCopy",
+          "correct": true,
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "prompt_digest": "a95a13d0665cac44f7171e34fc974c0baa09aa99889e7719c26036ba7837c667",
+          "stop": "length",
+          "target": "white"
+        },
+        {
+          "answer": " pink\nCopy",
+          "correct": true,
+          "output_ids": [
+            11986,
+            198,
+            32601
+          ],
+          "prompt_digest": "930a4d56142fbc499adade2a4f358e7c00ff39822b93f43567302b2689cb7cbc",
+          "stop": "length",
+          "target": "pink"
+        }
+      ],
+      "completed": 4,
+      "correct": 4,
+      "output_sha256": "77d1238350fcefece9d093957952a934f7e990e7a9122ad633df3bd5fc18b75c",
+      "phase": "document",
+      "requests": [
+        [
+          104,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 8,
+      "thread_choice": {
+        "choice": "reference",
+        "eligible_threads": [
+          1
+        ],
+        "profile": {
+          "backend": "ggml-cpu",
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "capacity": 4,
+          "draft_rows": 0,
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "operation": "plain_decode",
+          "padding_rows": 0,
+          "pending_requests": 0,
+          "prompt_rows": 0,
+          "sequence_context": 512,
+          "sequence_rows": 4,
+          "sequences": 4,
+          "settings": {
+            "flash_attn": false,
+            "kv_f32": false,
+            "kv_unified": false
+          },
+          "shared_cache": false,
+          "threads": 1
+        },
+        "qualification": null,
+        "reason": "no local qualification",
+        "reference_threads": 1,
+        "regime": "1:1:4:4",
+        "selection_us": null,
+        "uncertainty": "unknown"
+      },
+      "tokens": 12,
+      "ttfts_s": [
+        1.17002392,
+        0.294619798,
+        0.588589087,
+        0.880560719
+      ],
+      "wall_s": 1.22235133
+    },
+    {
+      "answers": [
+        {
+          "answer": " yellow\nCopy",
+          "correct": true,
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "prompt_digest": "2e317e8872f7fc65b279bca01c771163447a2e606c31a423ed89f21be67974aa",
+          "stop": "length",
+          "target": "yellow"
+        },
+        {
+          "answer": " white\nCopy",
+          "correct": true,
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "prompt_digest": "8790e578fe7558d7288e39940ec90c13ecd841affe52b694f6610c7144dd22a7",
+          "stop": "length",
+          "target": "white"
+        },
+        {
+          "answer": " pink\nCopy",
+          "correct": true,
+          "output_ids": [
+            11986,
+            198,
+            32601
+          ],
+          "prompt_digest": "4f563b8689b92cee144e318088026a11c42ca92eb61868ca617d6a61b87c00df",
+          "stop": "length",
+          "target": "pink"
+        },
+        {
+          "answer": " brown\nCopy",
+          "correct": true,
+          "output_ids": [
+            6354,
+            198,
+            32601
+          ],
+          "prompt_digest": "40427951a62ed9b4c82c3d4dd0b341df38b63cac5839afa7ed1fbd843a2a4e27",
+          "stop": "length",
+          "target": "brown"
+        }
+      ],
+      "completed": 4,
+      "correct": 4,
+      "output_sha256": "745c1e82a6d7e10f5942ea59827ea69d365d2373082b0613a68696bc7b6d26bc",
+      "phase": "short",
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 10,
+      "thread_choice": {
+        "choice": "reference",
+        "eligible_threads": [
+          1
+        ],
+        "profile": {
+          "backend": "ggml-cpu",
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "capacity": 4,
+          "draft_rows": 0,
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "operation": "plain_decode",
+          "padding_rows": 0,
+          "pending_requests": 0,
+          "prompt_rows": 0,
+          "sequence_context": 512,
+          "sequence_rows": 4,
+          "sequences": 4,
+          "settings": {
+            "flash_attn": false,
+            "kv_f32": false,
+            "kv_unified": false
+          },
+          "shared_cache": false,
+          "threads": 1
+        },
+        "qualification": null,
+        "reason": "outside measured workload",
+        "reference_threads": 1,
+        "regime": null,
+        "selection_us": null,
+        "uncertainty": "unknown"
+      },
+      "tokens": 12,
+      "ttfts_s": [
+        0.423271119,
+        0.104210351,
+        0.209999747,
+        0.316755169
+      ],
+      "wall_s": 0.482248419
+    },
+    {
+      "answers": [
+        {
+          "answer": " white\nCopy",
+          "correct": true,
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "prompt_digest": "0d192f236545a9cca418bb1c5744d11535f8a32bd615f932f0c0ea0e26df86e3",
+          "stop": "length",
+          "target": "white"
+        },
+        {
+          "answer": " pink\nCopy",
+          "correct": true,
+          "output_ids": [
+            11986,
+            198,
+            32601
+          ],
+          "prompt_digest": "d70cfe562e8ecc640a13e9c2f3971b43fb112abe0a1806e057a07a169a6148bb",
+          "stop": "length",
+          "target": "pink"
+        },
+        {
+          "answer": " brown\nColor",
+          "correct": true,
+          "output_ids": [
+            6354,
+            198,
+            13646
+          ],
+          "prompt_digest": "375f434bc90975c63f58907c5493d56f75c0ac27e0afd6788e373fb8b4e1cf63",
+          "stop": "length",
+          "target": "brown"
+        },
+        {
+          "answer": " purple\nColor",
+          "correct": true,
+          "output_ids": [
+            14230,
+            198,
+            13646
+          ],
+          "prompt_digest": "2dd4a9f6f927ab87024e74b2f5742e6ab5489d87527f7c3d06788aeceb9b2416",
+          "stop": "length",
+          "target": "purple"
+        }
+      ],
+      "completed": 4,
+      "correct": 4,
+      "output_sha256": "bb2c2ba47fd918425cfd2e623426729b1cb53a753bf2a4404e7a24a7087af5c5",
+      "phase": "document",
+      "requests": [
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 9,
+      "thread_choice": {
+        "choice": "reference",
+        "eligible_threads": [
+          1
+        ],
+        "profile": {
+          "backend": "ggml-cpu",
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "capacity": 4,
+          "draft_rows": 0,
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "operation": "plain_decode",
+          "padding_rows": 0,
+          "pending_requests": 0,
+          "prompt_rows": 0,
+          "sequence_context": 512,
+          "sequence_rows": 4,
+          "sequences": 4,
+          "settings": {
+            "flash_attn": false,
+            "kv_f32": false,
+            "kv_unified": false
+          },
+          "shared_cache": false,
+          "threads": 1
+        },
+        "qualification": null,
+        "reason": "no local qualification",
+        "reference_threads": 1,
+        "regime": "1:1:4:4",
+        "selection_us": null,
+        "uncertainty": "unknown"
+      },
+      "tokens": 12,
+      "ttfts_s": [
+        1.185951287,
+        0.29058962,
+        0.584858856,
+        0.8884171
+      ],
+      "wall_s": 1.238747453
+    }
+  ]
+}

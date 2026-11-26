@@ -4575,3 +4575,31 @@ serving arms out of eighteen. The source remains unqualified and the two triplet
 six-pair performance label. The code remained on the incumbent. The cost file records the entire
 shared lease to that point, before its billing tail.
 [Replayed refusal](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/qualification-stopped.json) · [Calibration and probe times](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/profile.json) · [Worker exit](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/rule-18353.log) · [Captured file hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/sha256.json)
+
+### 2026-11-26 EPYC CPU Pilot checkpoint withdrawal and restart
+
+On four pinned physical cores of the same AMD EPYC 7742, the scratch head served real
+SmolLM2-135M-Instruct Q4_K_M requests before and after a process restart. The five stages
+each completed 16 correct requests and generated 48 tokens. Every answer, output token,
+stop reason and prompt digest matched the original serving receipt. The 136.49 s run
+included warmups, qualification and the separate process startup.
+
+| Stage | Active local thread offsets | Scratch choices in measured waves | Complete wave time |
+| --- | --- | ---: | ---: |
+| Initial qualification | 2 → 4 threads in context band 1 | 2 | 3.417 s |
+| One additional CPU worker | 2 → 4 threads in context band 1 | 4 | 4.011 s |
+| Checkpoint withdrawn, same process | Empty | 0 | 3.427 s |
+| Restored checkpoint, new process before qualification | Empty | 0 | 6.338 s |
+| New process after independent qualification | 1 → 4 threads in context band 1 | 4 | 6.412 s |
+
+The idle recheck under external load admitted a separate two-to-three-thread choice in
+context band 2. Both offsets disappeared when the next idle check noticed removal of the
+published checkpoint. The restored file supplied proposals to the restarted process. Its
+first measured waves ran on the shipped Pilot until the local hardware gate admitted the
+new offset. Withdrawal was explicitly induced. The load test observed no performance
+regression. The stage timings describe different process and load states.
+
+Replay all five original sets of answers offline with
+`python -m training.pilot_withdrawal_replay`. The experiment used the existing RunPod
+lease. Its elapsed time is included in the campaign cost journal.
+[Measured outcome and source digests](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/outcome.json) · [Raw receipts](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/raw/) · [Hardware driver](../lab/rp/cpu_pilot_withdrawal.py)
