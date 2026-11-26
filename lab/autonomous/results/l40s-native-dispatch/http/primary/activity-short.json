@@ -1,0 +1,133 @@
+{
+  "decode": 0,
+  "elapsed_s": 0.05189124890603125,
+  "kernels": [
+    {
+      "calls": 382,
+      "device_s": 0.02812770499999994,
+      "symbol": "void mul_mat_q<(ggml_type)12, 32, false>(char const*, int const*, int const*, int const*, float*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 63,
+      "device_s": 0.006879341999999959,
+      "symbol": "void mul_mat_q<(ggml_type)14, 32, false>(char const*, int const*, int const*, int const*, float*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 382,
+      "device_s": 0.002125851000000018,
+      "symbol": "void mul_mat_q_stream_k_fixup<(ggml_type)12, 32, false>(int const*, int const*, float*, float const*, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 64,
+      "device_s": 0.0010660540000000255,
+      "symbol": "void flash_attn_ext_f16<128, 128, 8, 8, 4, 2, false, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, int, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+    },
+    {
+      "calls": 2,
+      "device_s": 0.0010489670000000042,
+      "symbol": "void mul_mat_vec_q<(ggml_type)14, 1>(void const*, void const*, int const*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 64,
+      "device_s": 0.0006862520000000077,
+      "symbol": "void flash_attn_stream_k_fixup<128, 8, 8>(float*, float2 const*, int, int, int, int)"
+    },
+    {
+      "calls": 382,
+      "device_s": 0.0006018949999999229,
+      "symbol": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)1>(float const*, int const*, void*, long, long, long, long, long, int, int)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.0005613470000000453,
+      "symbol": "void ironmule_add_rms_norm_mul_f32<1024>(float const*, float const*, float*, float*, float const*, int, int, float, __half*, int, int)"
+    },
+    {
+      "calls": 63,
+      "device_s": 0.0005051610000000183,
+      "symbol": "void mul_mat_q_stream_k_fixup<(ggml_type)14, 32, false>(int const*, int const*, float*, float const*, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.00038432399999997193,
+      "symbol": "void rms_norm_f32<32, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.00024960599999999966,
+      "symbol": "void rope_neox<true, false, float>(float const*, float*, int, int, int, int, int, int const*, float, float, float, rope_corr_dims, float, float const*)"
+    },
+    {
+      "calls": 64,
+      "device_s": 0.00023949000000002342,
+      "symbol": "void unary_gated_op_kernel<&_INTERNAL_fe259106_8_unary_cu_eb6d5366::op_silu, float>(float const*, float const*, float*, long, long, long, long)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.00021958499999999908,
+      "symbol": "void k_set_rows<float, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)"
+    },
+    {
+      "calls": 2,
+      "device_s": 0.0002194889999999941,
+      "symbol": "void mul_mat_vec_q<(ggml_type)12, 1>(void const*, void const*, int const*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 63,
+      "device_s": 0.00011709000000002922,
+      "symbol": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0>(float const*, int const*, void*, long, long, long, long, long, int, int)"
+    },
+    {
+      "calls": 6,
+      "device_s": 9.753599999999642e-05,
+      "symbol": "Memcpy HtoD (Pinned -> Device)"
+    },
+    {
+      "calls": 1,
+      "device_s": 4.012800000000425e-05,
+      "symbol": "argmax_f32(float const*, int*, long)"
+    },
+    {
+      "calls": 4,
+      "device_s": 5.3439999999973225e-06,
+      "symbol": "quantize_q8_1(float const*, void*, long, long, long, long, long, int, int)"
+    },
+    {
+      "calls": 1,
+      "device_s": 4.54399999999805e-06,
+      "symbol": "void rms_norm_f32<1024, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)"
+    },
+    {
+      "calls": 2,
+      "device_s": 2.7529999999969733e-06,
+      "symbol": "void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)"
+    },
+    {
+      "calls": 1,
+      "device_s": 1.7910000000010769e-06,
+      "symbol": "void cpy_flt<&(void _INTERNAL_8db1dfbb_6_cpy_cu_843ac19f::cpy_1_flt<float, __half>(char const*, char*))>(char const*, char*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, char**, int)"
+    },
+    {
+      "calls": 1,
+      "device_s": 1.728000000002794e-06,
+      "symbol": "Memcpy DtoH (Device -> Pageable)"
+    },
+    {
+      "calls": 1,
+      "device_s": 4.1600000000107686e-07,
+      "symbol": "Memcpy HtoD (Pageable -> Device)"
+    }
+  ],
+  "logical_batch_capacity": 2048,
+  "occupied_kv_cells": 3,
+  "pid": 10149,
+  "prompt": 30,
+  "request_ids": [
+    "chatcmpl-6e519e2e0e06408883f1136a98157383"
+  ],
+  "sequences": [
+    0
+  ],
+  "shared": true,
+  "start_monotonic": 863943.533863011
+}

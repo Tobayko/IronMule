@@ -1048,6 +1048,11 @@ def build(root=ROOT) -> Iterator[dict]:
                         "lab/autonomous/results/l40s-mixed-prefill-progress/result.json"}:
             from training.mixed_progress_evidence import experiences
             yield from experiences(root, source, digest)
+        elif source in {"lab/autonomous/results/l40s-native-dispatch/comparison.json",
+                        "lab/autonomous/results/l40s-native-dispatch/tile-order/order.json",
+                        "lab/autonomous/results/l40s-native-dispatch/pilot/fit.json"}:
+            from training.native_dispatch_evidence import experiences
+            yield from experiences(root, source, digest)
         elif source == "lab/autonomous/results/a100-first-token/result.json":
             yield from first_token_trial(root, source, digest)
         elif source == "lab/autonomous/results/a100-pr57-warm-repeat/protocol.json":

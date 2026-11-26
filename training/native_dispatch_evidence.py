@@ -1,0 +1,90 @@
+"""Import paired serving measurements and target-specific prompt experiments into the existing experience archive."""
+
+import json
+
+from lab.pk6.native_dispatch.score import run
+from training.experience_archive import record
+
+
+def experiences(root, source, digest):
+    path = root / source
+    result = json.loads(path.read_bytes())
+    folder = path.parent
+    if path.name == "comparison.json":
+        if result != run(folder / "http"):
+            raise ValueError(
+                "native dispatch comparison differs from its raw stream receipts"
+            )
+        hardware, base, gguf, awq, version, seeds = result["binding"]
+        for arm, run_result in result["arms"].items():
+            for width, metrics in run_result["metrics"].items():
+                external = arm == "vllm"
+                yield record(
+                    "native_dispatch_http",
+                    source,
+                    digest,
+                    f"{arm}/{width}",
+                    "l40s-native-dispatch",
+                    hardware=hardware,
+                    base_commit=base,
+                    model=awq if external else gguf,
+                    quantization="official AWQ-Marlin" if external else "Q4_K_M",
+                    software={
+                        "engine": "vllm-" + version if external else "IronMule",
+                        "process": arm,
+                    },
+                    workload={
+                        "concurrency": int(width),
+                        "output_limit": 32,
+                        "seeds": seeds if external else [seeds[int(arm[1:]) - 1]],
+                    },
+                    metrics=[metrics],
+                    quality=run_result["quality"],
+                    memory_mib=run_result["resources"]["peak_gpu_mib"],
+                    profiles=[run_result["proof"]],
+                    reason=run_result["excluded_from_promotion"]
+                    or "measured product comparison",
+                    authorship="Codex wrote the Ada candidates. IronMule ranked the native Q4_K tile order.",
+                    uncertainty="System comparison on one board with distinct official quantizations. Diagnostic and rejected paths supply no production labels.",
+                )
+    elif path.name == "order.json":
+        yield record(
+            "native_prompt_development_order",
+            source,
+            digest,
+            "target",
+            result["order_id"],
+            hardware=result["hardware"],
+            base_commit=result["base_commit"],
+            model=result["gguf"],
+            quantization="Q4_K_M",
+            workload={"request_ids_matched": result["matched_request_ids"]},
+            provenance="simulated",
+            metrics=result["options"],
+            decision=result["target"],
+            reason="ranked device-cost sensitivity",
+            authorship="IronMule selected the measured target. Codex wrote the replacement function.",
+            uncertainty="The assumed 10 percent device-time gain ranks experiments. It is not a measured saving.",
+        )
+    elif path.name == "fit.json":
+        for i, row in enumerate(result["rows"]):
+            yield record(
+                "native_operator_pilot",
+                source,
+                digest,
+                str(i),
+                str(row["shape"][1:3]),
+                hardware=result["target"]["hardware"],
+                model=result["target"]["gguf"],
+                quantization="Q4_K_M",
+                software={
+                    "ggml_cuda": result["target"]["ggml_cuda"],
+                    "weights": result["weights_sha256"],
+                },
+                workload={"shape": row["shape"], "partition": row["set"]},
+                metrics=[row["median_us"]],
+                decision=row["trained_profile"],
+                reason="measured operator profile replay",
+                authorship="IronMule fitted its CPU profile head from synchronized native matmuls.",
+                uncertainty="Operator times include GGML graph calls. Product qualification is separate.",
+            )
