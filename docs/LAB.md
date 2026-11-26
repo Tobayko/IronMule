@@ -4426,3 +4426,26 @@ A second experiment used independent one- and three-thread workers on the same C
 The v3 follow-up used the same two CPU workers. IronMule rejected the first campaign after 98.04 seconds because the faster routes changed responses and output counts. Then 32 short requests arrived four at a time. IronMule learned a new workload plan that included two requests ahead on one worker and one on the other. It recreated and drained the observed queues for each measured route. The second campaign took 70.05 seconds. The native reward policy and the native latency model tied on the selection set, and the controller selected the immediate latency model. In the two fresh rounds its total completion time was 48.68% and 55.47% of the shortest-queue reference. Time to first token was 46.69% and 51.38% of the reference. Visible responses, output-token counts and stop reasons matched on every selected route. A subsequent foreground request used the qualified three-thread route. Offline fitting and holdout replay of the saved trace took 0.82 ms with the native trainer already built.
 
 Reproduce this load transition with `python -m lab.placement.cpu_pair --gguf MODEL --state-dir STATE --short-traffic --burst-size 4`. The results cover a single host and this small GGUF with short outputs. [Queue patterns, paired timings and verdicts](../lab/placement/results/smollm2-cpu-reward-burst-v3.json)
+
+### 2026-11-26: CPU Pilot development order and rejected tokenizer change
+
+An offline planner observed four real waves of four concurrent copy requests with SmolLM2-135M-Instruct
+Q4_K_M on the GGML CPU backend. The baseline was the head of PR 57, a4e2fc4, on an Intel Xeon
+Platinum 8573C with a four-core cgroup quota. The serving path encoded the prompts, ran the shipped
+Pilot and native engine, and streamed detokenized output. There was no HTTP transport. From the
+caller-thread profile and its step-cost simulation, IronMule selected GgufTokenizer.encode.
+The estimated recoverable time was 1.9 ms per wave under an assumed 25% reduction in self time.
+
+A Codex worker proposed returning the ctypes token-array slice directly. The development CLI
+received HTTP 401 in this environment. The session dispatched the saved order to a hosted Codex
+worker and imported its response. IronMule compiled the candidate, ran the engine and tokenizer
+tests and evaluated six pairs in independent Linux namespaces. Runtime flags, GGUF digest,
+output IDs, stop reasons and the unprofiled evaluator were matched within pairs. Each pair used a
+fresh seed, alternating which arm ran first, with a fresh engine and one warm-up wave per arm.
+Both arms answered 96/96 correctly, generated 288 tokens and took 72 measured Pilot decisions.
+Per-pair throughput ratios were 1.302, 1.078, 0.919, 1.320, 1.002 and 0.974. The six-win rule
+rejected the candidate. The wide variation exceeds the measured share of the tokenizer.
+The paired workloads consumed 33.84 s of serving and 79.14 s including worker initialization.
+This trial incurred no additional CPU rental or metered API charges. It did not change any serving default.
+
+[Order, waves, patch, outputs and decision](../lab/autonomous/results/cpu-tokenizer-01/).

@@ -255,6 +255,15 @@ one visible CUDA device, since the timing loop measures only that device. The en
 decides whether a built kernel is faster on the serving machine. Hardware performance of these cache changes has
 not been measured.
 
+### Code experiments selected by the Pilot's measured world model
+
+An offline development worker can investigate a source location selected from measured wave or kernel costs.
+Keep PR 57's PS1, ps1a and PK6 configuration as the A100 reference. Measure identical completed work,
+including the controller, and reject a candidate that misses the predeclared correctness, paired throughput,
+TTFT or resource gates. After rejection, retain the program and timing evidence for future experiment selection.
+The first CPU tokenizer experiment failed the six-pair gate. The A100 native path requires fresh device attribution
+and target qualification. See the [trial record](LAB.md#2026-11-26-cpu-pilot-development-order-and-rejected-tokenizer-change).
+
 ### Local Pilot thread weights (opt-in, 2026-11-18)
 
 The CPU Pilot has an optional hardware model that learns from scratch on real thread experiments and persists
