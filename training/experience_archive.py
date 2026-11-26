@@ -374,6 +374,44 @@ def xeon_profiled_hosts(root, source, digest):
                      uncertainty=outcome["uncertainty"], authorship="Instrumented Xeon serving evaluator")
 
 
+def calibration_information(root, source, digest):
+    from training.code_author import digest as outcome_digest
+    from lab.pk1 import followup_contract, restart_trial
+
+    folder = (root / source).parent
+    def doc(name):
+        return json.loads((folder / name).read_bytes())
+    def sha(name):
+        return canonical_sha256((folder / name).read_bytes())
+    checked, holdout, plan = (doc(n) for n in ("independent-replay.json", "holdout.json", "information-decision.json"))
+    release = folder.parent / "a100-restart" / followup_contract.PARENT
+    control = json.loads((release / "control.json").read_bytes())
+    observations = [sha(f"{seed}.json") for seed in (97251, 97252)]
+    if (checked["schema"] != "ironmule.calibration-stability-replay.v1" or checked["qualification"] is not False
+            or holdout["activation"] is not None or holdout["training_label"] is not False or plan["authoring_eligible"] is not False
+            or plan["activation"] is not None or holdout["control_sha256"] != checked["control"] or checked["control"] != followup_contract.CONTROL
+            or checked["weights"] != holdout["weights_sha256"] or checked["weights"] != followup_contract.HEAD
+            or checked["heldout_sha256"] != sha("holdout.json") or checked["forecast_sha256"] != sha("prediction.json")
+            or checked["forecast_sha256"] != holdout["forecast_sha256"] or checked["forecast_sha256"] != plan["forecast_sha256"]
+            or checked["observations"] != observations or holdout["holdout_sha256"] != observations
+            or plan["verified_holdout_digest"] != outcome_digest(holdout)):
+        raise ValueError("different calibration return, independently replayed holdout or information forecast")
+    for seed in checked["seeds"]:
+        row = doc(f"{seed}.json")
+        restart_trial.validate(row["arm"], seed, expected_source=control["qualification"]["candidate_sha256"])
+        restart_trial.verify_binding(row["arm"], control["order"])
+    common = dict(hardware=control["order"]["binding"]["fp"], base_commit=control["publication"]["candidate"], model=control["order"]["binding"]["gguf"],
+                  quantization="Q4_K_M", software={"source_sha256": plan["source_sha256"], "weights_sha256": checked["weights"]},
+                  cost_reference="lab/rp/results/campaign-costs.json")
+    yield record("calibration_information_holdout", source, digest, "complete_returns", checked["forecast_sha256"], **common,
+                 metrics=checked["profiles"], broker_elapsed_s=holdout["measured_s"], authorship="Independent return-value replay",
+                 reason="two_qualified_starts_checked", provenance="measured_replay", uncertainty=checked["confidence_scope"])
+    planfile = folder / "information-decision.json"
+    yield record("calibration_information_plan", str(planfile.relative_to(root)), sha(planfile.name), "forecast", checked["forecast_sha256"], **common,
+                 reason=plan["recommended"], metrics=plan["scenarios"], authoring_eligible=False, decision=False, provenance="simulated",
+                 authorship="IronMule information experiment", uncertainty=plan["limitations"])
+
+
 def stopped_epyc(root, source, digest):
     from lab.rp import cpu_code_trial, cpu_matched_profile
     from training.code_author import digest as proposal_digest
@@ -808,6 +846,8 @@ def build(root=ROOT) -> Iterator[dict]:
             yield from confounded_native_inventory(root, source, digest)
         elif source == "lab/autonomous/results/xeon-smollm2-broad-host/outcome.json":
             yield from xeon_profiled_hosts(root, source, digest)
+        elif source == "lab/autonomous/results/a100-calibration-stability/independent-replay.json":
+            yield from calibration_information(root, source, digest)
         elif source == "lab/autonomous/results/a100-post-restart-60/decision.json":
             yield from post_restart_observations(root, source, digest)
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
