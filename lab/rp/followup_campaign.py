@@ -225,6 +225,15 @@ def main():
     args.sampling_evidence = args.prior_dir.parent
     followup_release.verified_sampling(args, decision)
     write_once(state / "order.json", decision)
+    terminal = state / "outcome.json"
+    if terminal.is_file() and read(terminal).get("stage") == "rejected":
+        from training.calibration_replan import record
+
+        outcome = read(terminal)
+        require(outcome["order"] == decision["order_id"], "different previously rejected order")
+        record(state, decision, args.control)
+        print(json.dumps(outcome))
+        return
     try:
         candidate = author(decision, args.checkout, state, args.author, args.archive)
     except PendingAuthor:
@@ -241,6 +250,10 @@ def main():
         print(json.dumps(result), flush=True)
         if result["stage"] not in ("measuring", "activate", "run", "exercise"):
             write_once(state / ("qualification.json" if result["stage"] == "qualified" else "outcome.json"), result)
+            if result["stage"] == "rejected":
+                from training.calibration_replan import record
+
+                record(state, decision, args.control)
             return
         if time.monotonic() >= until:
             return
