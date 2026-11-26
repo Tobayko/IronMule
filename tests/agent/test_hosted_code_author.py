@@ -94,3 +94,17 @@ def test_cli_preflight_and_nonzero_exit_do_not_spend_another_attempt(tmp_path, m
         consume_cli(tmp_path, retry_preflight=True)
     assert calls == ["login", "login", "debug", "exec"]
     assert not (tmp_path / "author/response.json").exists()
+
+
+def test_updates_to_the_lab_notebook_leave_dispatched_knowledge_frozen(tmp_path):
+    order, source = {"target": {"function": "op"}}, "void op() {}"
+    with pytest.raises(PendingAuthor):
+        hosted_proposal(tmp_path, order, source, knowledge=[{"evidence": "initial notebook"}])
+    path = tmp_path / "author/request.json"
+    frozen = path.read_bytes()
+    with pytest.raises(PendingAuthor):
+        hosted_proposal(tmp_path, order, source, knowledge=[{"evidence": "updated notebook"}])
+    assert path.read_bytes() == frozen
+    response = {"definition": source, "rationale": "preserve the bound order"}
+    respond(tmp_path, json.loads(frozen)["request_id"], response, "worker", "model")
+    assert hosted_proposal(tmp_path, order, source, knowledge=[]) == response

@@ -278,15 +278,28 @@ def cycle(args):
                   "--worker-root", cfg["worker_root"]]
         snapshot(pod, remote_trial, TRIAL_FILES, trial)
         if not (trial / "result.json").exists():
+            qualifier = command(cfg, "lab.pk1.native_trial",
+                                [*common, "--order", native_order, "--output", remote_trial / "result.json"])
+            job_name = "qualify-" + key[:16]
             try:
-                status = job(pod, "qualify-" + key[:16], command(cfg, "lab.pk1.native_trial",
-                             [*common, "--order", native_order, "--output", remote_trial / "result.json"]))
-            except RuntimeError:
+                status = job(pod, job_name, qualifier)
+            except RuntimeError as exc:
                 # The evaluator can atomically publish a negative decision just before its nonzero exit.
                 snapshot(pod, remote_trial, TRIAL_FILES, trial)
                 result = trial / "result.json"
                 if not result.exists():
-                    raise
+                    reason = getattr(args, "retry_startup", None)
+                    attempt = state / "startup-retry.json"
+                    if not reason or (trial / "context.json").exists() or attempt.exists():
+                        raise
+                    # Only the trusted framework failed before starting a trial. Once any
+                    # evaluator receipt exists, its outcome cannot be cleared by this flag.
+                    write_once(attempt, {"order": key, "incident": str(exc), "repair": reason,
+                                         "requested_unix_s": time.time()})
+                    restarted = call(pod, "POST", "/job", json.dumps({"name": job_name, "cmd": qualifier}).encode())
+                    if restarted.get("started") != job_name:
+                        raise OSError("target did not acknowledge repaired startup") from exc
+                    return {"stage": "measuring", "captured": 0}
                 refused = read(result)
                 if (refused.get("passed") is not False or refused.get("schema") != native_trial.SCHEMA
                         or not (trial / "context.json").is_file() or refused.get("context") != read(trial / "context.json")
@@ -342,6 +355,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("config", "order", "state", "checkout"):
         p.add_argument("--" + name, type=Path, required=True)
+    p.add_argument("--retry-startup", metavar="REPAIR", help="retry one diagnosed pre-evaluator startup failure")
     p.add_argument("--stage-only", action="store_true", help="checkpoint immutable inputs while target admission is pending")
     p.add_argument("--publish", action="store_true", help="submit a qualifying tree and activate after passing CI")
     p.add_argument("--author-cli", action="store_true", help="consume pending orders via subscription Codex")

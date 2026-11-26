@@ -81,10 +81,17 @@ def hosted_proposal(state: Path, order: dict, source_text: str, *, knowledge=Non
                "instructions": "Return a dedented replacement definition and a rationale. Preserve the "
                "function signature, behavior and request isolation. The editor preserves decorators. "
                "Change only the specified function. Leave measurement, quality and budget gates intact."}
-    if knowledge is not None:
-        payload["knowledge"] = knowledge
-    request_id = digest(payload)
-    write_once(directory / "request.json", {"request_id": request_id, **payload})
+    if (directory / "request.json").is_file():
+        # An order sees the archive as it was at dispatch. Other trials may extend
+        # the notebook while the worker is coding or between restart attempts.
+        request_id, original = read_request(directory)
+        if {k: v for k, v in original.items() if k != "knowledge"} != payload:
+            raise ValueError("conflicting record: request.json")
+    else:
+        if knowledge is not None:
+            payload["knowledge"] = knowledge
+        request_id = digest(payload)
+        write_once(directory / "request.json", {"request_id": request_id, **payload})
     path = directory / "response.json"
     if not path.exists():
         raise PendingAuthor(f"hosted Codex request {request_id} is waiting at {directory / 'request.json'}")
