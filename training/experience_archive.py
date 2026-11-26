@@ -339,7 +339,10 @@ def native_experiment(root, source, digest, calibration_seen):
         details = []
         for label, row in zip(("reference", "candidate"), raw):
             if row:
-                details.append({"arm": label, **{k: row.get(k) for k in ("wall_s", "ttft_s", "tokens", "completed",
+                wall = row.get("wall_s")
+                throughput = {k + "_per_s": row[k] / wall for k in ("completed", "tokens")
+                              if isinstance(wall, (int, float)) and wall > 0 and isinstance(row.get(k), (int, float))}
+                details.append({"arm": label, **throughput, **{k: row.get(k) for k in ("wall_s", "ttft_s", "tokens", "completed",
                    "total_elapsed_s", "pilot_decisions", "peak_rss_kib", "device_used_bytes_after_phases", "treatment", "output_sha256")},
                                 "facts_passed": sum(row.get("facts", []))})
         name = f"{'ref' if ref else 'cand'}-{index}.json"
@@ -381,6 +384,9 @@ def native_experiment(root, source, digest, calibration_seen):
         word = {True: "Qualified", False: "Rejected", None: "Unresolved"}[actual]
         yield record("native_code_decision", source, digest, "decision", group, **context, provenance="reported",
                      decision=actual, reported_qualification=reported, deployment=outcome.get("stage"), reason=reason,
+                     workload=raw_pairs[0][0]["workload"] if raw_pairs else order["workload"],
+                     coverage={"candidate_built": bool(build), "numerical_screen": bool(screen),
+                               "frozen_calibration": "calibration.json" in files, "comparable_serving_pairs": len(raw_pairs)},
                      metrics=[{k: v for k, v in result.items() if k.endswith("_ratios") or k in
                               ("elapsed_s", "gpu_memory_ratios_at_phase_boundaries")}],
                      cost_window=outcome.get("cost_window"), hypothesis=order["hypothesis"],

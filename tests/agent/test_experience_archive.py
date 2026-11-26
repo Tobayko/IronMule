@@ -119,6 +119,7 @@ def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path):
     assert pair["reason"] == "unpaired_or_confounded" and pair["metrics"][0]["ttft_s"] == .13
     result = next(r for r in rows if r["kind"] == "native_code_decision")
     assert result["decision"] is None and result["reported_qualification"] is True and not result["label_eligible"]
+    assert result["coverage"]["comparable_serving_pairs"] == 0 and result["workload"]["decode_rows"] == 32
     (state / "outcome.json").write_text(json.dumps({"order": order.parent.name, "authorization": "private"}))
     with pytest.raises(ValueError, match="private fields"):
         native_evidence.export(args)
