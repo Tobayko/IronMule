@@ -417,3 +417,21 @@ On the campaign control host, append `--cost-phase during-qualification`, `after
 provider account and hourly-rate data, the held cleanup reserve and completed worker-arm durations.
 Each figure for elapsed lease cost is cumulative across workloads. The final campaign journal
 also checks provider-confirmed pod removal and available posted charges.
+### Replay the qualified PR 60 program and CPU decision
+
+The following command runs on an ordinary CPU with NumPy. It regenerates the development
+order from both measured GPU mask observations and the earlier startup phase traces. It
+reconstructs the submitted Python method from the Codex response and regrades the entire
+hardware qualification, then trains the startup head again from its original random seed.
+It checks the resulting weight bytes, held-out decisions, publication, fresh target receipt,
+two real serving processes with equal profile eligibility and the same-work rollback.
+
+```sh
+order=d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3
+OPENBLAS_NUM_THREADS=1 python -m training.replay_qualified_restart "lab/autonomous/results/a100-restart/$order"
+```
+
+The measured phase selector for this first successful program used an engineer-defined
+cache-replay protocol. Codex supplied the changed method. The learned head selected the
+qualified complete program when serving new work, after the original paired experiment.
+The ablation measures that final selection with identical admission and uncertainty gates.

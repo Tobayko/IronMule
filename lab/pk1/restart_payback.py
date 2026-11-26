@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from contextlib import contextmanager
 from pathlib import Path
 from statistics import median
 from tempfile import TemporaryDirectory
@@ -15,7 +16,9 @@ from training.code_author import read_request, read_response
 from training.code_trial import read
 
 
-def replay(folder, journal=None):
+@contextmanager
+def measured_sources(folder):
+    """Rebuild the authored method and independently replay the complete immutable hardware gate."""
     archive = restart_evidence.manifest(folder)
     if archive.get("qualified") is not True:
         raise ValueError("A completed, passing hardware qualification is required")
@@ -31,7 +34,12 @@ def replay(folder, journal=None):
         proposal.write_bytes(restart_evidence.candidate_bytes(original, request, order, read_response(folder, request_id)))
         check = SimpleNamespace(order=folder / "order.json", checkout=root, candidate_source=proposal, trial=folder)
         restart_trial.qualification(check)
+        yield check
 
+
+def replay(folder, journal=None):
+    with measured_sources(folder) as check:
+        order = read(check.order)
     seconds = read(folder / "result.json")["elapsed_s"]
     report = {"order": order["order_id"], "scope": "qualified repeat-start engine on the measured A100",
               "qualification_elapsed_s": seconds, "workloads": {}}
