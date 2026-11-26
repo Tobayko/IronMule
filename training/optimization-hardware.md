@@ -37,3 +37,27 @@ Read one trial's evidence and selected deployment without running a model. A mis
 python -m training.trial_release status --state "$TRIAL"
 python -m training.trial_release check --state "$TRIAL" --gguf "$GGUF"
 ```
+
+### Activated EPYC prefill code in the product bridge
+
+After the EPYC code release has a verified publication and a fresh active target receipt, run the
+separate product gate on that same target. Both root-owned checkouts must match the published receipt.
+The broker starts two unprivileged workers, qualifies the same thread head, and alternates six
+comparisons through `GgmlBridge.generate_many`. Each comparison includes four short/document waves
+of four public copy requests. Worker first-visible-token timing comes from the product callbacks.
+Total batch latency includes the request and completed reply over the broker pipe.
+
+```sh
+python -m lab.rp.cpu_product_release qualify --state "$STATE" --order "$ORDER" \
+  --reference "$REF" --candidate "$CAND" --gguf "$GGUF" --head "$HEAD_FILE" \
+  --python "$CPU_PYTHON" --worker-root "$WORKER_ROOT" --receipt-sha256 "$RECEIPT_SHA" --timeout 360
+```
+
+Use `serve` with the same arguments to keep both workers warm. After its JSON readiness line, send
+one JSON object per line containing a `prompts` array and `max_tokens`. Replies include the selected
+arm, complete answers, token IDs, stop reasons and timings. For a single batch, use `run --requests
+PATH`. A four-lane batch in the qualified copy family can use the candidate. Other prompt content,
+batch sizes within one to four, and output limits up to 64 use the reference. The worker context
+limit is 512 tokens per request. A quality failure retries on the reference. Exceeding the measured
+reference timing envelope withdraws the candidate for subsequent requests and processes.
+This interface operates over private process pipes. HTTP measurement requires its own target run.
