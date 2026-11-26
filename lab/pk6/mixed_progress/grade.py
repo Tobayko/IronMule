@@ -276,6 +276,28 @@ def grade(folder):
         or target["vllm_version"] != "0.11.0"
     ):
         raise ValueError("foreign hardware, model or backend")
+    if "stock_retry_revision" in target:
+        from lab.pk6.mixed_progress.recover import FIX, REFERENCE
+
+        if (
+            target["stock_retry_revision"] != FIX
+            or target["stock_retry_sources"] != REFERENCE
+            or target["external_waves_sha256"] != checksum(folder / "waves-vllm.jsonl")
+        ):
+            raise ValueError("unbound stock recovery or external comparator")
+        failed = read("failed-start.json")
+        modes = failed["gate_attempts"]
+        if (
+            failed["ready"]
+            or not any(
+                a["kernel_mode"] == "generated"
+                and a["diagnostic"]["code"] == "out_of_memory"
+                for a in modes
+            )
+            or set(failed["two_compiled_libraries"])
+            != {"calibration_w4", "raw_engine_w4"}
+        ):
+            raise ValueError("missing original rejection")
     complete = read("completed.json")
     if complete["order"] != list(ARMS) or complete["hardware"] != target["hardware"]:
         raise ValueError("incomplete run or changed device")

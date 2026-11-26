@@ -1,0 +1,32 @@
+{
+  "gate_attempts": [
+    {
+      "kernel_mode": "generated",
+      "passes": false,
+      "diagnostic": {
+        "schema": "ironmule.gguf-gate-diagnostic.v1",
+        "stage": "tuning",
+        "code": "out_of_memory",
+        "exit_code": -6,
+        "exception_class": null,
+        "candidates": []
+      },
+      "ratio": null,
+      "interval": null
+    }
+  ],
+  "two_compiled_libraries": {
+    "calibration_w4": {
+      "sha256": "e96b9707a40518129d26b7526c2e4205838564f2407304ee19784a522cd7e246",
+      "bytes": 13318016,
+      "mtime_unix": 1795726173.9298048
+    },
+    "raw_engine_w4": {
+      "sha256": "6b9efd7ff6ae9742e0f18970198b941f4e58965e32a6ef42e2947408e98b4d69",
+      "bytes": 13318016,
+      "mtime_unix": 1795726725.9145951
+    }
+  },
+  "interrupted_unqualified_start_unix": 1795726890.4971278,
+  "ready": false
+}

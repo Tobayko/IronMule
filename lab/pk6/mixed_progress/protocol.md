@@ -13,3 +13,7 @@ Budget the L40S at no more than USD 1.16 per hour including disk for 75 minutes 
 ## Separate current-release comparison
 
 The main comparison retains the PR 57 reference version, vLLM 0.11.0. PyPI identified 0.34.0 as current on November 26, 2026. If the main series completes with enough reserved time, run 0.34.0 in a separate environment on the same L40S, with the identical AWQ snapshot, tokenizer, requests, seeds, generation limits and width cells. Keep its results separate. Finish installation and timing outside measured primary serving waves. The supplement uses the existing lease and hard deadline. A startup or dependency failure is an unverified comparison.
+
+## Recovery after the L40S kernel rejection
+
+The first native R1 attempt reported a generated-kernel out-of-memory error in tuning. The subsequent stock retry began compiling another W4 library in the automatic discovery cache. This violates the kernel identity required for a stock comparison. Stop that attempt before counting any native serving result. PR 68 makes the stock choice explicit for the child and invalidates ambiguous packed-stock cache entries. Preserve the completed external waves from the same board by exact digest. Repeat all four native starts with the same fix, scheduler, prompts, ordering and gates. Report the first failed start separately. The first completed native start can reuse the previously built target W4 library. Its startup time is a recovery with a partially populated cache. The original trial and the recovery share one lease and both count toward costs.
