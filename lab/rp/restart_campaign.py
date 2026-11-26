@@ -131,7 +131,8 @@ def tokenizer_retry(state, check, receipt, path):
             or child.get("returncode") != 0 or child.get("ids_count") != record.get("ids_count")
             or child.get("facts_sha256") != record.get("facts_sha256") or child.get("bos") != record.get("bos")
             or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("facts_sha256"))) or not record.get("diagnosed_dependency")
-            or not record.get("correction")):
+            or not record.get("correction") or not isinstance(record.get("python_overlay"), dict)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(record["python_overlay"].get("sha256")))):
         raise ValueError("need the recorded failed reference and an actual full corrected tokenizer preflight")
     return record
 
@@ -167,6 +168,8 @@ def product(args, cfg, remote, check, active):
     require_hash = ["lab/pk1/restart_http.py", "lab/pk1/restart_http_worker.py", "lab/pk1/native_http.py",
                     "lab/pk1/native_http_worker.py", "training/pilot_restart_profiles.py", "ironmule/pilot.py",
                     "ironmule/ggml_profiles.py", "ironmule_product/backend.py", "ironmule_product/http_server.py"]
+    if recovery:
+        require_hash.append("lab/pk1/restart_mlx_runtime.py")
     root = Path(__file__).resolve().parents[2]
     paths = [PurePosixPath(cfg["framework"]) / k for k in require_hash]
     hashes = shell(pod, shlex.join(["sha256sum", "--", *map(str, paths)])).splitlines()
@@ -177,6 +180,7 @@ def product(args, cfg, remote, check, active):
         proof = tokenizer_retry(state, check, receipt, recovery)
         write_once(local / "tokenizer-preflight.json", proof)
         geometry_record["runtime_preflight_sha256"] = checksum(local / "tokenizer-preflight.json")
+        geometry_record["python_overlay"] = proof["python_overlay"]
         shell(pod, shlex.join(["mkdir", "-p", str(output)]))
     upload(pod, output / "startup-head.npz", (state / "startup-head.npz").read_bytes())
     geometry = local / "geometry.json"

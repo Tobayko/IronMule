@@ -18,6 +18,10 @@ def main(argv):
 
     data = json.loads(Path(data_path).read_bytes())
     expected = data["runtime"]
+    if overlay := data.get("python_overlay"):
+        import mlx.core as mx
+        if not Path(mx.__file__).resolve().is_relative_to(Path(overlay["root"])) or mx.cuda.is_available():
+            raise ValueError("unexpected MLX dependency in the protected GGUF worker")
     lib = os.environ["IRONMULE_KG_LIB"]
     if (ge.file_sha256(gguf) != expected["model_sha256"] or checksum(lib) != expected["w4_sha256"]
             or checksum(os.environ["IRONMULE_W4_TABLE"]) != expected["table_sha256"] or identity() != expected["native"]

@@ -21,7 +21,7 @@ from ironmule.ggml_profiles import FLAGS
 from ironmule_product import compare
 from lab.pk1 import native_http as http
 from lab.pk1 import native_trial
-from lab.pk1 import restart_release, restart_trial
+from lab.pk1 import restart_release, restart_trial, restart_mlx_runtime
 from training import scoped_release as release
 from training.code_author import write_once
 from training.code_trial import read, save
@@ -67,6 +67,10 @@ def inputs(args, receipt, candidate, *, gate_cache=None):
             dest.chmod(0o444)
             require(release.checksum(dest) == expected, "changed startup library or table")
         env = http.env_for(SimpleNamespace(checkout=tree), lib, table)
+        overlay = getattr(args, "geometry_record", {}).get("python_overlay")
+        overlay_path = restart_mlx_runtime.bind(args.worker_root, overlay) if overlay else None
+        if overlay_path:
+            env["PYTHONPATH"] += os.pathsep + str(overlay_path)
         env["IRONMULE_GGML_THREADS"] = str(bound["threads"])
         if candidate:
             dst = public / "restart.json"
@@ -74,13 +78,13 @@ def inputs(args, receipt, candidate, *, gate_cache=None):
             dst.chmod(0o444)
             env.update(IRONMULE_KG_RESTART_RECEIPT=str(dst), IRONMULE_KG_RESTART_SHA256=release.checksum(dst))
         profile = public / "expected.json"
-        profile.write_text(json.dumps({"runtime": bound, "candidate": candidate, "vendor": q["binding"]["vendor"],
+        profile.write_text(json.dumps({"runtime": bound, "candidate": candidate, "python_overlay": overlay, "vendor": q["binding"]["vendor"],
                 "mask_bits": q["binding"]["mask_bits"], "pilot": q["binding"]["pilot_sha256"],
                 "source": q["candidate_sha256" if candidate else "reference_sha256"], "binary": bound["w4_sha256"],
                 "table": bound["table_sha256"], "flags": list(FLAGS),
                 "binding": {"profile": {}, "model_sha256": bound["model_sha256"], "native": bound["native"], "engine": bound["settings"]}}))
         profile.chmod(0o444)
-        paths = [public, tree, args.gguf, *(Path(env[k]).resolve() for k in ("IRONMULE_GGML_BINDINGS", "LLAMA_CPP_LIB_PATH"))]
+        paths = [public, tree, args.gguf, *([overlay_path] if overlay_path else []), *(Path(env[k]).resolve() for k in ("IRONMULE_GGML_BINDINGS", "LLAMA_CPP_LIB_PATH"))]
         for item in [sys.prefix, sys.base_prefix, *env.get("LD_LIBRARY_PATH", "").split(":")]:
             if item and not Path(item).resolve().is_relative_to("/usr"):
                 paths.append(Path(item).resolve())
@@ -91,7 +95,7 @@ def inputs(args, receipt, candidate, *, gate_cache=None):
 def key_for(args, receipt):
     from training import pilot_restart_profiles
     from ironmule import pilot
-    files = [Path(__file__), WORKER, http.WORKER, Path(http.__file__), Path(release.__file__),
+    files = [Path(__file__), WORKER, http.WORKER, Path(http.__file__), Path(release.__file__), Path(restart_mlx_runtime.__file__),
              Path(pilot_restart_profiles.__file__), Path(pilot.__file__),
              *sorted((Path(__file__).resolve().parents[2] / "ironmule_product").glob("*.py"))]
     return http.digest({"control": args.receipt_sha256, "order": receipt["order"]["order_id"], "seeds": SEEDS, "head": args.head_sha256, "geometry": args.geometry_sha256,

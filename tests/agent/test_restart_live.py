@@ -85,6 +85,7 @@ def test_new_product_attempt_requires_old_failure_and_successful_original_tokeni
     good = {"schema": "ironmule.product-tokenizer-preflight.v1", "order_id": "order", "source_sha256":digest,
             "gguf_sha256": "model", "returncode": 0, "gate_ids_sha256": hashlib.sha256(code.encode()).hexdigest(), "ids_count": 8193,
             "facts_sha256":"a"*64, "diagnosed_dependency":"package", "correction":"bound installation",
+            "python_overlay":{"root":"/approved/overlay", "sha256":"c"*64},
             "nested_diagnostic":{"stopped_before_timed_child":True, "tokenizer_child":{
                 "returncode":0,"ids_count":8193,"facts_sha256":"a"*64,"bos":None}}}
     release.save(preflight, good)
@@ -100,3 +101,18 @@ def test_new_product_attempt_requires_old_failure_and_successful_original_tokeni
     release.save(prior, {"passes":False, "diagnostic":{"stage":"candidate","code":"quality_rejected"}})
     with pytest.raises(ValueError):
         tokenizer_retry(tmp_path, args, verified, preflight)
+
+
+def test_cpu_mlx_overlay_cannot_shadow_the_released_model_source(tmp_path):
+    from lab.pk1.restart_mlx_runtime import content_hash
+
+    overlay = tmp_path / "overlay"
+    core = overlay / "mlx/core.cpython-311.so"
+    core.parent.mkdir(parents=True)
+    core.write_bytes(b"cpu native module")
+    initial = content_hash(overlay)
+    core.write_bytes(b"another module")
+    assert content_hash(overlay) != initial
+    (overlay/"sitecustomize.py").write_text("print('unexpected startup handler')")
+    with pytest.raises(ValueError):
+        content_hash(overlay)
