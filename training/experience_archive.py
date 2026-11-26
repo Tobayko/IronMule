@@ -338,6 +338,42 @@ def confounded_native_inventory(root, source, digest):
                      uncertainty=incident["reason"], authorship="Two dependent physical native-activity traces")
 
 
+def xeon_profiled_hosts(root, source, digest):
+    from math import isclose
+    from training.code_trial import verify_deliveries
+
+    folder = (root / source).parent
+    outcome = json.loads((root / source).read_bytes())
+    if (outcome["schema"] != "ironmule.xeon-broad-host-outcome.v1" or outcome["decision"] != "defer" or outcome["author_order"] is not None
+            or [run["seed"] for run in outcome["runs"]] != [68421, 68422]):
+        raise ValueError("different broad-host workload or planner outcome")
+    prior = None
+    for run in outcome["runs"]:
+        path = folder / f"{run['seed']}.json"
+        raw = path.read_bytes()
+        sample = json.loads(raw)
+        observed = sample["record"]
+        verify_deliveries(observed, run["seed"])
+        binding = observed["binding"]
+        if (canonical_sha256(raw) != run["raw_sha256"] or observed["commit"] != run["source"] or binding["machine"] != outcome["machine"]
+                or (prior is not None and prior != binding) or observed["correct"] != observed["completed"] or observed["correct"] != 16):
+            raise ValueError("Xeon profiling source, CPU or work changed")
+        prior = binding
+        times = [sum(site[4] for site in p["sites"]) for p in sample["measured_profiles"]]
+        if len(times) != 4 or not all(isclose(t / wave["wall_s"], share) for t, wave, share in
+                                      zip(times, observed["waves"], run["wave_shares"], strict=True)):
+            raise ValueError("different Xeon host attribution")
+        share = sum(times) / observed["wall_s"]
+        if not isclose(share, run["extra_share"]) or share >= 1 - 1 / 1.02:
+            raise ValueError("different source-time share or prospectively affordable headroom")
+        yield record("cpu_runtime_profile", str(path.relative_to(root)), run["raw_sha256"], str(run["seed"]), digest,
+                     hardware=binding["machine"], model=binding["model_sha256"], base_commit=run["source"], quantization="Q4_K_M",
+                     workload=observed["workload"], software=observed["runtime_source_sha256"], profiles=[binding],
+                     reason="eligible_runtime_sites_below_headroom", metrics=[run], quality={"correct": observed["correct"], "tokens": observed["tokens"]},
+                     note=outcome["reason"], decision=False, new_resource_bookings_usd=outcome["additional_service_cost_usd"],
+                     uncertainty=outcome["uncertainty"], authorship="Instrumented Xeon serving evaluator")
+
+
 def stopped_epyc(root, source, digest):
     from lab.rp import cpu_code_trial, cpu_matched_profile
     from training.code_author import digest as proposal_digest
@@ -770,6 +806,8 @@ def build(root=ROOT) -> Iterator[dict]:
                          cost_reference="lab/rp/results/campaign-costs.json", new_resource_bookings_usd=report["new_resource_bookings_usd"])
         elif source == "lab/autonomous/results/a100-post-restart-native-60/decision.json":
             yield from confounded_native_inventory(root, source, digest)
+        elif source == "lab/autonomous/results/xeon-smollm2-broad-host/outcome.json":
+            yield from xeon_profiled_hosts(root, source, digest)
         elif source == "lab/autonomous/results/a100-post-restart-60/decision.json":
             yield from post_restart_observations(root, source, digest)
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
