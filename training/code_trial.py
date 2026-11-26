@@ -149,6 +149,16 @@ def judge(pairs):
             "ttft_ratios": latencies, "peak_rss_ratios": memories}
 
 
+def runtime_env(provider):
+    environment = {"PYTHONPATH": "/trial", "HOME": "/tmp", "TMPDIR": "/tmp", "PATH": "/usr/local/bin:/usr/bin:/bin",
+                   "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "IRONMULE_PILOT": "1",
+                   "IRONMULE_GGML_GPU_LAYERS": "999" if provider == "cuda" else "0"}
+    for k in ("IRONMULE_GGML_BINDINGS", "LLAMA_CPP_LIB_PATH", "LD_LIBRARY_PATH", "CUDA_VISIBLE_DEVICES"):
+        if os.environ.get(k):
+            environment[k] = os.environ[k]
+    return environment
+
+
 def sandbox(tree, gguf, dest, provider):
     """Read-only fixture, evaluator and candidate. No account credentials or campaign state in the worker."""
     python = Path(sys.executable)
@@ -168,12 +178,7 @@ def sandbox(tree, gguf, dest, provider):
     cmd += ["--ro-bind", str(tree), "/trial", "--ro-bind", str(ROOT / "training/serving_trial.py"),
             "/trusted/serving_trial.py", "--ro-bind", str(gguf), "/models/" + gguf.name,
             "--bind", str(dest), "/output", "--chdir", "/trial"]
-    environment = {"PYTHONPATH": "/trial", "HOME": "/tmp", "TMPDIR": "/tmp", "PATH": "/usr/local/bin:/usr/bin:/bin",
-                   "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "IRONMULE_PILOT": "1",
-                   "IRONMULE_GGML_GPU_LAYERS": "999" if provider == "cuda" else "0"}
-    for k in ("IRONMULE_GGML_BINDINGS", "LLAMA_CPP_LIB_PATH", "LD_LIBRARY_PATH"):
-        if os.environ.get(k):
-            environment[k] = os.environ[k]
+    environment = runtime_env(provider)
     for k, v in environment.items():
         cmd += ["--setenv", k, v]
     return [*cmd, str(python)]
@@ -187,6 +192,23 @@ def measure(tree, args, seed, parent):
              "--require-provider", args.provider, "--out", "/output/trial.json", "--waves", "4",
              "--threads", "2", "--clients", "4", "--seed", str(seed)], timeout=300)
         return read(tmp / "trial.json")
+
+
+def validate_arm(row, tree, order, seed, signature):
+    expected = {name: hashlib.sha256((tree / "ironmule" / name).read_bytes()).hexdigest()
+                for name in ("ggml_engine.py", "gguf_tokenizer.py", "pilot.py")}
+    workload = {"seed": seed, "clients": 4, "waves": 4, "max_tokens": 3, "warmup_waves": 1,
+                "context": 512, "phases": ["short", "document"]}
+    if (row["evaluator_sha256"] != signature["evaluator_sha256"] or row["runtime_source_sha256"] != expected
+            or row["workload"] != workload or row["completed"] != 16 or row["correct"] != 16
+            or row["pilot_decisions"] <= 0 or row["profiled"] or row["schema"] != order["evaluator"]
+            or len(row["waves"]) != 4 or any(w["completed"] != 4 or w["correct"] != 4 for w in row["waves"])):
+        raise ValueError("unverified source, evaluator or incomplete work")
+    # Location-specific environment hashes can differ between discovery and isolation.
+    # Actual settings, hardware, model and libraries must agree. Both timed arms must
+    # additionally match *all* binding fields, including the environment hash.
+    if any(row["binding"].get(k) != v for k, v in order["binding"].items() if k != "env_sha256"):
+        raise ValueError("target differs from discovery")
 
 
 def cycle(args):
@@ -249,6 +271,8 @@ def cycle(args):
             pair = read(file)
             if any(pair.get(k) != v for k, v in signature.items()):
                 raise ValueError("cached pair differs from current experiment")
+            for arm, tree in (("reference", reference), ("candidate", candidate)):
+                validate_arm(pair[arm], tree, order, 8351 + i, signature)
             pairs.append((pair["reference"], pair["candidate"]))
         result = judge(pairs)
         result["serving_seconds_measured"] = sum(r["wall_s"] for pair in pairs for r in pair)
