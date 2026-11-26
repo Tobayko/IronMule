@@ -137,6 +137,31 @@ class Pilot:
     machine measured at startup (seconds): `step_one` (one row), `row` (each further row), `prefill_1k` (1,000 prompt
     tokens), `kv_1k` (1,000 attended tokens)."""
 
+    @staticmethod
+    def startup_profile(heads, features, names, qualified, reference, *, in_support, margin_error):
+        """Select one already qualified complete profile before native graphs are captured."""
+        if reference not in qualified or len(names) < 2 or not heads:
+            raise ValueError("an eligible reference and competing profile scores are required")
+        started = time.perf_counter_ns()
+        selected, proposal, scores, margin = reference, None, [], None
+        reason = "unknown hardware or workload"
+        if in_support:
+            scores = [predict(weights, features).tolist() for weights in heads]
+            if any(len(s) != len(names) or not all(math.isfinite(x) for x in s) for s in scores):
+                reason = "invalid prediction"
+            else:
+                ranks = [sorted(range(len(names)), key=score.__getitem__, reverse=True) for score in scores]
+                proposal = names[ranks[0][0]]
+                margin = min(score[r[0]] - score[r[1]] for score, r in zip(scores, ranks, strict=True))
+                if any(names[r[0]] != proposal for r in ranks) or not margin > margin_error >= 0:
+                    reason = "unresolved model margin"
+                elif proposal not in qualified:
+                    reason = "whole profile lacks local qualification"
+                else:
+                    selected, reason = proposal, "qualified model choice"
+        return {"profile": selected, "proposal": proposal, "scores": scores, "margin": margin,
+                "margin_error": margin_error, "reason": reason, "cpu_us": (time.perf_counter_ns() - started) / 1000}
+
     def __init__(self, engine: Any, costs: dict[str, float], *, max_cap: int, gpu: bool = False,
                  weights: Path | None = None):
         self.engine, self.gpu, self.max_cap = engine, bool(gpu), int(max_cap)
@@ -249,5 +274,15 @@ class Pilot:
                 **({"thread_learning": self.learning.status()} if self.learning is not None else {})}
 
 
-__all__ = ["BUDGETS", "CAPS", "HEADS", "OBS", "WEIGHTS", "WEIGHTS_GPU", "Pilot", "THREAD_FRACTIONS", "CpuLoad",
-           "usable_cores"]
+__all__ = [
+    "BUDGETS",
+    "CAPS",
+    "HEADS",
+    "OBS",
+    "THREAD_FRACTIONS",
+    "WEIGHTS",
+    "WEIGHTS_GPU",
+    "CpuLoad",
+    "Pilot",
+    "usable_cores",
+]
