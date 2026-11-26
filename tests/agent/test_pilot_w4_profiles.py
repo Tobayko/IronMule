@@ -65,3 +65,16 @@ def test_independent_stream_fit_requires_raw_counterbalanced_contexts(tmp_path):
     (tmp_path / "0-q4.json").write_text("{}")
     with pytest.raises(ValueError, match="incomplete"):
         lane.fit_contexts(args, order)
+
+
+def test_whole_profile_comparison_removes_only_qualified_mask_treatment():
+    from training.pilot_w4_profiles import equal_conditions, whole_profile
+
+    reference = {"mask_bits": [65535, 255], "padding": {"3": 8}, "pilot_costs": {"step_one": .002}}
+    runtime = {"profile": reference, "threads": 4, "affinity": [0, 1, 2, 3]}
+    q4 = whole_profile(reference, "q4")
+    assert q4 == {**reference, "mask_bits": [65535, 0]}
+    assert equal_conditions({"binding": {**runtime, "profile": q4}}, reference) == runtime
+    assert equal_conditions({"binding": {**runtime, "threads": 2, "profile": q4}}, reference) != runtime
+    assert equal_conditions({"binding": {**runtime, "profile": {**q4, "padding": {}}}}, reference) != runtime
+    assert reference["mask_bits"] == [65535, 255]
