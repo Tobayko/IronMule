@@ -83,7 +83,7 @@ def test_new_product_attempt_requires_old_failure_and_successful_original_tokeni
     verified = {"order": {"order_id": "order"}, "qualification": {"binding": {"runtime": {"model_sha256":"model"}}}}
     preflight = tmp_path / "preflight.json"
     good = {"schema": "ironmule.product-tokenizer-preflight.v1", "order_id": "order", "source_sha256":digest,
-            "gguf_sha256": "model", "gate_ids_sha256": hashlib.sha256(code.encode()).hexdigest(), "ids_count": 8193,
+            "gguf_sha256": "model", "returncode": 0, "gate_ids_sha256": hashlib.sha256(code.encode()).hexdigest(), "ids_count": 8193,
             "facts_sha256":"a"*64, "diagnosed_dependency":"package", "correction":"bound installation"}
     release.save(preflight, good)
     args = SimpleNamespace(checkout=tmp_path)

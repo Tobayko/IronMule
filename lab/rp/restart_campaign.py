@@ -123,7 +123,8 @@ def tokenizer_retry(state, check, receipt, path):
             or prior.get("source_sha256") != checksum(source)
             or record.get("schema") != "ironmule.product-tokenizer-preflight.v1" or record.get("order_id") != receipt["order"]["order_id"]
             or record.get("source_sha256") != checksum(source) or record.get("gguf_sha256") != receipt["qualification"]["binding"]["runtime"]["model_sha256"]
-            or record.get("gate_ids_sha256") != hashlib.sha256(gate.encode()).hexdigest() or record.get("ids_count") != 8193
+            or record.get("gate_ids_sha256") != hashlib.sha256(gate.encode()).hexdigest() or record.get("returncode") != 0
+            or record.get("ids_count") != 8193
             or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("facts_sha256"))) or not record.get("diagnosed_dependency")
             or not record.get("correction")):
         raise ValueError("need the recorded failed reference and an actual full corrected tokenizer preflight")
