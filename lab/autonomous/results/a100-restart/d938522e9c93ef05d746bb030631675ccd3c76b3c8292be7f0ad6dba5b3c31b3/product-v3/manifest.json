@@ -1,0 +1,21 @@
+{
+  "attempt": "product-v3",
+  "control_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
+  "files": {
+    "http-geometry.json": {
+      "original_sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73",
+      "sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73"
+    },
+    "http-trained-head.json": {
+      "original_sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37",
+      "sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37"
+    },
+    "tokenizer-preflight.json": {
+      "original_sha256": "5476ccee63801c06c82c39d9591c01ceb39104afb4aeb79edb2eb89c7a774051",
+      "sha256": "5476ccee63801c06c82c39d9591c01ceb39104afb4aeb79edb2eb89c7a774051"
+    }
+  },
+  "head_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+  "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "schema": "ironmule.portable-product-attempt.v1"
+}

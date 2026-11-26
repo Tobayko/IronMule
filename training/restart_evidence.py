@@ -27,7 +27,7 @@ PILOT_ARMS = ("pilot-initial.json", "pilot-trained.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
-HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
+HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "product-gate-reference.json", "product-gate-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
               "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json", "live-ready.json")
 COST_PHASES = ("during-qualification", "after-verdict", "after-release", "after-product")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
@@ -218,8 +218,28 @@ def product_assets(state, order, verified, assets, *, attempt=None, checkout=Non
         if "geometry.json" in raw and json.loads(raw["geometry.json"]).get("runtime_preflight_sha256") != sha(data):
             raise ValueError("retry geometry differs from the validated tokenizer environment")
         assets["tokenizer-preflight.json"] = data
+        if work.name == "product-v3" and "geometry.json" in raw:
+            g = json.loads(raw["geometry.json"])
+            previous = bounded(state / "product-v2/gate-reference.json")
+            if (g.get("original_product_width_selection") is not True or g.get("explicit_width_failure_sha256") != sha(previous)
+                    or json.loads(previous).get("passes") is not False):
+                raise ValueError("stock-sequence retry differs from the prior rejected explicit width")
+            for arm in ("reference", "candidate"):
+                intermediate = f"product-gate-{arm}.json"
+                if intermediate not in raw:
+                    continue
+                stage = json.loads(raw[intermediate])
+                if stage.get("passed") is False:
+                    continue
+                gate, devices = (json.loads(raw[n]) for n in (f"gate-{arm}.json", f"gate-devices-{arm}.json"))
+                if (stage.get("gate_completed") != arm or stage["source_sha256"] != verified[arm + "_sha256"]
+                        or stage["gate_sha256"] != sha(raw[f"gate-{arm}.json"]) or gate["passes"] is not True
+                        or gate["qualified_width"]["sequences"] != 32 or "32" not in gate["qualified_width"]["rates"]
+                        or {d["stage"] for d in devices} != {"GATE_IDS", "TUNE_CHILD", "GATE_CANDIDATE", "CELL_CHILD", "WIDTH_CHILD"}
+                        or any(d["default_sequences"] != 8 or d["provider"] != "cuda" or d["gpu_layers"] != 999 for d in devices)):
+                    raise ValueError("incomplete stock GPU stage, changed default sequencing or unqualified target width")
     private = work / "guarded-child-raw.local.jsonl"
-    if private.is_file():
+    if private.is_file() and work.name == "product-v2":
         original = bounded(private)
         logs = [json.loads(line) for line in original.splitlines()]
         row, = [r for r in logs if r["stage"] == "reference" and r["status"] == -6]
