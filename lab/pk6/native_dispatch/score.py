@@ -1,6 +1,7 @@
 """Replay paired Qwen3-32B HTTP comparisons from complete immutable process receipts."""
 
 import argparse
+from bisect import bisect_left
 import gzip
 import json
 import math
@@ -24,6 +25,44 @@ def waves(folder, arm):
         else gzip.decompress(path.with_suffix(".jsonl.gz").read_bytes())
     )
     return [json.loads(l) for l in raw.splitlines()]
+
+
+def exclusion(arm, proof):
+    if arm.startswith("D"):
+        return "instrumented discovery"
+    if arm.startswith("P"):
+        return "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70"
+    if arm.startswith(("F", "V", "I", "M", "Z", "T")) and (
+        not any(proof["prompt_plugin_dispatches_in_http_by_width"].values())
+        or not proof["prompt_plugin_dispatches_in_http_quality"]
+    ):
+        return "candidate path absent from counted performance or quality waves"
+    if arm.startswith(("N", "G")) and (
+        proof["shared_pool"] or proof["streams_pass"] is not True
+    ):
+        return "candidate split streams did not serve"
+    if arm.startswith(("V", "U")) and not proof["raised_budget_in_http"]:
+        return "candidate admission rule did not serve"
+    return None
+
+
+def wave_energy(samples, wave):
+    """Integrate linearly interpolated board power. Missing endpoints stay unknown."""
+    times = [r[0] for r in samples]
+    a, b = wave["unix_start"], wave["unix_end"]
+    left, right = bisect_left(times, a), bisect_left(times, b)
+    if left == 0 or right >= len(times):
+        return None
+    joules = 0.0
+    for i in range(left, right + 1):
+        t0, _, p0 = samples[i - 1]
+        t1, _, p1 = samples[i]
+        if not 0 < t1 - t0 <= 2.5:
+            return None
+        lo, hi = max(t0, a), min(t1, b)
+        rate = (p1 - p0) / (t1 - t0)
+        joules += (p0 + 0.5 * rate * (lo + hi - 2 * t0)) * (hi - lo)
+    return joules
 
 
 def inspect(folder, arm, target, telemetry):
@@ -67,6 +106,15 @@ def inspect(folder, arm, target, telemetry):
         if r["repeat"] == 3
     }
     sample = grade.sampled_resources(telemetry, rows)
+    energy = {}
+    for w in (1, 8, 32):
+        block = [r for r in rows if r["width"] == w and r["repeat"] < 3]
+        estimates = [wave_energy(telemetry, r) for r in block]
+        tokens = sum(x["tokens"] for r in block for x in r["requests"])
+        energy[str(w)] = (
+            sum(estimates) / tokens if all(e is not None for e in estimates) else None
+        )
+    sample["estimated_board_joules_per_output_token"] = energy
     quality = ready["health"].get("gate")
     if arm != "vllm" and not (
         quality and quality["passes"] is True and quality["interval"][1] <= 1.005
@@ -82,11 +130,27 @@ def inspect(folder, arm, target, telemetry):
             else gzip.decompress(trace.with_suffix(".txt.gz").read_bytes())
         )
         marks = []
+        budgets = []
         for line in raw.decode().splitlines():
+            if line.startswith("# shared_budget "):
+                budgets.append(float(line.split()[-1]))
             if line.startswith("# prompt_kernel "):
                 event = dict(part.split("=") for part in line.split()[2:])
                 marks.append((float(event["t"]), int(event["launches"])))
         proof = {
+            "raised_budget_in_http": sum(
+                1
+                for r in rows
+                if r["repeat"] < 3
+                for t in budgets
+                if min(x["t_send"] for x in r["requests"])
+                <= t
+                <= max(x["t_done"] for x in r["requests"])
+            ),
+            "selected_profile": ready["health"]
+            .get("kernel_profile", {})
+            .get("profile"),
+            "fallback": ready["health"].get("kernel_fallback", {}).get("serving"),
             "matched_native_requests": sum(c["matched"] for c in projection["cells"]),
             "native_raw_sha256": projection["trace_sha256"],
             "shared_pool": bool(ready["health"].get("shared_pool")),
@@ -123,13 +187,7 @@ def inspect(folder, arm, target, telemetry):
         "metrics": metrics,
         "resources": sample,
         "gate": quality,
-        "excluded_from_promotion": (
-            "instrumented discovery"
-            if arm.startswith("D")
-            else "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70"
-            if arm.startswith("P")
-            else None
-        ),
+        "excluded_from_promotion": exclusion(arm, proof),
         "proof": proof,
     }
     return rows, summary

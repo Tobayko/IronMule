@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--arms", nargs="+", required=True)
     parser.add_argument("--lib", type=Path)
     parser.add_argument("--routing-receipt", type=Path)
+    parser.add_argument("--policy", type=Path)
     parser.add_argument("--threshold", type=int, default=128)
     parser.add_argument("--seeds", type=int, nargs=2, default=SEEDS)
     args = parser.parse_args()
@@ -37,6 +38,7 @@ def main():
     gguf = args.models / trial.GGUF_NAME
     if checksum(gguf) != GGUF:
         raise ValueError("unexpected GGUF")
+    policy_decision = None
     if any(a.startswith("Z") for a in args.arms):
         if not args.routing_receipt or not args.lib:
             raise ValueError("routed arm requires its target-specific build receipt")
@@ -50,6 +52,27 @@ def main():
             or receipt["library_sha256"] != checksum(args.lib)
         ):
             raise ValueError("foreign routed kernel")
+        from lab.pk6.native_dispatch.live_policy import choose
+
+        if not args.policy:
+            raise ValueError("the CPU Pilot needs the measured policy bundle")
+        policy_decision = choose(args.policy, hw, checksum(cuda), receipt)
+        if policy_decision["profile"] != "routed":
+            raise ValueError(
+                "Pilot retained the reference; no routed qualification requested"
+            )
+    if any(a.startswith("L") for a in args.arms):
+        from lab.pk6.native_dispatch.live_policy import choose
+
+        if not args.policy:
+            raise ValueError("the CPU Pilot needs the measured policy bundle")
+        policy_decision = choose(
+            args.policy,
+            hw,
+            checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so"),
+        )
+        if policy_decision["profile"] != "stock":
+            raise ValueError("use the qualified routed build for this policy")
     awq = verify(args.models / "qwen3-32b-awq")
     trial.SEEDS = tuple(args.seeds)
     version = subprocess.check_output(
@@ -77,6 +100,7 @@ def main():
             "engine_sha256": checksum(Path("ironmule/ggml_engine.py")),
             "library_sha256": checksum(args.lib) if args.lib else None,
             "threshold": args.threshold,
+            "cpu_policy": policy_decision,
         },
     )
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
@@ -109,7 +133,7 @@ def main():
             os.environ["IRONMULE_LAB_SHARED_PROFILE"] = "wide"
         if arm.startswith("D"):
             os.environ["IRONMULE_LAB_ACTIVITY"] = str(args.out)
-        elif arm.startswith("P"):
+        elif arm.startswith(("P", "B")):
             os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = str(args.threshold)
         elif arm.startswith(("F", "V", "I", "M", "Z")):
             if not args.lib:
@@ -119,7 +143,7 @@ def main():
                 IRONMULE_KG_LIB=str(args.lib.resolve()),
                 IRONMULE_LAB_FP8=str(args.threshold),
             )
-        elif arm != "vllm" and not arm.startswith(("R", "U", "N", "G", "T", "A")):
+        elif arm != "vllm" and not arm.startswith(("R", "U", "N", "G", "T", "A", "L")):
             raise ValueError("unregistered arm")
         trial.measure(args, arm, hw, 0, deadline)
     save(args.out / "completed.json", {"hardware": trial.board(), "order": args.arms})

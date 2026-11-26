@@ -41,6 +41,7 @@
         }
       },
       "proof": {
+        "fallback": null,
         "matched_native_requests": 155,
         "native_raw_sha256": "f21c881740a19cc70ed04355f61b0a113b744a5d905c1c85fe327ab86e7a17a5",
         "prompt_plugin_dispatches_in_http_by_width": {
@@ -49,6 +50,8 @@
           "8": 0
         },
         "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
         "shared_pool": true,
         "streams_pass": false
       },
@@ -56,6 +59,11 @@
         "180341": 32
       },
       "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 8.39219641162852,
+          "32": 2.135416328133331,
+          "8": 2.874514054841636
+        },
         "mean_sampled_watts": 312.1646875,
         "peak_gpu_mib": 36134.0,
         "samples": 32
@@ -104,6 +112,7 @@
         }
       },
       "proof": {
+        "fallback": null,
         "matched_native_requests": 155,
         "native_raw_sha256": "1975ffd9ed9f479ffcd71f97fe7f93bcfd808210fbd6a7ed8cd029114e0eaad5",
         "prompt_plugin_dispatches_in_http_by_width": {
@@ -112,6 +121,8 @@
           "8": 0
         },
         "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
         "shared_pool": false,
         "streams_pass": false
       },
@@ -119,6 +130,11 @@
         "180341": 32
       },
       "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 6.752858400446773,
+          "32": 3.269635950626709,
+          "8": 3.0668129770132135
+        },
         "mean_sampled_watts": 322.86777777777775,
         "peak_gpu_mib": 28858.0,
         "samples": 45
@@ -167,6 +183,7 @@
         }
       },
       "proof": {
+        "fallback": null,
         "matched_native_requests": 155,
         "native_raw_sha256": "1b7197eb5aa3c07e1740c047318e87c11e0d4b7f1d7f50cba67faf33ddb83ae4",
         "prompt_plugin_dispatches_in_http_by_width": {
@@ -175,6 +192,8 @@
           "8": 0
         },
         "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
         "shared_pool": false,
         "streams_pass": false
       },
@@ -182,6 +201,11 @@
         "943819": 32
       },
       "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 9.04864202665989,
+          "32": 3.3019531227986114,
+          "8": 3.098911672752664
+        },
         "mean_sampled_watts": 324.06066666666663,
         "peak_gpu_mib": 28858.0,
         "samples": 45
@@ -230,6 +254,7 @@
         }
       },
       "proof": {
+        "fallback": null,
         "matched_native_requests": 155,
         "native_raw_sha256": "dbcae537b14af150608b5c93a61f8a69852d2d9e762f575ccd5e5ea87f2ba31b",
         "prompt_plugin_dispatches_in_http_by_width": {
@@ -238,6 +263,8 @@
           "8": 0
         },
         "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
         "shared_pool": true,
         "streams_pass": false
       },
@@ -245,6 +272,11 @@
         "180341": 32
       },
       "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 6.319948943909533,
+          "32": 2.1756382668513194,
+          "8": 2.981711606625709
+        },
         "mean_sampled_watts": 329.12967741935483,
         "peak_gpu_mib": 36122.0,
         "samples": 31
@@ -293,6 +325,7 @@
         }
       },
       "proof": {
+        "fallback": null,
         "matched_native_requests": 155,
         "native_raw_sha256": "90a5008d088b088af783b895a78a82beda628c80a80327a8b30e489388e0005b",
         "prompt_plugin_dispatches_in_http_by_width": {
@@ -301,6 +334,8 @@
           "8": 0
         },
         "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
         "shared_pool": true,
         "streams_pass": false
       },
@@ -308,6 +343,11 @@
         "943819": 32
       },
       "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 5.808026503036608,
+          "32": 2.1279941901339754,
+          "8": 2.9127367420851744
+        },
         "mean_sampled_watts": 324.5651612903226,
         "peak_gpu_mib": 36122.0,
         "samples": 31
@@ -354,6 +394,11 @@
         "943819": 32
       },
       "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 8.435864095695932,
+          "32": 1.2652050029383028,
+          "8": 1.894320827247916
+        },
         "mean_sampled_watts": 325.2585,
         "peak_gpu_mib": 39615.0,
         "samples": 40
