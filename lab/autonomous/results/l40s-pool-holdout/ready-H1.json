@@ -1,0 +1,106 @@
+{
+  "health": {
+    "admission_learning": {
+      "enabled": false,
+      "last": null,
+      "observations": 0,
+      "remaining_cooldown_s": 0,
+      "rules": 0,
+      "status": "disabled"
+    },
+    "answers": "may differ from the MLX plans, within the gate",
+    "gate": {
+      "interval": [
+        0.9903767454357966,
+        1.0012351303128075
+      ],
+      "passes": true,
+      "ratio": 0.9962530276359698
+    },
+    "kernel_generation": {
+      "reason": "IRONMULE_KG=0",
+      "status": "disabled"
+    },
+    "kernel_profile": {
+      "fallback": false,
+      "flags": {
+        "IRONMULE_GGML_DH2": "0",
+        "IRONMULE_PK6": "0",
+        "IRONMULE_PS1": "0",
+        "IRONMULE_PS1_CONCAT": "0",
+        "IRONMULE_PS1_WARM": "0",
+        "IRONMULE_SV5": "0"
+      },
+      "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+      "profile": "conservative"
+    },
+    "sequences": {
+      "fitting": [
+        8,
+        16,
+        32
+      ],
+      "rates": {
+        "16": 347.0835870012175,
+        "32": 663.9460216397249,
+        "8": 145.2505687682296
+      },
+      "reason": "the widest width whose doubling still bought the gain rule",
+      "sequences": 32
+    },
+    "shared_pool": {
+      "cap": 32,
+      "interval": [
+        0.9903767454357966,
+        1.0012351303128075
+      ],
+      "ratio": 0.9962530276359698
+    },
+    "stream_qualification": {
+      "diagnostic": {
+        "candidates": [
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0057404717573086,
+            "passes": false,
+            "role": "streams",
+            "settings": {
+              "flash_attn": true,
+              "kv_f32": false,
+              "kv_unified": false
+            }
+          }
+        ],
+        "code": "quality_rejected",
+        "exception_class": null,
+        "exit_code": null,
+        "schema": "ironmule.gguf-gate-diagnostic.v1",
+        "stage": "acceptance"
+      },
+      "passes": false
+    }
+  },
+  "startup_s": 64.04632551094983
+}

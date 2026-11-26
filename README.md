@@ -42,6 +42,10 @@ Two starts of the Qwen3-32B server spent almost 19 seconds each on one calibrati
 
 **How does a warm server compare?** In a separate HTTP test at 32 concurrent clients on that A100, IronMule produced **297.54 tokens/s** with Qwen3-32B Q4_K_M GGUF. vLLM 0.11.0 produced **271.26 tokens/s** with Qwen3-32B AWQ. That gives IronMule 9.69% more output per second across the group. vLLM delivered the first token sooner, with a median of 1.71 seconds versus IronMule’s 2.41. [PR 57 measurements and per-request timings](https://github.com/Tobayko/IronMule/tree/4b6971e5ba59f0fb74bf56cf7a4249b5d88fb9d5/lab/autonomous/results/a100-pr57-warm-repeat)
 
+### What changes on a smaller GPU?
+
+On an NVIDIA L40S, the trade-off changes with the queue. With one client IronMule delivered **43.3 output tokens/s** and vLLM 0.34.0 delivered **37.7**. With 32 clients IronMule started streaming in a median **0.56 seconds**, versus **1.68 seconds** for vLLM. Across the full group vLLM finished faster at **266.6 vs 154.7 tokens/s**. Both served Qwen3-32B with the same inputs and fixed output length, using Q4_K_M and AWQ-Marlin respectively. These are three repeats from the first matched seed. [Per-request measurements, quality checks and replay](lab/pk6/mixed_progress/replay.md)
+
 ## Quick start
 
 ### Serve a GGUF on Linux CPU

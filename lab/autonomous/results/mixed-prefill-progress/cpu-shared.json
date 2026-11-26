@@ -1,0 +1,184 @@
+{
+  "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "waves": [
+    {
+      "seed": 970113,
+      "candidate": false,
+      "marked": false,
+      "correct": 8,
+      "completed": 8,
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          104,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ]
+      ],
+      "output_sha256": "931216509d8566d46af2287cd551a1ce8a92129966cf878e5b7aee7d4d0db84c",
+      "tokens": 96,
+      "wall_s": 1.954461542
+    },
+    {
+      "seed": 970113,
+      "candidate": true,
+      "marked": true,
+      "correct": 8,
+      "completed": 8,
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          104,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ]
+      ],
+      "output_sha256": "00320ec0a8c590124be65c605fdd3d364fa8a6d546eb1aa7fbcfc3e601311bbc",
+      "tokens": 96,
+      "wall_s": 2.046307078
+    },
+    {
+      "seed": 970117,
+      "candidate": true,
+      "marked": true,
+      "correct": 8,
+      "completed": 8,
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ]
+      ],
+      "output_sha256": "a55742b5693b7405a297feb084c8bfacc429b50a0e6abe998d6072d914db958d",
+      "tokens": 96,
+      "wall_s": 3.230127161
+    },
+    {
+      "seed": 970117,
+      "candidate": false,
+      "marked": false,
+      "correct": 8,
+      "completed": 8,
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ]
+      ],
+      "output_sha256": "4187fe63e3989eb2918973c31f05906bc3103c1d774515d0118b0d2d47ba61ed",
+      "tokens": 96,
+      "wall_s": 1.292765781
+    }
+  ],
+  "all_correct": true,
+  "matched_work": true,
+  "witnessed": true
+}

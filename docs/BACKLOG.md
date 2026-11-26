@@ -28,6 +28,13 @@ but the p95 longest pause reached 2.03 seconds and both pairs missed the through
 and tail gates. Reopen with a mechanism that can advance short requests while the
 remaining long prompts are processed. [Paired results](../lab/autonomous/results/a100-first-token/)
 
+On the L40S with Qwen3-32B and 32 mixed HTTP requests, changing prompt admission alone raised
+throughput but lengthened streaming pauses. The conservative reference spent a median **4.869 s in
+the native backend across 20 mixed calls** per wave, with 0.003 s building those calls and 0.002 s
+reading them back. The next target is GPU work inside those mixed calls. Capture a native GPU profile
+on a fresh lease and qualify any kernel change with the original mixed and factual workloads.
+[Current vLLM comparison, budget holdout and rollback](LAB.md#l40s-qwen3-32b-and-the-wait-between-streamed-text-blocks-2026-11-26)
+
 The L40S prefill retest captured the 96 standalone calls previously missing from
 the cost model. In two paired replays the controller retained width 8 and throughput
 held near 33.75 output tok/s on the short-output workload. The cost of waiting for

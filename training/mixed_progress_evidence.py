@@ -1,0 +1,274 @@
+"""Index the mixed-prefill forecast separately from its measured device outcome."""
+
+import json
+
+from lab.pk6.mixed_progress import grade, plan
+from training.experience_archive import record
+
+
+def experiences(root, source, digest):
+    path = root / source
+    saved = json.loads(path.read_bytes())
+    if path.parent.name == "l40s-bounded-w4":
+        from lab.pk6.mixed_progress import footprint_score
+
+        primary = path.parent.parent / "l40s-mixed-prefill-progress"
+        if footprint_score.score(primary, path.parent) != saved:
+            raise ValueError("W4 screen differs from its measured hardware evidence")
+        target = json.loads((primary / "target.json").read_bytes())
+        yield record(
+            "bounded_w4_screen",
+            source,
+            digest,
+            "shape-selection",
+            "l40s-mixed-prefill-progress",
+            hardware=saved["hardware"],
+            base_commit=target["source"],
+            model=target["gguf_sha256"],
+            quantization="Q4_K_M",
+            workload={"native_widths": [1, 8]},
+            profiles=[saved["selection"]],
+            metrics=[saved["pairs"]],
+            reason=saved["outcome"]["status"],
+            cost_reference=str((primary / "cost.json").relative_to(root)),
+            authorship="IronMule selected whole target-tuned shapes under a memory budget specified by Codex.",
+            uncertainty="Candidate performance requires a complete target worker pair.",
+        )
+        return
+    if path.name == "learned-step-cost.json":
+        from lab.pk6.mixed_progress import learning
+
+        if learning.replay(path.parent) != saved:
+            raise ValueError("timing checkpoint differs from its two source starts")
+        target = json.loads((path.parent / "target.json").read_bytes())
+        yield record(
+            "shared_kv_timing_update",
+            source,
+            digest,
+            "C1-fit/C2-holdout",
+            "l40s-mixed-prefill-progress",
+            hardware=target["hardware"],
+            base_commit=target["source"],
+            model=target["gguf_sha256"],
+            quantization="Q4_K_M",
+            metrics=[saved],
+            cost_reference=str((path.parent / "cost.json").relative_to(root)),
+            reason="target_measured_call_forecast",
+            authorship="IronMule fitted StepCost on its own L40S calls.",
+            uncertainty="One board and two starts. Native timing accuracy measures planning.",
+        )
+        return
+    if path.parent.name in {"l40s-pool-holdout", "l40s-pool-balanced"}:
+        from lab.pk6.mixed_progress import holdout_score
+
+        balanced = path.parent.name.endswith("balanced")
+        result_root = path.parent.parent
+        if holdout_score.score(result_root, balanced=balanced) != saved:
+            raise ValueError(
+                "holdout does not match its original HTTP and native traces"
+            )
+        primary = result_root / "l40s-mixed-prefill-progress"
+        target = json.loads((primary / "target.json").read_bytes())
+        for width, comparison in saved["paired"].items():
+            yield record(
+                "shared_pool_paired_holdout",
+                source,
+                digest,
+                width,
+                "l40s-mixed-prefill-progress",
+                hardware=saved["hardware"],
+                base_commit=target["source"],
+                model=target["gguf_sha256"],
+                quantization="Q4_K_M",
+                profiles=[saved["reference"], saved["candidate"]],
+                workload={
+                    "seed": saved["seed"],
+                    "width": int(width),
+                    "output_tokens": 32,
+                },
+                metrics=[comparison],
+                quality={a: s["quality"] for a, s in saved["starts"].items()},
+                reason="retain_reference",
+                cost_reference=str((primary / "cost.json").relative_to(root)),
+                authorship="Codex implemented the queue rule. IronMule ranked the intermediate budget on discovery seeds."
+                if balanced
+                else "Codex implemented the queue rule. IronMule gated the fresh experiment on two measured starts.",
+                uncertainty=saved["scope"],
+            )
+        return
+    if path.parent.name in {"l40s-vllm-034", "l40s-pool-admission"}:
+        from lab.pk6.mixed_progress import pool_score, release_score
+
+        primary = path.parent.parent / "l40s-mixed-prefill-progress"
+        contemporary = path.parent.name == "l40s-vllm-034"
+        observed = (release_score if contemporary else pool_score).score(
+            primary, path.parent
+        )
+        if observed != saved:
+            raise ValueError("supplement differs from its hardware replay")
+        target = observed["target"]
+        for tag, stats in (
+            observed["median_by_width"] if contemporary else observed["starts"]
+        ).items():
+            yield record(
+                "l40s_current_vllm" if contemporary else "l40s_pool_admission",
+                source,
+                digest,
+                str(tag),
+                "l40s-mixed-prefill-progress",
+                hardware=target["hardware"],
+                base_commit=target["source"],
+                model=target["awq_manifest_sha256"]
+                if contemporary
+                else target["gguf_sha256"],
+                quantization="AWQ-Marlin" if contemporary else "Q4_K_M",
+                software=target.get("versions")
+                or {"pool_engine_sha256": target["pool_engine_sha256"]},
+                cost_reference=str((primary / "cost.json").relative_to(root)),
+                workload={"width": int(tag), "output_tokens": 32}
+                if contemporary
+                else {"start": tag, "widths": [1, 8, 32]},
+                metrics=[stats],
+                quality=observed["quality"] if contemporary else stats["quality"],
+                reason="measured_external_reference"
+                if contemporary
+                else "discovery_requires_fresh_holdout",
+                authorship="External vLLM release"
+                if contemporary
+                else "Codex adapted the Pilot's shared-pool admission budget.",
+                uncertainty=observed["scope"],
+            )
+        return
+    if path.name == "plan.json":
+        if saved != plan.plan():
+            raise ValueError("archived row selection disagrees with the CPU replay")
+        for row in saved["simulated"]:
+            yield record(
+                "mixed_prefill_forecast",
+                source,
+                digest,
+                f"rows/{row['rows']}",
+                saved["source"],
+                hardware={"gpu": "NVIDIA A100-SXM4-80GB"},
+                provenance="simulated",
+                profiles=[{"row_budget": row["rows"]}],
+                metrics=[row["forecast"]],
+                workload={
+                    "width": 32,
+                    "output_tokens": 32,
+                    "prompt_lengths": [33, 444],
+                },
+                decision=row["rows"] == saved["selected_rows"],
+                reason="ranked_for_hardware_test",
+                authorship="IronMule StepCost ranked row budgets for the scheduler written by Codex.",
+                uncertainty=saved["uncertainty"],
+                trace_sha256=saved["source_trace_sha256"],
+            )
+        return
+    if path.name == "failed-start.json":
+        device = json.loads((path.parent / "target.json").read_bytes())
+        attempts = saved["gate_attempts"]
+        libraries = saved["two_compiled_libraries"]
+        if (
+            saved["ready"]
+            or not any(
+                a["kernel_mode"] == "generated"
+                and a["diagnostic"]["code"] == "out_of_memory"
+                for a in attempts
+            )
+            or libraries["raw_engine_w4"]["mtime_unix"]
+            <= libraries["calibration_w4"]["mtime_unix"]
+        ):
+            raise ValueError("unbound kernel fallback failure")
+        yield record(
+            "packed_kernel_retry_failure",
+            source,
+            digest,
+            "original-R1",
+            "l40s-mixed-prefill-progress",
+            hardware=device["hardware"],
+            model=device["gguf_sha256"],
+            quantization="Q4_K_M",
+            base_commit=device["source"],
+            profiles=["locally tuned W4", "stock retry"],
+            error=attempts,
+            reason="out_of_memory_then_raw_w4_build_in_stock_retry",
+            workload={"phase": "before HTTP readiness"},
+            quality=None,
+            libraries=libraries,
+            cost_reference=str((path.parent / "cost.json").relative_to(root)),
+            authorship="Codex diagnosed the two-library retry. IronMule refused the generated kernel.",
+            uncertainty="Operator stopped the mislabeled retry before readiness. Its time to completion is unknown.",
+        )
+        return
+    observed = grade.grade(path.parent)
+    if saved != observed:
+        raise ValueError("archived decision disagrees with hardware replay")
+    target = observed["target"]
+    software = json.loads((path.parent / "software.json").read_bytes())
+    for key, counts in observed["comparisons"].items():
+        candidate, reference, width = key.split("/")
+        seed = str(grade.SEEDS[int(candidate[1]) - 1])
+        external = reference == "vllm"
+        # The paired arms, seeds and width cells share a single board and episode.
+        yield record(
+            "mixed_prefill_http_comparison",
+            source,
+            digest,
+            key,
+            "l40s-mixed-prefill-progress",
+            hardware=target["hardware"],
+            software=software,
+            base_commit=target["source"],
+            model={
+                "native": target["gguf_sha256"],
+                "reference": target["awq_manifest_sha256"]
+                if external
+                else target["gguf_sha256"],
+            },
+            quantization={
+                "candidate": "Q4_K_M",
+                "reference": "AWQ-Marlin" if external else "Q4_K_M",
+            },
+            workload={
+                "width": int(width),
+                "max_tokens": 32,
+                "seed": int(seed),
+                "repeats": 3,
+            },
+            profiles=[candidate, reference],
+            metrics=[
+                counts,
+                {
+                    "candidate": observed["median_by_arm_width"][candidate][width],
+                    "reference": grade.summarize(
+                        [
+                            grade.measure(w)
+                            for w in grade.lines(
+                                path.parent / f"waves-{reference}.jsonl"
+                            )
+                            if w["seed"] == int(seed)
+                            and w["width"] == int(width)
+                            and w["repeat"] < 3
+                        ]
+                    ),
+                },
+            ],
+            quality={
+                "separate_width32_graded_tasks": {
+                    arm: observed["quality"][arm][seed]
+                    for arm in (candidate, reference)
+                }
+            },
+            memory_mib={
+                arm: observed["resources"][arm]["peak_gpu_mib"]
+                for arm in (candidate, reference)
+            },
+            cost_reference=str((path.parent / "cost.json").relative_to(root)),
+            reason="different_native_profiles"
+            if counts.get("same_native_profile") is False
+            else observed["decision"],
+            authorship="Codex implemented mixed scheduling. IronMule ranked its experimental row limit.",
+            uncertainty="One device and synthetic chat traffic. Mixed-call evidence is bound to measured HTTP waves. "
+            "Cross-engine comparisons use different quantizations.",
+        )

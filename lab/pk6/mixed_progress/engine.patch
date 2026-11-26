@@ -1,0 +1,33 @@
+diff --git a/ironmule/ggml_engine.py b/ironmule/ggml_engine.py
+index 31b6313..e46ce2e 100644
+--- a/ironmule/ggml_engine.py
++++ b/ironmule/ggml_engine.py
+@@ -1367,7 +1367,7 @@ class GgmlEngine:
+         if physical != 512 and not (physical in (1024, 2048) and self.prefill_batch_long and self.gpu_layers
+                                     and seqs == 32 and seq_ctx == 2048 and not shared and not kv_unified and flash_attn):
+             raise ValueError("larger physical batches require the isolated split-KV long-prompt study")
+-        self.pack = PACK and bool(self.gpu_layers) and not shared and not kv_unified
++        self.pack = PACK and (bool(self.gpu_layers) or os.environ.get("IRONMULE_LAB_CPU_PACK") == "1") and not shared and not kv_unified
+         logical = seq_ctx
+         if self.pack:  # PK1: one call carries a step's prompts; its micro-batch as set (or llama.cpp's 512)
+             logical = max(seq_ctx, PACK_TOKENS)
+@@ -2194,8 +2194,17 @@ class GgmlEngine:
+                     group = self._even_reuse(sorted(fresh, key=lambda item: item[0]))  # PX1
+                     for sq, other, _ in group:
+                         active[sq] = other
+-                    for (sq, other, _), pick in zip(group, self._pack_prefill(group), strict=True):
+-                        take(sq, other, pick)
++                    limit = int(os.environ.get("IRONMULE_LAB_MIXED_ROWS", "0"))
++                    if (not order and len(group) >= 4 and len(group) < limit <= self.batch_cap
++                            and not any(job.hardware_probe for _, job, _ in group)
++                            and sum(len(job.ids) - keep for _, job, keep in group) > limit):
++                        from lab.pk6.mixed_progress.schedule import serve
++
++                        serve(self, group, active, take, finish, limit,
++                              whole=os.environ.get("IRONMULE_LAB_WHOLE") == "1")
++                    else:
++                        for (sq, other, _), pick in zip(group, self._pack_prefill(group), strict=True):
++                            take(sq, other, pick)
+                     singles = []
+                 elif self.prefill_batch and streams and len(fresh) > 1:
+                     def deliver_group(group):

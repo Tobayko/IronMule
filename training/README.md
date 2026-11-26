@@ -470,3 +470,7 @@ The A100 first-token experiment records a Codex-authored serving change alongsid
 The archive keeps all waves from the lease in one group and exposes the paired decision under
 `first_token_prefill_trial`. The records include work, first-content and tail timings, quality
 scores and the patch identity. See the [CPU replay and RunPod reproduction commands](../lab/pk6/first_token/replay.md).
+
+The L40S archive includes the initial failed kernel retry, six simulated budgets and twelve measured comparison cells. Query `mixed_prefill_http_comparison` or `packed_kernel_retry_failure` in a freshly built index. All repeated measurements from the board share one group. Refit the ordinary shared-KV step-cost model with `python -m lab.pk6.mixed_progress.learning lab/autonomous/results/l40s-mixed-prefill-progress`. C1 trains the update and C2 supplies the held-out restart. [Raw traces and replay](../lab/pk6/mixed_progress/replay.md)
+
+The same group includes the vLLM 0.34.0 system measurements, two shared-pool discovery starts, the fresh-seed rollback, the intermediate budget and the interrupted W4 screen. Search the rebuilt archive for `l40s_current_vllm`, `l40s_pool_admission`, `shared_pool_paired_holdout`, `shared_kv_timing_update` or `bounded_w4_screen`. The budget selector sees the two original seeds only. Both candidates and the rollback use identical fresh requests on seed 723449. [Reproduction](../lab/pk6/mixed_progress/replay.md)
