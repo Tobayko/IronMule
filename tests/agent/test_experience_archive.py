@@ -185,3 +185,24 @@ def test_prefill_microtimings_and_output_mismatches_remain_separate_from_planned
     [plan] = [x for x in rows if x["kind"] == "prefill_gemm_planning"]
     assert plan["provenance"] == "simulated" and plan["reason"] == "defer source order" and not plan["label_eligible"]
     assert plan["metrics"][0]["optimistic_best_sum_ms"] == pytest.approx(24.826, abs=.001)
+
+
+def test_qwen_startup_order_binds_both_observations_and_worker_replacement():
+    from training import restart_evidence as startup
+
+    root = Path(__file__).resolve().parents[2]
+    scope = root / "lab/autonomous/results/a100-restart"
+    folder = next(scope.glob("*/manifest.json")).parent
+    manifest = startup.manifest(folder)
+    order = json.loads((folder / "order.json").read_bytes())
+    ids = [json.loads((folder / f"observation-{i}.json").read_bytes())["order_id"] for i in range(2)]
+    assert ids == order["evidence"]["local_profile_ids"] and len(set(ids)) == 2
+    request = json.loads((folder / "request.json").read_bytes())
+    response = json.loads((folder / "response.json").read_bytes())
+    rebuilt = startup.candidate_bytes((folder / "reference-source.txt").read_text(), request, order, response["proposal"])
+    assert startup.sha(rebuilt) == manifest["candidate_sha256"]
+    rows = list(startup.experiences(root, str((folder / "manifest.json").relative_to(root))))
+    assert all(not r["label_eligible"] for r in rows)
+    assert next(r for r in rows if r["kind"] == "restart_experiment_plan")["provenance"] == "simulated"
+    if "result.json" not in manifest["files"]:
+        assert next(r for r in rows if r["kind"] == "restart_code_decision")["decision"] is None

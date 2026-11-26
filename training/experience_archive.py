@@ -606,6 +606,9 @@ def build(root=ROOT) -> Iterator[dict]:
                          uncertainty=fit["uncertainty"], references=[str(weights.relative_to(root))])
         elif source == "lab/autonomous/results/a100-prefill-lt/measurement.json":
             yield from prefill_experiment(root, source, digest)
+        elif source.startswith("lab/autonomous/results/a100-restart/") and path.name == "manifest.json":
+            from training.restart_evidence import experiences
+            yield from experiences(root, source)
         elif source.startswith("lab/autonomous/results/a100-native/") and path.name == "manifest.json":
             yield from native_experiment(root, source, digest, calibration_seen)
         elif (source.startswith("lab/autonomous/results/") and path.name == "result.json"

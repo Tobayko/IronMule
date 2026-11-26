@@ -210,9 +210,7 @@ def export(args):
         os.close(fd)
 
 
-def publish(directory, key, order, original, binding, base_tuner, binary_hash, assets):
-    manifest = directory / "manifest.json"
-    previous = verify_manifest(directory)["files"] if manifest.exists() else {}
+def persist_assets(directory, previous, assets):
     files = dict(previous)
     secrets = [os.fsencode(v) for k, v in os.environ.items() if len(v) >= 16
                and k in ("RUNPOD_API_KEY", "OPENAI_API_KEY", "GH_TOKEN", "GITHUB_TOKEN", "AGENT_TOKEN")]
@@ -250,6 +248,13 @@ def publish(directory, key, order, original, binding, base_tuner, binary_hash, a
             finally:
                 temp.unlink(missing_ok=True)
         files[name] = info
+    return files
+
+
+def publish(directory, key, order, original, binding, base_tuner, binary_hash, assets):
+    manifest = directory / "manifest.json"
+    previous = verify_manifest(directory)["files"] if manifest.exists() else {}
+    files = persist_assets(directory, previous, assets)
     evaluator_hash = read(directory / "context.json").get("harness") if "context.json" in files else None
     evaluator_commit = None
     if evaluator_hash:
@@ -275,10 +280,10 @@ def publish(directory, key, order, original, binding, base_tuner, binary_hash, a
     return manifest
 
 
-def verify_manifest(folder):
+def verify_manifest(folder, *, schema=SCHEMA, names=NAMES, required=("order.json", "order.profile.json")):
     manifest = read(folder / "manifest.json")
-    if (manifest["schema"] != SCHEMA or manifest["order_id"] != folder.name or not set(manifest["files"]) <= NAMES
-            or not {"order.json", "order.profile.json"} <= set(manifest["files"])):
+    if (manifest["schema"] != schema or manifest["order_id"] != folder.name or not set(manifest["files"]) <= names
+            or not set(required) <= set(manifest["files"])):
         raise ValueError("invalid portable native manifest")
     for name, receipt in manifest["files"].items():
         if sha(bounded(folder / name)) != receipt["sha256"]:
