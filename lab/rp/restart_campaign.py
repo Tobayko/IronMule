@@ -217,7 +217,13 @@ def product(args, cfg, remote, check, active):
         else:
             with tempfile.TemporaryDirectory(dir=local) as tmp:
                 observed = Path(tmp)
-                snapshot(pod, evidence, names, observed)
+                try:
+                    snapshot(pod, evidence, names, observed)
+                except OSError as exc:
+                    # A completed child atomically appends to this live journal while it is copied.
+                    # The next poll verifies the entire prefix. Terminal copies remain strict.
+                    if str(exc) != "target bytes changed during transfer":
+                        raise
                 for log in observed.glob("*.json"):
                     partial = local / (log.stem + ".partial.json")
                     old = read(partial) if partial.exists() else []
