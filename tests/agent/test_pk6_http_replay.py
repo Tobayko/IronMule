@@ -29,3 +29,27 @@ def test_inconsistent_rate_or_missing_measured_wave_is_rejected(tmp_path):
     path.write_text("\n".join(map(json.dumps, rows[:-1])))
     with pytest.raises(ValueError, match="missing warm-up"):
         replay.waves(tmp_path, "K1", "ironmule", 32)
+
+
+def test_fresh_vllm_alone_reports_its_own_waves_and_no_cross_system_ratio(tmp_path, monkeypatch):
+    doc = {"historical_H_artifacts_reused": False, "distinct_from_prior_H": True, "models": {
+        "quantization_match": False, "vllm_reference": {"repo": "fixture-awq"}, "ironmule_product": {"sha256": "fixture"}},
+        "http_protocol": {"fixture": {"client_widths": [32, 8], "max_tokens": 32, "seed": 20261119},
+                          "order": ["product-K1", "vllm-AWQ", "product-K2"]},
+        "immutable_source_manifest": {"files": {}}, "experiment_id": "fixture", "target": {"gpu": "fixture"}}
+    registration = tmp_path / "preregistration.json"
+    registration.write_text(json.dumps(doc))
+    monkeypatch.setattr(replay, "FRESH_REGISTRATION_SHA", replay.checksum(registration))
+    with tarfile.open(replay.POD37) as tar:
+        for name in replay.filenames(("vllm",)):
+            rows = [json.loads(line) for line in tar.extractfile("./" + name)]
+            rows[0]["warmup_s"] += .3
+            (tmp_path / name).write_text("\n".join(map(json.dumps, rows)))
+    stats = replay.fresh(tmp_path)
+    assert stats["status"] == "incomplete" and stats["throughput_ratio"] is None
+    assert stats["recorded_starts"] == ["vllm"] and set(stats["per_engine"]) == {"vllm"}
+    assert stats["missing"] == replay.filenames(("K1", "K2"))
+    assert stats["facts_all_18_in_recorded_starts"]
+    registration.write_text(registration.read_text() + " ")
+    with pytest.raises(ValueError, match="immutable agreement"):
+        replay.fresh(tmp_path)

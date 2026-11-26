@@ -27,3 +27,8 @@ checks the rounded rates against wall time, first-token percentiles, factual mis
 code hashes and historical file reuse. Use the target operator's corresponding environment,
 hardware, model manifests and command records to establish the run's identity. These warmed
 HTTP rows measure a different quantity from PR60's time after process startup.
+
+The fresh r1 registration has SHA-256
+`e7870dd37d96c3e3df558fd1947544462307ebdc726bca69f0aeb8a107364c50`.
+During a partial run the report can show a completed server's own measured starts and factual
+checks. A cross-system throughput ratio requires all three registered starts.

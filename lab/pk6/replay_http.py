@@ -19,6 +19,7 @@ from lab.adm2.verdict import final
 ROOT = Path(__file__).resolve().parents[2]
 POD37 = ROOT / "lab/pk1/results/pod37/pk6_all.tgz"
 POD37_SHA = "8f9611b216daa8545be194df9fe98d67528c2d9ceb77415cef59eba3a605fe6c"
+FRESH_REGISTRATION_SHA = "e7870dd37d96c3e3df558fd1947544462307ebdc726bca69f0aeb8a107364c50"
 
 
 def checksum(path):
@@ -54,8 +55,7 @@ def waves(directory, label, engine, width):
     return rows[1:]
 
 
-def score(directory, *, historical):
-    labels = ("K1", "K2", "R1", "R2", "vllm") if historical else ("K1", "K2", "vllm")
+def score(directory, labels):
     rows, summaries = {}, {}
     for label in labels:
         engine = "vllm" if label == "vllm" else "ironmule"
@@ -90,7 +90,7 @@ def historical():
         root = Path(tmp)
         for name in filenames(labels):
             (root / name).write_bytes(tar.extractfile("./" + name).read())
-        result = score(root, historical=True)
+        result = score(root, labels)
         def archived(name):
             return tar.extractfile("./" + name).read().decode()
         if (result["original_scoring"] != json.loads(archived("final_K.txt")) or not result["fixed_token_work"]
@@ -106,6 +106,8 @@ def historical():
 
 def fresh(directory):
     registration = directory / "preregistration.json"
+    if checksum(registration) != FRESH_REGISTRATION_SHA:
+        raise ValueError("fresh run registration differs from the immutable agreement")
     doc = json.loads(registration.read_bytes())
     protocol = doc["http_protocol"]
     if (doc["historical_H_artifacts_reused"] or not doc["distinct_from_prior_H"] or doc["models"]["quantization_match"]
@@ -118,14 +120,19 @@ def fresh(directory):
     base = {"experiment": doc["experiment_id"], "registration_sha256": checksum(registration),
             "declared_hardware": doc["target"]["gpu"], "reference_repo": doc["models"]["vllm_reference"]["repo"],
             "ironmule_model_sha256": doc["models"]["ironmule_product"]["sha256"], "matched_quantization": False}
-    if missing:
+    labels = [label for label in ("K1", "K2", "vllm") if all(name not in missing for name in filenames((label,)))]
+    if not labels:
         return {**base, "status": "incomplete", "missing": missing}
-    result = score(directory, historical=False)
-    if any(result["source_files"][name] == value for name, value in historical()["source_files"].items() if name in names):
+    result = score(directory, labels)
+    if any(result["source_files"].get(name) == value for name, value in historical()["source_files"].items()):
         raise ValueError("historical raw file supplied as a fresh arm")
     # The new registration is descriptive. Only pod 37 used a predeclared 1.10 threshold.
     rates = result.pop("original_scoring")
-    ratios = rates.pop("verdict")
+    ratios = rates.pop("verdict", {})
+    if missing:
+        return {**base, "status": "incomplete", "missing": missing, "recorded_starts": labels,
+                "per_engine": rates, "throughput_ratio": None, "waves": result["waves"],
+                "facts_all_18_in_recorded_starts": result["facts_all_18"], "source_files": result["source_files"]}
     comparable = result["fixed_token_work"] and result["facts_all_18"]
     return {**base, "status": "completed HTTP statistics" if comparable else "quality or fixed work differs",
             "per_engine": rates, "throughput_ratio": ratios["ratio_tok_s"] if comparable else None, **result}
