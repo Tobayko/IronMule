@@ -88,3 +88,18 @@ python -m lab.rp.cpu_campaign --replay --matched --state /persistent/epyc-matche
 
 If the original authoring directory was shared across protocols, pass the same
 `--authorship /persistent/authoring` used during qualification.
+
+Reconstruct the 2026-11-26 matched trial from a full repository clone using only the committed
+receipts, the original measured order and its hosted Codex response. This recreates both source
+checkouts at the measured revision and verifies the seven completed workers plus the rejected
+eighth startup. It prints `unqualified`, `failed_arm: rule-18353` and `complete_triplets: 2`.
+
+```sh
+trial_data=lab/autonomous/results/runpod-epyc-pilot
+trial_replay=$(mktemp -d)
+mkdir -p "$trial_replay/authoring/author"
+cp "$trial_data/prefill-order.json" "$trial_replay/order.json"
+cp "$trial_data/prefill-code/response.json" "$trial_replay/authoring/author/"
+cp -R "$trial_data/prefill-code/qualification-v2" "$trial_replay/qualification"
+python -m lab.rp.cpu_campaign --replay --matched --state "$trial_replay"
+```
