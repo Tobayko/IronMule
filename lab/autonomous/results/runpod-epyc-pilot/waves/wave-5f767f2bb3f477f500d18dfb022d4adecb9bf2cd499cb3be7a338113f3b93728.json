@@ -1,0 +1,246 @@
+{
+  "base_commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "binding": {
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "cores": 4,
+    "devices": [
+      {
+        "description": "AMD EPYC 7742 64-Core Processor",
+        "name": "CPU",
+        "provider": "cpu",
+        "total_memory": 2151618019328,
+        "type": "cpu"
+      }
+    ],
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_f32": false,
+      "kv_unified": false
+    },
+    "env_sha256": "6643d43111951fb7d2ea1109be20ea25b339a5c4708f172180c032bf1be3576b",
+    "gpu_layers": 0,
+    "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+    "model_bytes": 105454432,
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "native": {
+      "sha256": {
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d"
+      }
+    },
+    "offloaded_layers": [],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "prefix_reuse": true,
+    "provider": "cpu",
+    "python": "3.11.11",
+    "scratch_thread_head": {
+      "helper_sha256": "aa021ab39508acd20faca56ef7c21ebf9ee67ffaeebdd5e355a5ceb15497b5cb",
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "learner_sha256": "22b9eb0c20b734a71dde28bf5e37e42ca9b27842c65539aa1d16a8a67f2fce8c",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      },
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0"
+    },
+    "speculate": false,
+    "threads": 2
+  },
+  "captured_ns": 1795655906106612983,
+  "correct": true,
+  "evaluator": "ironmule.serving_trial.v1",
+  "functions": [
+    {
+      "calls": 1,
+      "function": "trace_note",
+      "line": 302,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 3.41e-07
+    },
+    {
+      "calls": 8,
+      "function": "Job.full_context",
+      "line": 529,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 2.3515e-05
+    },
+    {
+      "calls": 6,
+      "function": "GgmlEngine._batch_for",
+      "line": 1193,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 2.3416e-05
+    },
+    {
+      "calls": 1,
+      "function": "GgmlEngine.set_threads",
+      "line": 1299,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 2.0219e-05
+    },
+    {
+      "calls": 1,
+      "function": "GgmlEngine._attach_threadpool",
+      "line": 1316,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 5.1731e-05
+    },
+    {
+      "calls": 1,
+      "function": "GgmlEngine._attach_threadpool.<locals>.Params",
+      "line": 1322,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 2.8350000000000004e-06
+    },
+    {
+      "calls": 12,
+      "function": "GgmlEngine.eog",
+      "line": 1360,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 2.8063000000000002e-05
+    },
+    {
+      "calls": 10,
+      "function": "GgmlEngine._common",
+      "line": 1502,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 1.3022e-05
+    },
+    {
+      "calls": 4,
+      "function": "GgmlEngine._take_sequence",
+      "line": 1515,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 1.6219000000000002e-05
+    },
+    {
+      "calls": 4,
+      "function": "GgmlEngine._claim",
+      "line": 1541,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 6.8469e-05
+    },
+    {
+      "calls": 3,
+      "function": "GgmlEngine._prefill",
+      "line": 1551,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 2.9375000000000003e-05
+    },
+    {
+      "calls": 4,
+      "function": "GgmlEngine._slots",
+      "line": 1726,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 1.7720000000000001e-06
+    },
+    {
+      "calls": 4,
+      "function": "GgmlEngine.run.<locals>.finish",
+      "line": 1741,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 3.7081e-05
+    },
+    {
+      "calls": 12,
+      "function": "GgmlEngine.run.<locals>.take",
+      "line": 1776,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 5.1949e-05
+    },
+    {
+      "calls": 19,
+      "function": "GgmlEngine.run.<locals>.mark",
+      "line": 1813,
+      "path": "ironmule/ggml_engine.py",
+      "self_s": 3.2240000000000004e-06
+    },
+    {
+      "calls": 4,
+      "function": "GgufDetokenizer.__init__",
+      "line": 40,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 2.3040000000000003e-06
+    },
+    {
+      "calls": 4,
+      "function": "GgufDetokenizer.reset",
+      "line": 44,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 1.213e-06
+    },
+    {
+      "calls": 12,
+      "function": "GgufDetokenizer.add_token",
+      "line": 49,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 6.8589e-05
+    },
+    {
+      "calls": 4,
+      "function": "GgufDetokenizer.finalize",
+      "line": 55,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 2.305e-06
+    },
+    {
+      "calls": 12,
+      "function": "_complete_prefix",
+      "line": 59,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 4.3926000000000006e-05
+    },
+    {
+      "calls": 12,
+      "function": "GgufTokenizer.piece",
+      "line": 104,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 9.3354e-05
+    },
+    {
+      "calls": 4,
+      "function": "GgufTokenizer.encode",
+      "line": 115,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 0.000390549
+    },
+    {
+      "calls": 4,
+      "function": "GgufTokenizer.detokenizer",
+      "line": 143,
+      "path": "ironmule/gguf_tokenizer.py",
+      "self_s": 3.045e-06
+    }
+  ],
+  "kind": "measured",
+  "requests": [
+    [
+      39,
+      3
+    ],
+    [
+      39,
+      3
+    ],
+    [
+      39,
+      3
+    ],
+    [
+      39,
+      3
+    ]
+  ],
+  "schema": "ironmule.measured-wave.v1",
+  "wall_s": 0.8499071829719469,
+  "width": 4,
+  "workload": "short"
+}

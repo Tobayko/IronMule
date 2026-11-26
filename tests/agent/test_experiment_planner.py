@@ -71,3 +71,14 @@ def test_followup_can_save_the_cost_of_an_uninformative_experiment():
     assert decision["simulation"]["highest_remaining_measured_self_fraction"] == .0001
     changed = [wave(i, "document", .03, .5) for i in (3, 4)]
     assert plan(changed, [first])["target"]["function"] == "piece"
+
+
+def test_can_defer_first_bound_order_when_even_removing_a_site_cannot_meet_gate():
+    from training.experiment_planner import DEFERRED
+
+    observations = [wave(i, "short", .03, .0002) for i in (1, 2)]
+    decision = plan(observations, require_headroom=True)
+    assert decision["schema"] == DEFERRED
+    assert decision["simulation"]["highest_remaining_measured_self_fraction"] == .015
+    assert decision["strongest_observed_site"]["function"] == "encode"
+    assert decision["historical_experience"]

@@ -88,3 +88,15 @@ python -m lab.rp.rp report --output lab/rp/results/campaign-costs.json
 ```
 
 The product subprocess can use `open_worker` from `lab.rp.restricted_worker` with the same read-only inputs and preflight as the batch evaluator. Its stdin and stdout carry the product protocol. Setup and preflight use separate file descriptors which close before exec. Use `text=False` for the product's binary pipes. Exiting the context terminates the worker process group. The broker also enforces an independent wall deadline while the service runs.
+
+On the recorded EPYC host, install the CPU build of MLX in a separate environment for this campaign.
+The system CUDA build failed at import with the GPU hidden. The completed trial used matching
+`mlx==0.32.5` and `mlx-cpu==0.32.5` and the existing GGML bindings. Reproduce the host planner
+on its saved observations with the repository CPU environment.
+
+```sh
+python -m training.experience_archive build --output /tmp/epyc-experience.jsonl
+python -m training.experiment_planner \
+  --observations lab/autonomous/results/runpod-epyc-pilot/waves \
+  --archive /tmp/epyc-experience.jsonl --require-headroom --output /tmp/epyc-plan.json
+```

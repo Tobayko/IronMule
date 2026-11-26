@@ -4493,3 +4493,31 @@ came from source 9c9618d, with both raw repeats and rejection reasons retained. 
 matching machine with the bounded CPU command and the four-slot checkpoint in the method guide.
 [Measured discovery and qualification](../evidence/runtime/cpu-pilot-four-slot-discovery.json) ·
 [Experiment commands](OPTIMIZATION_METHODS.md#run-one-development-experiment-on-linux)
+
+### 2026-11-26 RunPod EPYC scratch Pilot in live four-client serving
+
+SmolLM2-135M-Instruct Q4_K_M served on four pinned physical cores of an AMD EPYC 7742, with CUDA masked.
+IronMule collected 48 equal-output native decode measurements across six complete series on commit
+79ee889. The initial fit used 72-token contexts and the update added separate 264-token contexts.
+Both widths of the 392-token family stayed out of both fits. For one and four decode rows, the
+trained head selected four threads and took 52.49 ms and 122.96 ms per eight-token probe. The shipped Pilot
+selected one thread and took 118.39 ms and 349.04 ms. The simple all-four-threads rule matched the new head
+on both held-out cells. The update changed the scores and preserved these two choices.
+[Measurements](../evidence/runtime/cpu-pilot-epyc-trials.json) · [Grouped replay](../evidence/runtime/cpu-pilot-epyc-replay.json) · [Checkpoint](../evidence/runtime/cpu-pilot-epyc-candidate.npz)
+
+A fresh qualification then admitted four threads for plain four-row decode in the 64–127-token context band.
+Across four paired windows, candidate/reference time ranged from 0.313 to 0.347 and the maximum
+A/A spread was 4.94%. Qualification and search took 42.65 s. The head made four qualified choices in
+the subsequent sixteen measured Pilot decisions. Sixteen of sixteen copy requests returned correct
+answers with 48 tokens in 6.166 s. The observed engine p95 time to first visible token was 2.196 s.
+The entire campaign took 231.97 s, including collection, both fits, qualification and serving.
+These profiled waves have no end-to-end baseline arm. The original load feature counts busy time
+across the host, including CPUs outside the worker's affinity.
+[Serving receipt](../evidence/runtime/cpu-pilot-epyc-discovery.json) · [Campaign and time breakdown](../lab/autonomous/results/runpod-epyc-pilot/campaign.json)
+
+The world model used all four completed serving waves and retrieved the prior rejected tokenizer
+experiment. The largest exclusive host-function share in any wave was 0.04764% for
+`GgufTokenizer.encode`. Even removing that entire measured cost falls below the 1.96078% elapsed-time
+saving required for the existing 2% throughput gate. IronMule therefore deferred a Python code order on
+this workload. This estimate covers the instrumented engine and tokenizer source sites only.
+[Decision and retrieved records](../lab/autonomous/results/runpod-epyc-pilot/planner-decision.json)

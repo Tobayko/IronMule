@@ -1,0 +1,131 @@
+{
+  "base_commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "binding": {
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "cores": 4,
+    "devices": [
+      {
+        "description": "AMD EPYC 7742 64-Core Processor",
+        "name": "CPU",
+        "provider": "cpu",
+        "total_memory": 2151618019328,
+        "type": "cpu"
+      }
+    ],
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_f32": false,
+      "kv_unified": false
+    },
+    "env_sha256": "6643d43111951fb7d2ea1109be20ea25b339a5c4708f172180c032bf1be3576b",
+    "gpu_layers": 0,
+    "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+    "model_bytes": 105454432,
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "native": {
+      "sha256": {
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d"
+      }
+    },
+    "offloaded_layers": [],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "prefix_reuse": true,
+    "provider": "cpu",
+    "python": "3.11.11",
+    "scratch_thread_head": {
+      "helper_sha256": "aa021ab39508acd20faca56ef7c21ebf9ee67ffaeebdd5e355a5ceb15497b5cb",
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "learner_sha256": "22b9eb0c20b734a71dde28bf5e37e42ca9b27842c65539aa1d16a8a67f2fce8c",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      },
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0"
+    },
+    "speculate": false,
+    "threads": 2
+  },
+  "completed_observations": [
+    "a9795cda2f60ca82e8cb69c1ce37e93e5734919591bc122a81119ab1706ce007",
+    "d0a2df48131ccb8ea29055edcbc4b478e2028a1f056e2be912030753ffdf456a",
+    "5f767f2bb3f477f500d18dfb022d4adecb9bf2cd499cb3be7a338113f3b93728",
+    "8c1e10461c483bb5682917f4b27bb22a9016b19f89e79a1549f74bbd75c650f8"
+  ],
+  "evaluator": "ironmule.serving_trial.v1",
+  "historical_experience": [
+    {
+      "authorship": "IronMule selected the target and evaluated the outcome. Codex authored the code.",
+      "contains_negative_result": true,
+      "excerpt": "Rejected. 4/6 pairs faster. The measured function wraps an opaque native tokenizer. A ctypes integer-array slice already allocates and fills a new Python list, so list(slice) copies all token references a second time. Return the slice directly. Keep one private native buffer per call, the UTF-8 byte length, BOS/special flags and negative-size retry. This removes linear host work without retaining request text or token IDs between calls. The native tokenization itself may dominate end-to-end time.",
+      "id": "e1e1da12d3aaa6faaf2803d19dc2acaa7ae4d4c4efbaa8b5288967d572b72b19",
+      "locator": "decision",
+      "provenance": "reported",
+      "reason": "Rejected: paired hardware gate",
+      "source": "lab/autonomous/results/cpu-tokenizer-01/result.json",
+      "source_sha256": "1c87cc1d0ee77fd4298cdaa44154fb41d4e73c80ae89466b1b714cf381c76497",
+      "title": "GgufTokenizer.encode",
+      "uncertainty": "The decision covers only the measured fixture and runtime. Activation is recorded separately."
+    },
+    {
+      "authorship": "IronMule selected the target and evaluated the outcome. Codex authored the code.",
+      "contains_negative_result": false,
+      "excerpt": "",
+      "id": "235239a02505ed5d8e8ad20ae5e2108df2623d128a790cc8c04931ba73fa4a47",
+      "locator": "pair",
+      "provenance": "measured",
+      "reason": null,
+      "source": "lab/autonomous/results/cpu-tokenizer-01/pair-3.json",
+      "source_sha256": "6796bc19446fa314dd754d80f5ee5233ea467f12b5f5cde6ae59877a69881048",
+      "title": "GgufTokenizer.encode",
+      "uncertainty": "One paired observation; admission uses the complete campaign."
+    },
+    {
+      "authorship": "IronMule selected the target and evaluated the outcome. Codex authored the code.",
+      "contains_negative_result": false,
+      "excerpt": "",
+      "id": "60244779d0392311d66bcac324a7b4be966f322aaeb6e439f721846c25bb93ff",
+      "locator": "pair",
+      "provenance": "measured",
+      "reason": null,
+      "source": "lab/autonomous/results/cpu-tokenizer-01/pair-4.json",
+      "source_sha256": "b9ed439d1c2b97b349ddf3ae49f8f600bf0fa4cad9bcaaf654a92da6bd921f34",
+      "title": "GgufTokenizer.encode",
+      "uncertainty": "One paired observation; admission uses the complete campaign."
+    }
+  ],
+  "prior_sites": [],
+  "reason": "remaining host sites lack measured headroom",
+  "remaining_sites": 23,
+  "schema": "ironmule.deferred-code-experiment.v1",
+  "simulation": {
+    "assumption": "Removing all exclusive host time at one site; indirect effects unknown.",
+    "highest_remaining_measured_self_fraction": 0.00047640538917280314,
+    "kind": "simulated",
+    "paired_profiled_wave_cost_s": 12.335087501909584,
+    "required_wall_fraction": 0.019607843137254943
+  },
+  "strongest_observed_site": {
+    "function": "GgufTokenizer.encode",
+    "line": 115,
+    "measured_self_share_range": [
+      0.00038747297408040724,
+      0.00047640538917280314
+    ],
+    "path": "ironmule/gguf_tokenizer.py",
+    "predicted_saved_s": 0.0001766076771142638,
+    "score": 1.431750501055816e-05,
+    "sensitivity_saved_s": [
+      0.0,
+      0.0003532153542285276
+    ]
+  }
+}

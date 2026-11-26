@@ -160,7 +160,8 @@ def _historical_notes(target, archive):
     return [r[2] for r in selected]
 
 
-def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None, demand=None) -> dict[str, Any]:
+def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None, demand=None,
+         require_headroom=False) -> dict[str, Any]:
     if not 2 <= len(waves) <= MAX_WAVES or not 1 <= repetitions <= 32:
         raise ValueError("need two to 48 measured waves and a bounded repeat count")
     waves = sorted(waves, key=lambda w: w["captured_ns"])
@@ -215,10 +216,14 @@ def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None, dem
                              "score": expected_s / measured_cost_s})
     # After exploring this binding, even removing all exclusive time from one remaining
     # site must plausibly clear the existing evaluator. New workloads can reopen a site.
-    max_share = max((a["measured_self_share_range"][1] for a in alternatives), default=0.0)
-    if seen and max_share < 1 - 1 / 1.02:
+    minimum = 1 - 1 / 1.02
+    maximum_site = max(alternatives, key=lambda a: a["measured_self_share_range"][1], default=None)
+    max_share = maximum_site["measured_self_share_range"][1] if maximum_site else 0.0
+    if (seen or require_headroom) and max_share < minimum:
         return {"schema": DEFERRED, **context, "reason": "remaining host sites lack measured headroom",
-                "simulation": {"kind": "simulated", "required_wall_fraction": 1 - 1 / 1.02,
+                "strongest_observed_site": maximum_site,
+                "historical_experience": _historical_notes(maximum_site, archive) if maximum_site else [],
+                "simulation": {"kind": "simulated", "required_wall_fraction": minimum,
                                "highest_remaining_measured_self_fraction": max_share,
                                "assumption": "Removing all exclusive host time at one site; indirect effects unknown.",
                                "paired_profiled_wave_cost_s": measured_cost_s},
@@ -226,6 +231,8 @@ def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None, dem
                 "prior_sites": [dict(zip(("path", "function", "line"), site)) for site in sorted(seen)]}
     if not alternatives:
         raise ValueError("no remaining observed source function with positive modeled headroom")
+    if require_headroom:
+        alternatives = [a for a in alternatives if a["measured_self_share_range"][1] >= minimum]
     alternatives.sort(key=lambda item: -item["score"])
     best = alternatives[0]
     target = {k: best[k] for k in ("path", "function", "line")}
@@ -258,6 +265,8 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--prior-orders", type=Path)
     parser.add_argument("--archive", type=Path, help="experience JSONL; default searches the lab-notebook importer")
+    parser.add_argument("--require-headroom", action="store_true",
+                        help="only order sites whose observed exclusive time could meet the release threshold")
     args = parser.parse_args()
     files = sorted(args.observations.glob("wave-*.json"))
     if len(files) > MAX_WAVES:
@@ -265,7 +274,7 @@ def main():
     waves = [json.loads(file.read_text()) for file in files]
     prior = [] if args.prior_orders is None else [json.loads(file.read_text())
                                                   for file in sorted(args.prior_orders.glob("*.json"))]
-    order = plan(waves, prior, archive=args.archive)
+    order = plan(waves, prior, archive=args.archive, require_headroom=args.require_headroom)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(args.output, order)
     print(json.dumps({k: order[k] for k in ("schema", "order_id", "target", "reason") if k in order}))

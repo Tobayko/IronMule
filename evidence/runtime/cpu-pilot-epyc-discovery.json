@@ -1,0 +1,679 @@
+{
+  "schema": "ironmule.serving_trial.v1",
+  "profiled": true,
+  "binding": {
+    "provider": "cpu",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_bytes": 105454432,
+    "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+    "devices": [
+      {
+        "provider": "cpu",
+        "name": "CPU",
+        "description": "AMD EPYC 7742 64-Core Processor",
+        "type": "cpu",
+        "total_memory": 2151618019328
+      }
+    ],
+    "native": {
+      "sha256": {
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+      }
+    },
+    "python": "3.11.11",
+    "gpu_layers": 0,
+    "offloaded_layers": [],
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "cores": 4,
+    "threads": 2,
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "prefix_reuse": true,
+    "speculate": false,
+    "env_sha256": "6643d43111951fb7d2ea1109be20ea25b339a5c4708f172180c032bf1be3576b",
+    "scratch_thread_head": {
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      },
+      "helper_sha256": "aa021ab39508acd20faca56ef7c21ebf9ee67ffaeebdd5e355a5ceb15497b5cb",
+      "learner_sha256": "22b9eb0c20b734a71dde28bf5e37e42ca9b27842c65539aa1d16a8a67f2fce8c"
+    }
+  },
+  "workload": {
+    "seed": 1241,
+    "clients": 4,
+    "waves": 4,
+    "max_tokens": 3,
+    "warmup_waves": 1,
+    "context": 512,
+    "phases": [
+      "short",
+      "document"
+    ]
+  },
+  "commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "runtime_source_sha256": {
+    "ggml_engine.py": "aae9299715c89437116ac8aa6f9d65c18149ca148a0ba18878b29eaa3ba718b5",
+    "gguf_tokenizer.py": "0952416ffdff0e965be1e60f88a74ec35bdd194bcb1646187dca98dccbfb3a11",
+    "pilot.py": "93b6752e80685b0a4cf53293699676b635e1cabb97e2ad25562cec8567f67853"
+  },
+  "evaluator_sha256": "c6e6c587dd12c128f83b700e4bb51fc06139e15ae10dcaf2a2b88b7a09f40ba7",
+  "initialization_s": 45.81148684595246,
+  "warmup_s": 0.898160129,
+  "wall_s": 6.166450834,
+  "ttft_s": 2.195505708,
+  "output_sha256": "6936c4eb544efd1de9a8778a24d0b93465f174a28d199c1fdd512acc3cc4f386",
+  "waves": [
+    {
+      "workload": "short",
+      "wall_s": 0.876767563,
+      "ttfts_s": [
+        0.800603429,
+        0.202078684,
+        0.402988097,
+        0.601645865
+      ],
+      "output_sha256": "35f74b957373f8ff88ae8b24a69b01efe3aec98132fec6f30675135cbeb1983b",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 8,
+      "answers": [
+        {
+          "prompt_digest": "6cbc4be24be13e104cba5d3029323f6a59574fb277be903feb06a35da8923384",
+          "output_ids": [
+            2654,
+            198,
+            32601
+          ],
+          "answer": " green\nCopy",
+          "stop": "length",
+          "target": "green",
+          "correct": true
+        },
+        {
+          "prompt_digest": "86c128c7f16bf8ee9d611cbf9a85136916739deb3438f172f1ed5a52d24e9839",
+          "output_ids": [
+            2632,
+            198,
+            32601
+          ],
+          "answer": " black\nCopy",
+          "stop": "length",
+          "target": "black",
+          "correct": true
+        },
+        {
+          "prompt_digest": "b6a02076fa6ba7766ba3bed3372ff0230fbb394b637bd95f31d736366ae1153f",
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "answer": " yellow\nCopy",
+          "stop": "length",
+          "target": "yellow",
+          "correct": true
+        },
+        {
+          "prompt_digest": "1a8e6aaaaf3b193a0fbd9ee8d5cb72e4e8ecba2c760e6ac51b895b01f5e2fee6",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "workload": "document",
+      "wall_s": 2.218878105,
+      "ttfts_s": [
+        2.19199954,
+        0.552548402,
+        1.100479157,
+        1.649002491
+      ],
+      "output_sha256": "77d1238350fcefece9d093957952a934f7e990e7a9122ad633df3bd5fc18b75c",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          104,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 8,
+      "answers": [
+        {
+          "prompt_digest": "99c162b96d50eb3ea7d40f848f53b89b9ca1fe0a650f9416fb46f48297a5761c",
+          "output_ids": [
+            2632,
+            198,
+            32601
+          ],
+          "answer": " black\nCopy",
+          "stop": "length",
+          "target": "black",
+          "correct": true
+        },
+        {
+          "prompt_digest": "644f24f91aeeb70aa3802bbb3dd7fecf880ac760bb5340b2ada2a29765d7d996",
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "answer": " yellow\nCopy",
+          "stop": "length",
+          "target": "yellow",
+          "correct": true
+        },
+        {
+          "prompt_digest": "a95a13d0665cac44f7171e34fc974c0baa09aa99889e7719c26036ba7837c667",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        },
+        {
+          "prompt_digest": "930a4d56142fbc499adade2a4f358e7c00ff39822b93f43567302b2689cb7cbc",
+          "output_ids": [
+            11986,
+            198,
+            32601
+          ],
+          "answer": " pink\nCopy",
+          "stop": "length",
+          "target": "pink",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "workload": "short",
+      "wall_s": 0.849678651,
+      "ttfts_s": [
+        0.775834662,
+        0.190991046,
+        0.381133108,
+        0.578629781
+      ],
+      "output_sha256": "745c1e82a6d7e10f5942ea59827ea69d365d2373082b0613a68696bc7b6d26bc",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 10,
+      "answers": [
+        {
+          "prompt_digest": "2e317e8872f7fc65b279bca01c771163447a2e606c31a423ed89f21be67974aa",
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "answer": " yellow\nCopy",
+          "stop": "length",
+          "target": "yellow",
+          "correct": true
+        },
+        {
+          "prompt_digest": "8790e578fe7558d7288e39940ec90c13ecd841affe52b694f6610c7144dd22a7",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        },
+        {
+          "prompt_digest": "4f563b8689b92cee144e318088026a11c42ca92eb61868ca617d6a61b87c00df",
+          "output_ids": [
+            11986,
+            198,
+            32601
+          ],
+          "answer": " pink\nCopy",
+          "stop": "length",
+          "target": "pink",
+          "correct": true
+        },
+        {
+          "prompt_digest": "40427951a62ed9b4c82c3d4dd0b341df38b63cac5839afa7ed1fbd843a2a4e27",
+          "output_ids": [
+            6354,
+            198,
+            32601
+          ],
+          "answer": " brown\nCopy",
+          "stop": "length",
+          "target": "brown",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "workload": "document",
+      "wall_s": 2.221126515,
+      "ttfts_s": [
+        2.195505708,
+        0.543729213,
+        1.095254592,
+        1.646389001
+      ],
+      "output_sha256": "bb2c2ba47fd918425cfd2e623426729b1cb53a753bf2a4404e7a24a7087af5c5",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 9,
+      "answers": [
+        {
+          "prompt_digest": "0d192f236545a9cca418bb1c5744d11535f8a32bd615f932f0c0ea0e26df86e3",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        },
+        {
+          "prompt_digest": "d70cfe562e8ecc640a13e9c2f3971b43fb112abe0a1806e057a07a169a6148bb",
+          "output_ids": [
+            11986,
+            198,
+            32601
+          ],
+          "answer": " pink\nCopy",
+          "stop": "length",
+          "target": "pink",
+          "correct": true
+        },
+        {
+          "prompt_digest": "375f434bc90975c63f58907c5493d56f75c0ac27e0afd6788e373fb8b4e1cf63",
+          "output_ids": [
+            6354,
+            198,
+            13646
+          ],
+          "answer": " brown\nColor",
+          "stop": "length",
+          "target": "brown",
+          "correct": true
+        },
+        {
+          "prompt_digest": "2dd4a9f6f927ab87024e74b2f5742e6ab5489d87527f7c3d06788aeceb9b2416",
+          "output_ids": [
+            14230,
+            198,
+            13646
+          ],
+          "answer": " purple\nColor",
+          "stop": "length",
+          "target": "purple",
+          "correct": true
+        }
+      ]
+    }
+  ],
+  "completed": 16,
+  "correct": 16,
+  "tokens": 48,
+  "pilot_decisions": 16,
+  "pilot": {
+    "version": 2,
+    "active": true,
+    "reason": null,
+    "weights": "pilot_weights.npz",
+    "cores": 4,
+    "foreign_cores": 12.96,
+    "decision": {
+      "threads": 1,
+      "cap": 4,
+      "budget": 1073741824,
+      "draft": true
+    },
+    "decisions": 167,
+    "decide_us_mean": 540.3,
+    "out_of_range": 0,
+    "thread_learning": {
+      "version": 2,
+      "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "generation": 1,
+      "weights": {
+        "1:1:4:4": 3
+      },
+      "model": {
+        "schema": 1,
+        "observations": 3,
+        "negative_or_unresolved": 0,
+        "parameters": 12,
+        "last_update": {
+          "prediction": 0.6224327954109161,
+          "reward": 1.0,
+          "stage": "qualification",
+          "accepted": true
+        }
+      },
+      "last": {
+        "key": "1:1:4:4",
+        "candidate_threads": 4,
+        "ratios": [
+          0.34659310224721723,
+          0.31300260072080394,
+          0.3133041993415174,
+          0.3178017170719327
+        ],
+        "aa_spread": [
+          0.018302408187929022,
+          0.049351421344667065,
+          0.012892298720664878,
+          0.01214554939678542
+        ],
+        "result": "qualified"
+      },
+      "scratch_candidate": {
+        "state": "available for local trial",
+        "sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+        "trials": 1,
+        "qualified_decisions": 4,
+        "reference_decisions": 147,
+        "inference_us": 351.31399999999996,
+        "regime": "1:1:4:4",
+        "threads": 4
+      },
+      "thread_decision": {
+        "choice": "qualified",
+        "reason": "locally qualified",
+        "profile": {
+          "backend": "ggml-cpu",
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "sequences": 4,
+          "sequence_context": 512,
+          "capacity": 4,
+          "shared_cache": false,
+          "settings": {
+            "flash_attn": false,
+            "kv_unified": false,
+            "kv_f32": false
+          },
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "operation": "plain_decode",
+          "threads": 4,
+          "sequence_rows": 4,
+          "prompt_rows": 0,
+          "draft_rows": 0,
+          "padding_rows": 0,
+          "pending_requests": 0
+        },
+        "regime": "1:1:4:4",
+        "reference_threads": 1,
+        "selection_us": 77.326,
+        "eligible_threads": [
+          1,
+          4
+        ],
+        "qualification": {
+          "windows": 4,
+          "candidate_threads": 4,
+          "max_ratio": 0.34659310224721723,
+          "max_aa_fraction": 0.049351421344667065,
+          "min_gain_after_noise_us_per_step": 22556.468182301614
+        },
+        "uncertainty": "local paired windows"
+      }
+    }
+  },
+  "scratch_qualification": {
+    "binding": {
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      }
+    },
+    "status": {
+      "version": 2,
+      "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "generation": 1,
+      "weights": {
+        "1:1:4:4": 3
+      },
+      "model": {
+        "schema": 1,
+        "observations": 3,
+        "negative_or_unresolved": 0,
+        "parameters": 12,
+        "last_update": {
+          "prediction": 0.6224327954109161,
+          "reward": 1.0,
+          "stage": "qualification",
+          "accepted": true
+        }
+      },
+      "last": {
+        "key": "1:1:4:4",
+        "candidate_threads": 4,
+        "ratios": [
+          0.34659310224721723,
+          0.31300260072080394,
+          0.3133041993415174,
+          0.3178017170719327
+        ],
+        "aa_spread": [
+          0.018302408187929022,
+          0.049351421344667065,
+          0.012892298720664878,
+          0.01214554939678542
+        ],
+        "result": "qualified"
+      },
+      "scratch_candidate": {
+        "state": "available for local trial",
+        "sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+        "trials": 1,
+        "qualified_decisions": 0,
+        "reference_decisions": 141,
+        "inference_us": 0.0,
+        "regime": "1:1:4:4",
+        "threads": 4
+      },
+      "thread_decision": {
+        "choice": "reference",
+        "reason": "no local qualification",
+        "profile": {
+          "backend": "ggml-cpu",
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "sequences": 4,
+          "sequence_context": 512,
+          "capacity": 4,
+          "shared_cache": false,
+          "settings": {
+            "flash_attn": false,
+            "kv_unified": false,
+            "kv_f32": false
+          },
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "operation": "plain_decode",
+          "threads": 1,
+          "sequence_rows": 4,
+          "prompt_rows": 0,
+          "draft_rows": 0,
+          "padding_rows": 0,
+          "pending_requests": 0
+        },
+        "regime": "2:1:4:4",
+        "reference_threads": 1,
+        "selection_us": null,
+        "eligible_threads": [
+          1
+        ],
+        "qualification": null,
+        "uncertainty": "unknown"
+      }
+    },
+    "search_and_warmup_s": 42.649863698054105,
+    "traces": [
+      {
+        "tokens": 192,
+        "reason": [
+          "length",
+          "length",
+          "length",
+          "length"
+        ],
+        "seconds": 3.856383345,
+        "ttft_s": 2.082567675,
+        "digest": "7a0c58bd69d884478ce6d29bd8e211bf09e3c48568a5c4027c2652f72f85759f"
+      },
+      {
+        "tokens": 192,
+        "reason": [
+          "length",
+          "length",
+          "length",
+          "length"
+        ],
+        "seconds": 3.851901564,
+        "ttft_s": 2.082122663,
+        "digest": "7a0c58bd69d884478ce6d29bd8e211bf09e3c48568a5c4027c2652f72f85759f"
+      },
+      {
+        "tokens": 192,
+        "reason": [
+          "length",
+          "length",
+          "length",
+          "length"
+        ],
+        "seconds": 3.862281945,
+        "ttft_s": 2.085378398,
+        "digest": "7a0c58bd69d884478ce6d29bd8e211bf09e3c48568a5c4027c2652f72f85759f"
+      }
+    ],
+    "idle_results": [
+      null,
+      null,
+      {
+        "key": "1:1:4:4",
+        "candidate_threads": 4,
+        "ratios": [
+          0.34659310224721723,
+          0.31300260072080394,
+          0.3133041993415174,
+          0.3178017170719327
+        ],
+        "aa_spread": [
+          0.018302408187929022,
+          0.049351421344667065,
+          0.012892298720664878,
+          0.01214554939678542
+        ],
+        "result": "qualified"
+      }
+    ]
+  },
+  "scratch_measured_decisions": 4,
+  "peak_rss_kib": 415964,
+  "device_free_bytes_after_waves": [],
+  "total_elapsed_s": 52.94030675501563
+}
