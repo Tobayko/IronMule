@@ -128,3 +128,33 @@ After the scoped source PR merges and a fresh native target pair passes, the cam
 Six distinct holdout seeds run in alternating order with a fresh worker on every arm. Each first batch contains 18 independently graded streamed answers. The wall clock starts before CPU profile selection, source checks, worker construction and the HTTP server start. It ends when every answer has completed. The second, warm batch contains 18 fresh factual tasks, followed by 32 ordinary PR57 performance completions with equal output, token counts and stop reasons. The earlier controller must select the reference. The newly trained controller must select the candidate using the pinned weights, cache and active release. Promotion requires six cold throughput wins, a median improvement of at least 2%, cold p95 TTFT parity, and no regression in median warm correct completions per second or warm p95 TTFT. The median 32-client performance wall time and TTFT may increase by at most 2%. Peak RSS and observed GPU memory may increase by at most 5% in each pair.
 
 The live endpoint receives a fresh factual batch, persists the actual CPU decision, source and streamed work, and serves ordinary requests for the bounded lifetime. An independent exercise starts the selected source, withdraws HTTP admission in a separate state, and repeats exactly the same requests after the CPU controller selects the reference. A failed integrity check, worker failure or three matched timing regressions withdraws HTTP use. Each finished arm has its own recoverable JSON record. The control host copies the results to `product/`.
+
+### Offline replay of the measured A100 experiment
+
+The complete Qwen3-32B Q4_K_M source qualification used the A100-SXM4-80GB with both W4
+masks at 0xffffffff. The median paired cold-start saving was 17.805 seconds and the median
+speedup was 2.1592. The six paired warm batch-time and p95 first-token ratios were 0.997 and
+0.998 at their medians. The factual-first runs finished eighteen graded answers in 30.445 and
+30.287 seconds with the incumbent, and 12.436 and 12.348 seconds with the candidate. Their
+second factual batches had median wall and p95 ratios of 1.011 and 1.003. Qualification used
+920.48 target seconds. At the observed median cold saving, 52 similar restarts would amortize
+that qualification alone. The experiment does not measure the frequency of future restarts.
+
+From a checkout containing the evidence and the qualification branch, reconstruct the candidate
+and replay all timing, output and source checks before refitting on the CPU:
+
+```sh
+order=d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3
+evidence=lab/autonomous/results/a100-restart/$order
+replay=$(mktemp -d)
+git worktree add --detach "$replay/base" 33dc7bf544954f6c79a8a15536c0d6f5724b26a2
+patch --silent --batch --output "$replay/candidate.py" "$replay/base/ironmule/ggml_engine.py" < "$evidence/candidate.diff"
+python -m training.pilot_restart_profiles --order "$evidence/order.json" \
+    --checkout "$replay/base" --trial "$evidence" --candidate-source "$replay/candidate.py" \
+    --weights "$replay/startup-head.npz" --report "$replay/fit.json"
+sha256sum "$replay/startup-head.npz" "$replay/candidate.py"
+```
+
+The verified Linux CPU replay produced model SHA-256
+`a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254` and source SHA-256
+`80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd`.

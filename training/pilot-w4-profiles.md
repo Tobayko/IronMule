@@ -79,3 +79,7 @@ using the frozen native serving evaluator. The reader checks the two expected ma
 separately, then applies the existing output, quality, wall-time, TTFT and memory gates.
 A subsequent experimental `serve --qualified DIRECTORY` replays the underlying measurements
 before the startup head may select that entire alternate profile.
+
+The separate repeated-startup experiment uses the same CPU Pilot to choose between qualified
+source profiles for a fresh worker. Its model trains on complete 32-client mixed starts and
+holds out the 18-client factual starts. See [training, source and measurement replay](../lab/pk1/restart-trial.md).
