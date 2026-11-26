@@ -27,13 +27,14 @@ RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
 HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "geometry.json", "decision.json", "withdrawn.json",
-              "product-qualify.json", "product-exercise.json", "product-serve.json")
+              "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json")
 COST_PHASES = ("during-qualification", "after-verdict", "after-release", "after-product")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
+PLANS = ("replan-after-product.json", "replan-after-product-declined.json")
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
 NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "startup-fit.json", "startup-head.npz", "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
-         "qualified.json", "control.json", "replan-after-product.json", "pilot-comparison.json", *PILOT_ARMS, *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
+         "qualified.json", "control.json", *PLANS, "pilot-comparison.json", *PILOT_ARMS, *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
 
 
 def manifest(path):
@@ -193,22 +194,34 @@ def product_assets(state, order, verified, assets):
                 and rows[0]["work_sha256"] == rows[1]["work_sha256"] and all(row["graded_correct"] == 18 for row in rows)):
             raise ValueError("actual product withdrawal or work differs")
     assets.update({"http-" + name: data for name, data in raw.items()})
-    plan_file = state / "replan-after-product.json"
-    if plan_file.is_file():
-        from training.code_author import digest
-        from training.restart_replan import past_attempts
+    for name in PLANS:
+        if (state / name).is_file():
+            assets[name] = bound_plan(state / name, order, assets)
 
-        data = bounded(plan_file)
-        plan = json.loads(data)
-        receipts = {"source_receipt": "control.json", "cpu_head": "startup-head.npz", "grade_sha256": "http-product-qualify.json",
-                    "served_sha256": "http-product-serve.json", "rollback_sha256": "http-product-exercise.json",
-                    "counterbalanced_native_sha256": "result.json", "cost_observation_sha256": "cost-after-verdict.json"}
-        if (plan["schema"] != "ironmule.restart-replan.v1" or plan["order"] != order["order_id"]
-                or plan["plan_id"] != digest({k: v for k, v in plan.items() if k != "plan_id"})
-                or plan["negative_history"] != past_attempts(ROOT / "lab/autonomous/results", order)
-                or any(plan[k] != sha(assets[name]) for k, name in receipts.items())):
-            raise ValueError("post-product forecast differs from measured deployment and negative history")
-        assets["replan-after-product.json"] = data
+
+def bound_plan(path, order, assets):
+    from training.code_author import digest
+    from training.restart_replan import past_attempts
+
+    data = bounded(path)
+    plan = json.loads(data)
+    receipts = {"source_receipt": "control.json", "cost_observation_sha256": "cost-after-verdict.json"}
+    known = past_attempts(ROOT / "lab/autonomous/results", order)
+    if path.name == PLANS[0]:
+        receipts.update({"cpu_head": "startup-head.npz", "grade_sha256": "http-product-qualify.json",
+                         "served_sha256": "http-product-serve.json", "rollback_sha256": "http-product-exercise.json",
+                         "counterbalanced_native_sha256": "result.json"})
+        match = plan["schema"] == "ironmule.restart-replan.v1" and plan["negative_history"] == known
+    else:
+        receipts.update({"native_result_sha256": "result.json", "product_verdict_sha256": "http-product-qualify.json"})
+        observed = {n: sha(assets["http-" + n]) for n in HTTP_ARMS if "http-" + n in assets}
+        match = (plan["schema"] == "ironmule.restart-replan-declined.v1" and plan["retained_measured_history"] == known
+                 and plan["completed_raw_files"] == observed and json.loads(assets["http-product-qualify.json"])["passed"] is False
+                 and plan["new_serving_improvement"] is None)
+    if (not match or plan["order"] != order["order_id"] or plan["plan_id"] != digest({k: v for k, v in plan.items() if k != "plan_id"})
+            or any(plan[k] != sha(assets[name]) for k, name in receipts.items())):
+        raise ValueError("post-product forecast differs from measured deployment and negative history")
+    return data
 
 
 def export(args):
@@ -379,11 +392,12 @@ def experiences(root, source):
                    decision=comparison["same_work_policy_changed_source"], actual_work=[r["work"] for r in arms],
                    metrics=[comparison], actions=[r["selection"] for r in arms], authorship="IronMule CPU pilot on the scoped A100 release",
                    uncertainty="These two process runs distinguish the policy action. Relative timing is judged in the separate counterbalanced gate.")
-    if "replan-after-product.json" in files:
-        plan = read(folder / "replan-after-product.json")
-        yield emit("restart_post_product_plan", "replan-after-product.json", provenance="simulated", reason="next_source_experiment",
-                   metrics=[plan["observed"]], plan=plan, authorship="IronMule experiment planner",
-                   uncertainty="The next experiment is prioritized from real serving history. Gains and costs are forecasts.")
+    for name in PLANS:
+        if name in files:
+            plan = read(folder / name)
+            yield emit("restart_post_product_plan", name, provenance="simulated", reason=plan["provenance"],
+                       metrics=[plan.get("observed", plan.get("raw_medians", {}))], plan=plan, authorship="IronMule experiment planner",
+                       uncertainty="The next experiment is prioritized from real serving history. Gains and costs are forecasts.")
     for name in HTTP_ARMS:
         public = "http-" + name
         if public not in files:
