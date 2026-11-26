@@ -9,3 +9,7 @@ Measure first nonempty content, first nonwhitespace content, first-content p95, 
 On the CPU, exercise cancellation, partial prompts, output ownership and the real small-model quality screen. Record exact-output differences separately. Two scheduling variants are tried locally. The GPU tests the simulator's split-prompt variant. Fresh independent CPU tasks must still pass factual grading and fixed work, and tracing must witness actual mixed calls before making a mechanism claim.
 
 Budget the L40S at no more than USD 1.16 per hour including disk for 75 minutes plus the existing ten-minute tail. The cumulative budget stays at USD 20. Persist measurements as each wave finishes. Stop on completion or unrecoverable failure and verify removal. No extension.
+
+## Separate current-release comparison
+
+The main comparison retains the PR 57 reference version, vLLM 0.11.0. PyPI identified 0.34.0 as current on November 26, 2026. If the main series completes with enough reserved time, run 0.34.0 in a separate environment on the same L40S, with the identical AWQ snapshot, tokenizer, requests, seeds, generation limits and width cells. Keep its results separate. Finish installation and timing outside measured primary serving waves. The supplement uses the existing lease and hard deadline. A startup or dependency failure is an unverified comparison.
