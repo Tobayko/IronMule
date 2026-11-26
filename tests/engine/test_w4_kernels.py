@@ -53,3 +53,54 @@ def test_w4_cache_verifies_artifacts_and_device_binding(tmp_path, monkeypatch):
     assert ensure() is None
     monkeypatch.setattr(wk, "tune", lambda *a, **k: 1 / 0)
     assert ensure() is None
+
+
+def test_w4_native_errors_and_bad_measurements_survive_strict_json(tmp_path, monkeypatch):
+    import ctypes
+    import json
+
+    import numpy as np
+
+    class Kernel:
+        def im_w4_bench(self, vid, raw, nbytes, rows, k, data, batch, split, copies, reps, timing, output):
+            if vid == 0:
+                return 10  # Native allocator failure. No output or timing exists.
+            ctypes.cast(timing, ctypes.POINTER(ctypes.c_double))[0] = (float("nan") if vid == 2 else 12.25)
+            dest = np.ctypeslib.as_array(ctypes.cast(output, ctypes.POINTER(ctypes.c_float)), shape=(batch * rows,))
+            dest.fill(float("nan") if vid == 1 else 1.0 if vid == 3 else 0.0)
+            return 0
+
+    monkeypatch.setattr(wk, "_lib", lambda _: Kernel())
+    monkeypatch.setattr(wk, "variants", lambda _: [{"id": i, "type": 12, "nt": 1} for i in range(5)])
+    monkeypatch.setattr(wk, "q4k_tensors", lambda gguf, kind: {(256, 16): {"data": np.zeros(16 * 144, np.uint8)}})
+    monkeypatch.setattr(wk, "fingerprint", lambda: {})
+    result = wk.tune("fixture", tmp_path / "kernel.so", tokens=[1], ksplits=[1], kinds=["Q4_K"], log=lambda *a, **k: None)
+    parsed = json.loads(json.dumps(result, allow_nan=False))
+    assert [(r["variant"], r["rejection"]) for r in parsed["measured"]] == [
+        (0, "native_error"), (1, "nonfinite_output_error"), (2, "invalid_timing"), (3, "output_error_bound"), (4, None)]
+    assert parsed["measured"][0]["rc"] == 10 and parsed["measured"][0]["rel_err"] is None
+    assert [r["variant"] for r in parsed["entries"]] == [4]
+
+
+def test_w4_receipt_serialization_failure_leaves_no_partial_generation(tmp_path, monkeypatch):
+    import pytest
+
+    gguf = tmp_path / "model"
+    gguf.write_bytes(b"model")
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(wk, "nvcc_path", lambda: "nvcc")
+    monkeypatch.setattr(wk, "compute_capability", lambda: "80")
+    monkeypatch.setattr(wk, "fingerprint", lambda: {"driver": "d", "nvcc": "toolkit", "devices": ["GPU"]})
+    def build(work, arch):
+        path = work / "compiled.so"
+        path.write_bytes(b"binary")
+        return path
+    entries = [{"type": 12, "N": 16, "K": 256, "B": 1, "variant": 4, "ksplit": 1}]
+    monkeypatch.setattr(wk, "build", build)
+    monkeypatch.setattr(wk, "tune", lambda *a, **k: {"entries": entries, "diagnostic": float("inf")})
+    with pytest.raises(ValueError, match="JSON"):
+        wk.ensure(str(gguf), cache)
+    assert not list(cache.rglob("kernel.so")) and not list(cache.rglob("dispatch.table"))
+    monkeypatch.setattr(wk, "tune", lambda *a, **k: {"entries": entries})
+    lib, table = wk.ensure(str(gguf), cache)
+    assert lib.is_file() and table.is_file() and table.with_name("measurement.json").is_file()
