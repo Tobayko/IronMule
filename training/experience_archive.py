@@ -774,6 +774,51 @@ def native_experiment(root, source, digest, calibration_seen):
                      uncertainty="Archive of a source experiment. Serving requires its separate target-bound release.")
 
 
+def fresh_http_comparison(root, source, checksum):
+    """Keep the current GGUF/AWQ series outside source-qualification and historical pod-37 groups."""
+    from lab.pk6 import replay_http
+
+    directory = (root / source).parent
+    data = json.loads((root / source).read_bytes())
+    result = replay_http.fresh(directory)
+    group = result["experiment"]
+    target = data["target"]
+    models = data["models"]
+    shared = {"hardware": {k:target[k] for k in ("gpu","compute_capability","driver","cuda_toolkit")},
+              "cost_reference": "lab/rp/results/campaign-costs.json", "quantization_match": False}
+    yield record("external_http_registration", source, checksum, "http_protocol", group, **shared, provenance="reported",
+                 workload=data["http_protocol"]["fixture"], comparison_order=data["http_protocol"]["order"],
+                 base_commit=data["immutable_source_manifest"]["base_commit"], models=[models["ironmule_product"]["sha256"], models["vllm_reference"]["manifest_sha256"]],
+                 reason="distinct_prospective_system_comparison", authorship="Registered hardware experiment",
+                 uncertainty=models["quantization_note"])
+    historical_hashes = set(replay_http.historical()["source_files"].values()) if any(directory.glob("http_*.jsonl")) else set()
+    for start in ("K1","K2","vllm"):
+        external = start == "vllm"
+        engine = "vllm" if external else "ironmule"
+        for width in (32,8):
+            tag = start + ("q" if width == 8 else "")
+            file = directory / f"http_{tag}_{width}.jsonl"
+            if not file.is_file():
+                continue
+            raw_hash = replay_http.checksum(file)
+            if raw_hash in historical_hashes:
+                raise ValueError("historical measurement presented as a current HTTP wave")
+            for i, row in enumerate(replay_http.waves(directory, tag, engine, width)):
+                yield record("external_http_wave", str(file.relative_to(root)), raw_hash, f"repeat/{i}", group, **shared,
+                             workload={"start": start, "width": width, "max_tokens": 32, "role": "factual" if width==8 else "performance"},
+                             model=models["vllm_reference"]["manifest_sha256"] if external else models["ironmule_product"]["sha256"],
+                             quantization="AWQ-Marlin" if external else models["ironmule_product"]["format"], authorship="Registered independent HTTP client",
+                             metrics=[{k:row[k] for k in ("tokens","prompt_tokens","wall_s","tok_s","ttft_p50_ms","ttft_p95_ms","ttft_max_ms","texts")}],
+                             quality={"score":row["quality"],"misses":row["quality_misses"]} if width==8 else None,
+                             reason="registered_warmed_wave", uncertainty="Aggregate token counts and response digests apply only to this workload.")
+    if "throughput_ratio" in result:
+        yield record("external_http_comparison", source, checksum, "fresh/replay", group, **shared,
+                     decision=None, reason=result["status"], authorship="Independent registered HTTP replay", measured_files=result["source_files"],
+                     quality={"factual_18":result.get("facts_all_18",result.get("facts_all_18_in_recorded_starts")),
+                              "equal_token_counts":result.get("fixed_token_work")}, metrics=[{"ratio":result["throughput_ratio"],"per_engine":result["per_engine"]}],
+                     uncertainty="Descriptive system rates use different quantized artifacts. Source-level training labels require a separate experiment.")
+
+
 def build(root=ROOT) -> Iterator[dict]:
     root = Path(root)
     # Limit imports to repository evidence. Keep credentials, private trials and generated indexes out.
@@ -877,6 +922,8 @@ def build(root=ROOT) -> Iterator[dict]:
                          uncertainty=fit["uncertainty"], references=[str(weights.relative_to(root))])
         elif source == "lab/autonomous/results/a100-prefill-lt/measurement.json":
             yield from prefill_experiment(root, source, digest)
+        elif source == "lab/autonomous/results/a100-vllm-awq-current-fixed128-r2/preregistration.json":
+            yield from fresh_http_comparison(root, source, digest)
         elif source.startswith("lab/autonomous/results/a100-calibration-sampling/trial-") and path.name == "manifest.json":
             from training.sampling_evidence import experiences
             yield from experiences(root, source)
