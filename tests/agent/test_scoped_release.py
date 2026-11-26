@@ -197,3 +197,54 @@ def test_failed_rollback_exercise_withdraws_real_selection(tmp_path):
     with pytest.raises(ValueError, match="rollback did not"):
         release.exercise(state, sha, wrong)
     assert release.selected(state, sha) == "reference"
+
+
+def test_qualified_restart_campaign_requires_live_work_and_rollback_after_publication(tmp_path, monkeypatch):
+    from pathlib import Path, PurePosixPath
+    import shlex
+    from types import SimpleNamespace
+    from lab.rp import restart_campaign as campaign
+
+    obj = order("qwen-restart")
+    obs = observation()
+    root = tmp_path / "release"
+    d = root / "deployment"
+    d.mkdir(parents=True)
+    path = d / "control.json"
+    release.save(path, {"schema": release.SCHEMA, "adapter": "qwen-restart", "order": obj,
+                        "publication": publication(obj), "qualification": obs})
+    sha = release.checksum(path)
+    release.save(root / "published.json", {"receipt_sha256": sha, "receipt": str(path), "pr": 900})
+    order_path = tmp_path / "order.json"
+    release.save(order_path, obj)
+    monkeypatch.setattr(campaign, "lease", lambda key: {"pod_id": key})
+    monkeypatch.setattr(campaign.restart_release, "approved", lambda _: obs)
+    monkeypatch.setattr(campaign, "upload", lambda _, __, data: data == path.read_bytes())
+    def hashes(_, cmd):
+        paths = shlex.split(cmd)[2:]
+        return "\n".join(release.checksum(p) + "  " + p for p in paths)
+    monkeypatch.setattr(campaign, "shell", hashes)
+    release.save(root / "target-check.json", {"passed": True, "metrics": {"fresh": 1}})
+    def actual(seed, arm):
+        return {"seed": seed, "arm": arm, "cache_used": arm == "candidate", "source_sha256": obs[arm + "_sha256"],
+                "graded_correct": 18, "cold_performance_completions": 32, "warm_performance_completions": 32,
+                "pilot_decisions": 64, "work_sha256": "same"}
+    records = {"activate": {"arm": "candidate", "pr": 900, "receipt_sha256": sha, "withdrawn": False,
+                            "target_check_sha256": release.checksum(root / "target-check.json")},
+               "run": actual(93742, "candidate"), "exercise": {"passed": True, "receipt_sha256": sha,
+                       "before": actual(93743, "candidate"), "after": actual(93743, "reference")}}
+    release.save(root / "rollback-exercise.json", records["exercise"])
+    current = dict(records["activate"])
+    monkeypatch.setattr(campaign, "call", lambda *a, **kw: json.dumps(current).encode())
+    def snapshot(pod, remote, names, local):
+        for name in names:
+            for op, result in records.items():
+                if name == "release-" + op + ".json":
+                    release.save(local / name, result)
+    monkeypatch.setattr(campaign, "snapshot", snapshot)
+    args = SimpleNamespace(state=tmp_path, order=order_path)
+    cfg = {k: "/test" for k in campaign.CONFIG_KEYS}
+    cfg["framework"] = str(Path(campaign.__file__).resolve().parents[2])
+    assert campaign.release(args, cfg, PurePosixPath("/run"), None)["stage"] == "active"
+    current.update(arm="reference", withdrawn=True)
+    assert campaign.release(args, cfg, PurePosixPath("/run"), None)["stage"] == "withdrawn"

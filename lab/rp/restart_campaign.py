@@ -12,7 +12,9 @@ from lab.pk1 import restart_order, restart_release, restart_trial
 from lab.pk1.native_trial import checksum
 from lab.rp.native_campaign import (
     CONFIG_KEYS,
+    call,
     command,
+    endpoint,
     job,
     lease,
     shell,
@@ -82,9 +84,25 @@ def release(args, cfg, remote, check):
             return {"stage": "withdrawn", "order": key, "pr": result["pr"], "result": observed}
         if op == "exercise" and not (observed.get("passed") is True and observed["receipt_sha256"] == pin):
             raise ValueError("rollback evidence missing")
-    snapshot(pod, remote / "active/deployment", ["target-check.json", "rollback-exercise.json"], local)
+    deployed = remote / "active/deployment"
+    snapshot(pod, deployed, ["target-check.json", "rollback-exercise.json"], local)
+    activation, work, proof = (read(local / f"release-{op}.json") for op in ("activate", "run", "exercise"))
+    check_sha = checksum(local / "target-check.json")
+    if (activation.get("target_check_sha256") != check_sha or activation.get("receipt_sha256") != pin
+            or activation.get("pr") != result["pr"] or proof != read(local / "rollback-exercise.json")
+            or proof["before"]["work_sha256"] != proof["after"]["work_sha256"]):
+        raise ValueError("release stages differ from their target receipts")
+    for row, seed, arm in ((work, 93742, "candidate"), (proof["before"], 93743, "candidate"), (proof["after"], 93743, "reference")):
+        if (row["arm"] != arm or row["seed"] != seed or row["cache_used"] is not (arm == "candidate")
+                or row["source_sha256"] != receipt["qualification"][arm + "_sha256"] or row["graded_correct"] != 18
+                or row["cold_performance_completions"] != 32 or row["warm_performance_completions"] != 32
+                or row["pilot_decisions"] <= 0):
+            raise ValueError("unbound actual startup workload")
+    selected = json.loads(call(pod, "GET", endpoint("get", deployed / "selection.json"), raw=True))
+    if selected != activation or selected["withdrawn"]:
+        return {"stage": "withdrawn", "order": key, "pr": result["pr"], "selection": selected}
     return {"stage": "active", "order": key, "pr": result["pr"], "receipt_sha256": pin,
-            "work": read(local / "release-run.json"), "rollback_test": read(local / "release-exercise.json")["passed"]}
+            "work": work, "rollback_test": proof["passed"]}
 
 
 def cycle(args):
