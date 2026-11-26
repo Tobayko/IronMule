@@ -376,3 +376,24 @@ On the Xeon with four engine slots and a 512-token slot context, the original ho
 loaded as a proposal under its recorded binding. With the same affinity and GGUF, the scoped worker
 set this checkpoint aside. Both workers returned four correct copy responses and identical tokens
 and stop reasons through `GgmlBridge.generate_many`. [Serving check](../evidence/runtime/cpu-pilot-affinity-serving.json)
+
+The EPYC development planner can also consume a direct measurement of native prefill. Run the
+trusted attribution script on the original CPU checkout and head. Its output includes every
+single-sequence prefill's elapsed time and thread count within the four complete serving waves.
+The planner requires the earlier host-site decision, the same source and a locally qualified head
+that made measured choices. Archive retrieval uses the source site selected by the planner.
+
+```sh
+epyc=lab/autonomous/results/runpod-epyc-pilot
+python -m training.experience_archive build --output /tmp/epyc-experience.jsonl
+python -m training.cpu_prefill_order --prior evidence/runtime/cpu-pilot-epyc-discovery.json \
+  --waves "$epyc/waves" --attribution "$epyc/prefill-attribution.json" \
+  --host-decision "$epyc/planner-decision.json" --archive /tmp/epyc-experience.jsonl --output /tmp/epyc-order.json
+```
+
+The original run timed 12 prefill calls at one thread. They took 4.523 of 6.264 s in the four
+waves. This includes time in native GGML. The corresponding development order tests whether
+a different CPU thread policy for those calls benefits completed requests. The comparator adds
+a separate four-thread rule to the existing six-pair quality, throughput, TTFT and memory check.
+[Attribution](../lab/autonomous/results/runpod-epyc-pilot/prefill-attribution.json) ·
+[Bound order](../lab/autonomous/results/runpod-epyc-pilot/prefill-order.json)

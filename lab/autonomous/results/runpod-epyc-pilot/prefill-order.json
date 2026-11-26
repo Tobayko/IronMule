@@ -1,0 +1,199 @@
+{
+  "schema": "ironmule.code-experiment.v1",
+  "base_commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "binding": {
+    "provider": "cpu",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_bytes": 105454432,
+    "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+    "devices": [
+      {
+        "provider": "cpu",
+        "name": "CPU",
+        "description": "AMD EPYC 7742 64-Core Processor",
+        "type": "cpu",
+        "total_memory": 2151618019328
+      }
+    ],
+    "native": {
+      "sha256": {
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+      }
+    },
+    "python": "3.11.11",
+    "gpu_layers": 0,
+    "offloaded_layers": [],
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "cores": 4,
+    "threads": 2,
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "prefix_reuse": true,
+    "speculate": false,
+    "env_sha256": "6643d43111951fb7d2ea1109be20ea25b339a5c4708f172180c032bf1be3576b",
+    "scratch_thread_head": {
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      },
+      "helper_sha256": "aa021ab39508acd20faca56ef7c21ebf9ee67ffaeebdd5e355a5ceb15497b5cb",
+      "learner_sha256": "22b9eb0c20b734a71dde28bf5e37e42ca9b27842c65539aa1d16a8a67f2fce8c"
+    }
+  },
+  "evaluator": "ironmule.serving_trial.v1",
+  "target": {
+    "path": "ironmule/ggml_engine.py",
+    "function": "GgmlEngine._prefill",
+    "line": 1551
+  },
+  "allowed_paths": [
+    "ironmule/ggml_engine.py"
+  ],
+  "workload": [
+    "short",
+    "document"
+  ],
+  "profile_sha256": [
+    "a9795cda2f60ca82e8cb69c1ce37e93e5734919591bc122a81119ab1706ce007",
+    "d0a2df48131ccb8ea29055edcbc4b478e2028a1f056e2be912030753ffdf456a",
+    "5f767f2bb3f477f500d18dfb022d4adecb9bf2cd499cb3be7a338113f3b93728",
+    "8c1e10461c483bb5682917f4b27bb22a9016b19f89e79a1549f74bbd75c650f8"
+  ],
+  "observations": {
+    "attribution_sha256": "7f818a2ab829cbb2373043a3dc4466d4f732bf4df3d68065ba99b3856160da41",
+    "host_decision_sha256": "ed964996621a7a901f90421bc62cce8180d2d2856a329ecb4b37ed4706144b75",
+    "largest_host_exclusive_time_fraction": 0.00047640538917280314,
+    "prior_sha256": "a546e61929e7f62c88b6f31cd898e76e9bfbbf2a4c17deff1cc5f05dfcbf68ca",
+    "wave_hashes": [
+      "a9795cda2f60ca82e8cb69c1ce37e93e5734919591bc122a81119ab1706ce007",
+      "d0a2df48131ccb8ea29055edcbc4b478e2028a1f056e2be912030753ffdf456a",
+      "5f767f2bb3f477f500d18dfb022d4adecb9bf2cd499cb3be7a338113f3b93728",
+      "8c1e10461c483bb5682917f4b27bb22a9016b19f89e79a1549f74bbd75c650f8"
+    ],
+    "head_uses": 2
+  },
+  "simulation": {
+    "kind": "simulated",
+    "next_workloads": [
+      "short"
+    ],
+    "step_model": {
+      "theta": [
+        0.5136179908359635,
+        -0.006451963533321732,
+        0.03819081870951652,
+        0.07665501233370953
+      ],
+      "p": [
+        [
+          0.8988473702569062,
+          -0.32374707145177545,
+          -0.011118462703897164,
+          -0.02283609667706133
+        ],
+        [
+          -0.32374707145177545,
+          0.15692699817992095,
+          -0.029649233877059117,
+          -0.06089625780549694
+        ],
+        [
+          -0.011118462703897164,
+          -0.029649233877059117,
+          1.0,
+          -0.01720958863164111
+        ],
+        [
+          -0.02283609667706133,
+          -0.06089625780549694,
+          -0.01720958863164111,
+          0.9817287342314422
+        ]
+      ],
+      "n": 4,
+      "spread": 1.0
+    },
+    "forecast_wall_s": 1.520032255956123,
+    "conditional_savings_s": [
+      0,
+      0.2595338111392487,
+      0.5190676222784975
+    ],
+    "observed_submax_prefill_fraction_by_workload": {
+      "short": [
+        0.6864168213795862,
+        0.6795216190569852
+      ],
+      "document": [
+        0.7363227853762192,
+        0.7377953274084055
+      ]
+    },
+    "minimum_fraction_for_release": 0.019607843137254943,
+    "six_pair_wall_estimate_s": 638.9724466321059,
+    "assumptions": "Only timed native prefill calls below available core count can benefit. Decode thread ratios do not predict prefill timing."
+  },
+  "historical_experience": [
+    {
+      "id": "01cfa7b56058801850fb3944e78b9565e2ddfa80ea004d7708ebe5c7f8389a91",
+      "source": "docs/LAB.md",
+      "source_sha256": "bf6c82f8f8beb8f9c6e5ce9cc7f2b552f596e1ab75da99c23b84ad2c52d0a46b",
+      "locator": "lines/1541-1595",
+      "title": "2026-11-16 PI3 probe: what the Pilot can decide on a T4",
+      "provenance": "reported",
+      "reason": null,
+      "authorship": null,
+      "uncertainty": "Notebook text includes hypotheses and commentary. Consult the linked raw source.",
+      "excerpt": "2), PAD1, 47 minutes. Each arm is a decision\nsource swapped into the same engine; every prompt is new to the engine (a first run showed a long prompt prefilled\nonce and then reused by every later arm). The T4 runs faster in its first minutes (55 against 42 tok/s for one\nrequest in the first cell), so arms alternate.\n\nA. Host CPU load (4 vCPUs), tok/s for 1 / 8 / 32 requests at once, 64 tokens, mean of 2 rounds:\n\n| busy processes | 1 thread | 2 threads | 4 threads | v6 (4 threads) |\n| --- | --- | --- | --- | --- |\n| none | 49 / 265 / 624 | 44 / 247 / 598 | 45 / 246 / 599 | 43 / 248 / 596 |\n| one | 42 / 236 / 576 | 42 / 237 / 580 | 42 / 237 / 5",
+      "contains_negative_result": false
+    },
+    {
+      "id": "0287c419579989df503080b0531299a9a2a50a8994bebc51ccd602dcffc249ba",
+      "source": "docs/LAB.md",
+      "source_sha256": "bf6c82f8f8beb8f9c6e5ce9cc7f2b552f596e1ab75da99c23b84ad2c52d0a46b",
+      "locator": "lines/4229-4299",
+      "title": "2026-11-25, A100 pod 36: PS1's slow prefills attributed and removed (PS1a), PS1 on by default, +9.2 % against vLLM",
+      "provenance": "reported",
+      "reason": null,
+      "authorship": null,
+      "uncertainty": "Notebook text includes hypotheses and commentary. Consult the linked raw source.",
+      "excerpt": " not reached.\n\n**D1, the attribution** (`lab/ps1/growth.py`, one engine process, waves of 8, 16, 16, 24, 24, 32, 32, 24, 32 fresh\nprompts, one packed prefill each, TL1/TL2 on). PS1 without the start's warm-up, the first call of each new size:\n\n| call | rows | prefill | TL1: build (graph / allocation) | TL2 | GPU wait (out) |\n| --- | ---: | ---: | --- | --- | ---: |\n| first 32-request call | 7,632 | 2,761.5 ms | 386.8 ms (0.96 / 385.8) | CUDA0 compute buffer 14.02 -> 18.69 GB, 384.7 ms | 1,271 ms |\n| the same shape again | 7,632 | 2,372.6 ms | 2.3 ms | none | 1,270 ms |\n| first 24-request call | 5,724 | 1,797.7 ms | 11.2 ms | 9.35 -> 14.02 GB,",
+      "contains_negative_result": true
+    },
+    {
+      "id": "0cc20cd0ef949212518fbba993e1982d94eb7345d4f7edcfbae99d6d7644ce4d",
+      "source": "docs/LAB.md",
+      "source_sha256": "bf6c82f8f8beb8f9c6e5ce9cc7f2b552f596e1ab75da99c23b84ad2c52d0a46b",
+      "locator": "lines/2618-2635",
+      "title": "2026-11-18: repeating the GPU tests with Qwen3-0.6B on an A40",
+      "provenance": "reported",
+      "reason": null,
+      "authorship": null,
+      "uncertainty": "Notebook text includes hypotheses and commentary. Consult the linked raw source.",
+      "excerpt": "aps between GPU streams counted all seven rows as decode work after the\nfix. [A40 placement and native call counts](../evidence/runtime/qwen3-06b-a40-prefill-observer.json)\n\nEach controller instance accumulated 240 live samples after the fix, up from 108. All\nfour instances retained width 8. Before and after the fix, each revision solved all\n192 held-out copy tasks. Output tokens and stops matched in all 12 paired waves.\nPooled throughput decreased from 195.56 to 192.49 output tokens/s (1.57%) on this\nworkload. In the first paired repetition it went from 195.03 to 192.27 and in the\nsecond from 196.10 to 192.71. For the document bursts the med",
+      "contains_negative_result": false
+    }
+  ],
+  "hypothesis": "Reduce the measured single-sequence native prompt ingestion time by letting the CPU run multi-token prefill with an independently selected thread count. Keep the existing head and its qualified plain-decode thread profile active. The paired evaluator tests whether a local thread switch pays its cost on the recorded CPU workload.",
+  "constraints": [
+    "Only change the specified method in the supplied engine source. Preserve its interface, token work, cache, observer, order and outputs. Restore thread state after errors.",
+    "The restricted deployment and measurements use the same four-core candidate and head. Keep existing width, thread and backend qualifications intact on other targets.",
+    "The unchanged serving evaluator times six matched pairs. Keep correctness, TTFT, RSS and complete work fixed. Withhold the candidate if the four-thread rule passes the same dominance gate against it. Report ties against the rule."
+  ],
+  "order_id": "eb6b1472357c7d89c683f7b9093b91bfc4b79d396992dcc773bca30b23f31e81"
+}
