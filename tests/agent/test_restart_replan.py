@@ -48,6 +48,8 @@ def test_completed_source_attribution_retains_the_timing_exclusion(tmp_path):
     pin = checksum(released / "control.json")
     proof = completed_phase_probe(results, receipt["order"], receipt, head, pin)
     assert proof["timing_eligible"] is proof["training_eligible"] is False
+    assert proof["closed_sampling_experiment"]["regular_pairs"] == 8
+    assert proof["closed_sampling_experiment"]["full_fallback"] == 1
     assert len(proof["observed_cells"]) == len(proof["observation_sha256"]) == 2
     copy = tmp_path / folder.name
     shutil.copytree(folder, copy)

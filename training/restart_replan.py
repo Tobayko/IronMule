@@ -179,7 +179,7 @@ def completed_phase_probe(archive, order, control, head, receipt_sha):
         or hashes != decision["observations"]
     ):
         raise ValueError("partial active-source diagnosis")
-    return {
+    summary = {
         "decision_sha256": checksum(folder / "decision.json"),
         "observation_sha256": hashes,
         "incident_sha256": checksum(incident),
@@ -188,6 +188,38 @@ def completed_phase_probe(archive, order, control, head, receipt_sha):
         "training_eligible": False,
         "reason": decision["confounder"]["reason"],
     }
+    # The later sampling experiment used prospectively held-out, uncontended source
+    # observations and developed its own program. Never transfer its timing to the
+    # conflicting native traces above.
+    study = archive / "a100-calibration-sampling"
+    closed = study / "post-terminal-replan.json"
+    if closed.is_file():
+        from training.calibration_replan import plan as regrade
+
+        source_order = read(study / "decision.json")
+        raw = study / ("trial-" + source_order["order_id"])
+        parent = archive / "a100-restart" / order["order_id"] / "control.json"
+        if checksum(parent) != receipt_sha or source_order["weights_sha256"] != head:
+            raise ValueError("different physical experiment or deployment")
+        graded = regrade(raw, source_order, parent)
+        if (
+            graded != read(closed)
+            or graded["activate"] is not False
+            or graded["retry_order"] is not False
+        ):
+            raise ValueError("unverified calibration trial disposition")
+        summary["closed_sampling_experiment"] = {
+            "order_id": source_order["order_id"],
+            "source_sha256": graded["source_sha256"],
+            "result_sha256": checksum(raw / "result.json"),
+            "replan_sha256": checksum(closed),
+            "decision": graded["development_decision"],
+            "information": graded["information_decisions"],
+            "regular_pairs": len(graded["validated_regular_pairs"]),
+            "actual_adaptive": graded["actual_adaptive_regimes"],
+            "full_fallback": graded["actual_full_fallback_regimes"],
+        }
+    return summary
 
 
 def verified_release(state, checkout):
@@ -358,7 +390,9 @@ def replan(state, *, checkout, archive=None, product_dir=None):
     result.update(
         rank(data, order["evidence"]["historical_startup_seconds"], history, cost)
     )
-    probe = completed_phase_probe(archive, order, control, head, published["receipt_sha256"])
+    probe = completed_phase_probe(
+        archive, order, control, head, published["receipt_sha256"]
+    )
     if probe is not None:
         result["completed_phase_probe"] = probe
         result["retired"].append(
@@ -380,6 +414,22 @@ def replan(state, *, checkout, archive=None, product_dir=None):
             "are required before any further candidate. The concurrent diagnostic supplies source "
             "ownership and device symbols only.",
         }
+        if experiment := probe.get("closed_sampling_experiment"):
+            result["retired"].append(
+                {
+                    "target": "repeat rejected adaptive sampling source",
+                    "order": experiment["order_id"],
+                    "result_sha256": experiment["result_sha256"],
+                }
+            )
+            result["next"] = {
+                "decision": experiment["decision"],
+                "book_additional_resources": False,
+                "maximum_new_paid_leases": 0,
+                "maximum_extra_author_calls": 0,
+                "estimated_extra_lease_usd": 0,
+                "evidence": experiment["information"],
+            }
     result["plan_id"] = digest(result)
     write_once(
         (state if product == state / "product" else product)
