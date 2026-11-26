@@ -23,7 +23,10 @@ def paired(ref, cand):
         p95.append(b["ttft_p95_ms"] / a["ttft_p95_ms"])
         records.append({"repeat": a["repeat"], "tok_s": [a["tok_s"], b["tok_s"]],
                         "p50_ms": [ar["p50_ms"], br["p50_ms"]], "p95_ms": [ar["p95_ms"], br["p95_ms"]],
-                        "max_ms": [ar["max_ms"], br["max_ms"]], "text_digest_match": a["texts"] == b["texts"]})
+                        "max_ms": [ar["max_ms"], br["max_ms"]],
+                        "second_content_p50_ms": [x.get("second_content_p50_ms") for x in (ar, br)],
+                        "longest_content_gap_p95_ms": [x.get("longest_content_gap_p95_ms") for x in (ar, br)],
+                        "text_digest_match": a["texts"] == b["texts"]})
     forms = [[(c["width"], c["short"]) for c in wave["prefill_calls"]] for wave in ref["phases"] + cand["phases"]]
     checks["prefill_groups"] = forms == [[(32, 16)]] * 3 + [[(17, 16), (15, 0)]] * 3
     checks["paired_work"] = all((a["tokens"], a["prompt_tokens"]) == (b["tokens"], b["prompt_tokens"])

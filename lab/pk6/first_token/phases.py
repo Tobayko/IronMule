@@ -72,6 +72,11 @@ def summarize(records, native=None):
                  "p95_ms": round(sorted(ttfts)[30], 1), "max_ms": round(max(ttfts), 1),
                  "p50_by_prompt_ms": {str(n): round(median(r["ttft_ms"] for r in group
                                                            if r["prompt_tokens"] == n), 1) for n in sorted(lengths)}}
+        if all(len(r["chunk_times"]) >= 2 for r in group):
+            second = [1000 * (r["chunk_times"][1] - r["t_send"]) for r in group]
+            gaps = [1000 * max(b - a for a, b in zip(r["chunk_times"], r["chunk_times"][1:])) for r in group]
+            entry["second_content_p50_ms"] = round(median(second), 1)
+            entry["longest_content_gap_p95_ms"] = round(sorted(gaps)[30], 1)
         if native is not None:
             phases, calls = [], {}
             for row in group:
