@@ -91,3 +91,28 @@ def test_authored_calibrator_preserves_live_nll_and_full_sampling_on_uncertainty
     assert evaluate(generated,True,drift=True)==evaluate(original,False,drift=True)
     _,_,checks,selected=evaluate(generated,True,likelihood=1.02)
     assert len(checks)==2 and selected==0
+
+
+def test_resume_training_reuses_the_measured_report_and_exact_weights(tmp_path):
+    from lab.pk6 import ordered_release as deploy
+
+    first = deploy.fit(tmp_path, TRIAL / "ordered")
+    assert deploy.fit(tmp_path, TRIAL / "ordered") == first
+    assert (tmp_path / "ordered-head.npz").read_bytes() == (TRIAL / "ordered-head.npz").read_bytes()
+    assert first["metrics"]["holdout_correct_profile"]
+
+
+def test_gate_binds_the_actual_settings_board_facts_and_reference_likelihood():
+    from copy import deepcopy
+    from lab.pk6.ordered_quality import validate
+
+    observed = read(TRIAL / "numerical/observed.json")
+    settings = read(TRIAL / "ordered/aa-0.json")["binding"]["settings"]
+    assert validate(observed, settings)["chunks"] == 16
+    damaged = deepcopy(observed)
+    for row in [*damaged["gate"]["tried"], damaged["gate"]["streams"]]:
+        row["factual"]["candidate_correct"] = 17
+    with pytest.raises(ValueError, match="quality receipt"):
+        validate(damaged, settings)
+    with pytest.raises(ValueError, match="different device"):
+        validate({**observed, "device_sha256":"0"*64}, settings)

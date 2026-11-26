@@ -82,3 +82,31 @@ the evidence. A different machine needs its own observations and qualification.
 Historical qualifying source, model and release receipts remain available in the
 [repeat-start archive](../pk1/restart-trial.md). The [operator guide](../rp/README.md)
 covers provider balance, reservations, watchdogs and teardown.
+
+## Ordered A100 qualification
+
+The six mixed-first pairs delivered their first 32 complete answers in median
+55.290 s with the original PK2 calibration and 51.057 s with the generated
+method. The median paired rate was 1.08324×. All eight pairs chose the same
+threshold locally and returned identical tokens and stops. The two held-out
+factual-first rates were 1.06585× and 1.07919×. The three scratch heads each
+had 354 parameters. On both held-out pairs the trained choice tied the simple
+rule that always selects the already qualified candidate. On the unchanged
+reference A/A the first-delivery spread was 0.1851%.
+
+The separate stock gate on the same GPU tested 16 likelihood chunks. The chosen
+profile had a perplexity ratio of 0.99349, with a 95% interval of 0.98576 to
+1.00015. The stock reference, its repeat and the generated source each answered
+18 of 18 questions correctly. That check took 341.0 s on the GPU.
+
+To re-fit from random weights on CPU, supply a fresh writable state directory.
+The deterministic weight digest and the outcomes for both workload families
+are in the tracked fit report. To replay the full deployment evidence after
+collection, run the second command.
+
+```sh
+trial=lab/autonomous/results/a100-dynamic-calibration
+OPENBLAS_NUM_THREADS=1 python -m lab.pk6.ordered_release fit \
+  --archive "$trial/ordered" --state "$(mktemp -d)"
+OPENBLAS_NUM_THREADS=1 python -m lab.pk6.replay_ordered "$trial"
+```

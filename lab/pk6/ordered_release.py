@@ -70,6 +70,18 @@ def publish(state,archive):
                            rationale=read(FOLDER/"author/response.json")["proposal"]["rationale"],submit=True)
 
 
+def training_evidence(metrics):
+    # The CPU time for each forward pass is a new observation on every replay.
+    result=dict(metrics)
+    def decision(d):
+        return {k:v for k,v in d.items() if k!="cpu_us"}
+    result["holdout_decision"]=decision(metrics["holdout_decision"])
+    result["matched_eligibility_ablation"]={
+        family:{name:decision(value) for name,value in observations.items()}
+        for family,observations in metrics["matched_eligibility_ablation"].items()}
+    return result
+
+
 def fit(state, archive):
     start=time.monotonic()
     q=qualification(archive)
@@ -104,7 +116,7 @@ def fit(state, archive):
     if (state/"fit.json").exists():
         old=read(state/"fit.json")
         require(old["weights_sha256"]==report["weights_sha256"] and old["order"]==order["order_id"]
-                and old["seed"]==report["seed"],"conflicting fit")
+                and old["seed"]==report["seed"] and training_evidence(old["metrics"])==training_evidence(score),"conflicting fit")
         return old
     write_once(state/"fit.json",report)
     return report
