@@ -257,4 +257,6 @@ On the Xeon Platinum 8573C, a live product bridge using SmolLM2-135M-Instruct Q4
 32 of 32 synthetic copy requests correctly. The idle publisher counted 16 short and 16 document
 prompts. The consumer deferred while that bridge was open. On shutdown the offline evaluation
 completed 16 of 16 discovery tasks, planned with the observed phase counts and produced a
-development order in 9.62 seconds through the author handoff. [Measured ticket and order](../lab/autonomous/results/cpu-serving-demand/summary.json)
+development order in 9.62 seconds through the author handoff. The hosted Codex worker read the archived
+list-copy rejection and returned the original tokenizer. The evaluator resumed from its pinned checkout,
+recorded the no-change decision and consumed the ticket. [Hosted reply](../lab/autonomous/results/cpu-serving-demand/author-response.json) · [Measured ticket and order](../lab/autonomous/results/cpu-serving-demand/summary.json)

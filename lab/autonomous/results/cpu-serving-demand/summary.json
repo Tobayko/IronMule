@@ -3,13 +3,17 @@
   "api_charges_usd": 0,
   "author_request_id": "bb64c8deef73f0ee7c7af508b0bb790ae589ab5313ee5865a08989923a4d8d3d",
   "consumer_while_producer_open": "deferred: serving process owns this host",
+  "decision": {
+    "passed": false,
+    "reason": "no source change"
+  },
   "demand": {
     "document": 16,
     "id": "3a541c44d9f740a09e3d992fc94494ea",
     "short": 16
   },
   "elapsed_s": 9.616571229999863,
-  "evaluation_state": "awaiting_author",
+  "evaluation_state": "complete",
   "evaluator_cpu_allowance": 2,
   "evaluator_wall_limit_s": 180,
   "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
@@ -28,9 +32,12 @@
   "producer_answers": 32,
   "producer_correct": 32,
   "producer_workload": "8 batches of 4 synthetic copy requests, alternating short and document",
+  "queue_consumed": true,
+  "resume": "An active-development checkout changed after discovery. The provenance gate refused that checkout. The pinned baseline resumed the job with the same ticket and author reply.",
   "target": {
     "function": "GgufTokenizer.encode",
     "line": 115,
     "path": "ironmule/gguf_tokenizer.py"
-  }
+  },
+  "total_recorded_optimization_s": 10.039642698999842
 }
