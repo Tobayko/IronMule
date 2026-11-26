@@ -42,3 +42,21 @@ allowlist before running the preflight in every worker. The parent sets a wall d
 the process group. Per-process CPU time, descriptors, process count, core files and output file size
 are limited. CUDA access uses the pod's device files. Check GPU execution separately on each host.
 [Recorded A100 preflight](results/restricted-worker-preflight.json)
+
+## Four-core CPU trial during a GPU-idle window
+
+On a leased Linux host with an available five-minute interval, use a clean Git checkout and a working
+GGML installation. Export its binding/library paths and choose four allowed physical cores. This
+example uses logical CPUs 0–3 on the EPYC 7742 RunPod host with SMT off.
+
+```bash
+python lab/rp/cpu_pilot.py --cpus 0 1 2 3 --seconds 300 \
+  --gguf /models/SmolLM2-135M-Instruct-Q4_K_M.gguf --state /work/cpu-trial-first
+```
+
+The runner trains on complete pairs from context bands 1 and 4 and replays band 6 on holdout. The
+subsequent four-slot serving run starts fresh hardware qualification. The command uses CPU inference
+with GPU visibility disabled and lowers its scheduling priority. `campaign.json` records the source
+commit, affinity, phase timings and outcome. `trials.json` retains complete and interrupted series.
+An empty holdout, failed correctness check or lack of qualified model decisions leaves a failed phase.
+Send SIGTERM when GPU timing must resume. Preserve the state directory before terminating the pod.
