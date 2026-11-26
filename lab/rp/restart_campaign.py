@@ -281,6 +281,14 @@ def product(args, cfg, remote, check, active):
                     value["gate_sha256"] != checksum(local/f"gate-{arm}.json") or
                     value["source_sha256"] != receipt["qualification"][arm+"_sha256"]):
                 raise ValueError("unbound completed ordinary product gate")
+            journal = f"gate-devices-{arm}.json"
+            snapshot(pod, evidence, [journal], local)
+            rows = read(local/journal)
+            from lab.pk1 import restart_gate_broker
+            if ({row["stage"] for row in rows} != set((*restart_gate_broker.STAGES, *restart_gate_broker.WIDTH_STAGES)) or
+                    any(row["provider"] != "cuda" or row["gpu_layers"] != 999 or row["default_sequences"] != 8
+                        for row in rows)):
+                raise ValueError("completed ordinary product gate lacks a bound CUDA stage journal")
             if args.stop_after_product_gate == arm:
                 return {**active,"stage":"product gate checkpointed","gate":value}
         elif op == "qualify":
