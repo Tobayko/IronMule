@@ -24,6 +24,7 @@ SCHEMA = "ironmule.scoped-code-release.v1"
 SOURCE = "ironmule/ggml_engine.py"
 ADAPTERS = {
     "epyc-prefill": ("79ee889e679f38835df5f30e215215aa9d0c60d2", "GgmlEngine._prefill"),
+    "epyc-prefill-matched-v2": ("79ee889e679f38835df5f30e215215aa9d0c60d2", "GgmlEngine._prefill"),
     "qwen-restart": ("33dc7bf544954f6c79a8a15536c0d6f5724b26a2", "GgmlEngine.__init__"),
 }
 BOUND = ("reference_sha256", "candidate_sha256", "binding", "evaluator_sha256")
@@ -43,6 +44,20 @@ def validate_order(adapter, order):
             and order["allowed_paths"] == [SOURCE] and order["base_commit"] == base
             and order["order_id"] == digest({k: v for k, v in order.items() if k != "order_id"}),
             "unbound order or scope")
+    if adapter == "epyc-prefill-matched-v2":
+        require(order == matched_order(order["author_order"], order["paired_profile_sha256"]),
+                "altered parent order, frozen profile or matched protocol")
+
+
+def matched_order(parent, profile_sha):
+    """The author order remains immutable. A new paired evaluation receives its own PR and target state."""
+    validate_order("epyc-prefill", parent)
+    require(re.fullmatch("[a-f0-9]{64}", profile_sha), "invalid frozen CPU profile")
+    result = {k: parent[k] for k in ("target", "allowed_paths", "base_commit", "hypothesis")}
+    result.update(schema="ironmule.epyc-prefill-matched-order.v2", evaluator="ironmule.epyc-prefill-matched.v2",
+                  author_order=parent, parent_order_id=parent["order_id"], paired_profile_sha256=profile_sha,
+                  first_seed=18351, pairs=6)
+    return {**result, "order_id": digest(result)}
 
 
 def check_method(adapter, reference, candidate):

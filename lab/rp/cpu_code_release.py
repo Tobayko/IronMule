@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 from pathlib import Path
 import tempfile
@@ -14,12 +15,19 @@ from training.code_trial import develop, prepare, read, save
 from training.trial_release import require
 
 ADAPTER = "epyc-prefill"
+MATCHED = "epyc-prefill-matched-v2"
 ACTIVATION_SEED = 9351
+
+
+def author_order(receipt):
+    return receipt["order"]["author_order"] if receipt["adapter"] == MATCHED else receipt["order"]
 
 
 def control(args):
     order = read(args.order)
     release.validate_order(ADAPTER, order)
+    matched = getattr(args, "matched", False)
+    evaluated = release.matched_order(order, release.checksum(args.trial / "profile.json")) if matched else order
     request_id, request = read_request(args.authorship / "author")
     require(request["order"] == order, "unrelated author request")
     proposal = read_response(args.authorship / "author", request_id)
@@ -31,21 +39,39 @@ def control(args):
         require(relative == release.SOURCE and release.checksum(source / relative) == release.checksum(args.candidate / relative),
                 "evaluated source differs from the attributed response")
         def verify():
-            options = argparse.Namespace(**{**vars(args), "state": args.trial, "seed": 8351})
-            observed = trial.verify_offline(options)
+            options = argparse.Namespace(**{**vars(args), "state": args.trial, "seed": 18351 if matched else 8351})
+            if matched:
+                from lab.rp import cpu_matched_trial
+                options.profile = args.trial / "profile.json"
+                observed = cpu_matched_trial.verify_offline(options)
+            else:
+                observed = trial.verify_offline(options)
             require(observed == read(args.trial / "verdict.json") and observed["metrics"]["fixed_four_threads_vs_candidate"]["passed"] is False,
                     "missing independently verified six-pair or static-rule verdict")
-            return revision(observed)
-        return release.publish(args.state, order, source / relative, adapter=ADAPTER, verify=verify,
+            observed = revision(observed, matched=matched)
+            if matched:
+                profile = args.trial / "profile.json"
+                require(observed["binding"]["matched_profile_sha256"] == evaluated["paired_profile_sha256"],
+                        "matched measurements use a different reference calibration")
+                observed["matched_profile_base64"] = base64.b64encode(profile.read_bytes()).decode("ascii")
+            return observed
+        return release.publish(args.state, evaluated, source / relative, adapter=MATCHED if matched else ADAPTER, verify=verify,
                                rationale=proposal["rationale"], submit=args.publish)
 
 
-def revision(observation):
+def revision(observation, *, matched=False):
     from training.code_author import digest
-    return {**observation, "evaluator_sha256": digest([observation["evaluator_sha256"], release.checksum(__file__)])}
+    code = [observation["evaluator_sha256"], release.checksum(__file__)]
+    if matched:
+        from lab.rp import cpu_matched_release
+        code.append(release.checksum(cpu_matched_release.__file__))
+    return {**observation, "evaluator_sha256": digest(code)}
 
 
 def measured(args, receipt, arm, seed, directory):
+    if receipt["adapter"] == MATCHED:
+        from lab.rp import cpu_matched_release
+        return cpu_matched_release.measured(args, receipt, arm, seed, directory)
     candidate = arm == "candidate"
     expect = receipt["qualification"]
     started = time.monotonic()
@@ -124,10 +150,12 @@ def main():
             cmd.add_argument("--trial", type=Path, required=True)
             cmd.add_argument("--authorship", type=Path, required=True)
             cmd.add_argument("--publish", action="store_true")
+            cmd.add_argument("--matched", action="store_true", help="qualify the fixed-profile v2 suite independently")
         else:
             for field in ("worker-root", "gguf", "head", "python"):
                 cmd.add_argument("--" + field, type=Path, required=True)
             cmd.add_argument("--receipt-sha256", required=True)
+            cmd.add_argument("--profile", type=Path, help="the immutable reference calibration for matched-profile v2")
             cmd.add_argument("--timeout", type=int, choices=range(1, 601), metavar="1..600", default=300)
             if op == "activate":
                 cmd.add_argument("--receipt", type=Path, required=True)
@@ -141,7 +169,7 @@ def main():
     elif a.operation == "activate":
         def verify(receipt):
             with tempfile.TemporaryDirectory(dir=a.state) as tmp:
-                return fresh_pair(a, receipt, ACTIVATION_SEED, Path(tmp))
+                return fresh_pair(a, receipt, 19351 if receipt["adapter"] == MATCHED else ACTIVATION_SEED, Path(tmp))
         result = release.activate(a.state, a.receipt, a.receipt_sha256, verify)
     elif a.operation == "exercise":
         result = release.exercise(a.state, a.receipt_sha256, lambda state: run(a, state, a.seed))

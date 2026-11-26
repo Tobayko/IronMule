@@ -248,3 +248,27 @@ def test_qualified_restart_campaign_requires_live_work_and_rollback_after_public
     assert campaign.release(args, cfg, PurePosixPath("/run"), None)["stage"] == "active"
     current.update(arm="reference", withdrawn=True)
     assert campaign.release(args, cfg, PurePosixPath("/run"), None)["stage"] == "withdrawn"
+
+
+def test_matched_profile_has_separate_order_and_verified_fallback_payload(tmp_path):
+    import base64
+    import hashlib
+    from lab.rp import cpu_matched_release
+
+    parent = order("epyc-prefill")
+    raw = b'{"profile":1}'
+    sha = hashlib.sha256(raw).hexdigest()
+    obj = release.matched_order(parent, sha)
+    assert parent["order_id"] != obj["order_id"] and obj["parent_order_id"] == parent["order_id"]
+    release.validate_order("epyc-prefill-matched-v2", obj)
+    assert release.matched_order(parent, "f" * 64)["order_id"] != obj["order_id"]
+    receipt = {"order": obj, "qualification": {"matched_profile_base64": base64.b64encode(raw).decode(),
+                                             "binding": {"matched_profile_sha256": sha}}}
+    bad = tmp_path / "bad.json"
+    bad.write_text("changed")
+    with pytest.raises(ValueError, match="supplied target profile"):
+        cpu_matched_release.profile_path(receipt, bad, tmp_path, "candidate")
+    assert cpu_matched_release.profile_path(receipt, bad, tmp_path, "reference").read_bytes() == raw
+    receipt["qualification"]["matched_profile_base64"] = "QUFB"
+    with pytest.raises(ValueError, match="published profile"):
+        cpu_matched_release.profile_path(receipt, None, tmp_path, "candidate")
