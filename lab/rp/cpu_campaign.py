@@ -344,6 +344,11 @@ def advance(args):
         result = cpu_code_release.control(SimpleNamespace(**{**options, "state": control, "publish": args.publish}))
         if "receipt_sha256" not in result:
             return {"stage": "qualified", **result, "cost": cost}
+    if args.stop_after_publication:
+        receipt = read(pin)
+        return {"stage": "published", "pr": receipt["publication"]["pr"], "receipt_sha256": sha(pin), "cost": cost}
+    # CI can outlast the original control pass. Re-read the live budget and deadline before activating.
+    pod = transport.lease(cfg["pod_id"])
     result = deploy(pod, cfg, state, lane, key, pin, common, affinity, cost, suite, remote)
     if result["stage"] in ("active", "withdrawn") and args.product_requests:
         return product(pod, cfg, state, lane, key, common, affinity, result, args.product_requests, suite, remote / "profile.json")
@@ -520,10 +525,13 @@ def main():
     parser.add_argument("--matched", action="store_true", help="use a separate v2 target path and a freshly captured complete profile")
     parser.add_argument("--prepare-only", action="store_true", help="stage immutable inputs and wait before any qualification or release")
     parser.add_argument("--publish", action="store_true", help="publish a qualified PR and activate only its independently verified merge")
+    parser.add_argument("--stop-after-publication", action="store_true", help="reserve a separate quiet window for activation after CI")
     parser.add_argument("--wait-seconds", type=int, default=0)
     args = parser.parse_args()
     if args.wait_seconds < 0:
         parser.error("--wait-seconds must be non-negative")
+    if args.stop_after_publication and not args.publish:
+        parser.error("--stop-after-publication requires --publish")
     if args.replay:
         if args.publish or args.author_cli or args.prepare_only:
             parser.error("replay reads existing receipts only")
@@ -541,7 +549,7 @@ def main():
             print(json.dumps(result, sort_keys=True), flush=True)
             left = begin + args.wait_seconds - time.monotonic()
             if (left <= 0 or result["stage"] in {"deferred", "awaiting Codex", "declined", "incomplete", "confounded", "waiting for target",
-                                                 "rejected", "qualified", "active", "withdrawn", "product declined", "product served", "product incomplete"}):
+                                                 "rejected", "qualified", "published", "active", "withdrawn", "product declined", "product served", "product incomplete"}):
                 return
             time.sleep(min(15, left))
 

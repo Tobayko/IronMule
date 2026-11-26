@@ -58,7 +58,7 @@ recomputes the complete verdict, checks fixed work and preserves refusals. The c
 includes the whole lease to date. Use the budget journal for invoice reconciliation.
 
 Add `--publish` to submit a qualified change through its scoped PR. Target activation requires the
-verified merge and a fresh pair. The coordinator dispatches real work, exercises withdrawal with
+verified merge and a fresh pair. On a shared test host, add `--stop-after-publication` to release the measurement window while CI runs; remove this flag to resume during a new quiet window. The coordinator dispatches real work, exercises withdrawal with
 identical input on an isolated state copy and then checks selection from a new process. Add
 `--product-requests prompts.json` to qualify the warm `GgmlBridge` path independently and send
 one real batch. The input shape is `{"prompts":["a prompt"],"max_tokens":3}`. Only eligible
