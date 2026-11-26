@@ -61,42 +61,60 @@ def main():
             "native_seconds": {str(k): list(v) for k, v in spans.items()},
         }
 
-    def finish(self):
+    def at_start(frame, event, answer):
         nonlocal jitter
+        if event != "return" or frame.f_code is not target.__code__:
+            return
+        # A serving Pilot may subsequently change the active CPU threads. Exercise all
+        # controls here on the real startup context, before the first admitted request.
+        sys.setprofile(None)
+        engine = frame.f_locals["self"]
+        result["startup"] = {**state(engine), "dispatch": answer}
+        if a.sampling_screen != "candidate":
+            return
+        original_prices = engine.pad_prices
+        original_telemetry = getattr(engine, "calibration_sampling", None)
+        checks = {}
         try:
-            result["startup"] = state(self)
-            if a.sampling_screen == "candidate":
-                checks = {}
-                for kind in (
-                    "valid_control",
-                    "missing",
-                    "wrong_pin",
-                    "expired",
-                    "foreign",
-                    "jitter",
-                ):
-                    calls.clear()
-                    spans.clear()
-                    os.environ[profile_env], os.environ[pin_env] = ordinary
-                    if kind == "missing":
-                        del os.environ[profile_env]
-                        del os.environ[pin_env]
-                    elif kind == "wrong_pin":
-                        os.environ[pin_env] = "0" * 64
-                    elif kind in ("expired", "foreign"):
-                        # These read-only source-profile variants were staged by the independent broker.
-                        logical = os.environ[prefix + kind.upper()]
-                        os.environ[profile_env] = logical
-                        os.environ[pin_env] = hashlib.sha256(
-                            Path(logical).read_bytes()
-                        ).hexdigest()
-                    jitter = kind == "jitter"
-                    self.calibration_sampling = None
-                    answer = getattr(self, method)()
-                    stage = state(self)
-                    stage["dispatch"] = answer
-                    checks[kind] = stage
-                result["negative"] = checks
+            for kind in (
+                "valid_control",
+                "missing",
+                "wrong_pin",
+                "expired",
+                "foreign",
+                "jitter",
+            ):
+                calls.clear()
+                spans.clear()
+                os.environ[profile_env], os.environ[pin_env] = ordinary
+                if kind == "missing":
+                    del os.environ[profile_env]
+                    del os.environ[pin_env]
+                elif kind == "wrong_pin":
+                    os.environ[pin_env] = "0" * 64
+                elif kind in ("expired", "foreign"):
+                    logical = os.environ[prefix + kind.upper()]
+                    os.environ[profile_env] = logical
+                    os.environ[pin_env] = hashlib.sha256(
+                        Path(logical).read_bytes()
+                    ).hexdigest()
+                jitter = kind == "jitter"
+                engine.calibration_sampling = None
+                dispatch = target(engine)
+                checks[kind] = {**state(engine), "dispatch": dispatch}
+        finally:
+            jitter = False
+            os.environ[profile_env], os.environ[pin_env] = ordinary
+            engine.pad_prices, engine.calibration_sampling = (
+                original_prices,
+                original_telemetry,
+            )
+        result["negative"] = checks
+
+    def finish(self):
+        try:
+            if not a.sampling_screen:
+                result["startup"] = state(self)
         finally:
             close(self)
 
@@ -104,9 +122,12 @@ def main():
     ge.GgmlEngine.close = finish
     if a.sampling_screen:
         ge.GgmlEngine._decode_once = once
+        sys.setprofile(at_start)
     try:
         followup_arm.main()
     finally:
+        if a.sampling_screen:
+            sys.setprofile(None)
         ge.GgmlEngine._decode_once, ge.GgmlEngine.close = original_once, close
         os.environ[profile_env], os.environ[pin_env] = ordinary
     row = json.loads(a.output.read_bytes())
