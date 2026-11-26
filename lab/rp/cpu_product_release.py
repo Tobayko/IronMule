@@ -50,25 +50,43 @@ def arm(args, receipt, name):
     env.update(IRONMULE_GGML_GPU_LAYERS="0", IRONMULE_PILOT="1", OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                IRONMULE_GGML_SEQ_CTX="512", IRONMULE_GGML_THREADS="2", IRONMULE_PILOT_LEARN="0",
                CUDA_VISIBLE_DEVICES="", PYTHONPATH=str(tree))
-    readonly = [tree, args.head, args.gguf, args.order, WORKER, args.python.parent.parent, Path("/etc/machine-id"),
+    readonly = [tree, args.head, args.gguf, args.python.parent.parent, Path("/etc/machine-id"),
                 Path(env["IRONMULE_GGML_BINDINGS"]), Path(env["LLAMA_CPP_LIB_PATH"]),
                 *(Path(p) for p in env["LD_LIBRARY_PATH"].split(":") if p and not Path(p).resolve().is_relative_to("/usr"))]
     with tempfile.TemporaryDirectory(dir=args.worker_root) as raw:
         stage = Path(raw)
         stage.chmod(0o711)
+        trusted = stage / "trusted"
+        trusted.mkdir(mode=0o755)
+        readonly.append(trusted)
+
+        def stage_input(path, name):
+            target = trusted / name
+            target.write_bytes(path.read_bytes())
+            target.chmod(0o444)
+            return target
+
+        worker_path = stage_input(WORKER, WORKER.name)
+        order_path = stage_input(args.order, "order.json")
+        if read(order_path) != order:
+            raise ValueError("staged product order differs from the source release")
         out = stage / "out"
         out.mkdir(mode=0o700)
         os.chown(out, 60000, 60000)
-        cmd = ["/usr/bin/env", "-u", "CUDA_CACHE_PATH", str(args.python), str(WORKER), "--gguf", str(args.gguf),
-               "--head", str(args.head), "--order", str(args.order), "--arm", name]
+        cmd = ["/usr/bin/env", "-u", "CUDA_CACHE_PATH", str(args.python), str(worker_path), "--gguf", str(args.gguf),
+               "--head", str(args.head), "--order", str(order_path), "--arm", name]
         if receipt["adapter"] == "epyc-prefill-matched-v2":
             from lab.rp.cpu_matched_profile import verify_profile
 
-            if not args.profile or trial.sha(args.profile) != receipt["order"]["paired_profile_sha256"]:
+            if not args.profile:
                 raise ValueError("expected the published matching CPU calibration")
-            verify_profile(read(args.profile), order)
-            readonly.extend([MATCHED, args.profile])
-            cmd.extend(["--profile", str(args.profile), "--matched-helper", str(MATCHED)])
+            profile_path = stage_input(args.profile, "profile.json")
+            if trial.sha(profile_path) != receipt["order"]["paired_profile_sha256"]:
+                raise ValueError("staged CPU calibration differs from the source release")
+            profile = read(profile_path)
+            verify_profile(profile, order)
+            helper_path = stage_input(MATCHED, MATCHED.name)
+            cmd.extend(["--profile", str(profile_path), "--matched-helper", str(helper_path)])
         with (args.state / "deployment" / f"product-{name}.log").open("ab") as log, open_worker(
                 cmd, env=env, cwd=tree, output=out, readonly=readonly, timeout=args.timeout, stderr=log) as proc:
             started = checked_line(proc)
@@ -77,8 +95,7 @@ def arm(args, receipt, name):
             if receipt["adapter"] == "epyc-prefill-matched-v2":
                 from lab.rp.cpu_matched_profile import measured_margin
 
-                profile = read(args.profile)
-                if started["profile_sha256"] != trial.sha(args.profile) or started["costs"] != profile["costs"]:
+                if started["profile_sha256"] != receipt["order"]["paired_profile_sha256"] or started["costs"] != profile["costs"]:
                     raise ValueError("foreign product calibration")
                 for key, offset in profile["weights"].items() if started["qualified"] else ():
                     checked = started["fresh"][key]
