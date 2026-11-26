@@ -296,7 +296,9 @@ def post_restart_observations(root, source, digest):
     yield record("post_release_source_plan", source, digest, "defer", plan["parent_order"], **common, provenance="simulated",
                  reason=plan["reason"], decision=False, metrics=plan["candidates"], next_experiment=plan["next_experiment"],
                  required_cold_saving_s=plan["required_cold_saving_s"], measured_discovery_s=plan["measured_discovery_s"],
-                 estimated_qualification_usd=plan["estimated_qualification_usd"], authorship="IronMule experiment planner", uncertainty=plan["scope"])
+                 estimated_qualification_usd=plan["estimated_qualification_usd"], authorship="IronMule experiment planner",
+                 uncertainty=plan["scope"] + " This historical price includes 18 processes. The follow-up protocol requires 20"
+                 " (2 A/A, 2 negative controls, 12 mixed, 4 factual). The extra cost cannot make a deferred option profitable.")
 
 
 def stopped_epyc(root, source, digest):
