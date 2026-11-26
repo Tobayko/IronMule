@@ -1,0 +1,164 @@
+{
+  "awq": {
+    "commit": "0499c3ac83fdef8810b907a23894ba91e95eddd8",
+    "file_stamps": {
+      "LICENSE": [
+        52,
+        17202980549,
+        11544,
+        1795683675922788222,
+        1795683675922788222
+      ],
+      "config.json": [
+        52,
+        17202980544,
+        907,
+        1795683675921788198,
+        1795683675922788222
+      ],
+      "generation_config.json": [
+        52,
+        17202962751,
+        239,
+        1795683675917788102,
+        1795683675917788102
+      ],
+      "merges.txt": [
+        52,
+        17202980550,
+        1671853,
+        1795683675937788583,
+        1795683675940788655
+      ],
+      "model-00001-of-00004.safetensors": [
+        52,
+        17202980555,
+        4966384688,
+        1795683756785733513,
+        1795683756787733561
+      ],
+      "model-00002-of-00004.safetensors": [
+        52,
+        17202980556,
+        4998723112,
+        1795683754167670531,
+        1795683754173670676
+      ],
+      "model-00003-of-00004.safetensors": [
+        52,
+        17202980557,
+        4949671152,
+        1795683788633499663,
+        1795683788634499687
+      ],
+      "model-00004-of-00004.safetensors": [
+        52,
+        17202980558,
+        4410702792,
+        1795683751914616330,
+        1795683751918616426
+      ],
+      "model.safetensors.index.json": [
+        52,
+        17202980554,
+        131598,
+        1795683675993789930,
+        1795683675993789930
+      ],
+      "tokenizer.json": [
+        52,
+        17202980553,
+        11422654,
+        1795683676043791133,
+        1795683676049791277
+      ],
+      "tokenizer_config.json": [
+        52,
+        17202980551,
+        9732,
+        1795683675975789497,
+        1795683675975789497
+      ],
+      "vocab.json": [
+        52,
+        17202980552,
+        2776833,
+        1795683675998790050,
+        1795683676003790171
+      ]
+    },
+    "files": {
+      "LICENSE": {
+        "bytes": 11544,
+        "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"
+      },
+      "config.json": {
+        "bytes": 907,
+        "sha256": "0e0c09d430b12e84773ef83ca83dba7c9174caf5a94bb940cd895b82df6c6528"
+      },
+      "generation_config.json": {
+        "bytes": 239,
+        "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+      },
+      "merges.txt": {
+        "bytes": 1671853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+      },
+      "model-00001-of-00004.safetensors": {
+        "bytes": 4966384688,
+        "sha256": "ab7988215e3b087c884e0c14ce1994a64aac31dc9a37a4bcf29f5b45f3506e2e"
+      },
+      "model-00002-of-00004.safetensors": {
+        "bytes": 4998723112,
+        "sha256": "46faff349f1dd18ffe76993edd3d9fd32941d042331dc590525409bbe3d37edf"
+      },
+      "model-00003-of-00004.safetensors": {
+        "bytes": 4949671152,
+        "sha256": "6e9f763d8c31ad19f1cd67b0b599a38edffd76a4465a22ff5f7fcac46d820e63"
+      },
+      "model-00004-of-00004.safetensors": {
+        "bytes": 4410702792,
+        "sha256": "87f180889fead12b00b1bdf4dca3a3a14e4510e1e200bf56e31898e120b993d8"
+      },
+      "model.safetensors.index.json": {
+        "bytes": 131598,
+        "sha256": "7d0427c7d238f401b5d38ec08dca07cc8a921aa69d73769b2b7983520de504a1"
+      },
+      "tokenizer.json": {
+        "bytes": 11422654,
+        "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+      },
+      "tokenizer_config.json": {
+        "bytes": 9732,
+        "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+      },
+      "vocab.json": {
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      }
+    },
+    "manifest_sha256": "00fd219734c5f6ff13b31c0038317ed7d6631e626619c8abf76c87412ea1395b",
+    "repo": "Qwen/Qwen3-32B-AWQ",
+    "revision": "0499c3ac83fdef8810b907a23894ba91e95eddd8",
+    "shard_bytes": 19325481744,
+    "tokenizer_commit": "9216db5781bf21249d130ec9da846c4624c16137",
+    "tokenizer_files_match": true,
+    "tokenizer_repo": "Qwen/Qwen3-32B",
+    "total_bytes": 19341507104,
+    "verified": true
+  },
+  "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "112d8a87ea0f7aab9de32ad3b2f2d65318c3bce1044ee30b75f78c528c923e2b",
+    "driver": "595.112.07",
+    "memory": "81920 MiB",
+    "name": "NVIDIA A100-SXM4-80GB"
+  },
+  "source_commit": "8cf0a3106f09a3338eb53c28047af7e36fc7b340",
+  "versions": {
+    "torch": "2.8.0",
+    "transformers": "4.57.1",
+    "vllm": "0.11.0",
+    "xformers": "0.0.32.post1"
+  }
+}

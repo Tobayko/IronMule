@@ -46,18 +46,18 @@ def replay(folder, journal=None):
     lease_hours = booked = price = None
     if journal is not None:
         costs = read(journal)
-        lease, = costs["leases"]
+        leases = costs["leases"]
         snapshot = read(folder / "cost-during-qualification.json")
         if (snapshot["order_id"] != order["order_id"] or costs["confirmed_owned_pods_remaining"] != 0
-                or not lease["verified_absent"] or "A100" not in lease["gpu"]
-                or costs["external_settlements_usd"] != 0):
-            raise ValueError("requires the final single-A100 campaign journal")
-        lease_hours = lease["hours"]
+                or not leases or any(not lease["verified_absent"] for lease in leases)
+                or not any("A100" in lease["gpu"] for lease in leases)):
+            raise ValueError("requires a closed campaign journal covering the original A100")
+        lease_hours = sum(lease["hours"] for lease in leases)
         booked = costs["booked_with_tail_usd"]
         price = snapshot["quoted_compute_usd_per_h"] + snapshot["disk_rate_estimate_usd_per_h"]
         if not all(math.isfinite(x) and x > 0 for x in (lease_hours, booked, price)):
             raise ValueError("incomplete final billing figures")
-        report.update(whole_campaign_lease_hours=lease_hours, whole_campaign_booked_usd_with_tail=booked,
+        report.update(whole_campaign_leases=len(leases), whole_campaign_lease_hours=lease_hours, whole_campaign_booked_usd_with_tail=booked,
                       estimated_marginal_usd_per_billable_hour=price)
     for label, prefix, count in (("32_mixed_completions", "", restart_trial.PAIRS), ("18_correct_facts", "facts-", 2)):
         first = []
