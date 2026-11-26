@@ -208,6 +208,8 @@ def main():
         write_once(state / "outcome.json", outcome)
         print(json.dumps(outcome))
         return
+    args.sampling_evidence = args.prior_dir.parent
+    followup_release.verified_sampling(args, decision)
     write_once(state / "order.json", decision)
     try:
         candidate = author(decision, args.checkout, state, args.author, args.archive)

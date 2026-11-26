@@ -227,3 +227,33 @@ An eligible source can proceed to its own research PR, fresh target admission an
 rollback exercise. The forecast's 256-start scenario had a negative return after trial
 cost. Refining the estimate requires actual serving measurements and a known restart
 frequency.
+
+### Run one adaptive calibration experiment on the active PR 60 source
+
+The discovery inputs below include eight historical starts, two prospective price studies,
+and two more blind workers. The coordinator recreates the price forecast, source method and
+decision from these same inputs. A declined forecast ends locally. An eligible order goes to
+the configured author once. On a reserved target a real candidate runs against the current
+PR 60 worker, with the identical trained startup head in both arms. The existing Linux
+watchdogs, CPU/GPU measurement lock, numerical controls, source-bound PR checks, fresh target
+and rollback checks apply. The control host saves each complete worker receipt while polling.
+The signed-in subscription CLI can run unattended where its authorization works. The hosted
+worker used here consumes the pending request and resumes with the same state directory.
+
+```sh
+data=lab/autonomous/results
+parent="$data/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3"
+probe="$data/a100-calibration-sampling"
+python -m training.experience_archive build --output "$KNOWLEDGE_JSONL"
+OPENBLAS_NUM_THREADS=1 python -m lab.rp.followup_campaign --config "$TARGET" \
+    --checkout "$PR60_CHECKOUT" --remote-checkout "$PR60_TARGET_TREE" --state "$FOLLOWUP_STATE" \
+    --prior-dir "$data/a100-calibration-stability" --forecast "$probe/prediction.json" \
+    --observations "$probe/97351.json" "$probe/97352.json" --control "$parent/control.json" \
+    --weights "$parent/startup-head.npz" --archive "$KNOWLEDGE_JSONL" \
+    --author hosted --publish --wait-seconds 7200
+```
+
+The local checkout is pinned at `63db7745998383509602601d46ae4bbff0076648`. The corresponding
+target export must pass the parent receipt's entire runtime manifest. The target configuration
+still names the original reference tree so withdrawal can run the appropriate preceding source.
+A fresh machine requires its own hardware measurements, release and binding.
