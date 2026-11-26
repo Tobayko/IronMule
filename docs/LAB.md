@@ -4624,3 +4624,37 @@ The diagnostic used 70.51 seconds of broker time, including the two trained sele
 Its share of the already running lease was $0.0431 at the reserved hourly rate. The
 planner estimated $0.389 for a full follow-up qualification and left it unspent.
 [Measured source observations and decision](../lab/autonomous/results/a100-post-restart-60/) · [Discovery contract](../training/post_restart_contract.json) · [Qualification contract](../lab/pk1/followup_contract.py)
+
+## 2026-11-26 — Native attribution and prospective calibration decisions after PR 60
+
+Two fresh Qwen processes traced all 193 startup decodes through the active W4 path on
+the A100-SXM4-80GB. Their common unprotected setup in the pass-cost and padding
+calibrations had the same logical KV, input, mask and output. A third call sharing that
+signature belonged to the protected W4 receipt check. The traced large prefill used
+cuBLAS/CUTLASS kernels and kernels with symbols matching IronMule's GGML patches.
+A separate tokenizer diagnostic attempted CUDA allocation during the first inventory.
+Both dependent observations carry a timing exclusion. Their structure and 3,993 CUDA
+device events remain in the archive. No code author order resulted from those times.
+[Source and device inventory, incident and replay](../lab/autonomous/results/a100-post-restart-native-60/)
+
+The next search ranked complete return values across all eight matched PR 60 starts.
+The two continuous calibration outputs varied in all eight. Only the discrete padding
+table repeated exactly. The controller chose to test that forecast in two new complete
+starts. Both returned the predicted empty table, with different underlying sets of 16
+fresh prices. The older full-calibration reference had also recorded a nonempty table.
+An early-sampling simulation reproduced the new answers but its preregistered empirical
+intervals allowed alternative choices at 15 widths in both starts. It abstained.
+[Full original holdouts, state, prediction and abstention](../lab/autonomous/results/a100-calibration-stability/)
+
+The retained raw timings showed elevated early post-warm measurements. A program
+ranked ten fresh-measurement plans within a human-directed search family and selected
+two warmups and two measurements per width. It fixed that plan before a further pair
+of independent starts. All four prospective starts used the trained CPU startup head,
+each served 32 cold and 32 warm completions and answered all 18 factual questions
+correctly. Across the last two, the maximum full-price prediction errors were 0.4001%
+and 0.4498%. Every tested interval gave the same discrete dispatch as the full
+original measurement. Both starts had about 0.682 s of measured tail work outside the
+paid prefix. The program produced Codex order `4e87c90d…` for a source experiment.
+The two separate prospective pairs consumed 141.36 s and an estimated $0.08646 of the
+existing lease. Source qualification has its own independent end-to-end release gate.
+[Bound order, costs, raw measurements and replay](../lab/autonomous/results/a100-calibration-sampling/)
