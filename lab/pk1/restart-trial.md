@@ -65,6 +65,13 @@ stops, rendered text and actual scheduling counters. The evaluator grades the ei
 factual answers outside the worker. Every cold pair must improve. Median cold speedup must
 reach 1.02 and exceed the relative A/A spread. Median warm time and 95th-percentile first-token
 ratios must be at most 1.02. Host and observed device memory ratios must be at most 1.05.
+Two additional fresh process pairs reverse execution order. Their first admitted requests are
+eighteen seeded factual questions, followed immediately by eighteen different factual questions
+on the warmed worker. The evaluator regrades all answers, verifies equal output tokens and
+measures cold time through the last completed fact and cold p95 through the first visible tokens.
+Both cold factual pairs must improve, median speedup must reach 1.02 and the median warmed
+factual latency and p95 ratios must stay within 1.02. Warm factual latency and p95 from the six
+original mixed-first pairs must satisfy that same threshold.
 A startup gain applies only to this repeated-deployment workload. Warm serving and HTTP
 throughput require their own measurements.
 

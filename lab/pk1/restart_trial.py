@@ -28,7 +28,7 @@ A100_VENDOR = {
 }
 
 
-def arm(args, tree, seed, out, receipt=None):
+def arm(args, tree, seed, out, receipt=None, *, factual_first=False):
     env = {"IRONMULE_" + k: v for k, v in native.FLAGS.items()}
     env.update(IRONMULE_KG_LIB="/kernel/active.so", IRONMULE_W4_TABLE="/kernel/dispatch.table")
     mounts = [(args.reference_lib, env["IRONMULE_KG_LIB"]), (args.table, env["IRONMULE_W4_TABLE"]),
@@ -41,7 +41,7 @@ def arm(args, tree, seed, out, receipt=None):
     with TemporaryDirectory(dir=out.parent) as tmp:
         product = Path(tmp) / out.name
         native.launch(run, product, ["/kernel/restart_arm.py", "--seed", str(seed), "--gguf", "/models/" + args.gguf.name,
-                                     "--output", "/output/" + out.name], mounts, env)
+                                     "--output", "/output/" + out.name, *(["--factual-first"] if factual_first else [])], mounts, env)
         row = read(product)
     row["broker_elapsed_s"] = time.perf_counter() - started
     save(out, row)
@@ -68,6 +68,7 @@ def validate(row, seed, *, expected_source=None):
     if len(row["factual"]) != 18 or not all(correct(q, answer["answer"]) and answer["output_ids"]
             for q, answer in zip(cases(seed), row["factual"], strict=True)):
         raise ValueError("failed independent factual grading")
+    fact_timing(row["factual_timing"])
     for name in ("cold", "warm"):
         wave = row[name]
         timings = wave["ttfts_s"]
@@ -89,7 +90,7 @@ def compare_pair(ref, cand, seed, binding=None, *, require_hit=True):
         validate(row, seed)
     if (ref["reused"] or cand["reused"] != require_hit or ref["binding"] != cand["binding"]
             or (binding is not None and ref["binding"] != binding)
-            or ref["cuda_vendor"] != cand["cuda_vendor"]
+            or ref["cuda_vendor"] != cand["cuda_vendor"] or bool(ref["factual_first"]) != bool(cand["factual_first"])
             or ref["pilot_sha256"] != cand["pilot_sha256"] or ref["mask_bits"] != cand["mask_bits"]
             or ref["factual"] != cand["factual"] or any(any(ref[name][field] != cand[name][field] for field in ("output_sha256", "geometry"))
                                                        for name in ("cold", "warm"))):
@@ -97,13 +98,53 @@ def compare_pair(ref, cand, seed, binding=None, *, require_hit=True):
     return {"cold_speedup": ref["cold_s"] / cand["cold_s"],
             "warm_ratio": cand["warm"]["wall_s"] / ref["warm"]["wall_s"],
             "warm_p95_ratio": sorted(cand["warm"]["ttfts_s"])[30] / sorted(ref["warm"]["ttfts_s"])[30],
+            "factual_warm_ratio": cand["factual_timing"]["wall_s"] / ref["factual_timing"]["wall_s"],
+            "factual_warm_p95_ratio": fact_timing(cand["factual_timing"]) / fact_timing(ref["factual_timing"]),
             "rss_ratio": cand["peak_rss_kib"] / ref["peak_rss_kib"],
             "device_ratio": max(cand["device_used_bytes"]) / max(ref["device_used_bytes"])}
+
+
+def fact_timing(timing):
+    values = timing["ttfts_s"]
+    if (len(values) != 18 or not math.isfinite(timing["completed_s"]) or not math.isfinite(timing["wall_s"])
+            or not 0 < timing["wall_s"] <= timing["completed_s"] or any(not 0 < v <= timing["wall_s"] for v in values)):
+        raise ValueError("incomplete factual delivery timings")
+    return max(values)  # nearest-rank p95 over 18 clients
+
+
+def factual_pair(ref, cand, seed, binding):
+    from ironmule.factual_gate import cases, correct
+
+    compare_pair(ref, cand, seed, binding)
+    for arm_row in (ref, cand):
+        batches = arm_row["factual_first"]
+        if len(batches) != 2:
+            raise ValueError("need fresh-worker facts followed by warm facts")
+        prior = arm_row["initialized_s"]
+        for batch, expected in zip(batches, (seed, seed ^ 419), strict=True):
+            fact_timing(batch)
+            if (batch["seed"] != expected or batch["correct"] != [True] * 18 or len(batch["answers"]) != 18
+                    or batch["completed_s"] < prior + batch["wall_s"] - .02
+                    or batch["completed_s"] > arm_row["cold_s"]
+                    or not all(correct(q, a["answer"]) and a["output_ids"] and a["stop"] in ("length", "eos")
+                               for q, a in zip(cases(expected), batch["answers"], strict=True))):
+                raise ValueError("incomplete or incorrectly timed factual-first work")
+            prior = batch["completed_s"]
+    r, c = ref["factual_first"], cand["factual_first"]
+    if any(a["answers"] != b["answers"] for a, b in zip(r, c, strict=True)):
+        raise ValueError("factual-first deliveries differ")
+    def first_p95(batch):
+        return batch["completed_s"] - batch["wall_s"] + fact_timing(batch)
+    return {"cold_factual_speedup": r[0]["completed_s"] / c[0]["completed_s"],
+            "cold_factual_p95_ratio": first_p95(c[0]) / first_p95(r[0]),
+            "warm_factual_ratio": c[1]["wall_s"] / r[1]["wall_s"],
+            "warm_factual_p95_ratio": fact_timing(c[1]) / fact_timing(r[1])}
 
 
 def fresh_pass(ref, cand, seed):
     r = compare_pair(ref, cand, seed)
     return {**r, "passed": r["cold_speedup"] >= 1.02 and r["warm_ratio"] <= 1.02 and r["warm_p95_ratio"] <= 1.02
+            and max(r["factual_warm_ratio"], r["factual_warm_p95_ratio"]) <= 1.02
             and max(r["rss_ratio"], r["device_ratio"]) <= 1.05}
 
 
@@ -116,6 +157,7 @@ def judge(pairs, aa):
     cold = [r["cold_speedup"] for r in scored]
     passed = (min(cold) > 1 and median(cold) >= 1.02 and median(cold) - 1 > noise
               and median(r["warm_ratio"] for r in scored) <= 1.02 and median(r["warm_p95_ratio"] for r in scored) <= 1.02
+              and median(r["factual_warm_ratio"] for r in scored) <= 1.02 and median(r["factual_warm_p95_ratio"] for r in scored) <= 1.02
               and max(max(r["rss_ratio"], r["device_ratio"]) for r in scored) <= 1.05)
     return {"passed": passed, "aa_relative_spread": noise, "median_cold_speedup": median(cold), "pairs": scored}
 
@@ -176,6 +218,8 @@ def proof(args, directory):
         ref, cand = (read(directory / f"{tag}-{i}.json") for tag in ("ref", "cand"))
         for row, source in ((ref, refsha), (cand, candsha)):
             validate(row, SEED + i, expected_source=source)
+            if row["factual_first"]:
+                raise ValueError("mixed cold arm had prior requests")
         if cand["mask"] != receipt["mask"]:
             raise ValueError("reused mask differs from the supplied reference")
         pairs.append((ref, cand))
@@ -187,6 +231,18 @@ def proof(args, directory):
     if wrong != {**receipt, "created_s": receipt["created_s"] - 172800}:
         raise ValueError("stale fixture was changed")
     scored = judge(pairs, aa)
+    factual = []
+    for i in range(2):
+        ref, cand = (read(directory / f"facts-{tag}-{i}.json") for tag in ("ref", "cand"))
+        seed = SEED + 100 + i
+        for row, source in ((ref, refsha), (cand, candsha)):
+            validate(row, seed, expected_source=source)
+        factual.append(factual_pair(ref, cand, seed, aa[0]["binding"]))
+    scored["factual_first_pairs"] = factual
+    scored["passed"] = bool(scored["passed"] and min(x["cold_factual_speedup"] for x in factual) > 1
+                            and median(x["cold_factual_speedup"] for x in factual) >= 1.02
+                            and all(median(x[k] for x in factual) <= 1.02 for k in
+                                    ("cold_factual_p95_ratio", "warm_factual_ratio", "warm_factual_p95_ratio")))
     return {"passed": scored["passed"], "reference_sha256": refsha, "candidate_sha256": candsha,
             "binding": aa[0]["binding"], "evaluator_sha256": native.checksum(HARNESS), "metrics": scored}
 
@@ -200,6 +256,7 @@ def context(args, order):
 def receipts(directory):
     names = ["context.json", "receipt.json", "stale-receipt.json", "stale.json", "missing.json", "aa-0.json", "aa-1.json",
              *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand"))]
+    names += [f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")]
     return {n: native.checksum(directory / n) for n in names}
 
 
@@ -227,10 +284,10 @@ def qualify(args):
         try:
             base = args.checkout.resolve()
             cand = _tree(base, args.candidate_source, args.worker_root)
-            def run(name, tree, seed, receipt=None):
+            def run(name, tree, seed, receipt=None, *, factual_first=False):
                 dest = state / (name + ".json")
                 if not dest.exists():
-                    arm(args, tree, seed, dest, receipt)
+                    arm(args, tree, seed, dest, receipt, factual_first=factual_first)
                 row = read(dest)
                 validate(row, seed, expected_source=native.checksum(tree / PATH))
                 verify_binding(row, order)
@@ -252,6 +309,12 @@ def qualify(args):
                     rows[label] = run(f"{label}-{i}", cand if label == "cand" else base, SEED + i,
                                       doc if label == "cand" else None)
                 compare_pair(rows["ref"], rows["cand"], SEED + i)
+            for i in range(2):
+                rows = {}
+                for label in (("ref", "cand") if i == 0 else ("cand", "ref")):
+                    rows[label] = run(f"facts-{label}-{i}", cand if label == "cand" else base, SEED + 100 + i,
+                                      doc if label == "cand" else None, factual_first=True)
+                factual_pair(rows["ref"], rows["cand"], SEED + 100 + i, aa[0]["binding"])
             result = proof(args, state)
             save(state / "result.json", {"schema": SCHEMA, "passed": result["passed"], "summary": result, "context": setup,
                                         "measurements_sha256": receipts(state), "elapsed_s": time.monotonic() - start})

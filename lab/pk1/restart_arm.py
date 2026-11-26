@@ -64,6 +64,7 @@ def main():
     p.add_argument("--gguf", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--factual-first", action="store_true")
     args = p.parse_args()
     lib, table = (Path(os.environ[k]) for k in ("IRONMULE_KG_LIB", "IRONMULE_W4_TABLE"))
     flags = {"IRONMULE_" + k: os.environ.get("IRONMULE_" + k) for k in FLAGS}
@@ -96,15 +97,25 @@ def main():
 
         initial_bits, memory_log = masks(), [memory()]
         with closing(GgufTokenizer(str(args.gguf), eng.L)) as tok:
+            def fact_trial(seed):
+                questions = cases(seed)
+                result = run_wave(eng, tok, [(TEMPLATE.format(q.prompt), "") for q in questions], MAX_TOKENS, {})
+                completed_s = process_age()
+                answers = [{k: a[k] for k in ("output_ids", "prompt_digest", "answer", "stop")} for a in result["answers"]]
+                return {"seed": seed, "answers": answers, "completed_s": completed_s, "ttfts_s": result["ttfts_s"],
+                        "wall_s": result["wall_s"], "correct": [correct(q, a["answer"]) for q, a in zip(questions, answers, strict=True)]}
+
+            initial_facts = []
+            if args.factual_first:
+                for fact_seed in (args.seed, args.seed ^ 419):
+                    initial_facts.append(fact_trial(fact_seed))
             cold = wave(args.seed)
             first_s = process_age()
             memory_log.append(memory())
             warm = wave(args.seed ^ 317)
             memory_log.append(memory())
-            questions = cases(args.seed)
-            factual = run_wave(eng, tok, [(TEMPLATE.format(q.prompt), "") for q in questions], MAX_TOKENS, {})
+            factual = fact_trial(args.seed)
             memory_log.append(memory())
-        facts = [correct(q, r["answer"]) for q, r in zip(questions, factual["answers"], strict=True)]
         mask = dict(eng.kg)
         used = mask.pop("restart_profile_reused", False)
         finish_bits = masks()
@@ -126,8 +137,9 @@ def main():
 
         save(args.output, {"schema": "ironmule.qwen-restart.arm.v1", "seed": args.seed, "cold_s": first_s,
                            "initialized_s": initialized_s, "mask": mask, "mask_bits": initial_bits, "reused": used,
-                           "cold": summarize(cold), "warm": summarize(warm), "facts": facts, "cuda_vendor": mapped_vendor(),
-                           "factual": deliveries(factual), "binding": binding, "pilot_decisions": eng.pilot.decisions,
+                           "cold": summarize(cold), "warm": summarize(warm), "facts": factual["correct"], "cuda_vendor": mapped_vendor(),
+                           "factual": factual["answers"], "factual_timing": {k: factual[k] for k in ("completed_s", "ttfts_s", "wall_s")},
+                           "factual_first": initial_facts, "binding": binding, "pilot_decisions": eng.pilot.decisions,
                            "source_sha256": checksum(ge.__file__), "pilot_sha256": checksum(eng.pilot.weights_path),
                            "startup_prices": {"pilot": eng.pilot.costs, "padding": eng.pad_to,
                                               "passes": eng.pass_costs.points if eng.pass_costs else []},
