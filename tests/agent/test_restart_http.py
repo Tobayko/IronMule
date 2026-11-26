@@ -93,9 +93,9 @@ def test_live_http_withdrawal_starts_reference_with_same_graded_input(tmp_path, 
     args = SimpleNamespace(state=tmp_path, gguf=tmp_path / "model.gguf", port=0, deadline=time.monotonic() + 15,
                            geometry_sha256="fixture", geometry_record={"count": 18, "minimum": shape, "maximum": shape})
     withdraw = tmp_path / "withdrawn.json"
-    before = product.serve(args, receipt, tmp_path, withdraw, seed=44, lifetime=0)
+    before = product.exercise_wave(args, receipt, tmp_path, withdraw, seed=44, lifetime=0)
     release.save(withdraw, {"withdrawn": True})
-    after = product.serve(args, receipt, tmp_path, withdraw, seed=44, lifetime=0)
+    after = product.exercise_wave(args, receipt, tmp_path, withdraw, seed=44, lifetime=0)
     assert starts == [True, False] and before["arm"] == "candidate" and after["arm"] == "reference"
     for result in [before, after]:
         c = result["completions"][0]

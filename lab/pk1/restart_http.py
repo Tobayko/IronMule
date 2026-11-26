@@ -234,6 +234,9 @@ def cold_endpoint(args, receipt, gates, *, withdrawn, ablate=False, port=0):
                                          request_received_monotonic_ns=self.first_arrived_ns, worker_ready_monotonic_ns=time.monotonic_ns(),
                                          request_to_ready_s=(time.monotonic_ns() - self.first_arrived_ns) / 1e9,
                                          worker_pid=self.client._process.pid)
+                        observer = getattr(args, "on_startup_selection", None)
+                        if observer:
+                            observer(dict(selection))
                 return self.backend.stream(req)
         outer = ColdProduct()
         listener = create_server(outer, host="127.0.0.1", port=port)
@@ -387,7 +390,7 @@ def choose(args, receipt, *, withdrawn, previous=False, ablate=False, family="fa
                   previous=previous, ablate_weights=ablate, expected_sha256=args.head_sha256)
 
 
-def serve(args, receipt, evidence, withdrawal, *, seed, lifetime):
+def exercise_wave(args, receipt, evidence, withdrawal, *, seed, lifetime):
     try:
         decision = read(evidence / "decision.json")
         require(decision["passed"] is True and assess(evidence, receipt) == decision, "product startup qualification changed")
@@ -482,14 +485,15 @@ def main():
     else:
         require(a.head is not None and a.head_sha256 and (a.dedicated or a.reference_url), "missing trained head or product route")
         if a.op == "serve":
-            result = serve(a, receipt, evidence, withdrawn, seed=96121, lifetime=a.lifetime)
+            from lab.pk1.restart_live import passive
+            result = passive(a, receipt, evidence, withdrawn)
         else:
             require(not withdrawn.exists(), "startup HTTP already withdrawn")
             with tempfile.TemporaryDirectory(dir=a.state) as tmp:
                 shadow = Path(tmp) / "withdrawn.json"
-                before = serve(a, receipt, evidence, shadow, seed=96122, lifetime=0)
+                before = exercise_wave(a, receipt, evidence, shadow, seed=96122, lifetime=0)
                 save(shadow, {"withdrawn": True, "reason": "test persistent product withdrawal"})
-                after = serve(a, receipt, evidence, shadow, seed=96122, lifetime=0)
+                after = exercise_wave(a, receipt, evidence, shadow, seed=96122, lifetime=0)
                 pair = [row["completions"][-1] for row in (before, after)]
                 result = {"passed": before["arm"] == "candidate" and after["arm"] == "reference"
                           and pair[0]["work_sha256"] == pair[1]["work_sha256"], "before": pair[0], "after": pair[1]}
