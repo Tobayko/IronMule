@@ -167,6 +167,8 @@ def cycle(args):
             if native_trial.checksum(state / PurePosixPath(cfg["table"]).name) != order["binding"]["table_sha256"]:
                 raise ValueError("staged dispatch table differs from profile")
             write_once(state / "staged.json", {"candidate": native_trial.checksum(candidate), "order": key})
+        if getattr(args, "stage_only", False):
+            return {"stage": "staged", "order": key, "source": native_trial.checksum(candidate)}
         common = ["--checkout", cfg["checkout"], "--candidate-source", remote_candidate,
                   "--reference-lib", cfg["reference_lib"], "--table", cfg["table"], "--gguf", cfg["gguf"],
                   "--worker-root", cfg["worker_root"]]
@@ -221,6 +223,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("config", "order", "state", "checkout"):
         p.add_argument("--" + name, type=Path, required=True)
+    p.add_argument("--stage-only", action="store_true", help="checkpoint immutable inputs while target admission is pending")
     p.add_argument("--publish", action="store_true", help="submit a qualifying tree and activate after passing CI")
     p.add_argument("--author-cli", action="store_true", help="consume pending orders via subscription Codex")
     p.add_argument("--wait-seconds", type=int, default=0, help="bounded polling window; rerun to resume")
@@ -231,7 +234,7 @@ def main():
     while True:
         outcome = cycle(args)
         print(json.dumps(outcome), flush=True)
-        if outcome["stage"] in {"active", "withdrawn", "qualified", "rejected"} or time.monotonic() >= until:
+        if outcome["stage"] in {"active", "withdrawn", "qualified", "rejected", "staged"} or time.monotonic() >= until:
             return
         time.sleep(max(0, min(10, until - time.monotonic())))
 
