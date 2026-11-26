@@ -1,0 +1,32 @@
+--- original
++++ actual
+@@ -54,16 +53,0 @@
+-    cpp, tree = relink_q4(body, work, base)
+-    save(
+-        work / "build.json",
+-        {
+-            "request": request_id,
+-            "header_sha256": NATIVE_MMQ,
+-            "edited_header_sha256": checksum(work / "mmq.cuh"),
+-            "reference_cuda": checksum(tree / "bin/libggml-cuda.so"),
+-            "candidate_cuda": checksum(work / "bin/libggml-cuda.so"),
+-            "observed_source": checksum(cpp),
+-        },
+-    )
+-
+-
+-def relink_q4(body, work, base):
+-    native = base / "ggml/src/ggml-cuda"
+@@ -96 +80,11 @@
+-    return cpp, tree
++    save(
++        work / "build.json",
++        {
++            "request": request_id,
++            "header_sha256": NATIVE_MMQ,
++            "edited_header_sha256": checksum(work / "mmq.cuh"),
++            "reference_cuda": checksum(tree / "bin/libggml-cuda.so"),
++            "candidate_cuda": checksum(work / "bin/libggml-cuda.so"),
++            "observed_source": checksum(cpp),
++        },
++    )

@@ -46,6 +46,8 @@ Two starts of the Qwen3-32B server spent almost 19 seconds each on one calibrati
 
 On an NVIDIA L40S, the trade-off changes with the queue. With one client IronMule delivered **43.3 output tokens/s** and vLLM 0.34.0 delivered **37.7**. With 32 clients IronMule started streaming in a median **0.56 seconds**, versus **1.68 seconds** for vLLM. Across the full group vLLM finished faster at **266.6 vs 154.7 tokens/s**. Both served Qwen3-32B with the same inputs and fixed output length, using Q4_K_M and AWQ-Marlin respectively. These are three repeats from the first matched seed. [Per-request measurements, quality checks and replay](lab/pk6/mixed_progress/replay.md)
 
+IronMule can also tell you which optimization it declined. On a second L40S run, it traced a slow GPU operation back to the requests waiting for it and issued a Q4_K kernel experiment to Codex. A separate FP8 kernel completed the short factual checks, but missed the model's perplexity limit. The server returned to its verified profile. You can replay the decisions and inspect the same fixed-length streams on a CPU. [L40S kernel experiments and replay](lab/pk6/native_dispatch/README.md)
+
 ## Quick start
 
 ### Serve a GGUF on Linux CPU

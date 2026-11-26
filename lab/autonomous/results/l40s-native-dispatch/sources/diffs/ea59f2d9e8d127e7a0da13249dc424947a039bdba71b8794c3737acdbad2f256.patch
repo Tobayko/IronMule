@@ -1,0 +1,26 @@
+--- original
++++ actual
+@@ -140,12 +139,0 @@
+-        if arm.startswith("E"):
+-            # Exercise normal automatic generation on this board, sharing its real persistent calibration state.
+-            for key in (
+-                "IRONMULE_KG",
+-                "IRONMULE_KG_LIB",
+-                "IRONMULE_GGML_PACK",
+-                "IRONMULE_GGML_UBATCH",
+-                "IRONMULE_CUDA_GRAPHS_ROWS",
+-                "IRONMULE_W4",
+-                "IRONMULE_W4_TABLE",
+-            ):
+-                os.environ.pop(key, None)
+@@ -158,4 +145,0 @@
+-        if arm.startswith("X"):
+-            os.environ.update(
+-                IRONMULE_LAB_MMQ_TILE="grid", IRONMULE_LAB_KERNEL_TRACE="1"
+-            )
+@@ -170 +154 @@
+-        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y")):
++        elif arm.startswith(("F", "V", "I", "M", "Z")):
+@@ -179 +163 @@
+-            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E")
++            ("R", "U", "N", "G", "T", "A", "L", "H")

@@ -1,0 +1,10 @@
+--- original
++++ actual
+@@ -82 +82 @@
+-def measure(args, arm, board_id, row_budget, deadline):
++def measure(args, arm, board_id, row_budget, deadline, *, draft=None):
+@@ -142,0 +143,4 @@
++    if draft is not None:
++        if competitor:
++            raise ValueError("native draft belongs to IronMule")
++        cmd.extend(["--draft-gguf", str(draft)])

@@ -44,6 +44,13 @@ def exclusion(arm, proof):
         for k in ("IRONMULE_PK6", "IRONMULE_PS1")
     ):
         return "requested PS1 and PK6 profile did not serve"
+    if arm.startswith(("K", "O")):
+        required = "context" if arm.startswith("O") else "model"
+        if not any(
+            v[required]["rows"]
+            for v in proof.get("draft_verified_by_width", {}).values()
+        ):
+            return "the target did not verify the proposed draft source during performance measurement"
     if arm.startswith("H") and not proof.get("verified_compact_pool"):
         return "requested pool capacity not witnessed in the serving worker"
     if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y")) and (
@@ -158,7 +165,19 @@ def inspect(folder, arm, target, telemetry):
         marks = []
         budgets = []
         capacities = []
+        drafts = []
         for line in raw.decode().splitlines():
+            if line.startswith("# draft_verified "):
+                parts = line.split()
+                fields = dict(v.split("=") for v in parts[2:-1])
+                drafts.append(
+                    (
+                        float(parts[-1]),
+                        fields["source"],
+                        int(fields["rows"]),
+                        int(fields["accepted"]),
+                    )
+                )
             if line.startswith("# physical_pool "):
                 fields = dict(v.split("=") for v in line.split()[2:] if "=" in v)
                 capacities.append(
@@ -169,7 +188,25 @@ def inspect(folder, arm, target, telemetry):
             if line.startswith("# prompt_kernel "):
                 event = dict(part.split("=") for part in line.split()[2:])
                 marks.append((float(event["t"]), int(event["launches"])))
+        draft_counts = {}
+        for width in (1, 8, 32):
+            counted = {
+                source: {"rows": 0, "accepted": 0} for source in ("model", "context")
+            }
+            for r in rows:
+                if r["repeat"] >= 3 or r["width"] != width:
+                    continue
+                lo = min(x["t_send"] for x in r["requests"])
+                hi = max(x["t_done"] for x in r["requests"])
+                for t, source, guesses, accepted in drafts:
+                    if lo <= t <= hi:
+                        counted[source]["rows"] += guesses
+                        counted[source]["accepted"] += accepted
+            draft_counts[str(width)] = counted
         proof = {
+            "draft_verified_by_width": draft_counts
+            if target.get("draft_gguf_sha256")
+            else {},
             "profile_flags": ready["health"].get("kernel_profile", {}).get("flags", {}),
             "cpu_policy": target.get("cpu_policy"),
             "verified_compact_pool": bool(
@@ -221,6 +258,18 @@ def inspect(folder, arm, target, telemetry):
                 <= max(x["t_done"] for x in r["requests"])
             ),
         }
+    if arm.startswith("B") and proof.get("fallback") == "stock":
+        worker = read(folder / f"worker-{arm}.json")
+        if not (
+            worker["process"] == "ironmule_product/worker.py"
+            and worker["hardware"] == target["hardware"]
+            and worker["start"] == start["unix"]
+            and start["unix"] <= worker["unix"] <= end["unix"]
+            and worker["threshold"] == "0"
+            and worker["empty_plugin"] is True
+        ):
+            raise ValueError("stock fallback did not reach the actual worker")
+        proof["worker_after_rejection"] = worker
     summary = {
         "start": start["unix"],
         "end": end["unix"],
@@ -280,7 +329,14 @@ def run(root):
         if arm == "vllm":
             continue
         for ref in dict.fromkeys(
-            ["vllm", "R" + arm[1:]] + (["A" + arm[1:]] if arm.startswith("T") else [])
+            ["vllm", "R" + arm[1:]]
+            + (
+                ["A" + arm[1:]]
+                if arm.startswith("T")
+                else ["K" + arm[1:]]
+                if arm.startswith("O")
+                else []
+            )
         ):
             if ref == arm or ref not in data:
                 continue

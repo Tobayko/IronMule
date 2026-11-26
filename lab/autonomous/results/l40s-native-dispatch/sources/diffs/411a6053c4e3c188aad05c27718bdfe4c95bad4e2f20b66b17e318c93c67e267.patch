@@ -1,0 +1,181 @@
+--- original
++++ actual
+@@ -24 +24 @@
+-def build(directory, *, native_grid=False):
++def build(directory):
+@@ -28,9 +28,2 @@
+-    source = substitute(
+-        source,
+-        "#include <stdio.h>",
+-        "#include <stdio.h>\n#include <dlfcn.h>\n#include <stdint.h>",
+-    )
+-    source = substitute(
+-        source,
+-        "        const double t0 = now();",
+-        """
++    source = substitute(source, "#include <stdio.h>", "#include <stdio.h>\n#include <dlfcn.h>\n#include <stdint.h>")
++    source = substitute(source, "        const double t0 = now();", """
+@@ -42,7 +35,2 @@
+-        const double t0 = now();""",
+-    )
+-    source = substitute(
+-        source,
+-        "        const double us =",
+-        "        ggml_backend_synchronize(be);\n        const double us =",
+-    )
++        const double t0 = now();""")
++    source = substitute(source, "        const double us =", "        ggml_backend_synchronize(be);\n        const double us =")
+@@ -50,10 +38,4 @@
+-    source = substitute(
+-        source,
+-        "fwrite(y, sizeof(float), (size_t)N * B, f);",
+-        "for (int b=0; b<B; ++b) for (int j=0; j<64; ++j) "
+-        "fwrite(y + (size_t)b*N + (size_t)j*(N-1)/63, sizeof(float), 1, f);",
+-    )
+-    source = substitute(
+-        source,
+-        "        fflush(stdout);",
+-        """
++    source = substitute(source, "fwrite(y, sizeof(float), (size_t)N * B, f);",
++                        "for (int b=0; b<B; ++b) for (int j=0; j<64; ++j) "
++                        "fwrite(y + (size_t)b*N + (size_t)j*(N-1)/63, sizeof(float), 1, f);")
++    source = substitute(source, '        fflush(stdout);', """
+@@ -63,5 +45 @@
+-        fflush(stdout);""",
+-    )
+-    if native_grid:
+-        source = substitute(source, 'getenv("IRONMULE_KG_LIB")', 'getenv("IRONMULE_GRID_BACKEND")')
+-        source = substitute(source, '"im_prompt_dispatches"', '"im_mmq_tile_calls"')
++        fflush(stdout);""")
+@@ -71,17 +49,3 @@
+-    subprocess.run(
+-        [
+-            "gcc",
+-            "-O2",
+-            str(path),
+-            "-o",
+-            str(binary),
+-            "-I" + str(tree / "ggml/include"),
+-            "-L" + str(library),
+-            "-Wl,-rpath," + str(library),
+-            "-lggml",
+-            "-lggml-base",
+-            "-lggml-cuda",
+-            "-ldl",
+-        ],
+-        check=True,
+-    )
++    subprocess.run(["gcc", "-O2", str(path), "-o", str(binary), "-I" + str(tree / "ggml/include"),
++                    "-L" + str(library), "-Wl,-rpath," + str(library), "-lggml", "-lggml-base",
++                    "-lggml-cuda", "-ldl"], check=True)
+@@ -96,10 +60,2 @@
+-    spec = {
+-        "hardware": board(),
+-        "gguf": GGUF,
+-        "plugin": checksum(plugin),
+-        "ggml_cuda": checksum(cuda),
+-        "widths": WIDTHS,
+-        "arms": ARMS,
+-        "seeds": [31993, 19001],
+-        "repeats": 6,
+-    }
++    spec = {"hardware": board(), "gguf": GGUF, "plugin": checksum(plugin), "ggml_cuda": checksum(cuda),
++            "widths": WIDTHS, "arms": ARMS, "seeds": [31993, 19001], "repeats": 6}
+@@ -112,6 +68,2 @@
+-            tensors = [
+-                (number, k, n, entry)
+-                for kind, number in (("Q4_K", 12), ("Q6_K", 14))
+-                for (k, n), entry in q4k_tensors(str(gguf), kind=kind).items()
+-                if n <= 65536
+-            ]
++            tensors = [(number, k, n, entry) for kind, number in (("Q4_K", 12), ("Q6_K", 14))
++                       for (k, n), entry in q4k_tensors(str(gguf), kind=kind).items() if n <= 65536]
+@@ -123,6 +75,2 @@
+-                np.random.default_rng(seed + k + n).standard_normal(
+-                    (max(WIDTHS), k), dtype=np.float32
+-                ).tofile(x)
+-                copies = min(
+-                    48, max(2, math.ceil((128 << 20) / weights.stat().st_size))
+-                )
++                np.random.default_rng(seed + k + n).standard_normal((max(WIDTHS), k), dtype=np.float32).tofile(x)
++                copies = min(48, max(2, math.ceil((128 << 20) / weights.stat().st_size)))
+@@ -135,21 +83,4 @@
+-                    env = {
+-                        **os.environ,
+-                        "GGML_CUDA_DISABLE_GRAPHS": "1",
+-                        "REF_TYPE": str(number),
+-                        "IRONMULE_KG_LIB": str(plugin.resolve())
+-                        if arm == "fp8"
+-                        else "",
+-                        "IRONMULE_LAB_FP8": "32",
+-                        "IRONMULE_CUBLAS_MIN_ROWS": "32" if arm == "cublas" else "0",
+-                    }
+-                    cmd = [
+-                        binary,
+-                        weights,
+-                        str(n),
+-                        str(k),
+-                        x,
+-                        tmp / arm,
+-                        str(copies),
+-                        str(spec["repeats"]),
+-                        *map(str, widths),
+-                    ]
++                    env = {**os.environ, "GGML_CUDA_DISABLE_GRAPHS": "1", "REF_TYPE": str(number),
++                           "IRONMULE_KG_LIB": str(plugin.resolve()) if arm == "fp8" else "",
++                           "IRONMULE_LAB_FP8": "32", "IRONMULE_CUBLAS_MIN_ROWS": "32" if arm == "cublas" else "0"}
++                    cmd = [binary, weights, str(n), str(k), x, tmp / arm, str(copies), str(spec["repeats"]), *map(str, widths)]
+@@ -159,5 +90 @@
+-                    rows = [
+-                        json.loads(line)
+-                        for line in proc.stdout.splitlines()
+-                        if line.startswith("{")
+-                    ]
++                    rows = [json.loads(line) for line in proc.stdout.splitlines() if line.startswith("{")]
+@@ -166,9 +93,2 @@
+-                    for b, metric, witness in zip(
+-                        widths, rows[::2], rows[1::2], strict=True
+-                    ):
+-                        if [metric[x] for x in ("B", "N", "K", "type")] != [
+-                            b,
+-                            n,
+-                            k,
+-                            number,
+-                        ]:
++                    for b, metric, witness in zip(widths, rows[::2], rows[1::2], strict=True):
++                        if [metric[x] for x in ("B", "N", "K", "type")] != [b, n, k, number]:
+@@ -177,3 +97 @@
+-                            raise ValueError(
+-                                f"partial or missing FP8 dispatch at {(k, n, b)}: {witness}"
+-                            )
++                            raise ValueError(f"partial or missing FP8 dispatch at {(k,n,b)}: {witness}")
+@@ -183,5 +101 @@
+-                    if (
+-                        ref.size != 64 * b
+-                        or not np.isfinite(ref).all()
+-                        or not np.linalg.norm(ref)
+-                    ):
++                    if ref.size != 64*b or not np.isfinite(ref).all() or not np.linalg.norm(ref):
+@@ -196,13 +110,2 @@
+-                save(
+-                    out / f"shape-{seed}-{number}-{k}-{n}.json",
+-                    {
+-                        "seed": seed,
+-                        "type": number,
+-                        "n": n,
+-                        "k": k,
+-                        "name": entry["name"],
+-                        "matrix_count": entry["count"],
+-                        "copies": copies,
+-                        "cells": cells,
+-                    },
+-                )
++                save(out / f"shape-{seed}-{number}-{k}-{n}.json", {"seed": seed, "type": number, "n": n, "k": k,
++                     "name": entry["name"], "matrix_count": entry["count"], "copies": copies, "cells": cells})
+@@ -214 +116,0 @@
+-
+@@ -219,3 +121 @@
+-    with Path(
+-        os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")
+-    ).open("a") as lock:
++    with Path(os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")).open("a") as lock:

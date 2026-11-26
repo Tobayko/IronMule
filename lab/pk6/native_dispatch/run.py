@@ -15,6 +15,7 @@ from lab.pk6.warm_repeat import GGUF, save
 from lab.portable_gpu.fetch_awq import verify
 
 SEEDS = (180341, 943819)
+DRAFT_SHA256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
 
 
 def main():
@@ -39,6 +40,11 @@ def main():
     gguf = args.models / trial.GGUF_NAME
     if checksum(gguf) != GGUF:
         raise ValueError("unexpected GGUF")
+    draft = None
+    if any(a.startswith(("K", "O")) for a in args.arms):
+        draft = args.models / "Qwen3-0.6B-Q8_0.gguf"
+        if checksum(draft) != DRAFT_SHA256:
+            raise ValueError("foreign draft model")
     policy_decision = None
     if any(a.startswith("Z") for a in args.arms):
         if not args.routing_receipt or not args.lib:
@@ -113,6 +119,7 @@ def main():
             "library_sha256": checksum(args.lib) if args.lib else None,
             "threshold": args.threshold,
             "cpu_policy": policy_decision,
+            "draft_gguf_sha256": DRAFT_SHA256 if draft else None,
             "pool_plan": pool,
         },
     )
@@ -121,6 +128,7 @@ def main():
         for flag in (
             *FLAGS,
             "IRONMULE_LAB_ACTIVITY",
+            "IRONMULE_LAB_DRAFT_MIX",
             "IRONMULE_LAB_MMQ_TILE",
             "IRONMULE_LAB_POOL_CELLS",
             "IRONMULE_CUBLAS_MIN_ROWS",
@@ -137,6 +145,10 @@ def main():
             IRONMULE_GGML_UBATCH="8192",
             IRONMULE_CUDA_GRAPHS_ROWS="32",
         )
+        if arm.startswith(("K", "O")):
+            os.environ["IRONMULE_LAB_DRAFT_MIX"] = (
+                "context_first" if arm.startswith("O") else "model_first"
+            )
         if arm.startswith("E"):
             # Exercise normal automatic generation on this board, sharing its real persistent calibration state.
             for key in (
@@ -176,10 +188,13 @@ def main():
                 IRONMULE_LAB_FP8=str(args.threshold),
             )
         elif arm != "vllm" and not arm.startswith(
-            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E")
+            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O")
         ):
             raise ValueError("unregistered arm")
-        trial.measure(args, arm, hw, 0, deadline)
+        if arm.startswith(("K", "O")):
+            trial.measure(args, arm, hw, 0, deadline, draft=draft)
+        else:
+            trial.measure(args, arm, hw, 0, deadline)
     save(args.out / "completed.json", {"hardware": trial.board(), "order": args.arms})
 
 

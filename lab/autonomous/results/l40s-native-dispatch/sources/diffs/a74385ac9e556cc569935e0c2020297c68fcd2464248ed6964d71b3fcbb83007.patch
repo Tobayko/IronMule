@@ -1,0 +1,110 @@
+--- original
++++ actual
+@@ -5 +4,0 @@
+-import json
+@@ -31,3 +29,0 @@
+-    parser.add_argument("--routing-receipt", type=Path)
+-    parser.add_argument("--policy", type=Path)
+-    parser.add_argument("--pool-plan", type=Path)
+@@ -42,46 +37,0 @@
+-    policy_decision = None
+-    if any(a.startswith("Z") for a in args.arms):
+-        if not args.routing_receipt or not args.lib:
+-            raise ValueError("routed arm requires its target-specific build receipt")
+-        receipt = json.loads(args.routing_receipt.read_bytes())
+-        cuda = Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so"
+-        if (
+-            receipt["kind"] != "routed"
+-            or receipt["hardware"] != hw
+-            or receipt["gguf"] != GGUF
+-            or receipt["ggml_cuda"] != checksum(cuda)
+-            or receipt["library_sha256"] != checksum(args.lib)
+-        ):
+-            raise ValueError("foreign routed kernel")
+-        from lab.pk6.native_dispatch.live_policy import choose
+-
+-        if not args.policy:
+-            raise ValueError("the CPU Pilot needs the measured policy bundle")
+-        policy_decision = choose(args.policy, hw, checksum(cuda), receipt)
+-        if policy_decision["profile"] != "routed":
+-            raise ValueError(
+-                "Pilot retained the reference; no routed qualification requested"
+-            )
+-    if any(a.startswith("L") for a in args.arms):
+-        from lab.pk6.native_dispatch.live_policy import choose
+-
+-        if not args.policy:
+-            raise ValueError("the CPU Pilot needs the measured policy bundle")
+-        policy_decision = choose(
+-            args.policy,
+-            hw,
+-            checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so"),
+-        )
+-        if policy_decision["profile"] != "stock":
+-            raise ValueError("use the qualified routed build for this policy")
+-    pool = None
+-    if any(a.startswith("H") for a in args.arms):
+-        pool = json.loads(args.pool_plan.read_bytes())
+-        if (
+-            pool["hardware"] != hw
+-            or pool["gguf"] != GGUF
+-            or pool["context"] != 2048
+-            or not 4096 <= pool["cells"] <= 65536
+-            or pool["cells"] % 256
+-        ):
+-            raise ValueError("unknown workload or device for compact KV candidate")
+@@ -115,2 +64,0 @@
+-            "cpu_policy": policy_decision,
+-            "pool_plan": pool,
+@@ -124,2 +71,0 @@
+-            "IRONMULE_LAB_MMQ_TILE",
+-            "IRONMULE_LAB_POOL_CELLS",
+@@ -128,3 +73,0 @@
+-            "IRONMULE_LAB_SHARED_PROFILE",
+-            "IRONMULE_LAB_STREAM_ALTERNATIVE",
+-            "IRONMULE_LAB_KERNEL_TRACE",
+@@ -140,26 +82,0 @@
+-        if arm.startswith("E"):
+-            # Exercise normal automatic generation on this board, sharing its real persistent calibration state.
+-            for key in (
+-                "IRONMULE_KG",
+-                "IRONMULE_KG_LIB",
+-                "IRONMULE_GGML_PACK",
+-                "IRONMULE_GGML_UBATCH",
+-                "IRONMULE_CUDA_GRAPHS_ROWS",
+-                "IRONMULE_W4",
+-                "IRONMULE_W4_TABLE",
+-            ):
+-                os.environ.pop(key, None)
+-        if arm.startswith("H"):
+-            os.environ["IRONMULE_LAB_POOL_CELLS"] = str(pool["cells"])
+-        if arm.startswith(("N", "G")):
+-            os.environ["IRONMULE_LAB_STREAM_ALTERNATIVE"] = "plain"
+-            if arm.startswith("G"):
+-                os.environ.update(IRONMULE_PS1="1", IRONMULE_PK6="1")
+-        if arm.startswith("X"):
+-            os.environ.update(
+-                IRONMULE_LAB_MMQ_TILE="grid", IRONMULE_LAB_KERNEL_TRACE="1"
+-            )
+-        if arm.startswith("T"):
+-            os.environ.update(IRONMULE_LAB_MMQ_TILE="96", IRONMULE_LAB_KERNEL_TRACE="1")
+-        if arm.startswith(("U", "V")):
+-            os.environ["IRONMULE_LAB_SHARED_PROFILE"] = "wide"
+@@ -168 +85 @@
+-        elif arm.startswith(("P", "B")):
++        elif arm.startswith("P"):
+@@ -170 +87 @@
+-        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y")):
++        elif arm.startswith("F"):
+@@ -174 +90,0 @@
+-                IRONMULE_LAB_KERNEL_TRACE="1",
+@@ -178,3 +94 @@
+-        elif arm != "vllm" and not arm.startswith(
+-            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E")
+-        ):
++        elif arm != "vllm" and not arm.startswith("R"):
+@@ -187,3 +101 @@
+-    with Path(
+-        os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")
+-    ).open("a") as lock:
++    with Path(os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")).open("a") as lock:

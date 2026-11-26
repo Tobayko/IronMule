@@ -68,3 +68,16 @@ LLAMA_CPP_LIB_PATH=/work/grid-calibration/bin python -m lab.pk6.native_dispatch.
 The Q4_K grid screen varies the CUDA launch geometry and keeps the native quantization. Each alternate configuration must run all the timed graphs, agree numerically with stock and beat it by 10% on both activation seeds. Its output contains exact projection shapes and row counts. If the list is nonempty, build the proposed profile with `grid_build /work/grid-serving --plan /work/grid-measurements/plan.json` and qualify it with the full server.
 
 The H process sizes its unified KV pool from the first stock workload. The individual context stays at 2,048 tokens and the native and scheduler capacities are recorded together. The J process retains packed INT8 feed-forward weights during one model's lifetime. L lets the frozen CPU head choose before server initialization. Its decision and CPU wall time are included in the target receipt.
+
+
+The Y arm converts original Q4_K and Q6_K feed-forward matrices to FP16 once while a model owns the cache. Its GEMM accumulates into an FP32 destination. The device arithmetic check compares its output with independently dequantized rows. E runs automatic kernel generation from the unchanged PR 57 product checkout with the experimental CUDA flags cleared. Compare it with the explicitly selected stock R control to see what the ordinary launcher chooses. The fixed-work harness pins online admission learning during timing for every native arm.
+
+To inspect startup, sampled energy and memory together with the streaming results, run `python -m lab.pk6.native_dispatch.verdict "$results" /tmp/native-verdict.json`. Where the late vLLM restart is available, the timing ratios must also hold against that process. The score retains the GGUF and AWQ artifact identities.
+
+To restore the exact Python evaluator that produced a particular set of receipts, run the following command from a clone containing this PR and its base history. It verifies the content hashes before writing the detached checkout. The primary evaluator restores the engine SHA-256 recorded in its HTTP target manifest.
+
+```bash
+python -m lab.pk6.native_dispatch.materialize "$results/sources" primary /tmp/ironmule-primary
+```
+
+The optional draft experiment pairs the Qwen3-32B target with the official Qwen3-0.6B Q8_0 draft at revision `23749fefcc72300e3a2ad315e1317431b06b590a`. K permits the available draft model to propose first. O uses a repeated-context proposal of at least two tokens when available, then offers remaining eligible requests to the draft model. The large model verifies every proposed token. A trace records how many proposed rows it checked and accepted during measured requests.

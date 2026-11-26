@@ -1,0 +1,13 @@
+--- original
++++ actual
+@@ -2757 +2757 @@
+-    default_alternative = kernel == ""
++    default_alternative = kernel == "" and not (on_gpu and ggml_profiles.cublas_override())
+@@ -3054,0 +3055 @@
++    cublas_override = ggml_profiles.cublas_override() if gpu_layers() > 0 else None
+@@ -3167 +3168 @@
+-        if experimental or prefill_batch or os.environ.get("IRONMULE_KG_LIB"):
++        if experimental or prefill_batch or cublas_override or os.environ.get("IRONMULE_KG_LIB"):
+@@ -3208 +3209 @@
+-        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch:
++        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch and not cublas_override:

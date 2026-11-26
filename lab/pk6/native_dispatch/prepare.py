@@ -14,7 +14,7 @@ def substitute(source, old, new):
     return source.replace(old, new)
 
 
-def prepare(root, candidates=True):
+def prepare(root, candidates=True, draft_mix=False):
     engine = root / "ironmule/ggml_engine.py"
     flags = root / "ironmule/ggml_profiles.py"
     if checksum(engine) != BASE_ENGINE:
@@ -149,6 +149,45 @@ if os.environ.get("IRONMULE_LAB_ACTIVITY"):
             '    if os.getenv("IRONMULE_LAB_POOL_CELLS"):\n'
             '        key.extend(["unified-pool-cells", os.environ["IRONMULE_LAB_POOL_CELLS"]])\n    return key',
         )
+    if draft_mix:
+        code = substitute(
+            code,
+            "                modelled: dict[int, list[int]] = {}",
+            """                modelled: dict[int, list[int]] = {}
+                local_drafts = {}
+                draft_mix = os.environ.get("IRONMULE_LAB_DRAFT_MIX") if self.drafter is not None else None""",
+        )
+        code = substitute(
+            code,
+            "                            wants[seq] = (job.full_context(), room)",
+            """                            if (draft_mix == "context_first" and self.policy is not None
+                                    and len(order) <= self.drafter.max_running):
+                                offer = job.context.draft(room)
+                                if self.collective is not None and len(offer[0]) < 2:
+                                    shared_offer = self.collective.draft(job.full_context(), room)
+                                    if len(shared_offer[0]) > len(offer[0]):
+                                        offer = shared_offer
+                                if len(offer[0]) >= 2:
+                                    local_drafts[seq] = offer
+                                    continue
+                            wants[seq] = (job.full_context(), room)""",
+        )
+        code = substitute(
+            code,
+            "                    if seq in modelled:\n                        offers.append((modelled[seq], DRAFT_BUCKET))",
+            """                    if seq in local_drafts:
+                        offers.append(local_drafts[seq])
+                        continue
+                    if seq in modelled:
+                        offers.append((modelled[seq], DRAFT_BUCKET))""",
+        )
+        code = substitute(
+            code,
+            "                        self.policy.observe_drafts(bucket, r, min(r, len(new) - 1))",
+            """                        self.policy.observe_drafts(bucket, r, min(r, len(new) - 1))
+                    if draft_mix and TRACE and r and (seq in modelled or seq in local_drafts):
+                        trace_note(f"draft_verified source={'model' if seq in modelled else 'context'} rows={r} accepted={min(r, len(new)-1)}")""",
+        )
     engine.write_text(code)
     flags.write_text(cache)
 
@@ -157,5 +196,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("root", type=Path)
     p.add_argument("--baseline", action="store_true")
+    p.add_argument("--draft-mix", action="store_true")
     args = p.parse_args()
-    prepare(args.root, not args.baseline)
+    prepare(args.root, not args.baseline, args.draft_mix)

@@ -1,0 +1,13 @@
+--- original
++++ actual
+@@ -37,0 +38,10 @@
++    if os.getenv("IRONMULE_CUBLAS_MIN_ROWS") or os.getenv("IRONMULE_LAB_FP8"):
++        key.extend([os.getenv("IRONMULE_CUBLAS_MIN_ROWS"), os.getenv("IRONMULE_LAB_FP8")])
++    if os.getenv("IRONMULE_LAB_SHARED_PROFILE"):
++        key.extend(["shared-physical-budget", os.environ["IRONMULE_LAB_SHARED_PROFILE"]])
++    if os.getenv("IRONMULE_LAB_STREAM_ALTERNATIVE"):
++        key.extend(["stream-alternative", os.environ["IRONMULE_LAB_STREAM_ALTERNATIVE"]])
++    if os.getenv("IRONMULE_LAB_MMQ_TILE"):
++        key.extend(["qualified-native-tile", os.environ["IRONMULE_LAB_MMQ_TILE"]])
++    if os.getenv("IRONMULE_LAB_POOL_CELLS"):
++        key.extend(["unified-pool-cells", os.environ["IRONMULE_LAB_POOL_CELLS"]])
