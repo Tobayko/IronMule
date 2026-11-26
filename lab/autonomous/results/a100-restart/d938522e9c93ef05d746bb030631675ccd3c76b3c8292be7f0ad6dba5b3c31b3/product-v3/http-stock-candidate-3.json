@@ -1,0 +1,14 @@
+{
+  "arm": "candidate",
+  "index": 3,
+  "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+  "device_receipt": {
+    "child_status": 0,
+    "code_sha256": "4278a9657c8102a07be576a50359d80870a839a3410ec4bc91501ffc3d8dc23b",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "GATE_CANDIDATE"
+  }
+}

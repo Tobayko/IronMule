@@ -1,0 +1,65 @@
+[
+  {
+    "child_status": 0,
+    "code_sha256": "2438e20aeb008ad68aa8d9c731d1d696ef81a272339d956641798421b3ecda13",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "GATE_IDS"
+  },
+  {
+    "child_status": 0,
+    "code_sha256": "4278a9657c8102a07be576a50359d80870a839a3410ec4bc91501ffc3d8dc23b",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "GATE_CANDIDATE"
+  },
+  {
+    "child_status": 0,
+    "code_sha256": "df3a47fc5412831828a9e16b4a1bcfa8bee948918d9ef75c97ae541454ab0636",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "TUNE_CHILD"
+  },
+  {
+    "child_status": 0,
+    "code_sha256": "4278a9657c8102a07be576a50359d80870a839a3410ec4bc91501ffc3d8dc23b",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "GATE_CANDIDATE"
+  },
+  {
+    "child_status": 0,
+    "code_sha256": "4278a9657c8102a07be576a50359d80870a839a3410ec4bc91501ffc3d8dc23b",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "GATE_CANDIDATE"
+  },
+  {
+    "child_status": 0,
+    "code_sha256": "c8f83d07a3027e2801ca5c8daf79b4111195b6f23841b4dd98c1fc37f966d11a",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "CELL_CHILD"
+  },
+  {
+    "child_status": 0,
+    "code_sha256": "3b3166ebd910550fd71577bd0f573e95df11484490f517d00a355fc8b6e1971d",
+    "default_sequences": 8,
+    "device": "NVIDIA A100-SXM4-80GB",
+    "gpu_layers": 999,
+    "provider": "cuda",
+    "stage": "WIDTH_CHILD"
+  }
+]

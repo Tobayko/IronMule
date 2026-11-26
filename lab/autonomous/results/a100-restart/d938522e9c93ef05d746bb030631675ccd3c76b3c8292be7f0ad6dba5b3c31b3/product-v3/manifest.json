@@ -2,6 +2,14 @@
   "attempt": "product-v3",
   "control_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
   "files": {
+    "http-gate-candidate.json": {
+      "original_sha256": "376ce57467815058bdc7ee41a51d29ed66fcbeb9303ff656989df33451e0e501",
+      "sha256": "376ce57467815058bdc7ee41a51d29ed66fcbeb9303ff656989df33451e0e501"
+    },
+    "http-gate-devices-candidate.json": {
+      "original_sha256": "5b6b0052010db8e054f756918996cd72f663b83cea27e5f56de206e05f6fe528",
+      "sha256": "5b6b0052010db8e054f756918996cd72f663b83cea27e5f56de206e05f6fe528"
+    },
     "http-gate-devices-reference.json": {
       "original_sha256": "5b6b0052010db8e054f756918996cd72f663b83cea27e5f56de206e05f6fe528",
       "sha256": "5b6b0052010db8e054f756918996cd72f663b83cea27e5f56de206e05f6fe528"
@@ -18,9 +26,41 @@
       "original_sha256": "2856db5b4a5e3fdd977bacb89abd2be0c5d70050e9a77e67e4574b07a2dff731",
       "sha256": "2856db5b4a5e3fdd977bacb89abd2be0c5d70050e9a77e67e4574b07a2dff731"
     },
+    "http-product-gate-candidate.json": {
+      "original_sha256": "65c60fdcaca6da8af2de7ba282908077cfbad6a87e8bf13d49e140dd19cfd51d",
+      "sha256": "65c60fdcaca6da8af2de7ba282908077cfbad6a87e8bf13d49e140dd19cfd51d"
+    },
     "http-product-gate-reference.json": {
       "original_sha256": "c4bcd741926a81918a12c7356e4adef93c71f6e40a6bb743056bf9944bde3983",
       "sha256": "c4bcd741926a81918a12c7356e4adef93c71f6e40a6bb743056bf9944bde3983"
+    },
+    "http-stock-candidate-0.json": {
+      "original_sha256": "c18afdf580d9e9fb8d6f6d4c6651aa982179a5eeeb0f70e2abaf1e5895b6f880",
+      "sha256": "c18afdf580d9e9fb8d6f6d4c6651aa982179a5eeeb0f70e2abaf1e5895b6f880"
+    },
+    "http-stock-candidate-1.json": {
+      "original_sha256": "21f19d2e728dad0df68c5f309e6f1d014889d58fcc5e406abedba002019a2145",
+      "sha256": "21f19d2e728dad0df68c5f309e6f1d014889d58fcc5e406abedba002019a2145"
+    },
+    "http-stock-candidate-2.json": {
+      "original_sha256": "5d39906b1511a028a12a84224d813208226bb70e77b607ebd24d00c94ee862d9",
+      "sha256": "5d39906b1511a028a12a84224d813208226bb70e77b607ebd24d00c94ee862d9"
+    },
+    "http-stock-candidate-3.json": {
+      "original_sha256": "fe96363c79d7023dd07a3e1f508b965dd03ad77e39c33f58ad49776d20356434",
+      "sha256": "fe96363c79d7023dd07a3e1f508b965dd03ad77e39c33f58ad49776d20356434"
+    },
+    "http-stock-candidate-4.json": {
+      "original_sha256": "f6b396b49ef1ec0424ed20e67332b0afece99934803aeb0ac37053c8f1b9c8dd",
+      "sha256": "f6b396b49ef1ec0424ed20e67332b0afece99934803aeb0ac37053c8f1b9c8dd"
+    },
+    "http-stock-candidate-5.json": {
+      "original_sha256": "4aa26bdc148e99b0a2a5757666d2542db4b6d6970c7b928eac439050c92941c8",
+      "sha256": "4aa26bdc148e99b0a2a5757666d2542db4b6d6970c7b928eac439050c92941c8"
+    },
+    "http-stock-candidate-6.json": {
+      "original_sha256": "e4cde600369af2d0d2ca5386a1b3e703564d3b27d45c945f70b47fb40f0da01b",
+      "sha256": "e4cde600369af2d0d2ca5386a1b3e703564d3b27d45c945f70b47fb40f0da01b"
     },
     "http-stock-reference-0.json": {
       "original_sha256": "27178f02252999b3042bb9d2be2228f154ac2b333f25d245e9fdf9902c1248c0",
