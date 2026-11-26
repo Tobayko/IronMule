@@ -118,8 +118,13 @@ def capture_incident(state, assets, order, verified):
     if not (folder / "result.json").is_file():
         return
     raw = {n: bounded(folder / n) for n in INCIDENT if (folder / n).is_file()}
+    verify_incident(raw, sha(assets["control.json"]), order, verified)
+    assets.update({"incident-" + n: data for n, data in raw.items()})
+
+
+def verify_incident(raw, control_digest, order, verified):
     prior, withdrawn, failure = (json.loads(raw[n]) for n in INCIDENT[:3])
-    if (prior["receipt_sha256"] != sha(assets["control.json"]) or prior["arm"] != "candidate" or prior["withdrawn"]
+    if (prior["receipt_sha256"] != control_digest or prior["arm"] != "candidate" or prior["withdrawn"]
             or failure["original_order"] != order["order_id"] or failure["passed"] is not False or failure["incumbent_returned_work"] is not False
             or withdrawn != failure["automatic_withdrawal"] or withdrawn["arm"] != "reference" or withdrawn["withdrawn"] is not True
             or failure["observed_error"].encode() not in raw["broker.log"]):
@@ -135,7 +140,11 @@ def capture_incident(state, assets, order, verified):
                 or recovered["frozen_evaluator_sha256"] != sha(bounded(Path(restart_trial.__file__))) or row["reused"] or work["arm"] != "reference"
                 or work["cache_used"] or work["work_sha256"] != actual or work["source_sha256"] != row["source_sha256"]):
             raise ValueError("restarted incumbent recovery has different source, cache, output or selection")
-    assets.update({"incident-" + n: data for n, data in raw.items()})
+        if (work["graded_correct"], work["cold_performance_completions"], work["warm_performance_completions"],
+                work["pilot_decisions"]) != (sum(row["facts"]), row["cold"]["completed"], row["warm"]["completed"], row["pilot_decisions"]):
+            raise ValueError("recovered work counts differ from raw worker data")
+        return work
+    return None
 
 
 def verify_withdrawal(assets, order, verified):

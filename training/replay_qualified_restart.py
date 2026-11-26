@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from lab.pk1 import restart_order, restart_release
 from lab.pk1.restart_payback import measured_sources
 from lab.rp.restart_pilot_campaign import assess
-from training import pilot_restart_profiles, scoped_release
+from training import pilot_restart_profiles, restart_evidence, scoped_release
 from training.code_author import read_request, read_response
 from training.code_trial import read
 from training.native_evidence import ROOT
@@ -58,6 +58,13 @@ def check(folder):
                 or after["source_sha256"] != approved["reference_sha256"] or before["work_sha256"] != after["work_sha256"]
                 or min(before["graded_correct"], after["graded_correct"]) != 18):
             raise ValueError("the measured rollback differs from the control receipt")
+        incident = {name: (folder / ("incident-" + name)).read_bytes() for name in restart_evidence.INCIDENT}
+        recovery = restart_evidence.verify_incident(incident, pin, expected, approved)
+        selector = deployment / "selection.json"
+        selector.unlink()
+        selector.symlink_to(folder / "incident-selection.json")
+        if recovery is None or scoped_release.selected(args.checkout, pin) != "reference":
+            raise ValueError("the withdrawn selection or fresh reference worker is missing")
         return {"order": expected["order_id"], "measured_startup_phase": expected["evidence"]["resolved_source_phase"],
                 "hypothesis_origin": "measured phase selection from an engineer-defined cache-replay protocol",
                 "generated_request": request_id, "code_author": read(folder / "response.json")["model"],
@@ -65,7 +72,8 @@ def check(folder):
                 "merged_tree": control["publication"]["candidate_tree"], "reproduced_weights_sha256": fit["weights_sha256"],
                 "training_family": fit["train_family"], "unseen_family": fit["holdout_family"],
                 "median_cold_speedup": approved["metrics"]["median_cold_speedup"],
-                "measured_policy_effect": measured, "explicit_rollback_preserved_correct_work": True}
+                "measured_policy_effect": measured, "explicit_rollback_preserved_correct_work": True,
+                "automatic_withdrawal": {"first_reference_attempt_served": False, "fresh_process": recovery}}
 
 
 def main():
