@@ -149,6 +149,21 @@ def withdraw_product(pod, cfg, evidence, local, reason):
         raise ValueError("product withdrawal was not persisted")
 
 
+def pin_product_binding(pod, evidence, local, binding):
+    """Resume only the same evaluator, source release, policy checkpoint and observed arrival geometry."""
+    marker = local / "product-binding.json"
+    if not marker.exists():
+        preceding = [p for p in (local/"gate-reference.json", local/"gate-candidate.json", local/"decision.json")
+                     if p.is_file()]
+        if preceding:
+            with tempfile.TemporaryDirectory(dir=local) as tmp:
+                copy = Path(tmp)
+                snapshot(pod, evidence, [p.name for p in preceding], copy)
+                if any(not (copy/p.name).is_file() or checksum(copy/p.name) != checksum(p) for p in preceding):
+                    raise ValueError("existing product checkpoint belongs to another target binding")
+    write_once(marker, binding)
+
+
 def product(args, cfg, remote, check, active):
     """Use the existing lease and ordinary HTTP broker only after the independent native release is active."""
     from lab.pk1 import restart_http
@@ -207,6 +222,9 @@ def product(args, cfg, remote, check, active):
     upload(pod, output / "geometry.json", geometry.read_bytes())
     bound = restart_http.key_for(SimpleNamespace(receipt_sha256=pin, head_sha256=head_sha, geometry_sha256=geometry_sha), receipt)
     evidence = remote / "active/deployment" / ("restart-http-" + bound)
+    if normal_width:
+        pin_product_binding(pod, evidence, local, {"release_sha256":pin, "head_sha256":head_sha,
+                            "geometry_sha256":geometry_sha, "evaluator_binding":bound})
     files = ["gate-candidate.json", "gate-reference.json", "decision.json",
              *(f"{arm}-{seed}.json" for seed in restart_http.SEEDS for arm in ("reference", "candidate"))]
     snapshot(pod, evidence, files, local)

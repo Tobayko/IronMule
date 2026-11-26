@@ -116,3 +116,24 @@ def test_cpu_mlx_overlay_cannot_shadow_the_released_model_source(tmp_path):
     (overlay/"sitecustomize.py").write_text("print('unexpected startup handler')")
     with pytest.raises(ValueError):
         content_hash(overlay)
+
+
+def test_checkpoint_resumes_only_its_original_target_evaluator(tmp_path, monkeypatch):
+    from lab.rp import restart_campaign as campaign
+    from training.code_trial import save
+
+    local = tmp_path / "local"
+    local.mkdir()
+    save(local/"gate-reference.json", {"source": "ordinary"})
+    target = {"source": "different"}
+    def fetch(_pod, _remote, names, dest):
+        for name in names:
+            save(dest/name, target)
+    monkeypatch.setattr(campaign, "snapshot", fetch)
+    with pytest.raises(ValueError, match="another target"):
+        campaign.pin_product_binding({}, tmp_path/"target", local, {"key":"original"})
+    target["source"] = "ordinary"
+    campaign.pin_product_binding({}, tmp_path/"target", local, {"key":"original"})
+    campaign.pin_product_binding({}, tmp_path/"target", local, {"key":"original"})
+    with pytest.raises(ValueError, match="conflicting record"):
+        campaign.pin_product_binding({}, tmp_path/"target", local, {"key":"different"})
