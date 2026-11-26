@@ -75,44 +75,28 @@ def develop(order, tree, state):
                  <= target["line"] <= f.lineno), None)
     if func is None:
         raise ValueError("profile location differs from pinned source")
+    from training.code_author import PendingAuthor, consume_cli, hosted_proposal
+
     out = state / "proposal.json"
-    if os.environ.get("IRONMULE_CODE_AUTHOR", "cli") == "hosted":
-        from training.code_author import hosted_proposal
+    mode = os.environ.get("IRONMULE_CODE_AUTHOR", "cli")
+    if mode not in ("cli", "hosted"):
+        raise ValueError("unknown IronMule development author")
+    try:
         proposal = hosted_proposal(state, order, code)
-        save(out, proposal)
-    if not out.exists():
+    except PendingAuthor:
+        if mode == "hosted":
+            raise
         if (state / "dispatch.json").exists():
-            raise RuntimeError("one authoring attempt was used; inspect the saved dispatch before a new order")
-        if "using ChatGPT" not in run(["codex", "login", "status"], stderr=subprocess.STDOUT):
-            raise RuntimeError("included ChatGPT access required; API billing is outside this adapter")
-        catalog = json.loads(run(["codex", "debug", "models"]))
-        models = [m["slug"] for m in catalog["models"] if m.get("visibility") == "list"]
-        model = next(m for m in ("gpt-6.2-sol", "gpt-6.1-sol", "gpt-6-sol") if m in models)
-        schema = {"type": "object", "properties": {"definition": {"type": "string"},
-                  "rationale": {"type": "string"}}, "required": ["definition", "rationale"],
-                  "additionalProperties": False}
-        save(state / "schema.json", schema)
-        prompt = ("You are IronMule's development worker. Return one optimized replacement Python function "
-                  "definition for the measured target. Preserve its signature, semantics on all inputs, and "
-                  "decorators (which the editor preserves for you). No new dependencies. No benchmark detection, "
-                  "measurement changes, or skipped work. No shell or tools needed. Return a dedented def without "
-                  "decorators. If no valid optimization exists return the original.\n"
-                  + json.dumps(order) + "\nSource file:\n" + code)
-        save(state / "dispatch.json", {"model": model, "catalog": models, "order_id": order["order_id"],
-                                      "time": time.time(), "payer": "ChatGPT session"})
-        with (state / "codex.log").open("w") as log:
-            run(["codex", "exec", "--ignore-user-config", "--ephemeral", "-s", "read-only", "-m", model,
-                 "--skip-git-repo-check", "--output-schema", str(state / "schema.json"), "-o",
-                 str(state / "reply.tmp"), "-"], cwd=state, input=prompt, timeout=480, stderr=log)
-        proposal = read(state / "reply.tmp")
-        dispatch = read(state / "dispatch.json")
-        dispatch["reply_sha256"] = hashlib.sha256(json.dumps(proposal, sort_keys=True).encode()).hexdigest()
-        save(state / "dispatch.json", dispatch)
-        save(out, proposal)
-    if os.environ.get("IRONMULE_CODE_AUTHOR", "cli") != "hosted":
-        actual = hashlib.sha256(json.dumps(read(out), sort_keys=True).encode()).hexdigest()
-        if read(state / "dispatch.json").get("reply_sha256") != actual:
-            raise ValueError("reply is not bound to the saved CLI dispatch")
+            # A CLI-only checkout from before the file transport already spent this attempt.
+            previous = read(state / "dispatch.json")
+            if not out.exists() or previous.get("order_id") != order["order_id"]:
+                raise RuntimeError("previous CLI attempt has no bound proposal")
+            proposal = read(out)
+            if hashlib.sha256(json.dumps(proposal, sort_keys=True).encode()).hexdigest() != previous.get("reply_sha256"):
+                raise ValueError("reply is not bound to the saved CLI dispatch")
+        else:
+            proposal = consume_cli(state)
+    save(out, proposal)
     replacement = textwrap.dedent(read(out)["definition"]).strip()
     nodes = ast.parse(replacement).body
     if (len(nodes) != 1 or not isinstance(nodes[0], ast.FunctionDef) or nodes[0].name != func.name

@@ -57,3 +57,7 @@ billable endpoint. The hosted worker transport completed orders in this session.
 Its file request and returned receipt can be resumed independently. An unattended
 installation needs a working author transport and an appropriate spending limit
 for any metered provider. The measured run made no metered API requests.
+
+For an unattended host with a working Codex CLI subscription, consume an existing Python or CUDA order with `python -m training.code_author --state TRIAL_STATE --consume-cli`. The consumer checks the request hash, confirms a ChatGPT login and queries the visible catalog. It runs one ephemeral read-only CLI request. A native kernel order requests high reasoning. A successful CLI exit and a valid function/rationale response create a receipt linked to the request and selected model. On restart the consumer returns the existing response. If login or catalog discovery failed before dispatch, repair that condition and specify `--retry-preflight`. After dispatch, an unsuccessful exit leaves the order pending for inspection. The original hosted submission command remains available.
+
+The CLI consumer removes API credentials from its child environment and checks the subscription login. It opens no metered API account. A future metered adapter must reserve its worst-case input, output and retry charges against the persistent campaign limit before dispatch, settle actual charges and retain outstanding reservations across restarts. An available provider balance alone does not admit a call.
