@@ -53,7 +53,7 @@ def checked_proposal(proposal):
     return proposal
 
 
-def hosted_proposal(state: Path, order: dict, source_text: str) -> dict:
+def hosted_proposal(state: Path, order: dict, source_text: str, *, knowledge=None) -> dict:
     """Publish once and return a checked reply; the caller may retry after PendingAuthor."""
     directory = state / "author"
     directory.mkdir(mode=0o700, exist_ok=True)
@@ -61,6 +61,8 @@ def hosted_proposal(state: Path, order: dict, source_text: str) -> dict:
                "instructions": "Return a dedented replacement definition and a rationale. Preserve the "
                "function signature, behavior and request isolation. The editor preserves decorators. "
                "Change only the specified function. Leave measurement, quality and budget gates intact."}
+    if knowledge is not None:
+        payload["knowledge"] = knowledge
     request_id = digest(payload)
     write_once(directory / "request.json", {"request_id": request_id, **payload})
     path = directory / "response.json"

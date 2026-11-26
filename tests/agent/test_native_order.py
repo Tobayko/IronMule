@@ -25,10 +25,11 @@ def test_native_gate_verifies_the_separately_mounted_kernel_and_all_quality_case
 
     devices = [{"uuid": "device-a"}]
     native = {"sha256": {"backend/CUDA": "ggml"}}
-    bound = {"native": native, "fp": {"devices": devices}, "gguf": "weights"}
+    sources = {"ironmule/pilot.py": "cpu-controller"}
+    bound = {"native": native, "fp": {"devices": devices}, "gguf": "weights", "serving_sources": sources}
     treatment = {"binary": "candidate", "table": "incumbent-selection"}
     row = {"schema": trial.SCHEMA, "evaluator_sha256": trial.checksum(trial.__file__), "treatment": treatment,
-           "binding": {"fp": {"devices": devices}, "native": native, "model_sha256": "weights"},
+           "binding": {"fp": {"devices": devices}, "native": native, "model_sha256": "weights", "runtime_sources": sources},
            "completed": 32, "pilot_decisions": 50, "facts": [True] * 18,
            "workload": {"clients": 32, "tokens": 32, "context": 2048, "quality_cases": 18, "warmup_waves": 1, "seed": 47}}
     trial.validate_arm(row, bound, treatment, 47)
@@ -55,3 +56,13 @@ def test_native_worker_imports_only_the_single_expected_regular_output(tmp_path)
     os.link(raw, tmp_path / "alias")
     with pytest.raises(ValueError):
         copy_result(raw, retained, os.getuid())
+
+
+def test_next_experiment_requires_new_source_and_realistic_whole_wave_headroom():
+    from lab.pk1.native_order import next_target
+
+    options = [{"function": name, "kernel_seconds_per_step": [sec, sec]}
+               for name, sec in [("declined", .035), ("plausible", .030), ("too_small", .0001)]]
+    assert next_target(options, {"declined"}, 3.3, .1)["function"] == "plausible"
+    assert next_target(options, {"declined", "plausible"}, 3.3, .1) is None
+    assert next_target(options, {"declined"}, 3.3, .025) is None

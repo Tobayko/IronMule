@@ -68,6 +68,12 @@ def write_order(args, engine, samples, wall, root, commit):
     if not re.fullmatch(r"[a-f0-9]{40}", commit):
         raise ValueError("profile requires the exact full source commit")
     if engine.gpu_layers != 999 or args.prompts not in engine.kg.get("tokens_served", []):
+        save(args.order_out.with_suffix(".rejected.json"), {
+            "kind": "rejected_native_diagnostic", "reason": "locally qualified width-32 W4 path unavailable",
+            "base_commit": commit, "gpu_layers": engine.gpu_layers, "width": args.prompts,
+            "kernel_selection": engine.kg, "w4": engine.w4, "settings": engine.settings,
+            "events": samples, "wall_seconds_per_window": wall,
+        })
         raise ValueError("W4 was not selected on this GPU for the profiled width")
     table = Path(os.environ["IRONMULE_W4_TABLE"])
     lib = Path(os.environ["IRONMULE_KG_LIB"])
@@ -78,7 +84,12 @@ def write_order(args, engine, samples, wall, root, commit):
             or binding["fp"] != fingerprint() or tuning["binary"] != file_sha256(str(lib))
             or tuning["table"] != file_sha256(str(table)) or not native.get("sha256")):
         raise ValueError("loaded binary, device, runtime, table, source or weights lack a matching receipt")
-    binding.update(native=native, w4_sha256=tuning["binary"], table_sha256=tuning["table"],
+    from ironmule import ggml_engine, gguf_tokenizer, pilot
+
+    serving_sources = {m.__name__.replace(".", "/") + ".py": file_sha256(m.__file__)
+                       for m in (ggml_engine, gguf_tokenizer, pilot)}
+    binding.update(native=native, serving_sources=serving_sources, tuning_receipt_sha256=file_sha256(str(table.with_name("measurement.json"))),
+                   w4_sha256=tuning["binary"], table_sha256=tuning["table"],
                    source_sha256=file_sha256(str(root / SOURCE)), engine=engine.settings, mask=engine.kg)
     variants = [row for line in table.read_text().splitlines() if line.strip() and not line.startswith("#")
                 and (row := list(map(int, line.split())))[3] == args.prompts]
@@ -108,3 +119,76 @@ def write_order(args, engine, samples, wall, root, commit):
     report["order_id"] = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
     save(args.order_out, report)
     print(f"Native order {report['order_id']} for {alternatives[0]['specialization']}")
+
+
+def next_target(options, explored, wave_s, fraction):
+    """Require a new source family to pay the whole-wave gate under the original simulation's prior."""
+    if not 0 < fraction < 1:
+        raise ValueError("invalid simulated reduction")
+    choices = []
+    for option in options:
+        if option["function"] in explored:
+            continue
+        exposed = 31 * min(option["kernel_seconds_per_step"])
+        saved = wave_s * (1 - 1 / 1.02)
+        if exposed > 0 and fraction * exposed >= saved:
+            choices.append({**option, "required_device_time_reduction": saved / exposed})
+    return min(choices, key=lambda c: c["required_device_time_reduction"]) if choices else None
+
+
+def replay_rejection(prior, trial, reference, output, seconds, hourly_usd, usd):
+    import math
+    import shutil
+
+    from lab.pk1.native_trial import SCHEMA, checksum, validate_arm, verify_outputs
+    from lab.portable_gpu.bench import save
+
+    result = json.loads((trial / "result.json").read_text())
+    order = json.loads(prior.read_text())
+    profile = prior.with_suffix(".profile.json")
+    digest = hashlib.sha256(json.dumps({k: v for k, v in order.items() if k != "order_id"}, sort_keys=True).encode()).hexdigest()
+    if (digest != order["order_id"] or result.get("passed") is not False or result["context"]["order"] != digest
+            or result["context"]["base_commit"] != order["base_commit"] or result["schema"] != SCHEMA
+            or checksum(profile) != order["profile_sha256"] or order["evaluator"] != SCHEMA):
+        raise ValueError("expected a rejected trial of this profiled native order")
+    ref = json.loads(reference.read_text())
+    bind = order["binding"]
+    validate_arm(ref, bind, {"binary": bind["w4_sha256"], "table": bind["table_sha256"]}, ref["workload"]["seed"])
+    verify_outputs(ref, ref["workload"]["seed"])
+    if not all(math.isfinite(v) and v > 0 for v in [seconds, hourly_usd, usd, ref["wall_s"], result["elapsed_s"]]):
+        raise ValueError("cost and time inputs must be finite and positive")
+    history = [*order.get("prior_rejections", []), {"order": digest, "target": order["target"],
+               "reason": result["reason"], "trial_sha256": checksum(trial / "result.json")}]
+    target = next_target(order["dreams"], {h["target"]["function"] for h in history}, ref["wall_s"],
+                         order["simulation"]["fraction"])
+    # Fixed six alternating pairs. A short screening failure cannot set an unrealistically low time estimate.
+    forecast_s = max(result["elapsed_s"], 12 * ref["total_elapsed_s"])
+    cost = {"estimated_seconds": forecast_s, "estimated_gpu_usd": forecast_s * hourly_usd / 3600,
+            "available_seconds": seconds, "available_usd": usd, "reference_wall_s": ref["wall_s"],
+            "reference_sha256": checksum(reference), "hourly_gpu_usd": hourly_usd}
+    if (target is None or forecast_s > seconds or cost["estimated_gpu_usd"] > usd
+            or len(history) >= 2):
+        save(output, {"schema": "ironmule.native-search-stop.v1", "prior_rejections": history, "cost": cost,
+                      "reason": "no new target above search sensitivity or remaining operational bounds"})
+        return
+    following = {**order, "target": target, "prior_rejections": history, "prospective_cost": cost,
+                 "hypothesis": f"Investigate {target['specialization']} from the retained target-device profile. "
+                               "Avoid the rejected source families and preserve the local dispatch ABI."}
+    following.pop("order_id")
+    following["order_id"] = hashlib.sha256(json.dumps(following, sort_keys=True).encode()).hexdigest()
+    out_profile = output.with_suffix(".profile.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if profile.resolve() != out_profile.resolve():
+        shutil.copyfile(profile, out_profile)
+    save(output, following)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Replay one rejected native code experiment")
+    for field in ("prior", "trial", "reference", "output"):
+        parser.add_argument("--" + field, type=Path, required=True)
+    for field in ("seconds", "hourly-usd", "usd"):
+        parser.add_argument("--" + field, type=float, required=True)
+    replay_rejection(**vars(parser.parse_args()))

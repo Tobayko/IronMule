@@ -32,6 +32,7 @@ def arm(args):
     from serving_trial import digest, run_wave
 
     from ironmule import ggml_engine as ge
+    from ironmule import gguf_tokenizer, kernel_gen, pilot, w4_kernels
     from ironmule.factual_gate import MAX_TOKENS, cases, correct
     from ironmule.ggml_binary import identity
     from ironmule.gguf_tokenizer import GgufTokenizer
@@ -76,7 +77,9 @@ def arm(args):
             raise ValueError("missing runtime identity or Pilot decisions")
         hardware = fingerprint()
         # The .cu variation is the only intended treatment; separately bind both loaded artifacts.
-        binding = {"fp": hardware, "model_sha256": checksum(args.gguf), "native": loaded,
+        runtime_sources = {m.__name__.replace(".", "/") + ".py": checksum(m.__file__)
+                           for m in (ge, gguf_tokenizer, pilot, kernel_gen, w4_kernels)}
+        binding = {"fp": hardware, "model_sha256": checksum(args.gguf), "native": loaded, "runtime_sources": runtime_sources,
                    "pilot": checksum(eng.pilot.weights_path), "engine": eng.settings, "flags": FLAGS,
                    "affinity": sorted(os.sched_getaffinity(0)), "threads": eng.threads}
     if result["completed"] != 32 or not latency:
@@ -170,6 +173,7 @@ def validate_screen(row, binding, candidate_hash, table):
 
 def author(args):
     from training.code_author import hosted_proposal, write_once
+    from training.experiment_planner import _historical_notes
 
     order = json.loads(args.order.read_text())
     target = order["target"]
@@ -186,7 +190,7 @@ def author(args):
     end = next(i + 1 for i in range(start + 1, len(lines)) if lines[i].rstrip() == "}")
     signature = "".join(lines[start:end]).split("{", 1)[0].strip()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    reply = hosted_proposal(args.output.parent, order, text)
+    reply = hosted_proposal(args.output.parent, order, text, knowledge=_historical_notes(target, None))
     updated = reply["definition"].strip()
     if updated.split("{", 1)[0].strip() != signature or not updated.endswith("}"):
         raise ValueError("only the attributed kernel definition and its existing signature are accepted")
@@ -206,6 +210,7 @@ def validate_arm(row, binding, treatment, seed):
     if (row["schema"] != SCHEMA or row["evaluator_sha256"] != checksum(__file__)
             or row["treatment"] != treatment or row["binding"]["native"] != binding["native"]
             or row["binding"]["fp"]["devices"] != binding["fp"]["devices"]
+            or any(row["binding"]["runtime_sources"].get(name) != value for name, value in binding["serving_sources"].items())
             or row["binding"]["model_sha256"] != binding["gguf"] or row["completed"] != 32
             or row["workload"] != {"seed": seed, "clients": 32, "tokens": 32, "context": 2048,
                                    "warmup_waves": 1, "quality_cases": 18}

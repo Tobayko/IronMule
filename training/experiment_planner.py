@@ -127,6 +127,8 @@ def _historical_notes(target, archive):
     terms = [part for part in parts if len(part) > 3 and part not in ("locals", "ggmlengine")]
     if target["path"].endswith("gguf_tokenizer.py"):
         terms += ["tokenizer", "tokenization"]
+    if target["path"].endswith("w4mma.cu"):
+        terms += [target["function"], "dk1", "gate / up"] if target["function"] == "w4d" else [target["function"], "w4r"]
     if not terms:
         terms = [Path(target["path"]).name]
     if archive is not None:

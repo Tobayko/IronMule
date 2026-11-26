@@ -61,7 +61,55 @@ The per-arm timing includes ordinary controller decisions. The outer report sepa
 build and experiment time for that invocation. A stopped run resumes from the saved order,
 build receipt, screening and completed arms.
 
+After a rejected order, replay its two original device windows against an unprofiled, factual-gated
+reference arm on this binding. The next order needs a different source family and enough measured
+device time to cover the 2% whole-wave gate using the original 10% kernel-duration assumption.
+The planner estimates the cost of twelve arm processes using the measured reference duration and the
+previous experiment's duration. A second rejection ends this search on the retained profile. Supply
+the current lease deadline, GPU price and unused reservation from the cost journal.
+
+```sh
+python -m lab.pk1.native_order --prior "$STATE/order.json" --trial "$STATE/trial" \
+    --reference "$STATE/trial/ref-0.json" --output "$STATE/next/order.json" \
+    --seconds "$REMAINING_SECONDS" --hourly-usd "$HOURLY_USD" --usd "$REMAINING_USD"
+```
+
 A failing screen or pair leaves the reference binary selected. A positive result qualifies the
 tested mixed engine workload on that binding. Attribution, kernel timings or device-name matches
 alone supply no serving qualification. Any extension of PR 57's comparison with vLLM requires
 the corresponding HTTP workloads on both deployments. [PR 57 benchmark protocol](../pk6/a100_pk6.sh)
+
+## Control publication and scoped target selection
+
+Copy the original order and adjacent profile, the full author directory, table, trial reports,
+and both the build receipt and measured candidate binary to the controller. Run below from
+the same trusted evaluator revision. The control command recomputes the numerical, factual,
+resource and timing gates, reconstructs the candidate from the hosted worker reply and
+reports the isolated Git tree. A rejected or incomplete measurement cannot create a PR.
+
+```sh
+python -m lab.pk1.native_release control --state "$CONTROL" --trial "$TRIAL" \
+    --order "$ORDER" --candidate-source "$PROPOSAL" --table "$TABLE"
+```
+
+After a genuine qualification, repeat with `--publish` to submit the exact tree and wait for
+both CI jobs. The command verifies the merge, parents and source bytes on the order's
+qualification branch. Transfer `$CONTROL/deployment/control.json` to the target using
+the trusted operator channel, along with the reported SHA-256. Keep the selected state,
+receipts, libraries, and table outside worker write access.
+
+```sh
+target=(--state "$DEPLOY" --trial "$TRIAL" --checkout "$BASE" --candidate-source "$PROPOSAL"
+        --reference-lib "$REFERENCE_SO" --gguf "$GGUF" --table "$TABLE")
+python -m lab.pk1.native_release activate "${target[@]}" --receipt "$RECEIPT" --receipt-sha256 "$SHA256"
+python -m lab.pk1.native_release run "${target[@]}" --seed 93742
+python -m lab.pk1.native_release rollback --state "$DEPLOY"
+```
+
+On the restricted RunPod use the same `--worker-root` and `--worker-uid` as the original
+trial. Activation runs both binaries on a fresh seeded 32-client workload and checks all 18
+factual responses. `run` selects the recorded binary only for this engine workload and reports
+fresh performance and correctness. A latency or elapsed-time excursion beyond the original
+reference envelope triggers a matched reference check. Failed quality, hash, or matched
+performance checks persist withdrawal before reference fallback. A different target needs
+its own qualification. The release command has no effect on the default server configuration.
