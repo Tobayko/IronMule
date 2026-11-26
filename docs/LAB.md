@@ -4733,3 +4733,21 @@ initial reservation. Two successive queries returned the same delta and zero
 remaining owned pods. The provider's individual pod records were still posting
 when the journal was exported. The conservative total of $16.76980 includes
 a ten-minute cleanup tail for each lease and zero metered API charges.
+
+### 2026-11-26, first content in the independent PR 57 warm HTTP comparison
+
+A post-hoc join matched each of the 192 native request IDs in the client timelines to its engine job and KV sequence. All six IronMule waves contained 16 prompts of 33 tokens and 16 of 444. Each wave submitted one packed prefill call with all 32 requests. Its elapsed time ranged from 2,279 to 2,441 ms. Median client send to engine admission ranged from 22 to 39 ms per wave. Median engine admission to first prefill ranged from 15 to 56 ms. Prompt processing dominated the wait for short requests too.
+
+| Process | First content p50 by wave, ms | First content p50 for the 33-token prompts, ms |
+| --- | --- | --- |
+| IronMule K1 | 2,562 / 2,404 / 2,408 | 2,555 / 2,398 / 2,404 |
+| vLLM | 1,706 / 1,856 / 1,673 | 1,705 / 1,856 / 1,673 |
+| IronMule K2 | 2,469 / 2,338 / 2,369 | 2,461.5 / 2,332.4 / 2,363.0 |
+
+Both systems streamed 32 output tokens per request on one A100-SXM4-80GB. IronMule used Qwen3-32B Q4_K_M and vLLM 0.11.0 used AWQ-Marlin. First content is the first nonempty streamed text piece, which can include whitespace. The native interval is shared elapsed wall time for the packed call. Only client timings are available here for vLLM. These data locate a wait inside IronMule. Explaining the cross-system difference requires a controlled intervention.
+
+The [redacted job and call projections](../lab/autonomous/results/a100-warm-ttft/) preserve counts, timing, opaque request IDs and the original trace digests from the earlier startup receipts. The [protocol for the paired A100 intervention](../lab/pk6/first_token/protocol.md) was committed before its lease.
+
+```sh
+python -m lab.pk6.first_token.phases --projections lab/autonomous/results/a100-warm-ttft
+```

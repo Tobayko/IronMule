@@ -1,0 +1,197 @@
+{
+  "K1": [
+    {
+      "repeat": 0,
+      "requests": 32,
+      "p50_ms": 2561.9,
+      "p95_ms": 2574.2,
+      "max_ms": 2575.4,
+      "p50_by_prompt_ms": {
+        "33": 2554.8,
+        "444": 2567.1
+      },
+      "prefill_calls": [
+        {
+          "width": 32,
+          "prompt_rows": 7629,
+          "short": 16,
+          "elapsed_ms": 2441.2
+        }
+      ],
+      "median_phase_ms": {
+        "send_to_seen": 39.1,
+        "seen_to_prefill": 56.1,
+        "prefill": 2441.2,
+        "prefill_to_first": 7.6,
+        "first_to_client_content": 15.8
+      }
+    },
+    {
+      "repeat": 1,
+      "requests": 32,
+      "p50_ms": 2403.5,
+      "p95_ms": 2413.6,
+      "max_ms": 2413.7,
+      "p50_by_prompt_ms": {
+        "33": 2397.9,
+        "444": 2409.1
+      },
+      "prefill_calls": [
+        {
+          "width": 32,
+          "prompt_rows": 7373,
+          "short": 16,
+          "elapsed_ms": 2329.3
+        }
+      ],
+      "median_phase_ms": {
+        "send_to_seen": 25.9,
+        "seen_to_prefill": 28.2,
+        "prefill": 2329.3,
+        "prefill_to_first": 6.4,
+        "first_to_client_content": 14.1
+      }
+    },
+    {
+      "repeat": 2,
+      "requests": 32,
+      "p50_ms": 2408.3,
+      "p95_ms": 2419.1,
+      "max_ms": 2419.2,
+      "p50_by_prompt_ms": {
+        "33": 2403.5,
+        "444": 2414.6
+      },
+      "prefill_calls": [
+        {
+          "width": 32,
+          "prompt_rows": 7373,
+          "short": 16,
+          "elapsed_ms": 2338.4
+        }
+      ],
+      "median_phase_ms": {
+        "send_to_seen": 24.7,
+        "seen_to_prefill": 25.4,
+        "prefill": 2338.4,
+        "prefill_to_first": 6.8,
+        "first_to_client_content": 13.3
+      }
+    }
+  ],
+  "vllm": [
+    {
+      "repeat": 0,
+      "requests": 32,
+      "p50_ms": 1706.1,
+      "p95_ms": 3049.2,
+      "max_ms": 3050.0,
+      "p50_by_prompt_ms": {
+        "33": 1705.0,
+        "444": 2076.6
+      }
+    },
+    {
+      "repeat": 1,
+      "requests": 32,
+      "p50_ms": 1856.2,
+      "p95_ms": 3072.4,
+      "max_ms": 3073.4,
+      "p50_by_prompt_ms": {
+        "33": 1856.2,
+        "444": 1856.6
+      }
+    },
+    {
+      "repeat": 2,
+      "requests": 32,
+      "p50_ms": 1672.8,
+      "p95_ms": 3043.9,
+      "max_ms": 3044.9,
+      "p50_by_prompt_ms": {
+        "33": 1672.8,
+        "444": 2044.0
+      }
+    }
+  ],
+  "K2": [
+    {
+      "repeat": 0,
+      "requests": 32,
+      "p50_ms": 2468.6,
+      "p95_ms": 2478.7,
+      "max_ms": 2479.0,
+      "p50_by_prompt_ms": {
+        "33": 2461.5,
+        "444": 2473.1
+      },
+      "prefill_calls": [
+        {
+          "width": 32,
+          "prompt_rows": 7629,
+          "short": 16,
+          "elapsed_ms": 2386.0
+        }
+      ],
+      "median_phase_ms": {
+        "send_to_seen": 21.8,
+        "seen_to_prefill": 39.6,
+        "prefill": 2386.0,
+        "prefill_to_first": 7.0,
+        "first_to_client_content": 12.6
+      }
+    },
+    {
+      "repeat": 1,
+      "requests": 32,
+      "p50_ms": 2337.7,
+      "p95_ms": 2347.7,
+      "max_ms": 2348.2,
+      "p50_by_prompt_ms": {
+        "33": 2332.4,
+        "444": 2342.7
+      },
+      "prefill_calls": [
+        {
+          "width": 32,
+          "prompt_rows": 7373,
+          "short": 16,
+          "elapsed_ms": 2278.9
+        }
+      ],
+      "median_phase_ms": {
+        "send_to_seen": 23.8,
+        "seen_to_prefill": 15.2,
+        "prefill": 2278.9,
+        "prefill_to_first": 6.7,
+        "first_to_client_content": 12.7
+      }
+    },
+    {
+      "repeat": 2,
+      "requests": 32,
+      "p50_ms": 2369.1,
+      "p95_ms": 2381.0,
+      "max_ms": 2381.2,
+      "p50_by_prompt_ms": {
+        "33": 2363.0,
+        "444": 2373.3
+      },
+      "prefill_calls": [
+        {
+          "width": 32,
+          "prompt_rows": 7383,
+          "short": 16,
+          "elapsed_ms": 2301.5
+        }
+      ],
+      "median_phase_ms": {
+        "send_to_seen": 23.4,
+        "seen_to_prefill": 26.5,
+        "prefill": 2301.5,
+        "prefill_to_first": 6.9,
+        "first_to_client_content": 12.1
+      }
+    }
+  ]
+}
