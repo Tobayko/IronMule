@@ -669,6 +669,23 @@ def build(root=ROOT) -> Iterator[dict]:
             yield from cpu_experiment(root, source, digest)
         elif source == "lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/qualification-stopped.json":
             yield from stopped_epyc(root, source, digest)
+        elif source == "lab/autonomous/results/runpod-epyc-pilot/withdrawal/outcome.json":
+            from training.pilot_withdrawal_replay import replay
+
+            report = json.loads(path.read_bytes())
+            prior_path = root / "evidence/runtime/cpu-pilot-epyc-discovery.json"
+            prior = json.loads(prior_path.read_bytes())
+            checked = replay(path.parent, prior_path)
+            if (report["prior_sha256"] != canonical_sha256(prior_path.read_bytes()) or report["elapsed_s"] != checked["elapsed_s"]
+                    or report["head_sha256"] != prior["binding"]["scratch_thread_head"]["weights_sha256"]
+                    or any(report["stages"][name][k] != v for name, stage in checked["stages"].items() for k, v in stage.items())):
+                raise ValueError("EPYC withdrawal differs from the verified worker samples")
+            yield record("cpu_checkpoint_withdrawal", source, digest, "restart", report["prior_sha256"],
+                         hardware=prior["binding"]["machine"], base_commit=report["commit"], model=report["gguf_sha256"],
+                         quantization="Q4_K_M", workload=prior["workload"], metrics=[checked], quality={"correct": checked["verified_correct"]},
+                         reason="head_missing_then_requalified_after_process_restart", weights_sha256=report["head_sha256"],
+                         note=report["scope"], uncertainty=report["timing_scope"], authorship="Bound CPU target evaluator",
+                         cost_reference="lab/rp/results/campaign-costs.json", new_resource_bookings_usd=report["new_resource_bookings_usd"])
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
             doc = json.loads(path.read_bytes())
             if "trials" in doc:
