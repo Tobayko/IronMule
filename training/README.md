@@ -306,3 +306,38 @@ To replay the decision following the Xeon serving-demand experiment, run the com
 evidence=lab/autonomous/results/cpu-serving-demand
 python -m training.experiment_planner --observations "$evidence/waves" --prior-orders "$evidence/prior" --output /tmp/ironmule-followup.json
 ```
+
+### Exporting and replaying a native GPU experiment
+
+The control machine can take successive snapshots of a native campaign while the target is running.
+Use the original order with its adjacent `.profile.json` and the coordinator state directory for that order.
+The optional calibration inputs are the measured tuner receipt, its dispatch table, and the actual tuner source.
+
+```sh
+python -m training.native_evidence --order "$ORDER" --state "$CAMPAIGN_STATE" \
+  --destination lab/autonomous/results/a100-native --tuning "$TUNING_RECEIPT" \
+  --table "$DISPATCH_TABLE" --tuner "$TUNER_SOURCE"
+git add lab/autonomous/results/a100-native
+python -m training.experience_archive build --output /tmp/ironmule-experience.jsonl
+python -m training.experience_archive search --archive /tmp/ironmule-experience.jsonl --query native_code_pair
+```
+
+A snapshot includes each available worker request and response, the source patch, numerical screen,
+frozen execution profile, individual serving arms, result and deployment receipts. Missing stages stay open.
+Repeated exports verify previously stored bytes and append new receipts under the same order ID.
+An earlier failed attribution can be added with `--prior-failure-log PATH`. The archive retains its
+error, device/model name and source log digest. The cost locator refers to the redacted campaign
+journal generated after resource cleanup. This is shared expenditure across orders.
+
+Each imported seed has one paired observation including wall time, p95 TTFT, exact token and answer digests,
+factual grades, sampled GPU memory and host peak RSS. Code decisions can be retrieved using
+`--query native_code_decision`; their paired observations never serve as profile selection labels.
+The measured device trace and hypothetical improvements are separate records. Calibration duplicates
+are linked by digest. The comparison covers the reported target runtime and workload.
+
+To rebuild the compiled candidate, check out `base_commit` from the manifest, apply `candidate.diff`,
+and point `--candidate-source` to the resulting `native/kernels/w4mma.cu`. Use the evaluator revision,
+CUDA compiler and compute capability recorded in `manifest.json`. Supply the GGUF, engine libraries
+and reference W4 library matching the order's hashes. Restore the exported dispatch table. The reference
+and candidate binaries stay outside Git. Recheck each binary digest before replaying qualification
+on its target. [Build and qualification commands](../lab/pk1/native-trial.md)

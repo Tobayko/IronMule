@@ -256,6 +256,141 @@ def scratch_qualification(source, digest, run):
                   uncertainty="One run. No independent serving comparator for a throughput or latency reward.")
 
 
+def native_experiment(root, source, digest, calibration_seen):
+    """Import native diagnostics, code provenance and raw trial outcomes as separate record types."""
+    from training.native_evidence import verify_manifest
+
+    folder = (root / source).parent
+    manifest = verify_manifest(folder)
+    files = manifest["files"]
+
+    def doc(name):
+        return json.loads((folder / name).read_bytes()) if name in files else {}
+
+    def emit(kind, name, group, **fields):
+        path = (folder / name).relative_to(root).as_posix()
+        return record(kind, path, files[name]["sha256"], kind, group, **context, **fields)
+
+    order, profile = doc("order.json"), doc("order.profile.json")
+    binding = order["binding"]
+    group = order["order_id"]
+    if (manifest["order_id"] != group or profile["binding"] != binding
+            or manifest["base_commit"] != order["base_commit"] or profile["base_commit"] != order["base_commit"]
+            or order["profile_sha256"] != files["order.profile.json"]["original_sha256"]):
+        raise ValueError("native order and measured device attribution disagree")
+    site = order["target"]
+    context = {"base_commit": manifest["base_commit"], "hardware": binding["fp"], "model": binding["gguf"],
+               "quantization": "Q4_K_M" if binding["gguf"] ==
+                               "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689" else None,
+               "software": {"native": binding["native"], "runtime_sources": binding.get("serving_sources"),
+                            "kernel_source": binding["source_sha256"], "tuner": binding.get("tuner")},
+               "title": site["function"] + " " + site["specialization"], "profiles": [binding["engine"], binding["mask"]],
+               "cost_reference": manifest["cost_journal"]}
+    yield emit("native_device_profile", "order.profile.json", group, workload={
+               k: profile[k] for k in ("width", "decode_steps", "prompt_tokens_per_client", "reference_flags")},
+               metrics=[{"wall_seconds_per_window": profile["wall_seconds_per_window"],
+                         "kernel_seconds_per_step": site["kernel_seconds_per_step"], "calls_per_step": site["calls_per_step"]}],
+               authorship="IronMule attributed warmed device events to the compiled specialization",
+               reason="diagnostic_only", uncertainty="A decode trace measures a subset of complete serving time.")
+    yield emit("native_dream", "order.json", group, provenance="simulated", workload=order["workload"],
+               predictions=order["dreams"], hypothesis=order["hypothesis"], reason="hypothetical_shorter_kernel",
+               uncertainty=order["simulation"]["uncertainty"], authorship="IronMule native experiment planner")
+    tuning = doc("measurement.json")
+    if tuning and binding["tuning_receipt_sha256"] not in calibration_seen:
+        calibration_seen.add(binding["tuning_receipt_sha256"])
+        data = tuning["measurement"]
+        rejects = Counter(row.get("rejection") or "accepted" for row in data["measured"])
+        yield emit("native_calibration", "measurement.json", binding["tuning_receipt_sha256"],
+                   metrics=[{"tuning_s": data["tune_s"], "measured_variants": len(data["measured"]),
+                             "counts_by_outcome": dict(rejects), "dispatch_entries": len(data["entries"])}],
+                   quality={"reference_relative_error_bound": data["error_bound"]}, reason=tuning["outcome"],
+                   authorship="Maintainer specified kernels. The on-device tuner measured dispatch choices.")
+    failure = doc("prior-failure.json")
+    if failure and failure["source_log_sha256"] not in calibration_seen:
+        calibration_seen.add(failure["source_log_sha256"])
+        path = "prior-failure.json"
+        yield record("native_failed_attribution", (folder / path).relative_to(root).as_posix(), files[path]["sha256"],
+                     "prior_run", failure["source_log_sha256"], hardware={"device": failure["device"], "cc": failure["cc"]},
+                     model=failure["model_filename"], decision=False, reason=failure["final_error"],
+                     note="Rejected diagnostic; the source site could not be attributed.", source_log_sha256=failure["source_log_sha256"],
+                     uncertainty="Model and device names are from the earlier log. Its other bindings were not verified.")
+    raw_pairs = []
+    result = doc("result.json")
+    build, setup, screen = (doc(k) for k in ("build.json", "context.json", "screen.json"))
+    for index in range(6):
+        raw = [doc(f"{arm}-{index}.json") for arm in ("ref", "cand")]
+        if not any(raw):
+            continue
+        ref, cand = raw
+        trusted = bool(ref and cand and build and setup and screen
+                       and setup.get("order") == group and setup.get("candidate_source") == build.get("source")
+                       and not any(r.get("profiled") for r in raw)
+                       and ref.get("binding", {}).get("model_sha256") == binding["gguf"]
+                       and all(r.get("evaluator_sha256") == setup.get("harness") for r in raw)
+                       and ref.get("workload", {}).get("seed") == 92741 + index
+                       and all(ref.get(k) == cand.get(k) for k in ("workload", "binding", "completed",
+                                                                    "tokens", "output_sha256", "fact_digest"))
+                       and all(r.get("completed") == 32 and r.get("facts") == [True] * 18 for r in raw)
+                       and [r.get("treatment") for r in raw] == [
+                           {"binary": binary, "table": binding["table_sha256"]}
+                           for binary in (binding["w4_sha256"], build["binary"])])
+        if trusted:
+            raw_pairs.append((ref, cand))
+        details = []
+        for label, row in zip(("reference", "candidate"), raw):
+            if row:
+                details.append({"arm": label, **{k: row.get(k) for k in ("wall_s", "ttft_s", "tokens", "completed",
+                   "total_elapsed_s", "pilot_decisions", "peak_rss_kib", "device_used_bytes_after_phases", "treatment", "output_sha256")},
+                                "facts_passed": sum(row.get("facts", []))})
+        name = f"{'ref' if ref else 'cand'}-{index}.json"
+        yield emit("native_code_pair", name, group, workload=(ref or cand).get("workload"), metrics=details,
+                   reason="paired_measurement" if trusted else "unpaired_or_confounded",
+                   quality={"answers_and_factual_grades": [f for f in (f"ref-{index}.json", f"cand-{index}.json") if f in files]},
+                   authorship="IronMule evaluated a Codex-proposed source change",
+                   uncertainty="One observation of the native workload; HTTP and vLLM were outside this trial.")
+    response, outcome = doc("response.json"), doc("outcome.json")
+    if result or response or outcome:
+        reported = result.get("passed")
+        actual = reported if type(reported) is bool else None
+        reason = result.get("reason") or outcome.get("stage") or "qualification_pending"
+        if actual is True:
+            from lab.pk1.native_release import check_row, score_screen
+            from lab.pk1.native_trial import judge_native, validate_calibration
+            signed = result.get("measurements_sha256", {})
+            names = ["build.json", "screen.json", "calibration.json", *(f"{arm}-{i}.json" for i in range(6) for arm in ("ref", "cand"))]
+            try:
+                if len(raw_pairs) != 6:
+                    raise ValueError("incomplete paired outcomes")
+                score_screen(screen, order, build["binary"], folder / "dispatch.table")
+                frozen = validate_calibration(doc("calibration.json"), binding)
+                for index, pair in enumerate(raw_pairs):
+                    for row, binary in zip(pair, (binding["w4_sha256"], build["binary"])):
+                        check_row(row, order, binary, 92741 + index)
+                        if row["binding"] != raw_pairs[0][0]["binding"] or row["binding"]["profile"] != frozen:
+                            raise ValueError("target changed between observations")
+                checks_passed = (all(k in files and signed.get(k) == files[k]["original_sha256"] for k in names)
+                                 and screen.get("all_elements_identical") is True
+                                 and screen.get("candidate") == build.get("binary") and screen.get("reference") == binding["w4_sha256"]
+                                 and raw_pairs[0][0]["binding"].get("profile") == doc("calibration.json").get("profile")
+                                 and result.get("context") == setup and judge_native(raw_pairs)["passed"])
+            except (FileNotFoundError, IndexError, KeyError, ValueError, TypeError, ZeroDivisionError):
+                checks_passed = False
+            if not checks_passed:
+                actual, reason = None, "confounded_or_unverified_reported_pass"
+        note = response.get("proposal", {}).get("rationale")
+        word = {True: "Qualified", False: "Rejected", None: "Unresolved"}[actual]
+        yield record("native_code_decision", source, digest, "decision", group, **context, provenance="reported",
+                     decision=actual, reported_qualification=reported, deployment=outcome.get("stage"), reason=reason,
+                     metrics=[{k: v for k, v in result.items() if k.endswith("_ratios") or k in
+                              ("elapsed_s", "gpu_memory_ratios_at_phase_boundaries")}],
+                     cost_window=outcome.get("cost_window"), hypothesis=order["hypothesis"],
+                     note=f"{word}: {reason}. {note or 'No author reply in the export.'}",
+                     references={k: v["sha256"] for k, v in files.items()},
+                     authorship={"selector": "IronMule", "code_author": response.get("model"),
+                                 "worker_receipt": response.get("worker_receipt")},
+                     uncertainty="Archive of a source experiment. Serving requires its separate target-bound release.")
+
+
 def build(root=ROOT) -> Iterator[dict]:
     root = Path(root)
     # Limit imports to repository evidence. Keep credentials, private trials and generated indexes out.
@@ -264,6 +399,7 @@ def build(root=ROOT) -> Iterator[dict]:
     ).decode().split("\0")
     checkpoints = {str(path.relative_to(root)) for path in root.glob(PILOT_TRIALS) if path.is_file()}
     files.extend(sorted(checkpoints - set(files)))
+    calibration_seen = set()
     for source in sorted(filter(None, files)):
         path = root / source
         if source in checkpoints:
@@ -306,6 +442,8 @@ def build(root=ROOT) -> Iterator[dict]:
                              hardware=doc["hardware"], model=doc["model"], metrics=doc["holdout"],
                              workload={"requests": len(doc["requests"])}, decision=doc["policy_active"],
                              reason="campaign_summary")
+        elif source.startswith("lab/autonomous/results/a100-native/") and path.name == "manifest.json":
+            yield from native_experiment(root, source, digest, calibration_seen)
         elif (source.startswith("lab/autonomous/results/") and path.name == "result.json"
               and all((path.parent / name).is_file() for name in
                       ("order.json", "evaluation.json", "proposal.json", "candidate.diff"))):

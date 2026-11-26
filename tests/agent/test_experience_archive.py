@@ -72,3 +72,57 @@ def test_published_code_change_rejects_and_retains_codex_rationale(tmp_path):
     assert "Codex" in rejected["authorship"] and "IronMule" in rejected["authorship"]
     assert len({r["group"] for r in rows}) == 1
     assert len([r for r in rows if r["kind"] == "code_trial_pair"]) == 6
+
+
+def test_native_trial_preserves_calibration_failure_and_dream_boundaries():
+    from training.native_evidence import verify_manifest
+
+    root = Path(__file__).resolve().parents[2]
+    scope = root / "lab/autonomous/results/a100-native"
+    seen = set()
+    manifests = sorted(scope.glob("*/manifest.json"))
+    assert manifests
+    for manifest in manifests:
+        verify_manifest(manifest.parent)
+        rows = list(archive.native_experiment(root, str(manifest.relative_to(root)),
+                    archive.canonical_sha256(manifest.read_bytes()), seen))
+        assert all(not row["label_eligible"] for row in rows)
+        profile = next(r for r in rows if r["kind"] == "native_device_profile")
+        assert profile["workload"]["width"] == 32 and min(profile["metrics"][0]["kernel_seconds_per_step"]) > 0
+        assert next(r for r in rows if r["kind"] == "native_dream")["provenance"] == "simulated"
+    rows = list(archive.build())
+    calibrations = [r for r in rows if r["kind"] == "native_calibration"]
+    assert calibrations and len({r["group"] for r in calibrations}) == len(calibrations)
+    assert any(len(r["metrics"][0]["counts_by_outcome"]) > 1 for r in calibrations)
+    assert any(r["kind"] == "native_failed_attribution" and not r["decision"] for r in rows)
+
+
+def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path):
+    from types import SimpleNamespace
+
+    from training import native_evidence
+
+    scope = Path(__file__).resolve().parents[2] / "lab/autonomous/results/a100-native"
+    order = next(scope.glob("*/order.json"))
+    state = tmp_path / "campaign"
+    trial = state / "trial"
+    trial.mkdir(parents=True)
+    (trial / "context.json").write_text(json.dumps({"order": order.parent.name}))
+    (trial / "ref-0.json").write_text(json.dumps({"ttft_s": 0.13}))
+    (trial / "result.json").write_text(json.dumps({"passed": True, "reason": "claimed"}))
+    args = SimpleNamespace(state=state, order=order, destination=tmp_path / "export",
+                           tuning=None, tuner=None, table=None, prior_failure_log=None)
+    manifest = native_evidence.export(args)
+    rows = list(archive.native_experiment(tmp_path, str(manifest.relative_to(tmp_path)),
+                archive.canonical_sha256(manifest.read_bytes()), set()))
+    pair = next(r for r in rows if r["kind"] == "native_code_pair")
+    assert pair["reason"] == "unpaired_or_confounded" and pair["metrics"][0]["ttft_s"] == .13
+    result = next(r for r in rows if r["kind"] == "native_code_decision")
+    assert result["decision"] is None and result["reported_qualification"] is True and not result["label_eligible"]
+    (state / "outcome.json").write_text(json.dumps({"order": order.parent.name, "authorization": "private"}))
+    with pytest.raises(ValueError, match="private fields"):
+        native_evidence.export(args)
+    assert not (manifest.parent / "outcome.json").exists()
+    (manifest.parent / "order.profile.json").write_text("{}")
+    with pytest.raises(ValueError, match="changed portable evidence"):
+        native_evidence.verify_manifest(manifest.parent)

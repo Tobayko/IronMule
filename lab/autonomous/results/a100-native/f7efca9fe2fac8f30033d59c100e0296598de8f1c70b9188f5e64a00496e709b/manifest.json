@@ -1,0 +1,57 @@
+{
+  "base_commit": "33dc7bf544954f6c79a8a15536c0d6f5724b26a2",
+  "candidate_binary_sha256": null,
+  "cost_journal": "lab/rp/results/campaign-costs.json",
+  "files": {
+    "authorship.json": {
+      "original_sha256": "fb6a341411db9eba44ca8985c6238020e28c73ef235ccc839f7173eda764bd39",
+      "sha256": "fb6a341411db9eba44ca8985c6238020e28c73ef235ccc839f7173eda764bd39"
+    },
+    "candidate.diff": {
+      "original_sha256": "b84731e7cca3cdeea63a3ff4b8c4b3d700acefb2cdb11c4e0762f8e050ab3681",
+      "sha256": "b84731e7cca3cdeea63a3ff4b8c4b3d700acefb2cdb11c4e0762f8e050ab3681"
+    },
+    "dispatch.table": {
+      "original_sha256": "ecd29307bb073d364aadd8941596b249d0a87ecf26c1fc846a82832269fca79e",
+      "sha256": "ecd29307bb073d364aadd8941596b249d0a87ecf26c1fc846a82832269fca79e"
+    },
+    "measurement.json": {
+      "original_sha256": "a644004af5371c1cc5e06e9168a3682543374a1e72c0a48cc4bede4f1b43a548",
+      "sha256": "a644004af5371c1cc5e06e9168a3682543374a1e72c0a48cc4bede4f1b43a548"
+    },
+    "order.json": {
+      "original_sha256": "c0e8ea52aa972079b19bff1e3d94d06373130008cc9a8c17b7660ac7e268cc87",
+      "sha256": "c0e8ea52aa972079b19bff1e3d94d06373130008cc9a8c17b7660ac7e268cc87"
+    },
+    "order.profile.json": {
+      "original_sha256": "38591469248af58f969a069d0a9bf3a389919cd22bb404b19ec7252c72580fb8",
+      "sha256": "38591469248af58f969a069d0a9bf3a389919cd22bb404b19ec7252c72580fb8"
+    },
+    "prior-failure.json": {
+      "original_sha256": "50c532e4719a4f1600cb3cfa70daa299e1a0d1edd91e2c5991ea98a081d45b57",
+      "sha256": "50c532e4719a4f1600cb3cfa70daa299e1a0d1edd91e2c5991ea98a081d45b57"
+    },
+    "request.json": {
+      "original_sha256": "61201608063c33cabcc5085f74e51108c1ca80eb37f9e043dd9d0f54ac95d039",
+      "sha256": "61201608063c33cabcc5085f74e51108c1ca80eb37f9e043dd9d0f54ac95d039"
+    },
+    "response.json": {
+      "original_sha256": "8adaa24662d21a0a493fcd9d7ded9b1097a34985d847796a316d5a572514304f",
+      "sha256": "daaf5fda80919122a39726f1268d8bc402d58fbc7e299ee071bda99fe5113f10"
+    }
+  },
+  "order_id": "f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b",
+  "rebuild": {
+    "base_kernel_sha256": "670c958add42cd138472c76a431a64d2ceb9b4c583320f48bdb292f42e6e8a8b",
+    "compiler": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:23:50_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0",
+    "evaluator_commit": null,
+    "evaluator_sha256": null,
+    "instructions": "Check out base_commit. Apply candidate.diff to a separate copy. Use native_trial --mode build on the original compute capability. Restore dispatch.table. Compare the build receipt and requalify.",
+    "source": "native/kernels/w4mma.cu",
+    "target_cc": "80",
+    "tuner_sha256": "b4e12d47e97da944cdefb9bca305850403586fddf7f16b3ed217dea1502c20d9",
+    "tuner_source_available": true
+  },
+  "reference_binary_sha256": "9d88c60855453860a53b1daa74b4c21e8b67e93c76ad53d8c6d1fa1b3516f1e1",
+  "schema": "ironmule.portable-native-trial.v1"
+}
