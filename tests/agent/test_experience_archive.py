@@ -175,3 +175,13 @@ def test_cpu_heldout_comparators_and_no_change_stay_out_of_training():
     assert noop["decision"] is False and "list-copy" in noop["note"] and noop["quality"]["producer_correct"] == 32
     defer = [x for x in rows if x["kind"] == "cpu_deferred_experiment"]
     assert len(defer) >= 2 and all(not row["label_eligible"] and row["provenance"] == "simulated" for row in defer)
+
+
+def test_prefill_microtimings_and_output_mismatches_remain_separate_from_planned_savings():
+    rows = list(archive.build())
+    probes = [x for x in rows if x["kind"] == "prefill_gemm_microprobe"]
+    assert len(probes) == 7 and sum(x["reason"] == "changed_output" for x in probes) == 2
+    assert all(x["provenance"] == "measured" and not x["label_eligible"] for x in probes)
+    [plan] = [x for x in rows if x["kind"] == "prefill_gemm_planning"]
+    assert plan["provenance"] == "simulated" and plan["reason"] == "defer source order" and not plan["label_eligible"]
+    assert plan["metrics"][0]["optimistic_best_sum_ms"] == pytest.approx(24.826, abs=.001)

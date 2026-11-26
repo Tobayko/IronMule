@@ -336,6 +336,48 @@ def cpu_experiment(root, source, digest):
                      uncertainty="The worker retained the reference using the archived rejection. No new code was timed.")
 
 
+def prefill_experiment(root, source, digest):
+    from lab.pk1.prefill_verdict import decide
+
+    folder = (root / source).parent
+    plan, receipt, decision = (json.loads((folder / f).read_bytes()) for f in
+                               ("plan.json", "measurement.json", "decision.json"))
+    if not re.fullmatch("[a-f0-9]{64}", plan["parent_order"]):
+        raise ValueError("invalid parent for traced prefill")
+    parent = folder.parent / "a100-native" / plan["parent_order"]
+    origin = json.loads((parent / "order.json").read_bytes())
+    if (decide(plan, receipt) != decision or plan["binding"] != origin["binding"]
+            or plan["base_commit"] != origin["base_commit"] or plan["profile_sha256"] != origin["profile_sha256"]
+            or plan["trace_sha256"] != canonical_sha256((folder / "profile.log").read_bytes())):
+        raise ValueError("prefill microprobe receipts, trace or planning verdict disagree")
+    binding = plan["binding"]
+    context = dict(hardware=binding["fp"], base_commit=plan["base_commit"], model=binding["gguf"],
+                   quantization="Q4_K_M", cost_reference="lab/rp/results/campaign-costs.json",
+                   authorship="IronMule selected the information experiment. The device benchmark tested cuBLASLt choices.",
+                   references={"parent_order": plan["parent_order"], "trace_sha256": plan["trace_sha256"],
+                               "probe_sha256": plan["source_sha256"], "binary_sha256": receipt["binary_sha256"]})
+    for shape, target in enumerate(receipt["targets"]):
+        info, *events = target["events"]
+        dimensions = {k: target["shape"][k] for k in ("family", "m", "n", "k")}
+        for choice in range(info["heuristics"]):
+            rows = [r for r in events if r["index"] == choice]
+            paired = rows[0]["status"] == "paired"
+            yield record("prefill_gemm_microprobe", source, digest, f"targets/{shape}/heuristics/{choice}",
+                         receipt["request_id"], **context, software={"cublas_version": info["cublas_version"]},
+                         workload={**dimensions, "inputs": "synthetic deterministic matrices", "contract": plan["contract"]},
+                         metrics=rows, reason="paired_bitwise_equivalent" if paired else rows[0]["status"],
+                         quality={"bitwise_equal_to_reference": True if paired else
+                                  (False if rows[0]["status"] == "changed_output" else None),
+                                  "mismatched_elements": rows[0].get("mismatches")},
+                         uncertainty="These are isolated matrix operations. No serving responses were generated.")
+    verdict = folder / "decision.json"
+    yield record("prefill_gemm_planning", str(verdict.relative_to(root)), canonical_sha256(verdict.read_bytes()),
+                 "simulation", receipt["request_id"], **context, provenance="simulated", reason=decision["outcome"],
+                 metrics=[{k: decision[k] for k in ("baseline_prefill_s", "throughput_requirement",
+                         "minimum_ms_for_2pct_if_decode_were_free", "optimistic_best_sum_ms", "per_shape")}],
+                 uncertainty=decision["uncertainty"])
+
+
 def native_experiment(root, source, digest, calibration_seen):
     """Import native diagnostics, code provenance and raw trial outcomes as separate record types."""
     from training.native_evidence import verify_manifest
@@ -562,6 +604,8 @@ def build(root=ROOT) -> Iterator[dict]:
                                    "kernel_rejections")}], profiles=[fit["holdout"]], decision=fit["holdout"]["profile"], reason=fit["holdout"]["reason"],
                          authorship="IronMule fitted a CPU profile head against the measured GPU startup calibration.",
                          uncertainty=fit["uncertainty"], references=[str(weights.relative_to(root))])
+        elif source == "lab/autonomous/results/a100-prefill-lt/measurement.json":
+            yield from prefill_experiment(root, source, digest)
         elif source.startswith("lab/autonomous/results/a100-native/") and path.name == "manifest.json":
             yield from native_experiment(root, source, digest, calibration_seen)
         elif (source.startswith("lab/autonomous/results/") and path.name == "result.json"
