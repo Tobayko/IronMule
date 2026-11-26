@@ -1,0 +1,51 @@
+diff --git a/ironmule/ggml_engine.py b/ironmule/ggml_engine.py
+index 122209f..29d33bf 100644
+--- a/ironmule/ggml_engine.py
++++ b/ironmule/ggml_engine.py
+@@ -1549,19 +1549,34 @@ class GgmlEngine:
+         return keep
+ 
+     def _prefill(self, ids: list[int], seq: int, start: int = 0) -> int:
++        pilot = getattr(self, "pilot", None)
++        learning = getattr(pilot, "learning", None)
++        # This variant is scoped to the measured CPU runtime, GGUF, four-core geometry and scratch head.
++        switch = (len(ids) - start > 1
++                  and getattr(learning, "binding", None) == "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50"
++                  and (learning.candidate_status or {}).get("sha256") == "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0"
++                  and learning.weights and self.gpu_layers == 0 and self.threads < pilot.cores)
++        if switch:
++            previous_threads, poll = self.threads, getattr(self, "poll", POLL)
+         first = None
+-        for start in range(start, len(ids), self.seq_ctx):
+-            chunk = ids[start:start + self.seq_ctx]
+-            last = start + len(chunk) == len(ids)
+-            rows = [(t, start + j, seq, last and j == len(chunk) - 1) for j, t in enumerate(chunk)]
+-            observer = self.observer
+-            if observer is not None:
+-                started = time.perf_counter()
+-            picks = self._decode(rows)
+-            if observer is not None:
+-                observer(0, len(chunk), start, time.perf_counter() - started)
+-            first = picks[-1] if picks else first
+-        return first
++        try:
++            if switch:
++                self.set_threads(pilot.cores, poll)
++            for start in range(start, len(ids), self.seq_ctx):
++                chunk = ids[start:start + self.seq_ctx]
++                last = start + len(chunk) == len(ids)
++                rows = [(t, start + j, seq, last and j == len(chunk) - 1) for j, t in enumerate(chunk)]
++                observer = self.observer
++                if observer is not None:
++                    started = time.perf_counter()
++                picks = self._decode(rows)
++                if observer is not None:
++                    observer(0, len(chunk), start, time.perf_counter() - started)
++                first = picks[-1] if picks else first
++            return first
++        finally:
++            if switch:
++                self.set_threads(previous_threads, poll)
+ 
+     def _prefill_groups(self, fresh: list[tuple[int, Job, int]]):
+         """Adjacent KV stream IDs with equally long uncached suffixes can share rectangular native batches."""
