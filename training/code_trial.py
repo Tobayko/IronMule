@@ -164,7 +164,8 @@ def sandbox(tree, gguf, dest, provider, thread_candidate=None):
     python = Path(sys.executable)
     cmd = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--proc", "/proc",
            "--dev", "/dev", "--tmpfs", "/tmp"]
-    mounts = [Path(p) for p in ("/usr", "/bin", "/lib", "/lib64", "/etc", "/sys", sys.base_prefix,
+    mounts = [Path(p) for p in ("/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache", "/etc/localtime",
+                                "/etc/passwd", "/etc/group", "/etc/alternatives", "/etc/machine-id", "/sys", sys.base_prefix,
                                 sys.prefix)]
     for key in ("IRONMULE_GGML_BINDINGS", "LLAMA_CPP_LIB_PATH"):
         if os.environ.get(key):
@@ -323,6 +324,24 @@ def cycle(args):
             publish(state, order, candidate, args.gguf)
 
 
+def wait_for_checks(repo, number, commit):
+    required = {"linux / py3.12 (MLX CPU)", "linux / wheel and quick start"}
+    deadline = time.monotonic() + 2400
+    while time.monotonic() < deadline:
+        pr = json.loads(run(["gh", "pr", "view", number, "--repo", repo, "--json", "headRefOid,statusCheckRollup"]))
+        if pr["headRefOid"] != commit:
+            raise ValueError("candidate changed while waiting for CI")
+        checks = pr["statusCheckRollup"]
+        states = [c.get("conclusion") or c.get("state") for c in checks]
+        if any(v in {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED"} for v in states):
+            raise RuntimeError("GitHub checks failed")
+        names = {c.get("name") or c.get("context") for c in checks}
+        if required <= names and all(v == "SUCCESS" for v in states):
+            return
+        time.sleep(10)
+    raise TimeoutError("qualification checks did not finish; resume from saved pairs")
+
+
 def publish(state, order, candidate, gguf):
     """A qualification branch is a deployment record. Only its evaluated tree may be activated."""
     from training.trial_release import activate
@@ -369,10 +388,7 @@ def publish(state, order, candidate, gguf):
     number = str(prs[0]["number"])
     if prs[0]["state"] != "MERGED":
         # Checks may not be registered immediately after publishing. An empty set cannot admit code.
-        run(["gh", "pr", "checks", number, "--repo", repo, "--watch", "--interval", "10"], timeout=2400)
-        checks = json.loads(run(["gh", "pr", "checks", number, "--repo", repo, "--json", "bucket"]))
-        if not checks or any(c["bucket"] != "pass" for c in checks):
-            raise RuntimeError("remote checks pending or unsuccessful")
+        wait_for_checks(repo, number, commit)
         run(["gh", "pr", "merge", number, "--repo", repo, "--merge", "--match-head-commit", commit])
     status = activate(state, order, int(number), gguf)
     save(state / "activation.json", status)

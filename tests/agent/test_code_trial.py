@@ -38,3 +38,15 @@ def test_gates_require_all_complete_bound_pairs():
     rows[0][1]["wall_s"] = float("nan")
     with pytest.raises(ValueError):
         judge(rows)
+
+
+def test_external_scorer_checks_delivered_answer_even_if_report_claims_success():
+    from pathlib import Path
+    import json
+    from training.code_trial import verify_deliveries
+    raw = Path(__file__).resolve().parents[2] / "lab/autonomous/results/cpu-tokenizer-01/pair-0.json"
+    row = json.loads(raw.read_text())["candidate"]
+    verify_deliveries(row, 8351)
+    row["waves"][1]["answers"][0]["answer"] = "incorrect"
+    with pytest.raises(ValueError, match="delivered answer"):
+        verify_deliveries(row, 8351)
