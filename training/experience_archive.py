@@ -791,6 +791,13 @@ def fresh_http_comparison(root, source, checksum):
                  base_commit=data["immutable_source_manifest"]["base_commit"], models=[models["ironmule_product"]["sha256"], models["vllm_reference"]["manifest_sha256"]],
                  reason="distinct_prospective_system_comparison", authorship="Registered hardware experiment",
                  uncertainty=models["quantization_note"])
+    if "product_binding" in result:
+        selected = result["product_binding"]
+        yield record("external_http_qualified_product", str((directory / "product-binding.json").relative_to(root)), selected["sha256"],
+                     "product_selection", group, **shared, base_commit=selected["base_commit"], observed_source_sha256=selected["engine_source_sha256"],
+                     model=models["ironmule_product"]["sha256"], quantization=models["ironmule_product"]["format"], reason=selected["scope"],
+                     provenance="reported", gate_sha256=selected["gate_sha256"], workload={"qualified_width":selected["qualified_width"]},
+                     uncertainty="Independent selection and real stock quality receipt before K1. No fresh throughput evidence is implied.")
     historical_hashes = set(replay_http.historical()["source_files"].values()) if any(directory.glob("http_*.jsonl")) else set()
     for start in ("K1","K2","vllm"):
         external = start == "vllm"

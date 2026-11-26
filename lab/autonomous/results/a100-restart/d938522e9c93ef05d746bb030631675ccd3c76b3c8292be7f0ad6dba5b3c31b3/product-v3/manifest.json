@@ -110,6 +110,10 @@
       "original_sha256": "69f62619889c2039a017c38773d0cd9248cdb3d3617d3ff43066b08859a8920d",
       "sha256": "69f62619889c2039a017c38773d0cd9248cdb3d3617d3ff43066b08859a8920d"
     },
+    "replan-after-product-declined.json": {
+      "original_sha256": "0ee59f16e8433c502378bc7ecd243f3c48fe7b38f65924710587f6295ed0454b",
+      "sha256": "0ee59f16e8433c502378bc7ecd243f3c48fe7b38f65924710587f6295ed0454b"
+    },
     "tokenizer-preflight.json": {
       "original_sha256": "5476ccee63801c06c82c39d9591c01ceb39104afb4aeb79edb2eb89c7a774051",
       "sha256": "5476ccee63801c06c82c39d9591c01ceb39104afb4aeb79edb2eb89c7a774051"
