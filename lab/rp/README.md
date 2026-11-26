@@ -71,7 +71,7 @@ commit, affinity, phase timings and outcome. `trials.json` retains complete and 
 An empty holdout, failed correctness check or lack of qualified model decisions leaves a failed phase.
 Send SIGTERM when GPU timing must resume. Preserve the state directory before terminating the pod.
 
-An owned pod may renew its current lease once, by at most 90 minutes. The operator first
+An owned pod may renew its current lease by up to 90 minutes per request. Each extension stays within the shared USD cap. The operator first
 checks the provider's reported owner, balance and rate and reserves the additional duration
 in the shared journal. The deployed pod's immutable original watcher transfers enforcement
 to a replacement that initially uses the original deadline. The controller commits the new
@@ -80,9 +80,17 @@ the earlier control deadline. Retry using identical minutes and reason. Start th
 least three minutes before the initial deadline. Calling `stop` still terminates early.
 
 ```sh
-python -m lab.rp.rp renew --minutes 90 --reason 'finish paired tests on the same calibrated GPU'
+python -m lab.rp.rp renew --minutes 90 --reason 'finish paired tests on the same calibrated GPU' --request-id first-paired-run
 python -m lab.rp.rp spend
 ```
+
+Reusing the same request ID and terms returns the recorded outcome, including after a restart or a later extension.
+A new extension verifies the provider's pod ID, owner-specific name, actual rate, remaining credit and shared reserve.
+Its new local watchdog acknowledges the current and proposed deadlines from the durable journal. On the pod a
+replacement enforces the previous cutoff before the broker retires the exact old monitor by process identity.
+This protocol also accepts the first-generation monitor's existing receipt. Missing acknowledgments leave the
+prior controller cutoff in force and keep the entire reservation held until explicit retry or cleanup.
+
 
 After verified teardown, export the redacted campaign journal. It contains the observed
 account delta, per-lease posted USD if billing has caught up, conservative charges including

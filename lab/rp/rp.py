@@ -19,6 +19,7 @@ import base64
 import json
 import os
 import secrets
+import select
 import subprocess
 import sys
 import time
@@ -219,58 +220,82 @@ def remote_handoff(pod, action):
         if agent(pod, "POST", "/put?path=" + path, data, timeout=15).get("bytes") != len(data):
             raise ValueError("watchdog helper staging failed")
     command = f"python3 -I {path} {action} {int(old)} {int(new)}"
+    prior_tag = pod["renewal"].get("previous_tag")
+    if prior_tag is not None:
+        if len(prior_tag) != 24 or any(c not in "0123456789abcdef" for c in prior_tag):
+            raise ValueError("invalid previous watchdog identity")
+        command += " --previous-tag " + prior_tag
     reply = agent(pod, "POST", "/run", json.dumps({"cmd": command, "timeout": 12}).encode(), timeout=17)
     if reply.get("rc") != 0:
         raise ValueError("pod watchdog handoff failed")
     return json.loads(reply["out"])
 
 
-def renew(state, minutes, reason):
+def renew(state, minutes, reason, request_id=None):
     pod = current(state)
     if not 1 <= minutes <= 90 or not reason.strip():
         raise ValueError("renewal requires one to ninety minutes and a concrete need")
     if not pod.get("id") or "reserved" not in pod:
         raise ValueError("cannot renew an unresolved lease")
+    token = request_id or f"{minutes}:{reason}"
+    if not token.strip() or len(token) > 512:
+        raise ValueError("invalid renewal request identity")
     prior = pod.get("renewal")
-    if prior and (minutes != prior["minutes"] or reason != prior["reason"]):
-        raise ValueError("one renewal per lease; retry only the original request")
-    if prior and prior["status"] == "committed":
-        return public(pod)
+    history = pod.get("previous_renewals", [])
+    for item in [*history, *([prior] if prior else [])]:
+        if item.get("request_id", f"{item['minutes']}:{item['reason']}") != token:
+            continue
+        if (item["minutes"], item["reason"]) != (minutes, reason):
+            raise ValueError("renewal identity already used for other terms")
+        if item["status"] == "committed":
+            return public(pod)
+    pending = prior and prior["status"] == "prepared"
+    if pending and prior.get("request_id", f"{prior['minutes']}:{prior['reason']}") != token:
+        raise ValueError("finish the unresolved reserved renewal first")
     old = pod["deadline"]
     if time.time() > old - 180:
         raise ValueError("insufficient time for a verified watchdog handoff")
     user = account()
     matching = [p for p in user["pods"] if p["id"] == pod["id"] and p["name"] == pod["name"]]
-    if len(matching) != 1:
-        raise ValueError("cannot confirm ownership of the live pod")
-    if not prior:
-        # Older ledgers stored the rounded-down UTC deadline and the full reservation.
-        # The original booking duration was an integer number of minutes.
-        initial_minutes = round((old - pod["started"]) / 60)
-        if initial_minutes <= 0:
-            raise ValueError("invalid initial lease duration")
-        rate = money(pod.get("max_hourly", pod["reserved"] * 3600 / (initial_minutes * 60 + CLEANUP_SECONDS)))
-        if rate < money(matching[0]["costPerHr"]) + money(pod["disk_rate"]):
-            raise ValueError("current price exceeds the reservation rate")
-        extra = rate * minutes / 60
-        reserve(state, extra)
-        if pod["reserved"] + extra > money(user["clientBalance"]):
-            raise ValueError("insufficient provider credit for the renewed lease")
+    if len(matching) != 1 or money(matching[0]["costPerHr"]) == 0:
+        raise ValueError("cannot confirm live ownership and on-demand rate")
+    if pending and prior["old"] != old:
+        raise ValueError("reserved renewal base deadline changed")
+    if prior and not pending and (prior["status"] != "committed" or prior["new"] != old):
+        raise ValueError("previous lease handoff unresolved")
+    # Migrate either state of an older journal lacking max_hourly, including its already reserved extension.
+    duration_minutes = round(((prior["new"] if pending else old) - pod["started"]) / 60)
+    if duration_minutes <= 0:
+        raise ValueError("invalid current lease duration")
+    rate = money(pod.get("max_hourly", pod["reserved"] * 3600 / (duration_minutes * 60 + CLEANUP_SECONDS)))
+    if rate < money(matching[0]["costPerHr"]) + money(pod["disk_rate"]):
+        raise ValueError("current price exceeds the reservation rate")
+    extra = 0.0 if pending else rate * minutes / 60
+    reserve(state, extra)
+    if pod["reserved"] + extra > money(user["clientBalance"]):
+        raise ValueError("insufficient provider credit for the renewed lease")
+    if not pending:
+        if prior:
+            pod["previous_renewals"] = [*history, prior]
+        pod["max_hourly"] = rate
         pod["renewal"] = {"old": old, "new": old + 60 * minutes, "minutes": minutes, "reason": reason,
-                          "tag": secrets.token_hex(12), "status": "prepared"}
+                          "request_id": token, "tag": secrets.token_hex(12), "status": "prepared"}
+        if prior:
+            pod["renewal"]["previous_tag"] = prior["tag"]
         pod["reserved"] += extra
         event(state, "renewal_reserved", old=old, new=old + 60 * minutes, additional_usd=extra)
         save(state)
     # A fresh control watchdog must exist before changing either cutoff. Until
     # the remote acknowledgement is durable the ledger still carries the old cutoff.
-    launch_watch(pod["name"])
+    watch_pid = launch_watch(pod["name"])
     new = pod["renewal"]["new"]
     try:
         if remote_handoff(pod, "commit") != {"effective": new, "live": True}:
             raise ValueError("missing pod watchdog acknowledgement")
         pod["deadline"] = new
         pod["renewal"]["status"] = "committed"
-        event(state, "renewed", name=pod["name"], old=old, new=new, reserved=pod["reserved"])
+        event(state, "renewed", name=pod["name"], old=old, new=new, reserved=pod["reserved"],
+              local_ack_pid=watch_pid, remote_ack_deadline=new)
         save(state)
     except Exception:
         # If either acknowledgement was lost, the old control cutoff survives.
@@ -281,12 +306,30 @@ def renew(state, minutes, reason):
 
 
 def launch_watch(name):
-    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "watch", name],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True)
+    reader, writer = os.pipe()
+    try:
+        with os.fdopen(writer, "wb") as ack:
+            child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "watch", name, "--ready-fd", str(ack.fileno())],
+                         env={**os.environ, "RP_STATE": str(STATE.resolve())}, pass_fds=(ack.fileno(),),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        pod = load()["pod"]
+        expected = [pod["deadline"], pod.get("renewal", {}).get("new", pod["deadline"])]
+        if (not select.select([reader], [], [], 5)[0] or os.read(reader, 128) != json.dumps(expected).encode()
+                or child.poll() is not None):
+            raise OSError("independent control watchdog did not acknowledge the current cutoff")
+        return child.pid
+    finally:
+        os.close(reader)
 
 
-def watch(name):
+def watch(name, ready_fd=None):
+    if ready_fd is not None:
+        with os.fdopen(ready_fd, "wb") as ack:
+            # The parent holds the journal lock through admission. Atomic snapshots let the new reaper acknowledge safely.
+            current_pod = load().get("pod")
+            if not current_pod or current_pod["name"] != name or current_pod["deadline"] <= time.time():
+                return
+            ack.write(json.dumps([current_pod["deadline"], current_pod.get("renewal", {}).get("new", current_pod["deadline"])]).encode())
     while True:
         with locked(STATE):
             state = load()
@@ -398,11 +441,14 @@ def main():
     s.add_parser("account")
     s.add_parser("report").add_argument("--output", required=True, type=Path)
     s.add_parser("resume")
-    s.add_parser("watch").add_argument("name")
+    watcher = s.add_parser("watch")
+    watcher.add_argument("name")
+    watcher.add_argument("--ready-fd", type=int)
     s.add_parser("extend").add_argument("reason")
     renewal = s.add_parser("renew")
     renewal.add_argument("--minutes", type=int, required=True)
     renewal.add_argument("--reason", required=True)
+    renewal.add_argument("--request-id", help="idempotency key; defaults to the requested minutes and reason")
     for op in ("reserve-external", "settle-external"):
         ext = s.add_parser(op)
         ext.add_argument("name")
@@ -411,7 +457,7 @@ def main():
     if a.op == "wait":
         return wait(a)
     if a.op == "watch":
-        return watch(a.name)
+        return watch(a.name, a.ready_fd)
     if a.op == "account":
         user = account()
         print(json.dumps({"balance": user["clientBalance"], "hourly": user["currentSpendPerHr"],
@@ -436,7 +482,7 @@ def main():
         if a.op == "deploy":
             return book(a)
         if a.op == "renew":
-            print(json.dumps(renew(state, a.minutes, a.reason)))
+            print(json.dumps(renew(state, a.minutes, a.reason, a.request_id)))
             return
         if a.op == "extend":
             if not a.reason.strip():

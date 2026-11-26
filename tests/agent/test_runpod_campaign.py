@@ -121,8 +121,19 @@ def test_two_phase_renewal_reserves_once_and_keeps_original_cutoff_on_failure(tm
     monkeypatch.setattr(rp, "remote_handoff", lambda *a: {"effective": old + 5400, "live": True})
     assert rp.renew(pending, 90, "same GPU")["deadline"] == old + 5400
     assert rp.renew(rp.load(), 90, "same GPU")["reserved"] == pytest.approx(2.5 * 160 / 60)
-    with pytest.raises(ValueError, match="one renewal"):
+    provider["pods"][0]["costPerHr"] = 3.
+    with pytest.raises(ValueError, match="price exceeds"):
         rp.renew(rp.load(), 5, "again")
+    provider["pods"][0]["costPerHr"] = 2.19
+    monkeypatch.setattr(rp, "remote_handoff", lambda p, _: {"effective": p["renewal"]["new"], "live": True})
+    updated = rp.renew(rp.load(), 5, "again", "round-two")
+    assert updated["deadline"] == old + 5700 and updated["reserved"] == pytest.approx(2.5 * 165 / 60)
+    assert rp.renew(rp.load(), 90, "same GPU") == updated
+    assert rp.renew(rp.load(), 5, "again", "round-two") == updated
+    with pytest.raises(ValueError, match="other terms"):
+        rp.renew(rp.load(), 6, "again", "round-two")
+    latest = rp.load()["pod"]
+    assert latest["renewal"]["previous_tag"] == latest["previous_renewals"][0]["tag"]
 
 
 def test_report_requires_verified_cleanup_and_excludes_private_data(tmp_path, monkeypatch):
@@ -164,13 +175,41 @@ def test_real_process_handoff_arms_replacement_before_original_exits(tmp_path, m
     monkeypatch.setattr(watcher, "ORIGINAL", original)
     monkeypatch.setattr(watcher.os, "geteuid", lambda: 0)
     proc = subprocess.Popen([sys.executable, str(original)], start_new_session=True)
+    second = None
     try:
         watcher.handoff(old, new, "commit")
         assert proc.wait(timeout=2) == -signal.SIGTERM
         assert watcher.live(old, new) and json.loads(watcher.MARKER.read_text()) == new
         watcher.handoff(old, new, "revert")
         assert watcher.live(old, new) and not watcher.MARKER.exists()
+        watcher.handoff(old, new, "commit")
+        second_root = tmp_path / "successor"
+        second_root.mkdir()
+        successor = second_root / "handoff.py"
+        successor.write_bytes(helper.read_bytes())
+        spec = importlib.util.spec_from_file_location("next_watcher_fixture", successor)
+        second = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(second)
+        monkeypatch.setattr(second, "ORIGINAL", original)
+        old_marker = watcher.MARKER.read_bytes()
+        # A failed preparation does not touch the still-live previous monitor.
+        watcher.MARKER.write_text("0")
+        try:
+            with pytest.raises(ValueError, match="prior monitor does not own"):
+                second.handoff(new, new + 60, "commit", watcher.ROOT)
+        finally:
+            watcher.MARKER.write_bytes(old_marker)
+        assert watcher.live(old, new)
+        second.handoff(new, new + 60, "commit", watcher.ROOT)
+        assert not watcher.live(old, new) and second.live(new, new + 60)
+        assert json.loads(second.MARKER.read_text()) == new + 60
+        second.handoff(new, new + 60, "revert", watcher.ROOT)
+        assert second.live(new, new + 60) and not second.MARKER.exists()
+        second.handoff(new, new + 60, "commit", watcher.ROOT)
+        assert second.live(new, new + 60)
     finally:
+        if second is not None and second.live(new, new + 60):
+            os.kill(json.loads(second.READY.read_text())["pid"], signal.SIGTERM)
         if watcher.READY.exists():
             pid = json.loads(watcher.READY.read_text())["pid"]
             if watcher.live(old, new):
@@ -178,3 +217,18 @@ def test_real_process_handoff_arms_replacement_before_original_exits(tmp_path, m
         if proc.poll() is None:
             proc.terminate()
             proc.wait(timeout=2)
+
+
+def test_real_control_reaper_acknowledges_locked_reservation(tmp_path, monkeypatch):
+    import signal
+    from lab.rp import rp
+
+    monkeypatch.setattr(rp, "STATE", tmp_path / "private.json")
+    rp.save({"pod": {"name": "local-test-only", "deadline": int(time.time()) + 600}})
+    with rp.locked(rp.STATE):
+        pid = rp.launch_watch("local-test-only")
+    try:
+        assert b"local-test-only" in Path(f"/proc/{pid}/cmdline").read_bytes()
+    finally:
+        os.kill(pid, signal.SIGTERM)
+        os.waitpid(pid, 0)
