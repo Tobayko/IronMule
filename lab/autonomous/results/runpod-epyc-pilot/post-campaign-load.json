@@ -1,0 +1,18 @@
+{
+  "kind": "post_campaign_host_load_sample",
+  "elapsed_s": 0.5023862470407039,
+  "ticks_per_second": 100,
+  "metric": "user+nice+system+irq+softirq+steal",
+  "host": {
+    "before": [644264783, 6208001, 316891271, 7588217026, 2390956, 0, 2450086, 0, 0, 0],
+    "after": [644265062, 6208001, 316891441, 7588222939, 2390956, 0, 2450096, 0, 0, 0],
+    "busy_ticks": 459,
+    "total_ticks": 6372,
+    "busy_core_equivalents": 9.136396601294926
+  },
+  "cpu0": {"before": [6581633, 53701, 2559422, 50469635, 15440, 0, 210637, 0, 0, 0], "after": [6581635, 53701, 2559424, 50469673, 15440, 0, 210637, 0, 0, 0], "busy_ticks": 4, "busy_core_equivalents": 0.07962001395463988},
+  "cpu1": {"before": [5028494, 42017, 2610772, 57783498, 19954, 0, 33380, 0, 0, 0], "after": [5028496, 42017, 2610774, 57783543, 19954, 0, 33380, 0, 0, 0], "busy_ticks": 4, "busy_core_equivalents": 0.07962001395463988},
+  "cpu2": {"before": [3948526, 37002, 2523909, 59907609, 20480, 0, 44601, 0, 0, 0], "after": [3948528, 37002, 2523910, 59907655, 20480, 0, 44601, 0, 0, 0], "busy_ticks": 3, "busy_core_equivalents": 0.059715010465979906},
+  "cpu3": {"before": [3993651, 54372, 2472989, 60155979, 19878, 0, 32903, 0, 0, 0], "after": [3993653, 54372, 2472992, 60156023, 19878, 0, 32904, 0, 0, 0], "busy_ticks": 6, "busy_core_equivalents": 0.11943002093195981},
+  "notes": "Measured after CPU campaign process exited; no GPU profile or candidate running. Busy core equivalents are tick delta / HZ / elapsed."
+}

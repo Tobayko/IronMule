@@ -350,3 +350,29 @@ An unattended installation with a working subscription login can complete one de
 python -m training.demand_worker --queue "$IRONMULE_EXPERIMENT_QUEUE" --state "$EVAL_STATE" \
     --gguf "$GGUF" --provider cpu --cores 2 --wait 60 --seconds 1800 --author cli --publish
 ```
+
+On Linux, `IRONMULE_PILOT_CPU_LOAD=affinity` opts the local thread learner into per-CPU busy
+ticks for the exact allowed CPU set. The scheduler's shipped head continues to use its original
+host-wide feature. The experiment records its CPU list in the profile and keeps a separate model
+database and checkpoint binding. A changed mask or an incomplete sample leaves the worker on the
+shipped path. This reader assumes the worker's compute threads inherit its affinity. New hardware
+still needs collection, training and a fresh per-process gate.
+
+```sh
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 taskset -c 0,1 python -m training.pilot_load_audit \
+  --profile evidence/runtime/cpu-pilot-thread-trials.json --out /tmp/load-audit.json
+```
+
+After the four-core EPYC serving campaign stopped, the host accumulated 459 busy CPU ticks in
+0.502 s. The worker's former CPUs 0–3 accumulated 17, or 0.34 core equivalents compared with
+9.14 across the host. Both counters include the observer and other processes. A separate two-core
+affinity reader audit on the Xeon measured median complete Pilot decisions of 106.7 µs with a host
+refresh and 113.0 µs when also refreshing the scoped counter. This was a passive read and
+decision replay on the local CPU. Serving gains require qualified end-to-end measurements.
+[EPYC observation](../lab/autonomous/results/runpod-epyc-pilot/post-campaign-load.json) ·
+[Xeon reader audit](../evidence/runtime/cpu-pilot-affinity-reader-audit.json)
+
+On the Xeon with four engine slots and a 512-token slot context, the original host-scope checkpoint
+loaded as a proposal under its recorded binding. With the same affinity and GGUF, the scoped worker
+set this checkpoint aside. Both workers returned four correct copy responses and identical tokens
+and stop reasons through `GgmlBridge.generate_many`. [Serving check](../evidence/runtime/cpu-pilot-affinity-serving.json)

@@ -66,6 +66,9 @@ class ThreadLearning(ThreadPolicy):
         machine = machine_key()
         binding = [VERSION, ENGINE_VERSION, gguf_digest, base_digest, machine, self.pilot.cores,
                    engine.settings, engine.seqs, engine.seq_ctx, engine.shared, engine.cap]
+        load_scope = getattr(getattr(self.pilot, "load", None), "scope_binding", None)
+        if load_scope:
+            binding.append(load_scope)
         self.binding = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
         self.path = root / "pilot" / (self.binding + ".json")
         hardware = hashlib.sha256(f"{machine}|{self.pilot.cores}".encode()).hexdigest()[:20]
@@ -77,7 +80,12 @@ class ThreadLearning(ThreadPolicy):
         self.decode_geometry = {"backend": "ggml-cpu", "hardware_runtime": machine, "model_sha256": gguf_digest,
                                 "sequences": engine.seqs, "sequence_context": engine.seq_ctx, "capacity": engine.cap,
                                 "shared_cache": engine.shared, "settings": dict(engine.settings)}
-        self.policy = HardwarePolicy(self.path.parent / f"thread-model-v{SCHEMA}.sqlite3", self.binding,
+        database = f"thread-model-v{SCHEMA}.sqlite3"
+        if load_scope:
+            profile["cpu_load_scope"] = self.decode_geometry["cpu_load_scope"] = load_scope
+            scope_digest = hashlib.sha256(json.dumps(load_scope, sort_keys=True).encode()).hexdigest()[:20]
+            database = f"thread-model-v{SCHEMA}-{scope_digest}.sqlite3"
+        self.policy = HardwarePolicy(self.path.parent / database, self.binding,
                                      hardware, self.pilot.cores, costs, profile)
         self.replay_rows, self.replay_load = 1, 0
         self.proposals = {}
@@ -296,7 +304,8 @@ class ThreadLearning(ThreadPolicy):
         e = self.engine
 
         def same_load():
-            return min(self.pilot.cores, int(self.pilot.load.update() + 0.5)) == self.replay_load
+            foreign = self.pilot.load.update()
+            return math.isfinite(foreign) and min(self.pilot.cores, int(foreign + 0.5)) == self.replay_load
 
         if interrupted() or not same_load() or context + DECODE >= e.seq_ctx:
             return None

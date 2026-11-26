@@ -90,6 +90,55 @@ def test_the_load_rereads_open_files_and_close_releases_them():
     load.close()  # twice is fine
 
 
+def test_scoped_linux_load_excludes_foreign_cpus_and_double_counted_guest_ticks(monkeypatch):
+    monkeypatch.setattr(pl.os, "sched_getaffinity", lambda _: {0, 2})
+    load = pl.CpuLoad("affinity")
+    system, _ = load._fds
+    values = b"cpu 800 0 0 0 0 0 0 0\ncpu0 80 1 2 3 4 5 6 7 8 9\ncpu1 99 0 0 0 0 0 0 0\ncpu2 10 0 0 0 0 0 0 0\n"
+    proc = b"123 (runtime thread) " + b"0 " * 11 + b"11 12 0"
+    monkeypatch.setattr(pl.os, "pread", lambda fd, n, off: values if fd == system else proc)
+    try:
+        assert load._read()[1:] == (111, 23)
+        monkeypatch.setattr(pl.os, "sched_getaffinity", lambda _: {1, 3})
+        assert np.isnan(load.update()) and load._last is None
+    finally:
+        load.close()
+
+
+def test_scoped_thread_learning_separates_equal_width_cpu_sets(tmp_path):
+    from ironmule.pilot_learning import ThreadLearning
+
+    fake = types.SimpleNamespace(cores=2)
+    engine = types.SimpleNamespace(pilot=fake, settings={}, seqs=4, seq_ctx=512, shared=False, cap=4)
+    host = ThreadLearning(engine, tmp_path, "model", "weights")
+    fake.load = types.SimpleNamespace(scope_binding={"reader": "linux-affinity-v1", "cpus": [0, 1]})
+    left = ThreadLearning(engine, tmp_path, "model", "weights")
+    fake.load.scope_binding = {"reader": "linux-affinity-v1", "cpus": [2, 3]}
+    right = ThreadLearning(engine, tmp_path, "model", "weights")
+    assert len({p.binding for p in (host, left, right)}) == 3
+    assert len({p.policy.path for p in (host, left, right)}) == 3
+
+
+def test_shipped_head_keeps_host_feature_during_a_scoped_trial(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRONMULE_PILOT_CPU_LOAD", "affinity")
+    pilot = pl.Pilot(engine(), COSTS, max_cap=4, weights=weights(tmp_path))
+    monkeypatch.setattr(pilot.load, "update", lambda: 0.)
+    monkeypatch.setattr(pilot.base_load, "update", lambda: pilot.cores)
+    original = pl.predict
+    inputs = []
+
+    def capture(weights, features):
+        inputs.append(features[7])
+        return original(weights, features)
+
+    try:
+        monkeypatch.setattr(pl, "predict", capture)
+        pilot.decide(1, 0, 0, 97)
+        assert inputs == [1.] and pilot.features(1, 0, 0, 97)[7] == 0.
+    finally:
+        pilot.close()
+
+
 def test_weights_for_the_four_budgets_of_version_1_are_refused(tmp_path):
     path = weights(tmp_path)
     z = dict(np.load(path))

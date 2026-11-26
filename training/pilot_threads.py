@@ -37,6 +37,8 @@ def acquire(args):
         p = e.pilot
         if not p or e.gpu_layers:
             raise ValueError("collection requires a live CPU Pilot")
+        if p.load.scope_binding and not math.isfinite(p.load.update()):
+            time.sleep(0.06)  # the scoped reader needs two observations before labelling a regime
         learning = ThreadLearning(e, args.state, file_sha256(str(args.gguf)), file_sha256(str(p.weights_path)))
         # All arms share a prompt, decode positions, reference, host and binary. Keep both orders.
         record = {"schema": 1, "binding": learning.binding, "profile": {
@@ -65,7 +67,10 @@ def acquire(args):
             context = band * 64 + 8
             features = p.features(rows, 0, 0, context)
             base = p.decide(rows, 0, 0, context)["threads"]
-            load = min(p.cores, int(p.load.update() + 0.5))
+            foreign = p.load.update()
+            if not math.isfinite(foreign) or not np.isfinite(features).all():
+                raise ValueError("unable to bind measured work to a stable CPU load scope")
+            load = min(p.cores, int(foreign + 0.5))
             learning.replay_load, learning.replay_rows = load, rows
             group = {"group": f"ctx-bin-{band}", "pass": pass_index, "step_costs": p.costs, "context": context, "rows": rows, "foreign": load,
                      "base": base, "features": features.tolist(), "observations": []}
