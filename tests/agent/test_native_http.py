@@ -107,7 +107,7 @@ def test_serve_reverts_failed_persistent_worker_and_starts_reference_on_same_por
         http.save(evidence / f"gate-{arm}.json", {})
     http.save(tmp_path / "http-selection.json", {"arm": "cand", "withdrawn": False, "binding": "binding", "control_receipt": "pin"})
     monkeypatch.setattr(http, "assess", lambda *_: decision)
-    monkeypatch.setattr(http, "locked_receipt", lambda *_: (receipt, "pin", True))
+    monkeypatch.setattr(http, "native_selected", lambda *_: True)
     def withdraw(args, reason):
         http.save(tmp_path / "http-selection.json", {"arm": "ref", "withdrawn": True, "reason": reason})
     monkeypatch.setattr(http, "withdraw", withdraw)

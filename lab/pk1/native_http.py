@@ -59,6 +59,12 @@ def locked_receipt(state):
         return receipt, pin["sha256"], selected["arm"] == "cand" and not selected["withdrawn"]
 
 
+def native_selected(state):
+    # Small, atomically published pointer. A long-running target recheck may hold the deployment lock.
+    selected = read(state / "deployment/selection.json")
+    return selected.get("arm") == "cand" and selected.get("withdrawn") is False
+
+
 def code_binding(args, receipt_sha):
     # The two Python checkouts may differ (original engine, newer protected control host).
     # Bind their actual product code, including scheduler and protocol, in addition to native target_files.
@@ -414,8 +420,11 @@ def live(args, d, receipt, pin, key):
     evidence = d / ("http-" + key)
     result = read(evidence / "decision.json")
     require(result["binding"] == key and result["control_receipt"] == pin, "HTTP target binding changed")
-    if result["decision"].get("passed") and assess(evidence, key, pin) != result:
-        withdraw(args, "HTTP holdout reports changed since qualification")
+    if result["decision"].get("passed"):
+        try:
+            require(assess(evidence, key, pin) == result, "HTTP holdout reports changed since qualification")
+        except (ValueError, OSError, TypeError, KeyError) as exc:
+            withdraw(args, str(exc)[:300])
     deadline = time.monotonic() + args.lifetime
     stop = threading.Event()
     previous = signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -424,7 +433,7 @@ def live(args, d, receipt, pin, key):
     try:
         while not stop.is_set() and time.monotonic() < deadline:
             selected = read(d / "http-selection.json")
-            active = (selected.get("arm") == "cand" and not selected.get("withdrawn") and locked_receipt(args.state)[2]
+            active = (selected.get("arm") == "cand" and not selected.get("withdrawn") and native_selected(args.state)
                       and selected.get("binding") == key and selected.get("control_receipt") == pin
                       and result["decision"].get("passed") is True)
             arm = "cand" if active else "ref"
@@ -445,7 +454,7 @@ def live(args, d, receipt, pin, key):
                             raise ValueError("product worker exited")
                         if active:
                             desired = read(d / "http-selection.json")
-                            if desired.get("arm") != "cand" or not locked_receipt(args.state)[2]:
+                            if desired.get("arm") != "cand" or not native_selected(args.state):
                                 break
                             for row in service.live_samples():
                                 if row["at"] <= since:
