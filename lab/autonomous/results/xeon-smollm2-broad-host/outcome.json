@@ -1,0 +1,105 @@
+{
+  "kind": "measured",
+  "cores": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|5547e01cc1bc9a0cb518eef20e9e7b8a99194ffa57fef68652c196006575b6df",
+  "profile": "Two threads and 4 CPU clients; one warm-up and four alternating complete short/document copy waves per fresh process",
+  "commit_comparison": "Only non-runtime files changed between source labels. Git trees of engine, product, pilot, ironmule_devices and serving evaluator identical. All binding fields identical.",
+  "max_all_runtime_site_saving_ratio_bound": 0.001521267759676682,
+  "minimum_elapsed_time_reduction_for_2pct_throughput": 0.019607843137254943,
+  "capture_sha256": "8e479440f49afca9c80b63d20dcf8e808a8dbf9263b61b7c06a225bd09b24db2",
+  "runs": [
+    {
+      "seed": 68421,
+      "source": "dceae35978e3f1001440445e1a6837eb905b2afb",
+      "correct": 16,
+      "tokens": 48,
+      "pilot_decisions": 12,
+      "wall_s": 5.6887270139999995,
+      "extra_files": {
+        "ironmule/pilot.py": 0.004465912000000001,
+        "ironmule/speculation.py": 0.004188165000000001
+      },
+      "all_extra_self_s": 0.008654077,
+      "extra_share": 0.001521267759676682,
+      "wave_shares": [
+        0.0008954270913344491,
+        0.0009616570537435929,
+        0.003446986190060543,
+        0.001551631754762061
+      ],
+      "largest_three": [
+        {
+          "path": "ironmule/speculation.py",
+          "function": "NgramIndex._index",
+          "line": 79,
+          "self_s": 0.003127278
+        },
+        {
+          "path": "ironmule/pilot.py",
+          "function": "predict",
+          "line": 164,
+          "self_s": 0.002674027
+        },
+        {
+          "path": "ironmule/pilot.py",
+          "function": "Pilot._features",
+          "line": 252,
+          "self_s": 0.0008605980000000001
+        }
+      ],
+      "raw_sha256": "91582abc6942aff4f6b535030dba9e0d5df3bafebf3f810e4d6b4ce5cf378d23"
+    },
+    {
+      "seed": 68422,
+      "source": "16af87b23ee685888e0f0a94c65ab7785fd3a24a",
+      "correct": 16,
+      "tokens": 48,
+      "pilot_decisions": 12,
+      "wall_s": 4.767524445,
+      "extra_files": {
+        "ironmule/pilot.py": 0.001953234,
+        "ironmule/speculation.py": 0.0017003459999999997
+      },
+      "all_extra_self_s": 0.0036535800000000005,
+      "extra_share": 0.0007663474077897465,
+      "wave_shares": [
+        0.0014127186933612817,
+        0.0006009979538305151,
+        0.0010134398390012178,
+        0.0005794400187051972
+      ],
+      "largest_three": [
+        {
+          "path": "ironmule/speculation.py",
+          "function": "NgramIndex._index",
+          "line": 79,
+          "self_s": 0.0010106490000000002
+        },
+        {
+          "path": "ironmule/pilot.py",
+          "function": "predict",
+          "line": 164,
+          "self_s": 0.000947225
+        },
+        {
+          "path": "ironmule/pilot.py",
+          "function": "Pilot._features",
+          "line": 252,
+          "self_s": 0.00030359800000000003
+        }
+      ],
+      "raw_sha256": "c40f35eeb20bf79d7671e133a5cdec7cb606ea86b13c8b5118ddfa5bff5a4db1"
+    }
+  ],
+  "schema": "ironmule.xeon-broad-host-outcome.v1",
+  "decision": "defer",
+  "author_order": null,
+  "additional_service_cost_usd": 0,
+  "reason": "The total additional measured exclusive runtime share is smaller than the necessary 1.96% elapsed time reduction in both independent seeds.",
+  "uncertainty": "This bound describes only host self time in the recorded direct engine waves. Decisions may change native execution time. Product HTTP and other loads or machines were not measured."
+}
