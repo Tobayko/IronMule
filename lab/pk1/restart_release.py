@@ -24,9 +24,10 @@ def evaluator():
 
 def approved(args):
     result = trial.qualification(args)
+    ref = read(args.trial / "aa-0.json")
     return {**result, "evaluator_sha256": evaluator(),
             "binding": {"runtime": result["binding"], "cache_receipt_sha256": release.checksum(args.trial / "receipt.json"),
-                        "pilot_sha256": read(args.trial / "aa-0.json")["pilot_sha256"]}}
+                        "pilot_sha256": ref["pilot_sha256"], "mask_bits": ref["mask_bits"], "vendor": ref["cuda_vendor"]}}
 
 
 def control(args):
