@@ -219,3 +219,26 @@ def test_qwen_startup_order_binds_both_observations_and_worker_replacement():
     assert observed["metrics"][0]["campaign_reserved_usd"] <= 15
     if "result.json" not in manifest["files"]:
         assert next(r for r in rows if r["kind"] == "restart_code_decision")["decision"] is None
+
+
+def test_qwen_product_partial_and_rejected_evidence_preserve_bound_measurements(monkeypatch, tmp_path):
+    from training import restart_evidence as startup, scoped_release
+
+    product = tmp_path / "product"
+    product.mkdir()
+    assets = {"control.json": b"pin", "startup-head.npz": b"checkpoint"}
+    order = {"order_id": "order"}
+    verified = {"reference_sha256": "ref"}
+    monkeypatch.setattr(scoped_release, "pinned", lambda *_: {"order": order, "qualification": verified})
+    raw = {"seed": 95111, "source_sha256": "ref", "startup_decision": {"weights_sha256": startup.sha(b"checkpoint")}}
+    arm = product / "reference-95111.json"
+    arm.write_text(json.dumps(raw))
+    for name in ("decision.json", "product-qualify.json"):
+        (product / name).write_text('{"passed": false, "reason": "gate failed"}')
+    startup.product_assets(tmp_path, order, verified, assets)
+    assert json.loads(assets["http-product-qualify.json"])["passed"] is False
+    assert json.loads(assets["http-reference-95111.json"]) == raw
+    raw["startup_decision"]["weights_sha256"] = "unrelated head"
+    arm.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="unbound ordinary product arm"):
+        startup.product_assets(tmp_path, order, verified, assets)

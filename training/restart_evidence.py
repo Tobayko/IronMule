@@ -23,12 +23,16 @@ TRIAL = ("context.json", "aa-0.json", "aa-1.json", "stale.json", "missing.json",
          *(f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")), "result.json")
 RELEASE = ("release-activate.json", "release-run.json", "release-exercise.json", "target-check.json", "rollback-exercise.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
-COST_PHASES = ("during-qualification", "after-verdict", "after-release")
+# Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
+HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
+HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "geometry.json", "decision.json", "withdrawn.json",
+              "product-qualify.json", "product-exercise.json", "product-serve.json")
+COST_PHASES = ("during-qualification", "after-verdict", "after-release", "after-product")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
 NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "startup-fit.json", "startup-head.npz", "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
-         "qualified.json", "control.json", *TRIAL, *RELEASE}
+         "qualified.json", "control.json", *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
 
 
 def manifest(path):
@@ -56,7 +60,8 @@ def observe_cost(state, phase):
         raise ValueError("cost snapshot requires the exact target configuration")
     target = read(state / "target.json")
     if (phase == "after-verdict" and not (state / "trial/result.json").is_file()
-            or phase == "after-release" and not (state / "release/release-run.json").is_file()):
+            or phase == "after-release" and not (state / "release/release-run.json").is_file()
+            or phase == "after-product" and not (state / "product/product-qualify.json").is_file()):
         raise ValueError("requested campaign cost phase has not occurred")
     with rp.locked(rp.STATE):
         ledger = rp.load()
@@ -103,6 +108,55 @@ def checkpoint_assets(state, order, verified, assets):
         raise ValueError("startup head is not bound to the measured training and held-out families")
     assets["startup-fit.json"] = bounded(state / "startup-fit.json")
     assets["startup-head.npz"] = weights
+
+
+def product_assets(state, order, verified, assets):
+    """Bind held-out product measurements to the independently approved source and deployed scratch head."""
+    from training import scoped_release
+
+    work = state / "product"
+    raw = {n: bounded(work / n) for n in HTTP_FILES if (work / n).is_file()}
+    if not raw:
+        return
+    control = scoped_release.pinned(state / "release", sha(assets["control.json"]))
+    if control["order"] != order or control["qualification"] != verified:
+        raise ValueError("HTTP evidence belongs to a different release")
+    head = sha(assets["startup-head.npz"])
+    for name in HTTP_ARMS:
+        if name not in raw:
+            continue
+        row = json.loads(raw[name])
+        arm, number = name.removesuffix(".json").split("-")
+        if (row["seed"] != int(number) or row["source_sha256"] != verified[arm + "_sha256"]
+                or row["startup_decision"]["weights_sha256"] != head):
+            raise ValueError("unbound ordinary product arm")
+    for n in ("decision.json", "product-qualify.json"):
+        if n not in raw:
+            continue
+        decision = json.loads(raw[n])
+        if type(decision.get("passed")) is not bool:
+            raise ValueError("incomplete product verdict")
+        if decision["passed"] is True or "integrity" in decision:
+            from lab.pk1 import restart_http
+            if restart_http.assess(work, control) != decision:
+                raise ValueError("product decision differs from independently graded raw HTTP pairs")
+    if "product-qualify.json" in raw and json.loads(raw["product-qualify.json"]) != json.loads(raw["decision.json"]):
+        raise ValueError("product qualification differs from target decision")
+    for name in ("product-serve.json", "product-exercise.json"):
+        if name not in raw:
+            continue
+        stage = json.loads(raw[name])
+        rows = stage["completions"] if name == "product-serve.json" else [stage["before"], stage["after"]]
+        for row in rows:
+            arm = row["arm"]
+            if (arm not in ("reference", "candidate") or row["source_sha256"] != verified[arm + "_sha256"]
+                    or row["startup_decision"]["weights_sha256"] != head or row["startup_decision"]["profile"] != arm):
+                raise ValueError("unbound product action")
+        if name == "product-exercise.json" and stage["passed"] and not (
+                rows[0]["arm"] == "candidate" and rows[1]["arm"] == "reference"
+                and rows[0]["work_sha256"] == rows[1]["work_sha256"] and all(row["graded_correct"] == 18 for row in rows)):
+            raise ValueError("actual product withdrawal or work differs")
+    assets.update({"http-" + name: data for name, data in raw.items()})
 
 
 def export(args):
@@ -194,7 +248,10 @@ def export(args):
                                         candidate_source=author / "candidate.py")
                 if (state / "startup-fit.json").is_file():
                     from lab.pk1 import restart_release
-                    checkpoint_assets(state, order, restart_release.approved(check), assets)
+                    verified = restart_release.approved(check)
+                    checkpoint_assets(state, order, verified, assets)
+                    if (state / "product").is_dir():
+                        product_assets(state, order, verified, assets)
                 else:
                     restart_trial.qualification(check)
             qualified = True
@@ -253,6 +310,27 @@ def experiences(root, source):
                    initialization="Three independently seeded heads trained from random weights on CPU",
                    authorship="IronMule fitted and replayed the CPU startup controller",
                    uncertainty=fit["uncertainty"])
+    for name in HTTP_ARMS:
+        public = "http-" + name
+        if public not in files:
+            continue
+        row = read(folder / public)
+        yield emit("restart_product_arm", public, reason="matched_first_http_requests", arm=name.split("-")[0],
+                   seed=row["seed"], source_sha256=row["source_sha256"], startup_decision=row["startup_decision"],
+                   cold_admission=row["cold_admission"],
+                   metrics=[{"cold_completed_s": row["cold_completed_s"], "worker_ready_s": row["startup_s"],
+                             **{phase: {k: row[phase][k] for k in ("correct", "wall_s", "ttft_p95_s")}
+                                for phase in ("cold", "warm")},
+                             **{k: row[k] for k in ("perf_wall_s", "perf_ttft_s", "perf_tokens", "peak_rss", "device_bytes")}}],
+                   authorship="Ordinary target ProductService and independent bounded workload",
+                   uncertainty="Paired HTTP qualification combines all six independent seeds.")
+    for name, kind in (("product-qualify.json", "restart_product_qualification"),
+                       ("product-exercise.json", "restart_product_rollback"), ("product-serve.json", "restart_product_serving")):
+        public = "http-" + name
+        if public in files:
+            stage = read(folder / public)
+            yield emit(kind, public, reason=stage.get("reason", name), observed=stage,
+                       authorship="ProductService on the source-bound target", uncertainty="Only the admitted target workload was observed.")
     for name in COST_FILES:
         if name in files:
             cost = read(folder / name)
