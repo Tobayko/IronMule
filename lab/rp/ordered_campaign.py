@@ -66,7 +66,7 @@ def deploy(pod,local,trained,publication):
 repo=/work/IronMule
 dst={DEPLOY}
 install -d -m 0755 "$dst" "$dst/inputs"
-git -C "$repo" fetch -q origin {framework} {new}
+git -C "$repo" fetch -q https://github.com/Tobayko/IronMule.git {framework} {new}
 for entry in reference:{base} candidate:{new} framework:{framework}; do
  name=${{entry%:*}}
  rev=${{entry#*:}}
