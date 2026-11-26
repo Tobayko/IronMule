@@ -63,6 +63,10 @@
       "original_sha256": "603ef7b9eaa47d681f54a2a489c182c40fa5a97358aa7e2248b1fac973efd014",
       "sha256": "603ef7b9eaa47d681f54a2a489c182c40fa5a97358aa7e2248b1fac973efd014"
     },
+    "cost-after-release.json": {
+      "original_sha256": "046903c69ac0d8e9ef03b6a9ca73425e710b3e7cf1b7bf69de5c93c4cbc069d7",
+      "sha256": "046903c69ac0d8e9ef03b6a9ca73425e710b3e7cf1b7bf69de5c93c4cbc069d7"
+    },
     "cost-after-verdict.json": {
       "original_sha256": "ea8e1e27eb5340fdae451707633a713b5b0dca8f8da6a49ea7cca9cc617a1a7a",
       "sha256": "ea8e1e27eb5340fdae451707633a713b5b0dca8f8da6a49ea7cca9cc617a1a7a"
@@ -155,6 +159,10 @@
       "original_sha256": "910ed323464532a6cd5615681571325f7bbbf4e9c68466aab2a6fd80e72cf822",
       "sha256": "910ed323464532a6cd5615681571325f7bbbf4e9c68466aab2a6fd80e72cf822"
     },
+    "release-exercise.json": {
+      "original_sha256": "2e1241e3316db8117591b5f93f300b77b4b6f7c36fd66afc1711b9f4f707f146",
+      "sha256": "2e1241e3316db8117591b5f93f300b77b4b6f7c36fd66afc1711b9f4f707f146"
+    },
     "release-run.json": {
       "original_sha256": "765725615d98e80a888f7ba968ac1691efb604a3df0299e4c3af285a0a0e9421",
       "sha256": "765725615d98e80a888f7ba968ac1691efb604a3df0299e4c3af285a0a0e9421"
@@ -171,6 +179,10 @@
       "original_sha256": "7ba184e968bdd4104153023d9bb05a34f9ec7b7db2f39fd89df0f777f99fee6d",
       "sha256": "7ba184e968bdd4104153023d9bb05a34f9ec7b7db2f39fd89df0f777f99fee6d"
     },
+    "rollback-exercise.json": {
+      "original_sha256": "15f9ab53fb367050e1e703ff82b8de07cef1e507df795b6c111fed8bf1d12878",
+      "sha256": "15f9ab53fb367050e1e703ff82b8de07cef1e507df795b6c111fed8bf1d12878"
+    },
     "stale-receipt.json": {
       "original_sha256": "b9b63e7544ddab4d1acd9707d61697a5c348a268cd070a6ae29c5821b203ad98",
       "sha256": "b9b63e7544ddab4d1acd9707d61697a5c348a268cd070a6ae29c5821b203ad98"
@@ -186,6 +198,10 @@
     "startup-head.npz": {
       "original_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
       "sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254"
+    },
+    "target-check.json": {
+      "original_sha256": "39f526753dd2bbc00cbc317a82c22f955bc8032912c5cfaaea73a6d50f6af9ab",
+      "sha256": "39f526753dd2bbc00cbc317a82c22f955bc8032912c5cfaaea73a6d50f6af9ab"
     }
   },
   "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
