@@ -157,3 +157,22 @@ python -m lab.pk1.native_http rollback --state "$DEPLOY"
 ```
 
 Here `target` contains the same state, GGUF, original checkout, reference library, candidate source, trial, dispatch table and dedicated worker root supplied to native activation. The measured CPU frontend smoke accepted two ordinary 32-token requests through its stock worker. CUDA product admission requires a positive native release and actual HTTP evidence on the target.
+## Replaying the warm search after a rejected source change
+
+The original source-order sensitivity model can also use six newer incumbent warm waves on the
+same bound A100. It verifies actual source, GPU, weights, library, masks, complete output, factual
+quality and fresh measurements in each input. Each seed starts in a fresh process and contributes
+one warmed 32-client wave. The estimate charges the median full worker lifetime for twelve arms.
+
+```sh
+native=lab/autonomous/results/a100-native/f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b
+starts=lab/autonomous/results/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3
+python -m lab.pk1.native_order --prior "$native/order.json" --trial "$native" --reference "$starts" \
+    --seconds 900 --hourly-usd 2.201904761904762 --usd 0.56 --output /tmp/warm-search.json
+```
+
+On the six 2026-11-26 incumbent waves the median was 3.301 s. A 2% throughput gain requires
+64.72 ms less wall time. The most exposed remaining kernel would save 19.92 ms under the original
+10% device-time sensitivity. The planner deferred further source orders at that sensitivity.
+This replay used the control CPU and incurred no extra GPU or API charge.
+[Recorded decision](../autonomous/results/a100-warm-followup/decision.json)

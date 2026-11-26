@@ -261,8 +261,21 @@ An offline development worker can investigate a source location selected from me
 Keep PR 57's PS1, ps1a and PK6 configuration as the A100 reference. Measure identical completed work,
 including the controller, and reject a candidate that misses the predeclared correctness, paired throughput,
 TTFT or resource gates. After rejection, retain the program and timing evidence for future experiment selection.
-The first CPU tokenizer experiment failed the six-pair gate. The A100 native path requires fresh device attribution
-and target qualification. See the [trial record](LAB.md#2026-11-26-cpu-pilot-development-order-and-rejected-tokenizer-change).
+The first CPU tokenizer experiment failed the six-pair gate. On the A100 the selected W4 specialization
+preserved all checked matrix values and took 27% longer. The next warm-source search priced five other
+specializations using two device traces and six new real reference waves. Under the original 10% kernel
+sensitivity assumption, the largest projected saving was 19.92 ms against the required 64.72 ms.
+The planner deferred that order. The cuBLASLt prefill probe has a separate measured headroom estimate.
+[Warm search](../lab/autonomous/results/a100-warm-followup/decision.json) · [Prefill probe](../lab/pk1/prefill-probe.md)
+· [CPU trial](LAB.md#2026-11-26-cpu-pilot-development-order-and-rejected-tokenizer-change)
+
+The repeat-start experiment uses the previously fixed A100, model, full stack and output-quality criteria.
+It compares two original starts, missing and stale receipts, six mixed-first pairs and two factual-first
+pairs, then requires a new seed after a source-bound pull request passes CI. The four-core EPYC prefill experiment checks
+the local head, a matched incumbent and the four-thread rule under six counterbalanced seeds.
+The complete rules are in the [A100 protocol](../lab/pk1/restart-trial.md) and
+[EPYC protocol](../lab/rp/cpu-campaign.md). GitHub returned 404 for the separate research repository in this
+session. The raw records and decisions are preserved here. A separate research-ledger entry is outstanding.
 
 ### Local Pilot thread weights (opt-in, 2026-11-18)
 

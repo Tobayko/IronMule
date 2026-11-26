@@ -136,11 +136,41 @@ def next_target(options, explored, wave_s, fraction):
     return min(choices, key=lambda c: c["required_device_time_reduction"]) if choices else None
 
 
+def reference_prices(path, order):
+    """Price the next kernel against completed incumbent work on the original loaded device."""
+    from lab.pk1.native_trial import checksum, validate_arm, verify_outputs
+
+    bind = order["binding"]
+    if path.is_file():
+        ref = json.loads(path.read_text())
+        seed = ref["workload"]["seed"]
+        validate_arm(ref, bind, {"binary": bind["w4_sha256"], "table": bind["table_sha256"]}, seed)
+        verify_outputs(ref, seed)
+        return ref["wall_s"], ref["total_elapsed_s"], {"reference_sha256": checksum(path)}
+
+    from lab.pk1 import restart_trial
+
+    waves, workers, hashes = [], [], {}
+    first = None
+    for i in range(restart_trial.PAIRS):
+        source = path / f"ref-{i}.json"
+        row = json.loads(source.read_text())
+        restart_trial.validate(row, restart_trial.SEED + i, expected_source=bind["serving_sources"]["ironmule/ggml_engine.py"])
+        restart_trial.verify_binding(row, order)
+        if row["reused"] or row["factual_first"] or (first is not None and row["binding"] != first):
+            raise ValueError("need six matched incumbent mixed-first runs with fresh mask measurements")
+        first = row["binding"]
+        hashes[source.name] = checksum(source)
+        waves.append(row["warm"]["wall_s"])
+        workers.append(row["broker_elapsed_s"])
+    return median(waves), median(workers), {"warm_reference_receipts": hashes, "warm_reference_waves_s": waves}
+
+
 def replay_rejection(prior, trial, reference, output, seconds, hourly_usd, usd):
     import math
     import shutil
 
-    from lab.pk1.native_trial import SCHEMA, checksum, validate_arm, verify_outputs
+    from lab.pk1.native_trial import SCHEMA, checksum
     from lab.portable_gpu.bench import save
 
     result = json.loads((trial / "result.json").read_text())
@@ -151,24 +181,27 @@ def replay_rejection(prior, trial, reference, output, seconds, hourly_usd, usd):
             or result["context"]["base_commit"] != order["base_commit"] or result["schema"] != SCHEMA
             or checksum(profile) != order["profile_sha256"] or order["evaluator"] != SCHEMA):
         raise ValueError("expected a rejected trial of this profiled native order")
-    ref = json.loads(reference.read_text())
-    bind = order["binding"]
-    validate_arm(ref, bind, {"binary": bind["w4_sha256"], "table": bind["table_sha256"]}, ref["workload"]["seed"])
-    verify_outputs(ref, ref["workload"]["seed"])
-    if not all(math.isfinite(v) and v > 0 for v in [seconds, hourly_usd, usd, ref["wall_s"], result["elapsed_s"]]):
+    wave_s, worker_s, reference_ids = reference_prices(reference, order)
+    if not all(math.isfinite(v) and v > 0 for v in [seconds, hourly_usd, usd, wave_s, worker_s, result["elapsed_s"]]):
         raise ValueError("cost and time inputs must be finite and positive")
     history = [*order.get("prior_rejections", []), {"order": digest, "target": order["target"],
                "reason": result["reason"], "trial_sha256": checksum(trial / "result.json")}]
-    target = next_target(order["dreams"], {h["target"]["function"] for h in history}, ref["wall_s"],
-                         order["simulation"]["fraction"])
+    excluded = {h["target"]["function"] for h in history}
+    fraction = order["simulation"]["fraction"]
+    target = next_target(order["dreams"], excluded, wave_s, fraction)
     # Fixed six alternating pairs. A short screening failure cannot set an unrealistically low time estimate.
-    forecast_s = max(result["elapsed_s"], 12 * ref["total_elapsed_s"])
+    forecast_s = max(result["elapsed_s"], 12 * worker_s)
     cost = {"estimated_seconds": forecast_s, "estimated_gpu_usd": forecast_s * hourly_usd / 3600,
-            "available_seconds": seconds, "available_usd": usd, "reference_wall_s": ref["wall_s"],
-            "reference_sha256": checksum(reference), "hourly_gpu_usd": hourly_usd}
+            "available_seconds": seconds, "available_usd": usd, "reference_wall_s": wave_s,
+            **reference_ids, "hourly_gpu_usd": hourly_usd}
     if (target is None or forecast_s > seconds or cost["estimated_gpu_usd"] > usd
             or len(history) >= 2):
+        projections = [{"specialization": opt["specialization"],
+                        "simulated_whole_wave_saving_s": fraction * 31 * min(opt["kernel_seconds_per_step"])}
+                       for opt in order["dreams"] if opt["function"] not in excluded]
         save(output, {"schema": "ironmule.native-search-stop.v1", "prior_rejections": history, "cost": cost,
+                      "required_wave_saving_s": wave_s * (1 - 1 / 1.02), "simulated_device_reduction": fraction,
+                      "unexplored_projections": projections,
                       "reason": "no new target above search sensitivity or remaining operational bounds"})
         return
     following = {**order, "target": target, "prior_rejections": history, "prospective_cost": cost,
