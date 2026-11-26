@@ -1,0 +1,91 @@
+{
+  "after": {
+    "arm": "reference",
+    "complete_first_work_s": 56.076854838989675,
+    "complete_request_s": 75.8783272029832,
+    "completed": [
+      32,
+      32,
+      18
+    ],
+    "decision": {
+      "ablate_weights": false,
+      "cpu_ms": 1.8946389900520444,
+      "cpu_us": 62.638,
+      "family": "mixed-first-32",
+      "margin": 0.07994647324085236,
+      "margin_error": 0.019682221914333456,
+      "profile": "reference",
+      "proposal": "candidate",
+      "reason": "whole profile lacks local qualification",
+      "scores": [
+        [
+          -1.0058283805847168e-07,
+          0.0799465924501419
+        ],
+        [
+          -1.4156103134155273e-07,
+          0.07994649559259415
+        ],
+        [
+          5.21540641784668e-08,
+          0.07994652539491653
+        ]
+      ]
+    },
+    "monitor": null,
+    "outside_worker_s": 0.4221581919118762,
+    "seed": 99501,
+    "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+    "work_id": "selected-reference-99501-0fb489393be845d2b37343ac09bc192a",
+    "work_sha256": "5e60f0fa96067f00c65d9e2e6893b10049382e4791ba8d949b6de4f4aa1722f8"
+  },
+  "before": {
+    "arm": "candidate",
+    "complete_first_work_s": 51.79876055393834,
+    "complete_request_s": 71.55746204894967,
+    "completed": [
+      32,
+      32,
+      18
+    ],
+    "decision": {
+      "ablate_weights": false,
+      "cpu_ms": 3.1350540230050683,
+      "cpu_us": 76.696,
+      "family": "mixed-first-32",
+      "margin": 0.07994647324085236,
+      "margin_error": 0.019682221914333456,
+      "profile": "candidate",
+      "proposal": "candidate",
+      "reason": "qualified model choice",
+      "scores": [
+        [
+          -1.0058283805847168e-07,
+          0.0799465924501419
+        ],
+        [
+          -1.4156103134155273e-07,
+          0.07994649559259415
+        ],
+        [
+          5.21540641784668e-08,
+          0.07994652539491653
+        ]
+      ]
+    },
+    "monitor": {
+      "consecutive_late": 0,
+      "limit_s": 56.62261247749441,
+      "pin": "c7840a9f67a42558f8027517b59fc79520f8dd73db3957aa29890824c49898e7",
+      "work": "selected-candidate-99501-d867e3a27d4048d794ddc44d16a5f06c"
+    },
+    "outside_worker_s": 0.4523943429812789,
+    "seed": 99501,
+    "source_sha256": "f60951799571833dfa663227751a41d9a36a88b54405518240df762cdbf340f7",
+    "work_id": "selected-candidate-99501-d867e3a27d4048d794ddc44d16a5f06c",
+    "work_sha256": "5e60f0fa96067f00c65d9e2e6893b10049382e4791ba8d949b6de4f4aa1722f8"
+  },
+  "passed": true,
+  "receipt_sha256": "c7840a9f67a42558f8027517b59fc79520f8dd73db3957aa29890824c49898e7"
+}

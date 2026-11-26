@@ -264,3 +264,13 @@ python -m lab.pk6.warm_result "$series"
 python -m lab.pk6.startup_search commission "$series" "$trial" "$trial"
 python -m lab.pk6.startup_search materialize "$trial" /tmp/ironmule-pk2-candidate.py
 ```
+
+## Subsequent ordered-worker source release
+
+The second A100's two ordinary starts led to a new Pilot-generated PK2 code
+order and independent author. For that board, the merged source passed the
+16-chunk stock gate and all eight counterbalanced studies. A trained head then
+selected the measured local-calibration profile. Use the linked instructions
+to fit from the saved native outcomes, replay the GitHub publication and
+target receipts, submit a bounded run and withdraw the scoped release.
+[Source PR 62](https://github.com/Tobayko/IronMule/pull/62) · [Instructions and measured scope](../lab/pk6/local-calibration.md)

@@ -4675,3 +4675,43 @@ vLLM took 158.43 seconds, and the second IronMule start using local state took 8
 seconds. The historical pod 37 result was 1.1002. Different quantizations and the
 scope of the single-device workload limit both comparisons. This replication measures
 Claude's existing warm path. [Registration, raw waves and target](../lab/autonomous/results/a100-pr57-warm-repeat/)
+
+## 2026-11-26 — IronMule selects PK2 from two ordinary A100 starts
+
+IronMule ranked the repeated local measurements in two actual PR 57 server starts.
+It selected `GgmlEngine.measure_pk2` (18.807 and 18.752 s) and commissioned a
+separate Codex author. The search family was supplied by the developers. The
+ranked method, order, implementation, measured acceptance and source activation
+are individually attributable in the archive. The earlier losing padding method
+was excluded by its stored result. [Forecast and source response](../lab/autonomous/results/a100-dynamic-calibration/)
+
+The generated code sometimes finishes the five-option GPU calibration in 15 calls.
+Uncertain measurements take the original 20. Both execution paths test their
+threshold with fresh likelihood measurements. The independent 16-chunk stock
+gate on the RunPod A100 SXM4 80 GB gave a 95% upper ratio of 1.00015 against a
+limit of 1.005. Reference, repeat and candidate all answered 18/18 correctly.
+
+With six mixed-first ordered native pairs, first completion of all 32 answers
+took median 55.290 s on the reference and 51.057 s on the candidate. The median
+paired rate ratio was 1.08324. Warm wall-time ratio was 0.99991 and warm p95
+TTFT ratio 1.00000. Peak GPU memory matched. The two held-out factual-first
+pairs achieved 1.06585× and 1.07919×. The eight paired runs and two unchanged
+controls occupied 1,302.04 worker seconds. At the median 4.256 s saving per
+mixed cold start, these workers alone cost the time saved across 306 starts.
+The separate stock quality check occupied another 341.01 s. The experimental
+investment is additional to the controller's measured per-request overhead.
+
+The qualified source was automatically merged in PR 62. Two fresh target
+pairs improved complete first delivery by factors of 1.07901 and 1.08386.
+New processes with original random and newly trained CPU weights chose
+different source profiles for the same mixed input. Including the broker,
+first completion took 55.888 s versus 51.797 s. Both CPU selection calls took
+about 3.11 ms including loading the checkpoint. The fixed always-qualified
+candidate rule tied the learned head on the two held-out factual pairs.
+[Qualification PR](https://github.com/Tobayko/IronMule/pull/62) · [Reproduction commands](../lab/pk6/local-calibration.md)
+
+The unchanged asynchronous ordinary HTTP reference reproduced 31 of 32 warm
+responses exactly. Its mandatory A/A check closed that source experiment.
+The independent PR 57 comparison above measures warm HTTP throughput for the
+existing stack. The ordered source release measures a gain on fresh native
+workers. Source and training receipts bind one device, runtime and GGUF.

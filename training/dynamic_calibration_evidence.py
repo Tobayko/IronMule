@@ -78,3 +78,37 @@ def experiences(root,source,digest):
             yield emit("local_calibration_ordered_verdict",directory/"outcome.json","terminal",
                        reason=verdict.get("reason"),decision=verdict["status"],metrics=[verdict],
                        uncertainty="Authority applies only to the qualified physical target and ordered serving entry.")
+    deployed=folder/"target-state/target-check.json"
+    if deployed.is_file():
+        from lab.pk6.ordered_quality import validate
+        from lab.pk6.ordered_release import qualification
+
+        control=read(folder/"target-state/control.json")
+        actual=qualification(folder/"ordered")
+        checked=read(deployed)
+        if control["qualification"]!=actual or read(folder/"target-state/selection.json")["target_check_sha256"]!=sha(deployed):
+            raise ValueError("different merged source or fresh selection")
+        numeric=folder/"numerical/observed.json"
+        quality=validate(read(numeric),actual["binding"]["runtime"]["settings"])
+        if checked["metrics"]["numerical_quality"]!=quality:
+            raise ValueError("different numerical evidence")
+        yield emit("local_calibration_numerical_gate",numeric,"stock",quality=quality,
+                   reason="On-device stock reference, repeat and selected candidate scored the same 18 questions and 16 likelihood chunks.")
+        for p in checked["metrics"]["fresh"]:
+            seed=p["seed"]
+            rows=[read(folder/f"fresh/fresh-{a}-{seed}.json") for a in ("reference","candidate")]
+            if native.price(*rows,seed,p["facts_first"])!=p:
+                raise ValueError("different fresh measured delivery")
+        yield emit("local_calibration_source_activation",deployed,"fresh_target",metrics=checked["metrics"]["fresh"],
+                   quality=quality,decision="activated",program_sha256=native.CANDIDATE,
+                   authorship="The target broker admitted the merged Codex source after two fresh measured workload families.",
+                   reason="The exact hardware and runtime fingerprint and the two complete target comparisons passed.")
+    if (folder/"proofs/recovery.json").is_file():
+        from lab.pk6.replay_ordered import replay
+        receipt=replay(folder)
+        yield emit("local_calibration_live_pilot",folder/"proofs/trained.json","matched_live_training",metrics=[receipt],
+                   decision="candidate", reason="The trained CPU head selected the generated source. Its matched random initialization selected the reference.",
+                   uncertainty="The always-qualified simple rule tied the trained Pilot on the two independent factual-first holdouts.")
+        yield emit("local_calibration_rollback",folder/"proofs/recovery.json","real_rollback",
+                   decision="reference", reason="A persisted withdrawal restored the previous worker on an identical new batch.",
+                   quality={"identical_answers":True})

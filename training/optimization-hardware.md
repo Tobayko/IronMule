@@ -96,3 +96,14 @@ original counterbalanced triplets, checks outputs and re-evaluates its own A/A n
 controller cost. The serving head must choose the admitted action on real work. Supply this
 immutable artifact through `--profile PATH` to the matched product adapter. Both its warm workers
 verify the profile digest and requalify the same actions.
+
+### Learned local calibration on the second A100
+
+Two ordinary Qwen3-32B Q4_K_M server starts on the second RunPod A100 SXM4
+80 GB led to a new source order for PK2. The ordered native entry qualified
+and activated the generated source on that physical GPU with driver 595.112.07.
+The three scratch CPU heads preserve the original deployment on a missing or
+unqualified workload. The complete 16-chunk stock gate and factual checks
+are in the target archive. The ordinary asynchronous HTTP source trial stopped
+at its own reference A/A. Each new device needs fresh measurements for its
+own binding. [Deployment, external requests and offline replay](../lab/pk6/local-calibration.md)
