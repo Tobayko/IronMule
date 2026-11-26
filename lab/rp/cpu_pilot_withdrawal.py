@@ -132,10 +132,17 @@ def worker(args, prior):
             exercise = waves("under_load")
             ids = engine.tokenize("Continue the sequence by counting from one to ten.")
             prompt = (ids * ((97 + len(ids) - 1) // len(ids)))[:97]
-            trace = pt.request(engine, prompt, clients=4)
-            last_before = engine.pilot.learning.last
-            engine.pilot.learning.idle(lambda: False)
-            new_verdict = engine.pilot.learning.last is not last_before
+            # As in the frozen qualifier, a timing fixture must leave its four slots free for idle replay.
+            # The served waves retain their usual prefix policy.
+            reuse = engine.prefix_reuse
+            engine.prefix_reuse = False
+            try:
+                trace = pt.request(engine, prompt, clients=4)
+                last_before = engine.pilot.learning.last
+                engine.pilot.learning.idle(lambda: False)
+                new_verdict = engine.pilot.learning.last is not last_before
+            finally:
+                engine.prefix_reuse = reuse
             after = snapshot()
             record("load_recheck", {"before": before, "after": after, "request": trace, "foreign_workers": 1,
                                     "fresh_idle_verdict": new_verdict, "served_qualified_decisions": exercise["qualified_decisions"]})
