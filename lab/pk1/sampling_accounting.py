@@ -142,6 +142,75 @@ def grouped(group, seeds, rows, accepted):
     }
 
 
+def gate_findings(summary):
+    metrics = summary["metrics"]
+    mixed, facts = metrics["mixed"], metrics["factual_first"]
+    actual = [
+        (
+            "each mixed cold speedup > 1",
+            min(v["cold_speedup"] for v in mixed),
+            1.0,
+            "gt",
+        ),
+        (
+            "median mixed cold speedup >= 1.02",
+            median(v["cold_speedup"] for v in mixed),
+            1.02,
+            "ge",
+        ),
+        (
+            "median mixed relative gain > A/A spread",
+            median(v["cold_speedup"] for v in mixed) - 1.0,
+            metrics["aa_spread"],
+            "gt",
+        ),
+        (
+            "each factual-first cold speedup > 1",
+            min(v["factual_cold"] for v in facts),
+            1.0,
+            "gt",
+        ),
+        (
+            "median factual-first speedup >= 1.02",
+            median(v["factual_cold"] for v in facts),
+            1.02,
+            "ge",
+        ),
+    ]
+    for group, keys in [
+        (mixed, ("warm_wall", "warm_p95", "warm_fact", "warm_fact_p95")),
+        (facts, ("factual_cold_p95", "factual_warm", "factual_warm_p95")),
+    ]:
+        actual += [(key, median(v[key] for v in group), 1.02, "le") for key in keys]
+    actual.append(
+        (
+            "maximum resource ratio",
+            max(max(x["rss"], x["device"]) for x in [*mixed, *facts]),
+            1.05,
+            "le",
+        )
+    )
+    checks = [
+        {
+            "metric": k,
+            "observed": v,
+            "threshold": bound,
+            "comparison": op,
+            "passed": v > bound
+            if op == "gt"
+            else v >= bound
+            if op == "ge"
+            else v <= bound,
+        }
+        for k, v, bound, op in actual
+    ]
+    require(
+        all(c["passed"] for c in checks) == summary["passed"],
+        "accounting disagrees with the frozen gate",
+    )
+    return checks
+
+
 def account(folder, data):
     verified = sampling_evidence.replay(folder, data)
     require(
@@ -167,7 +236,15 @@ def account(folder, data):
         "schema": "ironmule.sampling-work-accounting.v1",
         "replay": verified,
         "scientific_verdict": verdict["passed"],
-        "reason": verdict.get("reason", "complete prospective serving gates"),
+        "reason": verdict.get(
+            "reason",
+            "all complete prospective serving gates passed"
+            if verdict["passed"]
+            else "one or more complete prospective serving thresholds failed",
+        ),
+        "scored_gate_conditions": gate_findings(verdict["summary"])
+        if "summary" in verdict
+        else None,
         "quantities": {},
         "gates": {
             "mixed_and_factual_minimum_cold_speedup": 1.02,
@@ -226,7 +303,16 @@ def account(folder, data):
         else:
             summary["full_arm_valid"] = True
             rows[name] = entry
+        if name == "screen-candidate.json" and summary["full_arm_valid"]:
+            summary["source_scope_checks"] = {
+                key: stage["telemetry"]["mode"]
+                for key, stage in entry["sampling"]["observed"]["negative"].items()
+            }
         checks[name] = summary
+    if all(k in rows for k in ("aa-0.json", "aa-1.json")):
+        aa = [arm(rows[k])["first_complete_wave_s"] for k in ("aa-0.json", "aa-1.json")]
+        result["gates"]["observed_aa_cold_clock_s"] = aa
+        result["gates"]["observed_aa_relative_spread"] = max(aa) / min(aa) - 1
     result["individual_workers"] = checks
     for group, seeds in (("mixed", protocol.MIXED), ("facts", protocol.FACTS)):
         result["quantities"][group] = grouped(group, seeds, rows, verdict["passed"])
