@@ -283,6 +283,10 @@ def _qualify_ggml_kernels(snapshot, gguf, cache):
     from ironmule.ggml_gate_diagnostics import sanitize
 
     def qualify(mode):
+        if mode == "stock":
+            # The raw packed engine auto-attaches W4 when the variable is absent.
+            # An explicit empty choice disables that path in every qualification child.
+            os.environ["IRONMULE_KG_LIB"] = ""
         result = gate(snapshot, gguf, cache=cache)
         summary = {"kernel_mode": mode, "passes": result.get("passes") is True,
                    "diagnostic": sanitize(result.get("diagnostic"))}
@@ -298,7 +302,6 @@ def _qualify_ggml_kernels(snapshot, gguf, cache):
     # separate explicitly requested KG5 experiment must continue to require its dispatch witness.
     if (not first["passes"] and mode == "generated" and not probe
             and diagnostic.get("stage") not in {"tokenize", "reference", "model_changed"}):
-        os.environ.pop("IRONMULE_KG_LIB", None)
         result, stock = qualify("stock")
         result = {**result, "kernel_fallback": {"attempts": [first, stock], "serving": "stock" if stock["passes"] else None}}
     if result.get("passes") is not True:
