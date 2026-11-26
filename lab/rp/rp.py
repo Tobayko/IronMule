@@ -201,6 +201,7 @@ def cleanup(state):
     booked = max(estimate, delta)
     state["spent"] += booked
     state["pods"].append({"id": pod["id"], "gpu": pod["gpu"], "hours": hours,
+                          "hourly_with_disk_usd": pod["cost"], "disk_hourly_upper_usd": pod["disk_rate"],
                           "usd": booked, "estimated_with_tail": estimate, "account_delta": delta})
     state["pod"] = None
     event(state, "removed", id=pod["id"], booked=booked, balance=user["clientBalance"])
@@ -369,6 +370,28 @@ def posted_billing(pod_id):
             "posted_usd": sum(money(r["totalAmount"]) for r in records) if records else None}
 
 
+def public_cost_events(state):
+    # Export quoted/reserved costs and exclusive cutoffs. Names, account balances,
+    # process IDs, request IDs and free-form notes remain in the private journal.
+    fields = {
+        "reserve": ("usd", "hourly_quote", "deadline"), "created": ("hourly",),
+        "watch_launch_failed": (), "renewal_reserved": ("old", "new", "additional_usd"),
+        "renewed": ("old", "new", "reserved"), "removed": ("booked",), "extend": (),
+        "reserve-external": ("usd",), "settle-external": ("usd",),
+    }
+    rows = []
+    for event in state.get("events", []):
+        kind = event["kind"]
+        if kind not in fields:
+            continue
+        row = {"kind": kind, **{k: money(event[k]) for k in ("time", *fields[kind]) if k in event}}
+        if kind == "renewed" and "local_ack_pid" in event:
+            row["control_watchdog_confirmed"] = bool(event["local_ack_pid"])
+            row["pod_watchdog_confirmed"] = event.get("remote_ack_deadline") == event["new"]
+        rows.append(row)
+    return rows
+
+
 def cost_report(state, output):
     """Export only allowlisted public fields, after provider-confirmed cleanup."""
     if state.get("pod") or state.get("external"):
@@ -387,9 +410,11 @@ def cost_report(state, output):
             posted = {"posted_records": None, "posted_usd": None}
         leases.append({"gpu": pod["gpu"], "verified_absent": True, "hours": pod["hours"],
                        "account_delta_at_cleanup_usd": pod.get("account_delta"),
-                       "booked_with_tail_usd": pod["usd"], **posted})
+                       "booked_with_tail_usd": pod["usd"],
+                       **{k: pod[k] for k in ("hourly_with_disk_usd", "disk_hourly_upper_usd") if k in pod}, **posted})
     extras = [e for e in state.get("events", []) if e["kind"] == "settle-external"]
     summary = {"campaign_budget_usd": limit(state), "booked_with_tail_usd": state["spent"],
+               "journal": public_cost_events(state),
                "confirmed_owned_pods_remaining": 0, "observed_unix_s": time.time(),
                "provider_account_delta_since_first_reservation_usd": (start_balance - user["clientBalance"]
                                                                      if start_balance is not None else None),

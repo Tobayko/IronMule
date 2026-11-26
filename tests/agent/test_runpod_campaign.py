@@ -157,7 +157,12 @@ def test_report_requires_verified_cleanup_and_excludes_private_data(tmp_path, mo
     monkeypatch.setattr(rp, "posted_billing", lambda _: {"posted_records": 0, "posted_usd": None})
     result = rp.cost_report(state, dest)
     assert result["leases"][0]["posted_usd"] is None and result["provider_account_delta_since_first_reservation_usd"] == 1.
+    assert result["journal"] == [{"kind": "reserve"}]
     assert "private" not in dest.read_text()
+    events = rp.public_cost_events({"events": [{"kind": "renewed", "name": "private", "old": 41, "new": 48,
+                                               "reserved": 2, "local_ack_pid": 55, "remote_ack_deadline": 48}]})
+    assert events == [{"kind": "renewed", "old": 41, "new": 48, "reserved": 2,
+                       "control_watchdog_confirmed": True, "pod_watchdog_confirmed": True}]
 
 
 def test_real_process_handoff_arms_replacement_before_original_exits(tmp_path, monkeypatch):
