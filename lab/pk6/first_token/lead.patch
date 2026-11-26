@@ -1,0 +1,27 @@
+diff --git a/ironmule/ggml_engine.py b/ironmule/ggml_engine.py
+--- a/ironmule/ggml_engine.py
++++ b/ironmule/ggml_engine.py
+@@ -2192,7 +2192,21 @@
+                     group = self._even_reuse(sorted(fresh, key=lambda item: item[0]))  # PX1
+                     for sq, other, _ in group:
+                         active[sq] = other
+-                    for (sq, other, _), pick in zip(group, self._pack_prefill(group), strict=True):
+-                        take(sq, other, pick)
++                    cohorts = (group,)
++                    if (not order and len(group) == 32 and os.environ.get("IRONMULE_LAB_PREFILL_LEAD") == "1"
++                            and not any(job.hardware_probe for _, job, _ in group)):
++                        # Lab candidate for the measured two-length burst. Preserve KV ownership and
++                        # native sequence order within each call. Publish picks before the second call.
++                        by_length = sorted(group, key=lambda item: len(item[1].ids))
++                        lengths = [len(job.ids) for _, job, _ in by_length]
++                        if (lengths[0] == lengths[15] and lengths[16] == lengths[-1]
++                                and lengths[16] >= 4 * lengths[15]):
++                            lead = {seq for seq, _, _ in by_length[:17]}
++                            cohorts = ([item for item in group if item[0] in lead],
++                                       [item for item in group if item[0] not in lead])
++                    for cohort_jobs in cohorts:
++                        for (sq, other, _), pick in zip(
++                                cohort_jobs, self._pack_prefill(cohort_jobs), strict=True):
++                            take(sq, other, pick)
+                     singles = []
+                 elif self.prefill_batch and streams and len(fresh) > 1:

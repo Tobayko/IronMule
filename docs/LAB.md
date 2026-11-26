@@ -4733,3 +4733,37 @@ initial reservation. Two successive queries returned the same delta and zero
 remaining owned pods. The provider's individual pod records were still posting
 when the journal was exported. The conservative total of $16.76980 includes
 a ten-minute cleanup tail for each lease and zero metered API charges.
+
+### 2026-11-26, first content in the independent PR 57 warm HTTP comparison
+
+A post-hoc join matched each of the 192 native request IDs in the client timelines to its engine job and KV sequence. All six IronMule waves contained 16 prompts of 33 tokens and 16 of 444. Each wave submitted one packed prefill call with all 32 requests. Its elapsed time ranged from 2,279 to 2,441 ms. Median client send to engine admission ranged from 22 to 39 ms per wave. Median engine admission to first prefill ranged from 15 to 56 ms. Prompt processing dominated the wait for short requests too.
+
+| Process | First content p50 by wave, ms | First content p50 for the 33-token prompts, ms |
+| --- | --- | --- |
+| IronMule K1 | 2,562 / 2,404 / 2,408 | 2,555 / 2,398 / 2,404 |
+| vLLM | 1,706 / 1,856 / 1,673 | 1,705 / 1,856 / 1,673 |
+| IronMule K2 | 2,469 / 2,338 / 2,369 | 2,461.5 / 2,332.4 / 2,363.0 |
+
+Both systems streamed 32 output tokens per request on one A100-SXM4-80GB. IronMule used Qwen3-32B Q4_K_M and vLLM 0.11.0 used AWQ-Marlin. First content is the first nonempty streamed text piece, which can include whitespace. The native interval is shared elapsed wall time for the packed call. Only client timings are available here for vLLM. These data locate a wait inside IronMule. Explaining the cross-system difference requires a controlled intervention.
+
+The [redacted job and call projections](../lab/autonomous/results/a100-warm-ttft/) preserve counts, timing, opaque request IDs and the original trace digests from the earlier startup receipts. The [protocol for the paired A100 intervention](../lab/pk6/first_token/protocol.md) was committed before its lease.
+
+```sh
+python -m lab.pk6.first_token.phases --projections lab/autonomous/results/a100-warm-ttft
+```
+
+### 2026-11-26, earlier first content for a 32-request burst and a two-second streaming pause
+
+Codex split the packed prefill after 17 requests in an isolated checkout. On a freshly calibrated A100-SXM4-80GB, R1/C1/C2/R2 ran as four sequential production HTTP servers. Every counted wave contained the same 16 short and 16 long prompts in matching positions in its pair, and delivered 32 tokens per client. Across the six candidate waves the native trace shows 16 short jobs and one long job completing in the first call, then 15 long jobs in the second. Every reference wave used one 32-job call. PS1 and PK6 were enabled across all starts. The generated W4 library and dispatch table hashes matched and the Pilot selected the same PK2 threshold of 128 rows.
+
+| Median over six 32-client waves per arm | PR 57 reference | Early delivery |
+| --- | ---: | ---: |
+| Time to first text chunk, p50 | 2,336 ms | 401 ms |
+| Time to first text chunk, p95 | 2,346 ms | 2,392 ms |
+| Time to second text chunk, p50 | 2,366 ms | 2,424 ms |
+| Longest gap between text chunks per request, p95 | 59 ms | 2,034 ms |
+| Generated tokens per second | 302.69 | 301.79 |
+
+The registered paired median ratios for throughput were 0.9982 and 0.9803, and p95 first-content ratios were 1.0161 and 1.0270. Both pairs missed both gates. All eight 18-case factual checks at width eight passed. This smaller shape uses the reference code path. Output text digests at width 32 matched in four of six pairs of waves. Delivering one early token left many clients waiting through the remaining prefill before their next piece of text. The evaluator retained the PR 57 reference.
+
+The lease ran for 32.75 minutes. The journal booked USD 1.5697 including the cleanup tail, bringing cumulative booked cost to USD 18.3395. The provider confirmed deletion. The native traces remain in private storage. The [public result and source projections](../lab/autonomous/results/a100-first-token/), [registered protocol](../lab/pk6/first_token/protocol.md) and [replay commands](../lab/pk6/first_token/replay.md) reproduce the decision. The separate research ledger could not be accessed for this entry.

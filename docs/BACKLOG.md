@@ -22,6 +22,12 @@ deployment comparison on the same workload. The L40S native AWQ reference delive
 225.1 output tok/s at 32 clients, while IronMule delivered 165.0.
 [Measured workloads and first-token latency](LAB.md#2026-11-18-qwen3-32b-gguf-and-native-awq-on-one-l40s)
 
+The [A100 early-delivery experiment](../lab/pk6/first_token/protocol.md) retained the
+current packed prefill. Returning 17 first tokens early improved median first content,
+but the p95 longest pause reached 2.03 seconds and both pairs missed the throughput
+and tail gates. Reopen with a mechanism that can advance short requests while the
+remaining long prompts are processed. [Paired results](../lab/autonomous/results/a100-first-token/)
+
 The L40S prefill retest captured the 96 standalone calls previously missing from
 the cost model. In two paired replays the controller retained width 8 and throughput
 held near 33.75 output tok/s on the short-output workload. The cost of waiting for

@@ -908,6 +908,27 @@ def warm_http_repeat(root, source, checksum):
                              quality=row.get("quality"), reason=result["status"], startup_s=stats["startup_s"])
 
 
+def first_token_trial(root, source, checksum):
+    """Keep the paired hardware decision together so its requests cannot leak across splits."""
+    from lab.pk6.first_token import grade
+
+    directory = (root / source).parent
+    measured = grade.grade(directory)
+    if measured != json.loads((root / source).read_bytes()):
+        raise ValueError("first-token decision differs from the measured waves")
+    target = json.loads((directory / "target.json").read_bytes())
+    for pair, comparison in measured["pairs"].items():
+        yield record("first_token_prefill_trial", source, checksum, pair, directory.name,
+                     hardware=measured["hardware"], model=target["model_sha256"], quantization="Q4_K_M",
+                     base_commit=target["base"], software={"patch_sha256": target["candidate_patch_sha256"]},
+                     workload={"width": 32, "prompt_tokens": [33, 444], "output_tokens": 32},
+                     profiles=["single packed call", "publish first 17 picks before second call"],
+                     metrics=comparison["waves"], quality=comparison["factual"], reason=measured["decision"],
+                     checks=comparison["checks"], cost_reference=str((directory / "cost.json").relative_to(root)),
+                     authorship="Codex proposed the two-call intervention from the PR 57 traces and wrote the patch.",
+                     uncertainty="One hardware and model binding. Local serving qualification is separate.")
+
+
 def build(root=ROOT) -> Iterator[dict]:
     root = Path(root)
     # Limit imports to repository evidence. Keep credentials, private trials and generated indexes out.
@@ -1016,6 +1037,8 @@ def build(root=ROOT) -> Iterator[dict]:
         elif source == "lab/autonomous/results/a100-dynamic-calibration/protocol.json":
             from training.dynamic_calibration_evidence import experiences
             yield from experiences(root, source, digest)
+        elif source == "lab/autonomous/results/a100-first-token/result.json":
+            yield from first_token_trial(root, source, digest)
         elif source == "lab/autonomous/results/a100-pr57-warm-repeat/protocol.json":
             yield from warm_http_repeat(root, source, digest)
         elif (path.parent == root / "lab/autonomous/results/a100-vllm-awq-current-fixed128-r2"

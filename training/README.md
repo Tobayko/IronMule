@@ -465,3 +465,8 @@ same-work rollback for the corresponding stages. While the lease is active, use
 `--cost-phase author-request`, `after-verdict` or `after-release` with
 `--target "$TARGET_CONFIG"` to retain the cumulative provider observation. The shared final
 journal is in `lab/rp/results/campaign-costs.json` after teardown.
+
+The A100 first-token experiment records a Codex-authored serving change alongside its reference.
+The archive keeps all waves from the lease in one group and exposes the paired decision under
+`first_token_prefill_trial`. The records include work, first-content and tail timings, quality
+scores and the patch identity. See the [CPU replay and RunPod reproduction commands](../lab/pk6/first_token/replay.md).

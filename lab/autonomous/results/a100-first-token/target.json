@@ -1,0 +1,18 @@
+{
+  "arguments": [
+    "R1",
+    "C1",
+    "C2",
+    "R2"
+  ],
+  "base": "f3a69741f7a466ffc144a87b0395f4bfdb6e9b50",
+  "candidate_patch_sha256": "1354882dff1a269763e827a03c0784f32226a7158050b0a002b72ee6cf48759f",
+  "hardware": {
+    "device_sha256": "22efc4061e10b55dc1db8978f249390466d7091aba861eff7d7dbe23b5548f93",
+    "driver": "595.112.07",
+    "memory": "81920 MiB",
+    "name": "NVIDIA A100-SXM4-80GB"
+  },
+  "model_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "protocol_sha256": "5ccdfd3682a31d8c736439d6f178a6ecc21688e422ca625fe005310bc434e51c"
+}

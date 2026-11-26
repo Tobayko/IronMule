@@ -66,7 +66,7 @@ def stop(proc):
             proc.wait()
 
 
-def arm(args, label, binding):
+def arm(args, label, binding, *, source=SOURCE, seed=20261119):
     env = dict(os.environ)
     vllm = label == "vllm"
     model = "compare" if vllm else "gguf/Qwen3-32B-Q4_K_M"
@@ -90,7 +90,7 @@ def arm(args, label, binding):
                    "--state-dir", str(args.state), "--agent", "on", "--no-thinking", "--host", "127.0.0.1",
                    "--port", port, "--api-key-env", "IRONMULE_COMPARE_LOCAL_KEY"]
     start = time.time()
-    save(target / f"start-{label}.json", {"time": start, "hardware": binding, "source_commit": SOURCE})
+    save(target / f"start-{label}.json", {"time": start, "hardware": binding, "source_commit": source})
     with (target / f"serve-{label}.log").open("xb") as log:
         proc = subprocess.Popen(command, cwd=args.checkout, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         try:
@@ -100,7 +100,7 @@ def arm(args, label, binding):
                 name = label + suffix
                 cmd = [sys.executable, "lab/pk1/http_bench.py", "--url", url, "--engine", "vllm" if vllm else "ironmule",
                        "--model", model, "--label", name, "--widths", str(width), "--repeats", str(count),
-                       "--seed", "20261119", "--max-tokens", "32"]
+                       "--seed", str(seed), "--max-tokens", "32"]
                 cmd += ["--timeline", str(target / f"timeline-{label}.jsonl")] if width == 32 else ["--quality"]
                 with (target / f"http_{name}_{width}.jsonl").open("xb") as rows, (target / f"benchmark-{name}.log").open("xb") as err:
                     subprocess.run(cmd, cwd=args.checkout, env=env, stdout=rows, stderr=err, check=True, timeout=420)
