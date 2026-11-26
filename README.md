@@ -74,6 +74,8 @@ curl -N http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"gguf/Qwen3-4B-Q8_0","messages":[{"role":"user","content":"What is continuous batching?"}],"stream":true}'
 ```
 
+To let a Linux server choose between qualified CPU and GPU workers, add `--placement auto` to the GGUF serving command. IronMule learns from local timings between requests and checks answer quality and first-token latency before using a learned route. [Hardware placement guide](training/hardware-placement.md)
+
 ### Run an MLX model
 
 To choose and serve an MLX model explicitly, install from source with `python -m pip install -e .` on Apple Silicon or `python -m pip install -e '.[cuda]'` on supported NVIDIA hardware. Then register a model and serve it locally.
