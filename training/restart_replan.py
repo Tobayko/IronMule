@@ -152,11 +152,11 @@ def verified_release(state, checkout):
     return published, control, order
 
 
-def declined(state, *, checkout, archive=None):
+def declined(state, *, checkout, archive=None, product_dir=None):
     from lab.pk1 import restart_http
 
     state = Path(state)
-    product = state / "product"
+    product = Path(product_dir) if product_dir is not None else state / "product"
     archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
     published, control, order = verified_release(state, checkout)
     observed = read(product / "product-qualify.json")
@@ -197,16 +197,17 @@ def declined(state, *, checkout, archive=None):
         "new_serving_improvement": None,
     }
     result["plan_id"] = digest(result)
-    write_once(state / "replan-after-product-declined.json", result)
+    write_once((state if product == state / "product" else product) / "replan-after-product-declined.json", result)
     return result
 
 
-def replan(state, *, checkout, archive=None):
+def replan(state, *, checkout, archive=None, product_dir=None):
     from lab.pk1 import restart_http
 
     state = Path(state)
     archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
-    trial, product = state / "trial", state / "product"
+    trial = state / "trial"
+    product = Path(product_dir) if product_dir is not None else state / "product"
     published, control, order = verified_release(state, checkout)
     verdict = restart_http.assess(product, control)
     served, rollback = read(product / "product-serve.json"), read(product / "product-exercise.json")
@@ -267,7 +268,7 @@ def replan(state, *, checkout, archive=None):
     }
     result.update(rank(data, order["evidence"]["historical_startup_seconds"], history, cost))
     result["plan_id"] = digest(result)
-    write_once(state / "replan-after-product.json", result)
+    write_once((state if product == state / "product" else product) / "replan-after-product.json", result)
     return result
 
 
