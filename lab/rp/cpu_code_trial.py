@@ -57,11 +57,11 @@ def inputs(args, *, on_target=True):
 
 
 def worker(args, tree, mode, destination, seed):
-    order, evaluator, helper = inputs(args)
+    order, evaluator, _ = inputs(args)
     env = {k: os.environ[k] for k in ("IRONMULE_GGML_BINDINGS", "LD_LIBRARY_PATH", "LLAMA_CPP_LIB_PATH")}
     env.update(IRONMULE_GGML_GPU_LAYERS="0", IRONMULE_PILOT="1", CUDA_VISIBLE_DEVICES="",
                OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", PYTHONPATH=str(tree))
-    readonly = [tree, args.gguf, args.head, evaluator, helper, RULE, args.python.parent.parent, Path("/etc/machine-id"),
+    readonly = [tree, args.gguf, args.head, evaluator.parent, RULE, args.python.parent.parent, Path("/etc/machine-id"),
                 Path(env["IRONMULE_GGML_BINDINGS"]), Path(env["LLAMA_CPP_LIB_PATH"]),
                 *(Path(p) for p in env["LD_LIBRARY_PATH"].split(":") if p and not Path(p).resolve().is_relative_to("/usr"))]
     # Execute the venv entry point by its original path so Python picks up its pyvenv.cfg.
