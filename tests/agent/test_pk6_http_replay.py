@@ -31,6 +31,24 @@ def test_inconsistent_rate_or_missing_measured_wave_is_rejected(tmp_path):
         replay.waves(tmp_path, "K1", "ironmule", 32)
 
 
+def test_request_timeline_must_reconstruct_aggregate_latency_and_work(tmp_path):
+    from lab.pk6.warm_result import check_timeline
+
+    arm = "K1"
+    timeline = tmp_path / "timeline.jsonl"
+    wave_file = tmp_path / "http_K1_32.jsonl"
+    with tarfile.open(replay.POD37) as tar:
+        timeline.write_bytes(tar.extractfile("./tl_K1_32.jsonl").read())
+        wave_file.write_bytes(tar.extractfile("./http_K1_32.jsonl").read())
+    measured = replay.waves(tmp_path, arm, "ironmule", 32)
+    check_timeline(timeline, arm, "ironmule", measured)
+    rows = [json.loads(line) for line in timeline.read_bytes().splitlines()]
+    rows[3]["tokens"] -= 1
+    timeline.write_text("\n".join(map(json.dumps, rows)))
+    with pytest.raises(ValueError, match="aggregate differs"):
+        check_timeline(timeline, arm, "ironmule", measured)
+
+
 def test_fresh_vllm_alone_reports_its_own_waves_and_no_cross_system_ratio(tmp_path, monkeypatch):
     doc = {"historical_H_artifacts_reused": False, "distinct_from_prior_H": True, "models": {
         "quantization_match": False, "vllm_reference": {"repo": "fixture-awq"}, "ironmule_product": {"sha256": "fixture"}},

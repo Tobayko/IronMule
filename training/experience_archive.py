@@ -877,6 +877,37 @@ def fresh_http_comparison(root, source, checksum):
                      uncertainty="Descriptive system rates use different quantized artifacts. Source-level training labels require a separate experiment.")
 
 
+def warm_http_repeat(root, source, checksum):
+    from lab.pk6 import warm_result
+
+    directory = (root / source).parent
+    protocol = json.loads((root / source).read_bytes())
+    result = warm_result.result(directory)
+    context = dict(base_commit=protocol["source_commit"], cost_reference="lab/rp/results/campaign-costs.json",
+                   authorship="PR57 product and vLLM system comparison requested by the maintainer",
+                   uncertainty="Different GGUF and AWQ quantizations. This experiment cannot qualify a code change.")
+    yield record("external_http_registration", source, checksum, "protocol", directory.name, **context,
+                 hardware=protocol["device"], workload=protocol["per_process"], reason=result["status"],
+                 provenance="reported", missing=result.get("missing", []))
+    if "by_start" not in result:
+        return
+    for arm, stats in result["by_start"].items():
+        competitor = arm == "vllm"
+        for width in (32, 8):
+            tag = arm if width == 32 else arm + "q"
+            file = directory / f"http_{tag}_{width}.jsonl"
+            observed = warm_result.waves(directory, tag, "vllm" if competitor else "ironmule", width)
+            for row in observed:
+                yield record("external_http_wave", str(file.relative_to(root)), result["source_files"][file.name],
+                             f"repeat/{row['repeat']}", directory.name, **context, hardware=result["hardware"],
+                             software=result["versions"], workload={"start": arm, "width": width, "max_tokens": 32},
+                             model=result["awq_revision"] if competitor else result["gguf_sha256"],
+                             quantization="AWQ-Marlin" if competitor else "Q4_K_M",
+                             metrics=[{k: row[k] for k in ("tok_s", "wall_s", "tokens", "prompt_tokens",
+                                      "ttft_p50_ms", "ttft_p95_ms", "ttft_max_ms", "texts")}],
+                             quality=row.get("quality"), reason=result["status"], startup_s=stats["startup_s"])
+
+
 def build(root=ROOT) -> Iterator[dict]:
     root = Path(root)
     # Limit imports to repository evidence. Keep credentials, private trials and generated indexes out.
@@ -982,6 +1013,8 @@ def build(root=ROOT) -> Iterator[dict]:
             yield from prefill_experiment(root, source, digest)
         elif source == "lab/autonomous/results/a100-portfolio-shadow/result.json":
             yield from portfolio_observations(root, source, digest)
+        elif source == "lab/autonomous/results/a100-pr57-warm-repeat/protocol.json":
+            yield from warm_http_repeat(root, source, digest)
         elif (path.parent == root / "lab/autonomous/results/a100-vllm-awq-current-fixed128-r2"
               and (path.name == "preregistration.portable.json" or path.name == "preregistration.json"
                    and not path.with_name("preregistration.portable.json").is_file())):

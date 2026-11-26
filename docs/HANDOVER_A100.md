@@ -5,6 +5,39 @@ without the chat that produced the work. Measurement details live in [LAB.md](LA
 
 ## Subsequent CPU Pilot work on 2026-11-26
 
+The new warm HTTP comparison uses three sequential process starts on one fresh
+A100 SXM4 80 GB. K1 and K2 start the ordinary PR 57 server, each with automatic
+PK2 and the locally calibrated W4 kernel. vLLM 0.11.0 uses the official AWQ
+checkpoint between them. Scoring includes the first measured wave after the
+standard warmup. The previous fixed-128 experiment on a different lease closed
+before a complete HTTP wave was recovered. [Independent protocol and measurements](../lab/autonomous/results/a100-pr57-warm-repeat/)
+
+To reproduce on a fresh target, use the budgeted RunPod operator and start
+the setup job below from an approved lease. The source commit includes the
+PR 61 merge into PR 57. The collector runs on the control machine and uploads
+the benchmark driver, checks the software and model hashes, starts the three
+servers in order and copies completed data off the pod every eight seconds.
+Supply a fresh private directory on persistent storage.
+
+```sh
+python -m lab.rp.rp job warm-setup 'set -eu
+mkdir -p /work
+git clone https://github.com/Tobayko/IronMule.git /work/IronMule
+cd /work/IronMule
+git checkout --detach 8cf0a3106f09a3338eb53c28047af7e36fc7b340
+env JOBS=16 PIP_NO_CACHE_DIR=1 VLLM=1 bash lab/rp/setup.sh 80'
+cp lab/autonomous/results/a100-pr57-warm-repeat/protocol.json "$RESULTS/"
+python -m lab.rp.warm_repeat --state "$RESULTS" --pod-id "$POD_ID" --seconds 6000
+python -m lab.pk6.warm_result "$RESULTS"
+python -m lab.rp.rp stop
+python -m lab.rp.rp account
+```
+
+The scorer can also read the tracked result directory on CPU. The two
+quantizations and the narrow workload limit interpretation to these complete
+systems. The corresponding source-release replay is a separate command in
+[the repeat-start experiment](../lab/pk1/restart-trial.md).
+
 The original record below describes the warm HTTP comparison. A subsequent same-model
 campaign measured repeated worker startup on a new A100 SXM4 80 GB. Its CPU Pilot selected
 a complete, locally qualified W4 configuration. The source change reduced median first mixed
