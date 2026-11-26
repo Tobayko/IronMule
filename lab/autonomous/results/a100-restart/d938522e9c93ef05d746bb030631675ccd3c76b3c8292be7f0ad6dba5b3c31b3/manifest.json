@@ -35,6 +35,14 @@
       "original_sha256": "26aeb1334971b22376bc2368bb36a56ff9653524ee64f6bb7b25f7171d87be69",
       "sha256": "26aeb1334971b22376bc2368bb36a56ff9653524ee64f6bb7b25f7171d87be69"
     },
+    "cand-4.json": {
+      "original_sha256": "5967f80281967903c60ebdde60d3876d7c8776b3c27cb5eef392fd70f2c633ff",
+      "sha256": "5967f80281967903c60ebdde60d3876d7c8776b3c27cb5eef392fd70f2c633ff"
+    },
+    "cand-5.json": {
+      "original_sha256": "4b5b846db194440c213b8be2d54f2b5309412a58a3179c4e6ddfb816d663f07a",
+      "sha256": "4b5b846db194440c213b8be2d54f2b5309412a58a3179c4e6ddfb816d663f07a"
+    },
     "candidate.diff": {
       "original_sha256": "8abc322bf1806f2481a1fcb70ecfe426ea01bac0dca0f3c1cf5fff5322ea6c01",
       "sha256": "8abc322bf1806f2481a1fcb70ecfe426ea01bac0dca0f3c1cf5fff5322ea6c01"
@@ -51,9 +59,29 @@
       "original_sha256": "603ef7b9eaa47d681f54a2a489c182c40fa5a97358aa7e2248b1fac973efd014",
       "sha256": "603ef7b9eaa47d681f54a2a489c182c40fa5a97358aa7e2248b1fac973efd014"
     },
+    "cost-after-verdict.json": {
+      "original_sha256": "ea8e1e27eb5340fdae451707633a713b5b0dca8f8da6a49ea7cca9cc617a1a7a",
+      "sha256": "ea8e1e27eb5340fdae451707633a713b5b0dca8f8da6a49ea7cca9cc617a1a7a"
+    },
     "cost-during-qualification.json": {
       "original_sha256": "09a956b742ffd003c1d855f96cb260831750d050e3aa0f66085d7ab64519089e",
       "sha256": "09a956b742ffd003c1d855f96cb260831750d050e3aa0f66085d7ab64519089e"
+    },
+    "facts-cand-0.json": {
+      "original_sha256": "f4a9be9cea831b974bc9c73dd169b7f2d59f80cc66f11a04f0589a6acd918203",
+      "sha256": "f4a9be9cea831b974bc9c73dd169b7f2d59f80cc66f11a04f0589a6acd918203"
+    },
+    "facts-cand-1.json": {
+      "original_sha256": "e7fe0cded585acf5324c19693126c804744667b2f53524dd4fa6a48988d5f96c",
+      "sha256": "e7fe0cded585acf5324c19693126c804744667b2f53524dd4fa6a48988d5f96c"
+    },
+    "facts-ref-0.json": {
+      "original_sha256": "15dcf866673390c7ad23fb7e60b853700a85a9b32f6c5bcab7bc11ca04046907",
+      "sha256": "15dcf866673390c7ad23fb7e60b853700a85a9b32f6c5bcab7bc11ca04046907"
+    },
+    "facts-ref-1.json": {
+      "original_sha256": "e3a15bae6463e41b6674b8f08a915c2b0627b40baa95a75c312f05d7d8cfd138",
+      "sha256": "e3a15bae6463e41b6674b8f08a915c2b0627b40baa95a75c312f05d7d8cfd138"
     },
     "missing.json": {
       "original_sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4",
@@ -79,6 +107,10 @@
       "original_sha256": "abca0323d88c38767275c2df6957c1e7504cd8da07f87d4a66b933b4fe9d04de",
       "sha256": "abca0323d88c38767275c2df6957c1e7504cd8da07f87d4a66b933b4fe9d04de"
     },
+    "qualified.json": {
+      "original_sha256": "33a41bb200a1ba982b589cb353d6e6d4459e8acb4d6a7f368a0b9e503edfda87",
+      "sha256": "33a41bb200a1ba982b589cb353d6e6d4459e8acb4d6a7f368a0b9e503edfda87"
+    },
     "receipt.json": {
       "original_sha256": "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89",
       "sha256": "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89"
@@ -99,6 +131,14 @@
       "original_sha256": "aab099574aa34963fcfcc2d133fce8b02f34bd12a7274ecfb1b8f32c7ca3112f",
       "sha256": "aab099574aa34963fcfcc2d133fce8b02f34bd12a7274ecfb1b8f32c7ca3112f"
     },
+    "ref-4.json": {
+      "original_sha256": "449140171c73a57e8f6db10c717445688caf366b782a763196a71b72523bf9ff",
+      "sha256": "449140171c73a57e8f6db10c717445688caf366b782a763196a71b72523bf9ff"
+    },
+    "ref-5.json": {
+      "original_sha256": "1f3f5ec07f492865db13768566046168ba258cf6bc2585fcacb50bb6805870f6",
+      "sha256": "1f3f5ec07f492865db13768566046168ba258cf6bc2585fcacb50bb6805870f6"
+    },
     "reference-source.txt": {
       "original_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
       "sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5"
@@ -111,6 +151,10 @@
       "original_sha256": "04a4dd497b813677822b5d5633ee74b831acc4ff971ae29f1e4d536b36317a15",
       "sha256": "de648c4ddd2c75abd614b10ecc1f8248522d1697c8c273a8f78685b89645ea5a"
     },
+    "result.json": {
+      "original_sha256": "7ba184e968bdd4104153023d9bb05a34f9ec7b7db2f39fd89df0f777f99fee6d",
+      "sha256": "7ba184e968bdd4104153023d9bb05a34f9ec7b7db2f39fd89df0f777f99fee6d"
+    },
     "stale-receipt.json": {
       "original_sha256": "b9b63e7544ddab4d1acd9707d61697a5c348a268cd070a6ae29c5821b203ad98",
       "sha256": "b9b63e7544ddab4d1acd9707d61697a5c348a268cd070a6ae29c5821b203ad98"
@@ -121,7 +165,7 @@
     }
   },
   "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
-  "qualified": null,
+  "qualified": true,
   "rebuild": {
     "instructions": "Check out base_commit and apply candidate.diff to reconstruct this Python candidate. Restore the native library, table and GGUF by their bound hashes and run lab.pk1.restart_trial.",
     "reference_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
