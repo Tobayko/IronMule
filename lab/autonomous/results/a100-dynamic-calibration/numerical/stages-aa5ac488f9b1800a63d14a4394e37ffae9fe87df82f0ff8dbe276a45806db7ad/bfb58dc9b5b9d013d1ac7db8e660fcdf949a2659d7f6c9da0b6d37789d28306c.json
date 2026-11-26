@@ -1,0 +1,74 @@
+{
+  "digest": "c8bf3d123e6446b8ad3b99479ad7050e26cc4b6b989221c7b845019389b1aef8",
+  "label": {
+    "role": "reference",
+    "settings": {
+      "flash_attn": false,
+      "kv_f32": false,
+      "kv_unified": false
+    },
+    "shared": false
+  },
+  "output": {
+    "facts": {
+      "0:arithmetic-0": true,
+      "0:arithmetic-1": true,
+      "0:arithmetic-2": true,
+      "0:arithmetic-3": true,
+      "0:arithmetic-4": true,
+      "0:arithmetic-5": true,
+      "0:extraction-0": true,
+      "0:extraction-1": true,
+      "0:extraction-2": true,
+      "0:extraction-3": true,
+      "0:extraction-4": true,
+      "0:extraction-5": true,
+      "0:facts-0": true,
+      "0:facts-1": true,
+      "0:facts-2": true,
+      "0:facts-3": true,
+      "0:facts-4": true,
+      "0:facts-5": true
+    },
+    "kg5_launches": null,
+    "nll": [
+      0.46292719593708187,
+      0.9005291568675011,
+      1.1577286009507477,
+      1.4247569617623106,
+      1.9145887354751256,
+      1.4245614337647896,
+      1.8414829196344784,
+      2.217681832134424,
+      1.7966499831452547,
+      1.7227938418833917,
+      2.2451091726348227,
+      1.9143116413651278,
+      2.098777561732729,
+      2.2169162626034398,
+      2.0859888777866518,
+      2.4409218587486654
+    ],
+    "prefill_batch": null,
+    "repeat": {
+      "0:arithmetic-0": true,
+      "0:arithmetic-1": true,
+      "0:arithmetic-2": true,
+      "0:arithmetic-3": true,
+      "0:arithmetic-4": true,
+      "0:arithmetic-5": true,
+      "0:extraction-0": true,
+      "0:extraction-1": true,
+      "0:extraction-2": true,
+      "0:extraction-3": true,
+      "0:extraction-4": true,
+      "0:extraction-5": true,
+      "0:facts-0": true,
+      "0:facts-1": true,
+      "0:facts-2": true,
+      "0:facts-3": true,
+      "0:facts-4": true,
+      "0:facts-5": true
+    }
+  }
+}

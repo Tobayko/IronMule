@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 
 import numpy as np
@@ -83,19 +84,27 @@ def fit(state, archive):
              margin=np.asarray(margin),holdout_admitted=np.asarray(score["holdout_correct_profile"]))
     state.mkdir(parents=True,exist_ok=True)
     path=state/"ordered-head.npz"
-    if not path.is_file():
-        with path.open("xb") as stream:
-            stream.write(out.getvalue())
-            stream.flush()
-            os.fsync(stream.fileno())
-    require(path.read_bytes()==out.getvalue(),"different trained checkpoint")
+    with tempfile.NamedTemporaryFile(dir=state,delete=False) as stream:
+        staged=Path(stream.name)
+        stream.write(out.getvalue())
+        stream.flush()
+        os.fsync(stream.fileno())
+    try:
+        try:
+            os.link(staged,path)
+        except FileExistsError:
+            pass
+        require(path.read_bytes()==out.getvalue(),"different trained checkpoint")
+    finally:
+        staged.unlink(missing_ok=True)
     report={"order":order["order_id"],"seed":20851,"weights_sha256":release.checksum(path),
             "parameters_per_network":sum(v.size for v in heads[0]),"ensemble_size":len(heads),
             "fit_and_grade_s":time.monotonic()-start,"metrics":score,
             "rule_comparator":"Always use the already qualified candidate on this exact target; it pays the guarded local PK2 measurements on each start."}
     if (state/"fit.json").exists():
         old=read(state/"fit.json")
-        require(old["weights_sha256"]==report["weights_sha256"] and old["metrics"]==score,"conflicting fit")
+        require(old["weights_sha256"]==report["weights_sha256"] and old["order"]==order["order_id"]
+                and old["seed"]==report["seed"],"conflicting fit")
         return old
     write_once(state/"fit.json",report)
     return report
