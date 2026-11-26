@@ -236,7 +236,9 @@ def cycle(args):
         if getattr(args, "exercise_pilot", False) and active["stage"] == "active":
             from lab.rp.restart_pilot_campaign import exercise
             from training.pilot_restart_profiles import fit
-            fit(SimpleNamespace(**vars(check), weights=state / "startup-head.npz", report=state / "startup-fit.json", seed=18471))
+            weights, report = state / "startup-head.npz", state / "startup-fit.json"
+            if not (weights.is_file() and report.is_file()):
+                fit(SimpleNamespace(**vars(check), weights=weights, report=report, seed=18471))
             active = exercise(args, cfg, remote, active)
         return product(args, cfg, remote, check, active) if getattr(args, "serve_product", False) and active["stage"] == "active" else active
     return {"stage": "qualified", "order": key, "metrics": verified["metrics"]}
