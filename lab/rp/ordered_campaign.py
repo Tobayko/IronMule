@@ -147,6 +147,9 @@ def run(a):
             if names:
                 target.snapshot(pod,PurePosixPath(DEPLOY)/"ordered",names,local/"fresh")
             if not active["running"] and active["rc"] is not None:
+                target.snapshot(pod,PurePosixPath(DEPLOY)/"state/deployment",
+                                ["control.json","selection.json","target-check.json","rollback-exercise.json",
+                                 "mixed-monitor.json","facts-monitor.json"],local/"target-state")
                 result={"publication":pub,"target_exit":active["rc"],"trained_weights_sha256":trained["weights_sha256"],
                         "activation":read(local/"proofs/activation.json") if (local/"proofs/activation.json").exists() else None}
                 write_once(local/"deployment-outcome.json",result)
