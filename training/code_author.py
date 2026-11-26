@@ -133,7 +133,7 @@ def consume_cli(state: Path, *, retry_preflight=False):
                                       stdout=subprocess.PIPE, **kwargs).stdout.strip()
 
             auth = invoke(["login", "status"], timeout=30, stderr=subprocess.STDOUT)
-            if "using ChatGPT" not in auth:
+            if not any(line.strip() == "Logged in using ChatGPT" for line in auth.splitlines()):
                 raise RuntimeError("included ChatGPT login required for unattended authoring")
             catalog = json.loads(invoke(["debug", "models"], timeout=30))
             models = [m["slug"] for m in catalog["models"] if m.get("visibility") == "list"]
@@ -146,7 +146,9 @@ def consume_cli(state: Path, *, retry_preflight=False):
                       "additionalProperties": False}
             write_once(work / "schema.json", schema)
             native = request["order"]["target"]["path"].endswith((".cu", ".cuh", ".cc", ".cpp"))
-            settings = ["-c", "forced_login_method=chatgpt"]
+            settings = ["-c", "forced_login_method=chatgpt", "-c", 'web_search="disabled"',
+                        "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps",
+                        "--disable", "multi_agent_v2"]
             if native:
                 settings += ["-c", "model_reasoning_effort=high"]
             prompt = ("Complete the following IronMule development order using its included source. Return one "

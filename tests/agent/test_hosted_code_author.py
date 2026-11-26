@@ -48,6 +48,7 @@ def test_subscription_consumer_is_bounded_and_recovers_a_successful_reply(tmp_pa
             return subprocess.CompletedProcess(argv, 0, '{"models":[{"slug":"gpt-6.2-sol","visibility":"list"}]}')
         assert argv[1] == "exec" and argv[argv.index("-s") + 1] == "read-only"
         assert "model_reasoning_effort=high" in argv and "--ignore-user-config" in argv
+        assert {"shell_tool", "unified_exec", "apps", "multi_agent_v2"} <= set(argv)
         assert "void load() {}" in kwargs["input"] and "measured" in kwargs["input"]
         Path(argv[argv.index("-o") + 1]).write_text(json.dumps(native_reply))
         return subprocess.CompletedProcess(argv, 0, "")
