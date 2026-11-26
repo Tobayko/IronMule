@@ -11,6 +11,10 @@ def test_grouped_training_does_not_fit_heldout_factual_pairs():
     _, second, _, b = learner.make_heads(train, [(15, 32)] * 2, 81)
     assert all((x == y).all() for h, k in zip(first, second) for x, y in zip(h, k))
     assert a['holdout_correct_profile'] and not b['holdout_correct_profile']
+    for family, analysis in a['matched_eligibility_ablation'].items():
+        assert len(analysis['random_initialization']['scores']) == len(analysis['after_mixed_observations']['scores']) == 3
+        assert analysis['random_initialization']['margin_error'] == analysis['after_mixed_observations']['margin_error']
+        assert analysis['random_initialization']['scores'] != analysis['after_mixed_observations']['scores']
     assert a['holdout_seconds']['fixed_use_cache'] == a['holdout_seconds']['scratch_pilot']
 
 
@@ -36,6 +40,7 @@ def test_release_head_uses_evidence_and_returns_to_reference_on_rollback(tmp_pat
         params = dict(active=True, cache_ready=True, family='factual-first-18', expected_sha256=sha)
         return learner.select(args.weights, control, **{**params, **kwargs})
     assert choose()['profile'] == 'candidate'
+    assert len(choose(ablate_weights=True)['scores']) == 3 and choose(ablate_weights=True)['previous'] is False
     assert choose(previous=True)['profile'] == choose(active=False)['profile'] == 'reference'
     assert choose(cache_ready=False)['profile'] == choose(family='unobserved')['profile'] == 'reference'
     assert choose(expected_sha256='0'*64)['profile'] == 'reference'

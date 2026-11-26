@@ -46,6 +46,12 @@ def make_heads(train, test, seed):
     after = [fit_head(times, [mixed], seed + j, inputs) for j in range(3)]
     margin = max(abs(math.log(r / c) + math.log(times[mixed][1])) for r, c in train)
     decision = Pilot.startup_profile(after, features(facts), NAMES, NAMES, "reference", in_support=True, margin_error=margin)
+    ablation = {}
+    for family in FAMILIES:
+        ablation[family] = {
+            name: Pilot.startup_profile(ensemble, features(family), NAMES, NAMES, "reference",
+                                        in_support=True, margin_error=margin)
+            for name, ensemble in (("random_initialization", before), ("after_mixed_observations", after))}
     winner = min(range(2), key=lambda k: median(x[k] for x in test))
     predicted = NAMES.index(decision["profile"])
     return before, after, margin, {
@@ -56,6 +62,7 @@ def make_heads(train, test, seed):
                             "scratch_pilot": [pair[predicted] for pair in test]},
         "scores_before": [predict(h, features(facts)).tolist() for h in before],
         "scores_after": [predict(h, features(facts)).tolist() for h in after],
+        "matched_eligibility_ablation": ablation,
         "train_log_margin_error": margin,
         "uncertainty": "Training spread uses mixed-first pairs only. The independently tested factual-first family is the only additional admissible context. Future families fall back."}
 
@@ -118,7 +125,7 @@ def fit(args):
     return report
 
 
-def select(checkpoint, receipt, *, family, cache_ready, active, previous=False, expected_sha256):
+def select(checkpoint, receipt, *, family, cache_ready, active, previous=False, ablate_weights=False, expected_sha256):
     """One CPU-only dispatch on a verified control receipt. Unknown or withdrawn profiles use the baseline."""
     start = time.perf_counter_ns()
     reason = None
@@ -132,7 +139,7 @@ def select(checkpoint, receipt, *, family, cache_ready, active, previous=False, 
         with np.load(io.BytesIO(data), allow_pickle=False) as saved:
             if str(saved["schema"]) != SCHEMA or str(saved["scope"]) != binding(receipt["order"], q):
                 raise ValueError("different target, receipt or source")
-            tag = "prior" if previous else "head"
+            tag = "prior" if previous or ablate_weights else "head"
             heads = [[saved[f"{tag}{i}_{k}"] for k in PARAMS] for i in range(3)]
             margin = float(saved["margin"])
             supported = family == "mixed-first-32" or (family == "factual-first-18" and bool(saved["holdout_admitted"]))
@@ -142,7 +149,7 @@ def select(checkpoint, receipt, *, family, cache_ready, active, previous=False, 
     except (KeyError, ValueError, OSError, TypeError, EOFError) as exc:
         reason = str(exc)
         result = {"profile": "reference", "reason": "unavailable qualified startup model", "scores": [], "cpu_us": 0.0}
-    return {**result, "detail": reason, "family": family, "previous": previous, "weights_sha256": expected_sha256,
+    return {**result, "detail": reason, "family": family, "previous": previous, "ablate_weights": ablate_weights, "weights_sha256": expected_sha256,
             "cpu_ms": (time.perf_counter_ns() - start) / 1e6}
 
 
