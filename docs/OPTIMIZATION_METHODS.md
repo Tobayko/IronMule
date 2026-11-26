@@ -40,3 +40,20 @@ Read `historical_qualification` for the measured verdict. On resume the command 
 For an integrated CPU trial, pass `--thread-candidate CHECKPOINT.npz` to `training.optimization_run` with a checkpoint trained on the same CPU, native build, model and four-slot context. The runner snapshots the weights, verifies their hash on resume and mounts the copy read-only. Discovery and both evaluation arms qualify the proposed thread offsets from fresh local measurements before their timed real generations. They run with four slots, a 512-token sequence context and speculation disabled. Serving bindings include the checkpoint, trainer/learner source digests and qualified offsets. Different bindings or zero qualified choices in the timed waves disqualify the comparison. A completed discovery with zero qualified scratch choices retains its measurements in `discovery-rejected/` and closes the run. Interrupted measurements remain in a timestamped rejection directory. CLI workers run with a Linux nice value of at least 10.
 
 The [hardware coverage matrix](../training/optimization-hardware.md) distinguishes a detected backend, verified native computation, serving calibration and a qualified deployment.
+
+## Development model availability on 2026-11-26
+
+The RunPod operator used the repository's configured hosted `gpt-6-luna`. On the
+control machine, `codex debug models` listed `gpt-6.2-sol`, `gpt-6.1-sol`,
+`gpt-6-sol`, `gpt-5.6-sol`, `gpt-6.1-terra`, `gpt-5.6-terra`, `gpt-6-luna`
+and `gpt-5.6-luna` among the repo-permitted families. List the catalog again on
+the deployment host. The single-attempt CLI adapter selects an available Sol for
+source changes. Archive ingestion, costing, matching and scoring are deterministic
+local programs. The per-step controller runs locally in NumPy.
+
+The control machine's nested CLI reported a ChatGPT login, but its actual code
+request returned HTTP 401. A catalog entry alone cannot establish access to a
+billable endpoint. The hosted worker transport completed orders in this session.
+Its file request and returned receipt can be resumed independently. An unattended
+installation needs a working author transport and an appropriate spending limit
+for any metered provider. The measured run made no metered API requests.
