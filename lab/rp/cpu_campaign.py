@@ -489,14 +489,34 @@ def product(pod, cfg, state, lane, key, common, affinity, deployed, requests, su
     return {**deployed, "stage": "product served", "product_arm": answer["arm"], "response": str(local / output)}
 
 
+def replay(args):
+    """Recompute the historical decision from local receipts, with no provider or author calls."""
+    suite = Suite(args.matched)
+    raw = args.state / "qualification"
+    order = read(args.order or args.state / "order.json")
+    scoped_release.validate_order(cpu_code_release.ADAPTER, order)
+    if not suite.matched and (stopped := profile_conflict(raw, order)):
+        return stopped
+    authorship = args.authorship or args.state / "authoring"
+    if not (authorship / "author/response.json").is_file():
+        raise ValueError("replay needs the original correlated author response")
+    reference, candidate = make_source(order, authorship, False)
+    options = SimpleNamespace(state=raw, trial=raw, reference=reference, candidate=candidate,
+                              order=args.order or args.state / "order.json", seed=suite.seed)
+    observed = suite.broker.verify_offline(options)
+    if observed != read(raw / "verdict.json"):
+        raise ValueError("historical replay differs from its raw target verdict")
+    return {"stage": "historically qualified" if observed["passed"] else "rejected", "result": observed}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for key in ("state", "target", "head"):
-        parser.add_argument("--" + key, type=Path, required=True)
-    for key in ("order", "authorship", "evidence", "prior", "archive", "product-requests"):
+    parser.add_argument("--state", type=Path, required=True)
+    for key in ("target", "head", "order", "authorship", "evidence", "prior", "archive", "product-requests"):
         parser.add_argument("--" + key, type=Path)
     parser.add_argument("--job-name", help="adopt an existing qualification job for this order, including its incident suffix")
     parser.add_argument("--author-cli", action="store_true", help="consume the pending order through the included subscription")
+    parser.add_argument("--replay", action="store_true", help="recompute the historical verdict from local raw receipts")
     parser.add_argument("--matched", action="store_true", help="use a separate v2 target path and a freshly captured complete profile")
     parser.add_argument("--prepare-only", action="store_true", help="stage immutable inputs and wait before any qualification or release")
     parser.add_argument("--publish", action="store_true", help="publish a qualified PR and activate only its independently verified merge")
@@ -504,6 +524,13 @@ def main():
     args = parser.parse_args()
     if args.wait_seconds < 0:
         parser.error("--wait-seconds must be non-negative")
+    if args.replay:
+        if args.publish or args.author_cli or args.prepare_only:
+            parser.error("replay reads existing receipts only")
+        print(json.dumps(replay(args), sort_keys=True))
+        return
+    if not (args.target and args.head):
+        parser.error("a live campaign needs --target and --head")
     args.state.mkdir(mode=0o700, parents=True, exist_ok=True)
     begin = time.monotonic()
     with (args.state / ".cpu-campaign.lock").open("a") as lock:

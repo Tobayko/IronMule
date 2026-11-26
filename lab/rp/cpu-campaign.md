@@ -48,7 +48,7 @@ a sibling file lock and runs under the lease deadline. The default qualification
 `epyc-qualify-` and the first 16 hex characters of the author order. The matched protocol adds
 `-matched-v2`. Use `--job-name` to adopt an existing operator-submitted job including its incident
 suffix. A restarted control process inspects the target's files, job table and process arguments
-before deciding to dispatch. Each wait is bounded by `--wait-seconds`. With zero wait the command
+before deciding to dispatch. The polling window is bounded by `--wait-seconds`. Source transfers and a protected GitHub CI check can outlast that window. With zero wait the command
 takes one step and exits, and rerunning it resumes the campaign.
 
 The output directory contains `order.json`, `target-binding.json`, `qualification/` and
@@ -78,3 +78,13 @@ data = Path('lab/autonomous/results/runpod-epyc-pilot')
 print(profile_conflict(data / 'prefill-code/qualification-v1', read(data / 'prefill-order.json')))
 PY
 ```
+
+For a qualified or rejected six-triplet result, replay the exact historical verdict from the
+recorded source response and `qualification/` directory, even after the lease has been deleted.
+
+```sh
+python -m lab.rp.cpu_campaign --replay --matched --state /persistent/epyc-matched
+```
+
+If the original authoring directory was shared across protocols, pass the same
+`--authorship /persistent/authoring` used during qualification.
