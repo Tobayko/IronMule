@@ -14,6 +14,10 @@
       "original_sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73",
       "sha256": "676fcdb79538b9bb32e702e95984aab2b2c65a46a0485edcadb727c4db8b3f73"
     },
+    "http-product-binding.json": {
+      "original_sha256": "2856db5b4a5e3fdd977bacb89abd2be0c5d70050e9a77e67e4574b07a2dff731",
+      "sha256": "2856db5b4a5e3fdd977bacb89abd2be0c5d70050e9a77e67e4574b07a2dff731"
+    },
     "http-product-gate-reference.json": {
       "original_sha256": "c4bcd741926a81918a12c7356e4adef93c71f6e40a6bb743056bf9944bde3983",
       "sha256": "c4bcd741926a81918a12c7356e4adef93c71f6e40a6bb743056bf9944bde3983"

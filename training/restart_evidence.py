@@ -27,7 +27,7 @@ PILOT_ARMS = ("pilot-initial.json", "pilot-trained.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
-HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "product-gate-reference.json", "product-gate-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
+HTTP_FILES = (*HTTP_ARMS, "product-binding.json", "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "product-gate-reference.json", "product-gate-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
               "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json", "live-ready.json")
 # The frozen stock gate broker allows sixteen child calls per arm.
 STOCK_STAGES = tuple(f"http-stock-{arm}-{i}.json" for arm in ("reference", "candidate") for i in range(16))
@@ -223,6 +223,16 @@ def product_assets(state, order, verified, assets, *, attempt=None, checkout=Non
         if work.name == "product-v3" and "geometry.json" in raw:
             g = json.loads(raw["geometry.json"])
             previous = bounded(state / "product-v2/gate-reference.json")
+            if "product-binding.json" in raw:
+                from lab.pk1 import restart_http
+
+                release_sha = sha(assets["control.json"])
+                head_sha = sha(assets["startup-head.npz"])
+                geometry_sha = sha(raw["geometry.json"])
+                key = restart_http.key_for(SimpleNamespace(receipt_sha256=release_sha, head_sha256=head_sha, geometry_sha256=geometry_sha), control)
+                if json.loads(raw["product-binding.json"]) != {"release_sha256":release_sha, "head_sha256":head_sha,
+                                                               "geometry_sha256":geometry_sha, "evaluator_binding":key}:
+                    raise ValueError("stock product attempt resumed under another evaluator, workload or release")
             if (g.get("original_product_width_selection") is not True or g.get("explicit_width_failure_sha256") != sha(previous)
                     or json.loads(previous).get("passes") is not False):
                 raise ValueError("stock-sequence retry differs from the prior rejected explicit width")
