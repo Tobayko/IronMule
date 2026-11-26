@@ -1,5 +1,5 @@
 import json
-from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -40,8 +40,17 @@ def test_refuses_mixed_foreign_unsuccessful_or_simulated_profiles():
 
 
 def test_captures_only_completed_measured_python_work(tmp_path):
-    from ironmule.gguf_tokenizer import _complete_prefix
-    root = Path(__file__).resolve().parents[2]
+    root = tmp_path / "repo"
+    root.mkdir()
+    module = root / "ironmule/gguf_tokenizer.py"
+    module.parent.mkdir()
+    module.write_text("def _complete_prefix(data):\n    return len(data)\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.org", "commit", "-qm", "base"],
+                   cwd=root, check=True)
+    from runpy import run_path
+    _complete_prefix = run_path(str(module))["_complete_prefix"]
     with observe_wave(tmp_path, "short", {"hardware": "test-cpu"}, root) as record:
         assert _complete_prefix(b"hello") == 5
         record.update(requests=[[2, 1]], correct=True)
