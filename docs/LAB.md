@@ -4521,3 +4521,25 @@ experiment. The largest exclusive host-function share in any wave was 0.04764% f
 saving required for the existing 2% throughput gate. IronMule therefore deferred a Python code order on
 this workload. This estimate covers the instrumented engine and tokenizer source sites only.
 [Decision and retrieved records](../lab/autonomous/results/runpod-epyc-pilot/planner-decision.json)
+
+### 2026-11-26, A100 SXM4 80 GB, prefill cuBLASLt screen deferred a source experiment
+
+The pinned Qwen3-32B Q4_K_M capture at commit `33dc7bf` executed 7,616 prompt rows in 2.369 s.
+The FFN gate/up and down groups were attributed 1,036.75 and 527.10 ms from device times, counts,
+the graph and the actual matrix dimensions. Call-argument traces would give direct confirmation.
+The bounded planner selected a synthetic-input micro-test of the same TN FP16-input/FP32-output
+GEMM layouts. It charged 3.788 s to compile and execute on the existing pod, including 2.222 s
+for compilation. Its portion of the occupied lease is already included in the RunPod journal.
+[Capture](../lab/autonomous/results/a100-prefill-lt/profile.log) · [Experiment plan](../lab/autonomous/results/a100-prefill-lt/plan.json)
+
+| Projection | M × N × K | Calls per prefill | Bitwise matches / Lt heuristics | Best paired median projected saving |
+| --- | --- | ---: | ---: | ---: |
+| Gate/up | 25,600 × 7,616 × 5,120 | 126 | 3 / 3 | 21.12 ms |
+| Down | 5,120 × 7,616 × 25,600 | 63 | 2 / 4 | 3.70 ms |
+
+Each qualifying heuristic matched every output bit across the warm-up and four alternating pairs
+on cuBLAS 12.8.4. The two rejected down heuristics each changed 38,857,337 FP32 values.
+The optimistic sum of the best within-shape estimates was 24.83 ms. Even a wave consisting only of the
+observed prefill would require 46.45 ms to meet the existing 2% throughput gate. The planner deferred
+a new source build. The trial measured isolated GEMMs and left the deployed cuBLAS path in place.
+[Raw timings and quality](../lab/autonomous/results/a100-prefill-lt/measurement.json) · [Planning decision](../lab/autonomous/results/a100-prefill-lt/decision.json) · [Replay](../lab/pk1/prefill-probe.md)

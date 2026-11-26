@@ -71,3 +71,21 @@ def test_cached_probe_needs_no_gpu(files, tmp_path, monkeypatch):
     output.write_text(json.dumps({**result, "status": "failed", "reason": "short allocation"}))
     with pytest.raises(RuntimeError, match="short allocation"):
         prefill_probe.run(order, output)
+
+
+def test_gpu_probe_defers_source_trial_and_rejects_partial_pairs():
+    from pathlib import Path
+
+    from lab.pk1.prefill_verdict import decide
+
+    archive = Path(__file__).resolve().parents[2] / "lab/autonomous/results/a100-prefill-lt"
+    plan = json.loads((archive / "plan.json").read_text())
+    result = json.loads((archive / "measurement.json").read_text())
+    decision = decide(plan, result)
+    assert decision == json.loads((archive / "decision.json").read_text())
+    assert decision["outcome"] == "defer source order"
+    assert decision["optimistic_best_sum_ms"] == pytest.approx(24.826029165)
+    assert decision["minimum_ms_for_2pct_if_decode_were_free"] == pytest.approx(46.45098)
+    result["targets"][0]["events"].pop()
+    with pytest.raises(ValueError, match="incomplete"):
+        decide(plan, result)

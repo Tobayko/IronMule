@@ -21,3 +21,10 @@ The reported per-wave extrapolations multiply isolated per-call differences by o
 Pod 32 reached approximately 89% of the clock-adjusted FP16 peak. Its 30–60 ms estimate for an algorithm or workspace change had no measurement. Pod 35's concat diagnostic concerned the **attention segment outputs**. Pod 36's ps1a corrected the lifetime of their shared storage. The diagnostic provides no evidence for concatenating gate and up weights. Pod 37 already removed unused FP32 outputs of SwiGLU and fused normalization. In the canonical capture, SwiGLU still uses 89.65 ms. The per-element gate and up FP32 reads and FP16 write already represent about 123 GB for 63 full FFN layers. A local SwiGLU change has little whole-wave headroom.
 
 See [the prior GPU measurements](../../docs/LAB.md) and [the retained comparison](../../docs/HANDOVER_A100.md).
+
+Reproduce the planning decision from the archived A100 result with CPU resources.
+
+```bash
+D=lab/autonomous/results/a100-prefill-lt
+python -m lab.pk1.prefill_verdict --plan "$D/plan.json" --receipt "$D/measurement.json" --out /tmp/prefill-decision.json
+```
