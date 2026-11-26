@@ -33,6 +33,13 @@ The JSON configuration uses the existing reserved lease and the paths documented
 campaign. The controller can stage without admitting GPU work. Run measurement with exclusive
 access to the GPU and its CPU allocation.
 
+On this image, point the restart broker's `LD_LIBRARY_PATH` first to the installed NVIDIA
+wheel directories `nvidia/cublas/lib` and `nvidia/cuda_runtime/lib`. They are under
+`/usr/local/lib/python3.11/dist-packages`. The startup worker launches an ordinary Python
+interpreter with those paths. After serving it identifies the mapped inodes of cuBLAS,
+cuBLASLt and the CUDA runtime, hashes their bytes and compares them to the successful
+incumbent diagnostic. The original system-toolkit stack aborted during incumbent calibration.
+
 ```sh
 python -m lab.rp.restart_campaign --config "$TARGET" --order "$STATE/order.json" \
     --state "$STATE" --checkout "$BASE" --stage-only

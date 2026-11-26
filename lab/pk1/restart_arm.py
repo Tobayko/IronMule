@@ -17,6 +17,34 @@ def process_age():
     return time.clock_gettime(time.CLOCK_BOOTTIME) - int(fields[19]) / os.sysconf("SC_CLK_TCK")
 
 
+def mapped_vendor():
+    """Hash the actual CUDA mappings after serving, outside the timed windows."""
+    import re
+
+    objects = {}
+    for line in Path("/proc/self/maps").read_text().splitlines():
+        fields = line.split(None, 5)
+        if len(fields) != 6 or int(fields[2], 16) != 0:
+            continue
+        path = Path(fields[5])
+        matched = re.fullmatch(r"(libcublas(?:Lt)?|libcudart)\.so(?:\.\d+)+", path.name)
+        if not matched:
+            continue
+        tag = matched.group(1)
+        if tag in objects:
+            raise ValueError(f"multiple mapped vendor images for {tag}")
+        with path.open("rb") as stream:
+            info = os.fstat(stream.fileno())
+            major, minor = fields[3].split(":")
+            if (info.st_dev, info.st_ino) != (os.makedev(int(major, 16), int(minor, 16)), int(fields[4])):
+                raise ValueError(f"mapped {tag} differs from file")
+            objects[tag] = {"path": str(path), "sha256": hashlib.file_digest(stream, "sha256").hexdigest()}
+            after = os.fstat(stream.fileno())
+            if (after.st_size, after.st_ctime_ns) != (info.st_size, info.st_ctime_ns):
+                raise ValueError(f"vendor image changed while hashing {tag}")
+    return objects
+
+
 def main():
     import ctypes
 
@@ -98,7 +126,7 @@ def main():
 
         save(args.output, {"schema": "ironmule.qwen-restart.arm.v1", "seed": args.seed, "cold_s": first_s,
                            "initialized_s": initialized_s, "mask": mask, "mask_bits": initial_bits, "reused": used,
-                           "cold": summarize(cold), "warm": summarize(warm), "facts": facts,
+                           "cold": summarize(cold), "warm": summarize(warm), "facts": facts, "cuda_vendor": mapped_vendor(),
                            "factual": deliveries(factual), "binding": binding, "pilot_decisions": eng.pilot.decisions,
                            "source_sha256": checksum(ge.__file__), "pilot_sha256": checksum(eng.pilot.weights_path),
                            "startup_prices": {"pilot": eng.pilot.costs, "padding": eng.pad_to,

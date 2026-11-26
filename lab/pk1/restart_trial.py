@@ -19,6 +19,13 @@ from training.code_trial import PAIRS
 
 HARNESS = Path(__file__).with_name("restart_arm.py")
 SEED = 92741
+# Frozen from the successful incumbent differential in
+# lab/autonomous/results/a100-native/incumbent-refdiag-20261126/torch-preload-libraries.json.
+A100_VENDOR = {
+    "libcublas": "9b6997d8ac06badb59b90fd08cb89b1f807576306f6b0d762f3e72000b69d260",
+    "libcublasLt": "fbbf5c66fcc42c4eb6e56a7cb40be3936edbf0d08e757761e95c84afb9606cb6",
+    "libcudart": "218eec4c8385a32e258a0235be4d449986844f2d0de3430052f0924e6fe60f71",
+}
 
 
 def arm(args, tree, seed, out, receipt=None):
@@ -47,6 +54,7 @@ def validate(row, seed, *, expected_source=None):
 
     b = row["binding"]
     if (row["schema"] != "ironmule.qwen-restart.arm.v1" or row["seed"] != seed
+            or {tag: obj["sha256"] for tag, obj in row["cuda_vendor"].items()} != A100_VENDOR
             or row["harness_sha256"] != native.checksum(HARNESS) or row["pilot_decisions"] < 1
             or (expected_source is not None and row["source_sha256"] != expected_source)
             or b["gpu_layers"] != 999 or b["seqs"] != 32 or b["seq_ctx"] != 2048 or not b["speculate"]
@@ -81,6 +89,7 @@ def compare_pair(ref, cand, seed, binding=None, *, require_hit=True):
         validate(row, seed)
     if (ref["reused"] or cand["reused"] != require_hit or ref["binding"] != cand["binding"]
             or (binding is not None and ref["binding"] != binding)
+            or ref["cuda_vendor"] != cand["cuda_vendor"]
             or ref["pilot_sha256"] != cand["pilot_sha256"] or ref["mask_bits"] != cand["mask_bits"]
             or ref["factual"] != cand["factual"] or any(any(ref[name][field] != cand[name][field] for field in ("output_sha256", "geometry"))
                                                        for name in ("cold", "warm"))):
@@ -144,7 +153,7 @@ def verify_binding(row, order):
 
 
 def receipt_fields(row):
-    return {"schema": "ironmule.w4-restart-qualified.v1", "binding": row["binding"], "mask": row["mask"],
+    return {"schema": "ironmule.w4-restart-qualified.v1", "binding": row["binding"], "cuda_vendor": row["cuda_vendor"], "mask": row["mask"],
             "quality": {"completed": 32, "facts": 18, "output_sha256": row["cold"]["output_sha256"]}}
 
 

@@ -21,6 +21,7 @@ def row(seed, cold=50., reused=False):
                         "settings": {"flash_attn": True, "kv_unified": False, "kv_f32": False},
                         "native": {"sha256": {"backend/CUDA": "backend"}}, "fp": {"devices": ["test"]}},
             "source_sha256": "candidate" if reused else "base", "pilot_decisions": 23,
+            "cuda_vendor": {tag: {"path": "/cuda/" + tag, "sha256": value} for tag, value in trial.A100_VENDOR.items()},
             "pilot_sha256": "pilot", "harness_sha256": native.checksum(trial.HARNESS),
             "peak_rss_kib": 300, "device_used_bytes": [40, 45, 45, 45]}
 
@@ -38,6 +39,10 @@ def test_cold_restart_requires_arm_equivalence_and_gain_above_aa_noise():
     wrong["factual"][0]["answer"] = "doesn't know"
     with pytest.raises(ValueError):
         trial.fresh_pass(aa[0], wrong, trial.SEED)
+    wrong_vendor = copy.deepcopy(pairs[0][1])
+    wrong_vendor["cuda_vendor"]["libcublasLt"]["sha256"] = "0" * 64
+    with pytest.raises(ValueError):
+        trial.fresh_pass(aa[0], wrong_vendor, trial.SEED)
 
 
 def test_stale_restart_must_return_to_the_prevailing_profile():
