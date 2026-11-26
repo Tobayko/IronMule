@@ -1,0 +1,16 @@
+{
+  "schema": "ironmule.fresh-warm-http.v1",
+  "registered_utc": "2026-11-26T09:00:00Z",
+  "source_commit": "8cf0a3106f09a3338eb53c28047af7e36fc7b340",
+  "purpose": "Independent replication of the PR57 warm serving comparison on a newly leased A100 after loss of the preceding target. The earlier fixed-128 series closed without a recoverable complete HTTP wave.",
+  "device": "one RunPod NVIDIA A100-SXM4-80GB; all three measured processes on the same device",
+  "model": "Qwen3-32B Q4_K_M SHA256 efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "competitor": "vLLM 0.11.0, transformers 4.57.1, official Qwen/Qwen3-32B-AWQ 0499c3ac83fdef8810b907a23894ba91e95eddd8, AWQ-Marlin, float16, tensor parallel 1, maximum model length 2048, maximum sequences 32, GPU memory utilization 0.88",
+  "profile": "original ironmule_cli serve --agent on --no-thinking, local numerical gate and measured own width, PS1=1, PK6=1, DH2=0, SV5=0, sequence context 2048, automatic PK2 and W4, no imported dispatch table or measurement receipt. K1 and K2 use the same executable, engine flags, model and locally qualified ProductStore.",
+  "workload": "original lab/pk1/http_bench.py, seed 20261119, generation limit 32, first measured wave counted, all responses, stops and facts retained",
+  "process_order": ["K1", "vllm", "K2"],
+  "per_process": {"warmup": "existing benchmark warmup for each call", "width32_waves": 3, "width8_waves": 2, "width8_factual_questions_per_wave": 18},
+  "primary": "median output tokens/s of all six 32-client IronMule waves divided by all three vLLM waves; also report both IronMule starts separately and median TTFT p50/p95, throughput at eight clients. Ratios 1.0 and 1.10 distinguish parity and the historical target.",
+  "validity": "All three target identities and model/runtime pins must match. Require identical token work, all 18 factual answers in each quality wave and full process series. Partial, calibration-only and missing evidence carry no winner claim. Quantizations differ. This protocol cannot qualify an optimizer source change.",
+  "cost": "First lease closed at 12.47924 USD conservatively with tail. Combined absolute limit 20 USD including disk, tail and external fees. New lease initially 110 minutes with maximum 2.50 USD/hour plus reserved 10-minute tail. Save raw evidence off-pod progressively, terminate after work."
+}
