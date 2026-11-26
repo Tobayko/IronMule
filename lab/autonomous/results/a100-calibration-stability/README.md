@@ -28,3 +28,7 @@ OPENBLAS_NUM_THREADS=1 python -m training.calibration_information --forecast "$d
   --weights "$r/startup-head.npz" --checkout "$src" --out /tmp/ironmule-calibration-information.json
 cmp "$d/information-decision.json" /tmp/ironmule-calibration-information.json
 ```
+
+In holdout.json, direct_state_identical compares only fields directly assigned by the method.
+For the two methods without such assignments both dictionaries are empty. Their returned
+continuous measurements differ, as recorded by return_sha256.
