@@ -32,3 +32,9 @@ The fresh r1 registration has SHA-256
 `e7870dd37d96c3e3df558fd1947544462307ebdc726bca69f0aeb8a107364c50`.
 During a partial run the report can show a completed server's own measured starts and factual
 checks. A cross-system throughput ratio requires all three registered starts.
+
+The r2 registration, SHA-256 `2e6eeb2d7030d1dab7898c799197aabe088bf7875690c95e0353442c42abe51e`,
+defines a separate current product comparison with a fixed cuBLAS threshold of 128 rows.
+Its selection rule binds one independently qualified product engine before K1 for both
+IronMule starts. PR57 used dynamic PK2. A difference from those historical throughput
+rates cannot establish the effect of PR60.

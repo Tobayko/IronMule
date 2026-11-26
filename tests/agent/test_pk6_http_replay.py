@@ -39,7 +39,7 @@ def test_fresh_vllm_alone_reports_its_own_waves_and_no_cross_system_ratio(tmp_pa
         "immutable_source_manifest": {"files": {}}, "experiment_id": "fixture", "target": {"gpu": "fixture"}}
     registration = tmp_path / "preregistration.json"
     registration.write_text(json.dumps(doc))
-    monkeypatch.setattr(replay, "FRESH_REGISTRATION_SHA", replay.checksum(registration))
+    monkeypatch.setitem(replay.FRESH_REGISTRATIONS, replay.checksum(registration), "fixture")
     with tarfile.open(replay.POD37) as tar:
         for name in replay.filenames(("vllm",)):
             rows = [json.loads(line) for line in tar.extractfile("./" + name)]

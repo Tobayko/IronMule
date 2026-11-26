@@ -19,7 +19,10 @@ from lab.adm2.verdict import final
 ROOT = Path(__file__).resolve().parents[2]
 POD37 = ROOT / "lab/pk1/results/pod37/pk6_all.tgz"
 POD37_SHA = "8f9611b216daa8545be194df9fe98d67528c2d9ceb77415cef59eba3a605fe6c"
-FRESH_REGISTRATION_SHA = "e7870dd37d96c3e3df558fd1947544462307ebdc726bca69f0aeb8a107364c50"
+FRESH_REGISTRATIONS = {
+    "e7870dd37d96c3e3df558fd1947544462307ebdc726bca69f0aeb8a107364c50": "PR60 ordinary product r1",
+    "2e6eeb2d7030d1dab7898c799197aabe088bf7875690c95e0353442c42abe51e": "current fixed-128 product r2",
+}
 
 
 def checksum(path):
@@ -106,7 +109,8 @@ def historical():
 
 def fresh(directory):
     registration = directory / "preregistration.json"
-    if checksum(registration) != FRESH_REGISTRATION_SHA:
+    registration_sha = checksum(registration)
+    if registration_sha not in FRESH_REGISTRATIONS:
         raise ValueError("fresh run registration differs from the immutable agreement")
     doc = json.loads(registration.read_bytes())
     protocol = doc["http_protocol"]
@@ -117,7 +121,8 @@ def fresh(directory):
         raise ValueError("fresh protocol or frozen harness differs")
     names = filenames(("K1", "K2", "vllm"))
     missing = [name for name in names if not (directory / name).is_file()]
-    base = {"experiment": doc["experiment_id"], "registration_sha256": checksum(registration),
+    base = {"experiment": doc["experiment_id"], "registration_sha256": registration_sha,
+            "registered_product_lane": FRESH_REGISTRATIONS[registration_sha],
             "declared_hardware": doc["target"]["gpu"], "reference_repo": doc["models"]["vllm_reference"]["repo"],
             "ironmule_model_sha256": doc["models"]["ironmule_product"]["sha256"], "matched_quantization": False}
     labels = [label for label in ("K1", "K2", "vllm") if all(name not in missing for name in filenames((label,)))]
