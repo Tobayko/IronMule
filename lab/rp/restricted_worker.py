@@ -171,7 +171,7 @@ def restrict_files(spec):
         os.close(fd)
 
 
-def restrict(uid, gid, timeout):
+def restrict(uid, gid, timeout, parent_pid=None):
     libc = C.CDLL(None, use_errno=True)
     def prctl(option, value):
         if libc.prctl(option, C.c_ulong(value), 0, 0, 0) != 0:
@@ -188,6 +188,12 @@ def restrict(uid, gid, timeout):
         hard = resource.getrlimit(kind)[1]
         n = min(hard, bound) if hard != resource.RLIM_INFINITY else bound
         resource.setrlimit(kind, (n, n))
+    if parent_pid is not None:
+        # setresuid clears PDEATHSIG. Install it after the final identity change and
+        # close the race with a controller that exited before prctl took effect.
+        prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG
+        if os.getppid() != parent_pid:
+            raise RuntimeError("restricted worker lost its broker during startup")
     filter_syscalls()
 
 
@@ -208,7 +214,7 @@ def child(fd, spec_fd):
         spec = json.load(stream)
     output = Path(spec["output"])
     os.umask(0o077)
-    restrict(spec["uid"], spec["gid"], spec["timeout"])
+    restrict(spec["uid"], spec["gid"], spec["timeout"], spec["parent_pid"])
     restrict_files(spec)
     status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
     caps = {k: int(status[k], 16) for k in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")}
@@ -287,7 +293,7 @@ def _worker(argv, *, env, cwd, output, readonly, timeout, uid, gid, secret_paths
         fixture.write_bytes(b"reference")
         fixture.chmod(0o444)
         spec = {"argv": [os.fspath(a) for a in argv], "cwd": str(cwd), "output": str(output), "uid": uid, "gid": gid,
-                "timeout": int(timeout), "readonly": inputs, "secret_paths": protected, "env": clean,
+                "parent_pid": os.getpid(), "timeout": int(timeout), "readonly": inputs, "secret_paths": protected, "env": clean,
                 "sentinel": str(sentinel), "unlisted": str(unlisted), "fixture": str(fixture)}
         with tempfile.TemporaryFile(dir=boundary) as control:
             control.write(json.dumps(spec).encode())

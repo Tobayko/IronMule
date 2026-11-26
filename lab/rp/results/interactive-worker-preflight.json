@@ -15,5 +15,12 @@
   "network_denied": true,
   "byte_pipe_roundtrip": true,
   "one_shot_preflight": true,
-  "nvidia_arithmetic_in_this_probe": false
+  "nvidia_arithmetic_in_this_probe": false,
+  "broker_exit_probe": {
+    "launcher_sha256": "9aa622b883efc9889711a7992879c271d5c63d5386f8e60603b96fc5717e7d7f",
+    "broker_hard_exit": true,
+    "worker_exit_confirmed_by_pidfd": true,
+    "deadline_s": 120,
+    "max_observation_s": 3
+  }
 }
