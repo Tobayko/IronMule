@@ -15,6 +15,32 @@ service after restart. [Hardware scope](../training/optimization-hardware.md#a10
 [Training, source experiment and activation](../lab/pk1/restart-trial.md) ·
 [Original HTTP result replay](../lab/pk6/replay-http.md)
 
+The cache-replay search family for PR 60 came from the developers. IronMule issued the
+order from two matching device observations, Codex implemented it, and the CPU Pilot
+learned when to select the qualified source. In a subsequent search over observed startup
+methods and ten sampling plans, IronMule selected a different experiment from the data.
+Two blind full starts supported its forecast. Codex implemented the resulting order.
+On the A100, the new code reduced native calls from 96 to 64 in the instrumented screen,
+but won only four of six uninstrumented mixed pairs. The six batches together took
+104.491 seconds, compared with 100.533 seconds on the PR 60 reference. All paired outputs
+matched. The evaluator rejected the program and recorded the decision for the next run.
+The scoped PR 60 source stayed selected. [Independent target accounting](../lab/autonomous/results/a100-calibration-sampling/target-accounting.json) ·
+[Durable planning outcome](../lab/autonomous/results/a100-calibration-sampling/post-terminal-replan.json)
+
+To refit the released startup head on the CPU, reproduce its held-out decisions and verify the two
+source verdicts in a Linux source checkout with the repository dependencies installed, run
+
+```sh
+records=lab/autonomous/results
+parent="$records/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3"
+child="$records/a100-calibration-sampling/trial-4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7"
+OPENBLAS_NUM_THREADS=1 python -m training.replay_qualified_restart "$parent"
+python -m training.sampling_evidence replay "$child"
+```
+
+The [bounded target commands](../lab/pk1/restart-trial.md) describe how to supply a new
+reserved device, a pinned checkout, the Codex author and a persistent campaign directory.
+
 ## Result and validity domain
 
 - **+10.02 % output throughput over vLLM at 32 concurrent clients** by the rule fixed before the run: median tok/s
