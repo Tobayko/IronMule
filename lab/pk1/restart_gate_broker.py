@@ -11,6 +11,7 @@ import time
 
 
 STAGES = ("GATE_IDS", "TUNE_CHILD", "GATE_CANDIDATE")
+WIDTH_STAGES = ("CELL_CHILD", "WIDTH_CHILD")
 MARKER = "IRONMULE_PROTECTED_GATE_CUDA "
 MAX_PACKET = 1024 * 1024
 STOCK = {"IRONMULE_KG_LIB":"", "IRONMULE_KG5":"0", "IRONMULE_GGML_PREFILL_BATCH":"0", "IRONMULE_W4":"0",
@@ -27,7 +28,7 @@ def filtered(env):
 
 def install_driver(ge, channel):
     original = subprocess.run
-    stages = {getattr(ge, key):key for key in STAGES}
+    stages = {getattr(ge, key):key for key in (*STAGES,*WIDTH_STAGES) if hasattr(ge,key)}
 
     def route(command, *a, **kw):
         if not (isinstance(command, (list, tuple)) and len(command) == 4 and command[:2] == [sys.executable, "-c"]
@@ -51,7 +52,7 @@ def checked_request(layout, request):
 
     base = layout.env
     stage = request["stage"]
-    require(stage in STAGES and request["gguf"] == str(layout.args.gguf) and
+    require(stage in layout.gate_scripts and request["gguf"] == str(layout.args.gguf) and
             request["code"] == layout.gate_scripts[stage], "different gate program or model")
     env = {**base, "PYTHONPATH": base["PYTHONPATH"].split(os.pathsep)[0]+os.pathsep+base["PYTHONPATH"],
            "IRONMULE_CUDA_GRAPHS_ROWS":"1"}
@@ -65,6 +66,13 @@ def checked_request(layout, request):
                 "different gate workload or child settings")
         if data["reference"]:
             env.update(STOCK)
+    elif stage in WIDTH_STAGES:
+        data = json.loads(request["input"])
+        require(data["settings"] == layout.width_settings and (stage != "WIDTH_CHILD"
+                or data["seq_ctx"] == 2048 and data["long_ctx"] == 512 and len(data["widths"]) in range(1,8)
+                and all(w in (1,2,4,8,16,32,64) for w in data["widths"])), "different width calibration workload")
+        env.pop("IRONMULE_GGML_SEQS",None)
+        env["IRONMULE_PILOT"]="0"
     else:
         require(request["input"] is None, "unexpected gate subprocess input")
     require(request["env"] == {**filtered(env), "HF_HUB_OFFLINE":"1"}, "different gate subprocess environment")
@@ -109,14 +117,14 @@ def child_main(stage, expected, model):
     from ironmule import ggml_engine as ge
     from ironmule_devices import ggml_devices
 
-    if stage not in STAGES or fingerprint(getattr(ge,stage)) != expected:
+    if stage not in (*STAGES,*WIDTH_STAGES) or fingerprint(getattr(ge,stage)) != expected:
         raise ValueError("original protected gate script differs")
     bindings=ge.bindings()
     bindings.llama_backend_init()
     devices=ggml_devices(bindings)
     if len(devices)!=1 or devices[0]["provider"]!="cuda" or ge.gpu_layers(bindings)!=999:
         raise RuntimeError("fresh protected GGUF process has no registered CUDA offload device")
-    proof={"stage":stage,"provider":devices[0]["provider"],"device":devices[0]["description"],"gpu_layers":999}
+    proof={"stage":stage,"provider":devices[0]["provider"],"device":devices[0]["description"],"gpu_layers":999,"default_sequences":ge.SEQS}
     print(MARKER+json.dumps(proof),file=sys.stderr,flush=True)
     sys.argv=["-c",model]
     exec(compile(getattr(ge,stage),"<string>","exec"),{"__name__":"__main__"})

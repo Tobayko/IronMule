@@ -56,6 +56,18 @@ def main(argv):
                     and r["settings"] == expected["settings"] and r.get("passes") is True]
         passed = report.get("passes") is True and bool(matching)
         record = {**report, "passes": passed, "source_sha256": data["source"], "preferred_settings": report.get("settings")}
+        if passed and data.get("original_product_width_selection"):
+            from ironmule_product.cli import _ggml_streams
+            actual = _ggml_streams(report, bool(ge.gpu_layers()))
+            if ge.SEQS != 8 or actual["settings"] != expected["settings"]:
+                record.update(passes=False,reason="ordinary product selected different numerical settings")
+                passed = False
+            else:
+                width = ge.choose_sequences(gguf, actual["settings"], cache=Path.cwd()/"gate", experience_root=Path.cwd())
+                record["qualified_width"] = width
+                if width.get("sequences") != expected["seqs"] or "32" not in width.get("rates", {}):
+                    record.update(passes=False,reason="ordinary independent width calibration did not select measured width 32")
+                    passed = False
         if passed:
             result = matching[0]
             record.update(settings=result["settings"], ratio=result["ratio"], interval=result["interval"], chunks=result["chunks"],

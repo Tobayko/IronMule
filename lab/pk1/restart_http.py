@@ -70,6 +70,10 @@ def inputs(args, receipt, candidate, *, gate_cache=None):
         env = http.env_for(SimpleNamespace(checkout=tree), lib, table)
         overlay = getattr(args, "geometry_record", {}).get("python_overlay")
         overlay_path = restart_mlx_runtime.bind(args.worker_root, overlay) if overlay else None
+        normal_width = getattr(args,"geometry_record",{}).get("original_product_width_selection") is True
+        if gate_cache and normal_width:
+            # The ordinary product performs its numerical gate before selecting a serving width.
+            env.pop("IRONMULE_GGML_SEQS", None)
         if overlay_path:
             env["PYTHONPATH"] += os.pathsep + str(overlay_path)
         env["IRONMULE_GGML_THREADS"] = str(bound["threads"])
@@ -79,7 +83,7 @@ def inputs(args, receipt, candidate, *, gate_cache=None):
             dst.chmod(0o444)
             env.update(IRONMULE_KG_RESTART_RECEIPT=str(dst), IRONMULE_KG_RESTART_SHA256=release.checksum(dst))
         profile = public / "expected.json"
-        profile.write_text(json.dumps({"runtime": bound, "candidate": candidate, "python_overlay": overlay, "vendor": q["binding"]["vendor"],
+        profile.write_text(json.dumps({"runtime": bound, "candidate": candidate, "python_overlay": overlay, "original_product_width_selection":normal_width, "vendor": q["binding"]["vendor"],
                 "mask_bits": q["binding"]["mask_bits"], "pilot": q["binding"]["pilot_sha256"],
                 "source": q["candidate_sha256" if candidate else "reference_sha256"], "binary": bound["w4_sha256"],
                 "table": bound["table_sha256"], "flags": list(FLAGS),
@@ -338,7 +342,13 @@ def assess(evidence, receipt):
     if "python_overlay" in geometry:
         for arm in ("reference", "candidate"):
             observed = read(evidence / f"gate-devices-{arm}.json")
-            require({r["stage"] for r in observed} == set(restart_gate_broker.STAGES)
+            expected = set(restart_gate_broker.STAGES)
+            if geometry.get("original_product_width_selection"):
+                expected.update(restart_gate_broker.WIDTH_STAGES)
+                gate = read(evidence / f"gate-{arm}.json")
+                require(gate["qualified_width"]["sequences"] == 32 and "32" in gate["qualified_width"]["rates"]
+                        and all(r["default_sequences"] == 8 for r in observed), "different stock or measured serving width")
+            require({r["stage"] for r in observed} == expected
                     and all(r["provider"] == "cuda" and r["gpu_layers"] == 999 for r in observed),
                     "product gate is missing a real CUDA subprocess receipt")
     names = ["geometry.json", *(f"gate-devices-{arm}.json" for arm in ("reference", "candidate") if "python_overlay" in geometry), *(f"gate-{arm}.json" for arm in ("reference", "candidate"))]
@@ -365,9 +375,13 @@ def qualify(args, receipt, evidence):
                     output.unlink(missing_ok=True)
                     if args.geometry_record.get("python_overlay"):
                         source = ast.parse((args.checkout / "ironmule/ggml_engine.py").read_text())
+                        stages = set(restart_gate_broker.STAGES)
+                        if args.geometry_record.get("original_product_width_selection"):
+                            stages.update(restart_gate_broker.WIDTH_STAGES)
+                            layout.width_settings = receipt["qualification"]["binding"]["runtime"]["settings"]
                         layout.gate_scripts = {n.targets[0].id: restart_gate_broker.fingerprint(ast.literal_eval(n.value))
                                                for n in source.body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
-                                               and n.targets[0].id in restart_gate_broker.STAGES}
+                                               and n.targets[0].id in stages}
                         args.gate_driver_record = evidence / f"gate-devices-{arm}.json"
                     with http.launch(layout, "gate", [str(output)], args.timeout) as proc:
                         if hasattr(layout, "gate_scripts"):
@@ -384,6 +398,9 @@ def qualify(args, receipt, evidence):
             gate = read(dest)
             require(gate.get("passes") is True and gate.get("source_sha256") == receipt["qualification"][arm + "_sha256"],
                     f"{arm} product gate failed: {gate.get('reason', 'source mismatch')}")
+            if getattr(args, "through_gate", None) == arm:
+                return {"gate_completed": arm, "gate_sha256":release.checksum(dest),
+                        "width":gate["qualified_width"]["sequences"], "source_sha256":gate["source_sha256"]}
         for i, seed in enumerate(SEEDS):
             sequence = ("reference", "candidate") if i % 2 == 0 else ("candidate", "reference")
             for arm in sequence:
@@ -467,6 +484,7 @@ def main():
     p.add_argument("--receipt-sha256", required=True)
     p.add_argument("--geometry", type=Path, required=True)
     p.add_argument("--geometry-sha256", required=True)
+    p.add_argument("--through-gate", choices=("reference","candidate"), help="checkpoint and release the shared host after a complete quality and width gate")
     p.add_argument("--worker-uid", type=int, default=60000)
     p.add_argument("--timeout", type=int, default=1800)
     p.add_argument("--port", type=int, default=8232)

@@ -46,3 +46,17 @@ assert r.returncode == 0 and r.stdout.strip() == 'local-subprocess-output'
             "env":{"PYTHONPATH":"/unreviewed"}}
     with pytest.raises(ValueError):
         broker.checked_request(layout,forged)
+
+
+def test_width_uses_existing_cell_probe_only_after_the_original_qualification():
+    gguf=Path("/q.gguf")
+    settings={"flash_attn":True,"kv_unified":False,"kv_f32":False}
+    layout=SimpleNamespace(args=SimpleNamespace(gguf=gguf),env={"PYTHONPATH":"/ref:/cpu-mlx","IRONMULE_PILOT":"1"},
+                           width_settings=settings,gate_scripts={"CELL_CHILD":"measured"})
+    req={"stage":"CELL_CHILD","code":"measured","gguf":str(gguf),"input":json.dumps({"settings":settings}),
+         "env":{"PYTHONPATH":"/ref:/ref:/cpu-mlx","HF_HUB_OFFLINE":"1","IRONMULE_PILOT":"0","IRONMULE_CUDA_GRAPHS_ROWS":"1"}}
+    result=broker.checked_request(layout,req)
+    assert result["IRONMULE_PILOT"]=="0" and "IRONMULE_GGML_SEQS" not in result
+    req["env"]["IRONMULE_GGML_SEQS"]="32"
+    with pytest.raises(ValueError):
+        broker.checked_request(layout,req)

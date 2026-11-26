@@ -156,8 +156,12 @@ def product(args, cfg, remote, check, active):
 
     state = args.state
     recovery = getattr(args, "product_preflight", None)
-    local = state / ("product-v2" if recovery else "product")
-    output = remote / "product-v2" if recovery else remote
+    normal_width = getattr(args,"original_product_width",False)
+    if normal_width and not recovery:
+        raise ValueError("ordinary-width repair needs the verified bound runtime")
+    version = "product-v3" if normal_width else "product-v2" if recovery else "product"
+    local = state / version
+    output = remote / version if recovery else remote
     local.mkdir(exist_ok=True)
     control = state / "release"
     pod = lease(cfg["pod_id"])
@@ -189,6 +193,12 @@ def product(args, cfg, remote, check, active):
         write_once(local / "tokenizer-preflight.json", proof)
         geometry_record["runtime_preflight_sha256"] = checksum(local / "tokenizer-preflight.json")
         geometry_record["python_overlay"] = proof["python_overlay"]
+        if normal_width:
+            old = read(state/"product-v2/gate-reference.json")
+            if (old.get("passes") is not False or old.get("source_sha256") != proof["source_sha256"] or
+                    old["diagnostic"].get("stage") != "reference" or old["diagnostic"].get("exit_code") != -6):
+                raise ValueError("ordinary width repair needs the immutable explicit-32 stock failure")
+            geometry_record.update(original_product_width_selection=True, explicit_width_failure_sha256=checksum(state/"product-v2/gate-reference.json"))
         shell(pod, shlex.join(["mkdir", "-p", str(output)]))
     upload(pod, output / "startup-head.npz", (state / "startup-head.npz").read_bytes())
     geometry = local / "geometry.json"
@@ -216,7 +226,8 @@ def product(args, cfg, remote, check, active):
                         raise ValueError("protected GPU stage journal lost prior receipts")
                     if rows != old:
                         save(partial, rows)
-    for op in ("qualify", "exercise", "serve"):
+    phases = ("gate-reference", "gate-candidate", "qualify", "exercise", "serve") if normal_width else ("qualify","exercise","serve")
+    for op in phases:
         name = ("product-listener" if op == "serve" else "product-" + op) + ".json"
         snapshot(pod, output, [name], local)
         if op == "serve":
@@ -253,12 +264,26 @@ def product(args, cfg, remote, check, active):
                       "--geometry", output / "geometry.json", "--geometry-sha256", geometry_sha,
                       "--timeout", timeout, "--lifetime", args.product_lifetime]
             route = ["--reference-url", args.product_reference_url] if args.product_reference_url else ["--dedicated"]
-            cmd = command(cfg, "lab.pk1.restart_http", [op, *common, *route])
+            stage = ("qualify", "--through-gate", op.removeprefix("gate-")) if op.startswith("gate-") else (op,)
+            cmd = command(cfg, "lab.pk1.restart_http", [*stage, *common, *route])
             dest = shlex.quote(str(output / name))
             job(pod, "product-restart-" + op + "-" + (bound if recovery else active["order"])[:16], cmd + " > " + dest + ".tmp && mv " + dest + ".tmp " + dest)
             return {"stage": "product " + op, "order": active["order"], "pr": active["pr"]}
         value = read(local / name)
-        if op == "qualify":
+        if op.startswith("gate-"):
+            arm = op.removeprefix("gate-")
+            if value.get("passed") is False:
+                write_once(local/"product-qualify.json",value)
+                from training.restart_replan import declined
+                note = declined(state,checkout=args.checkout,product_dir=local)
+                return {**active,"stage":"product declined","product_result":value,"next_experiment":note["next"]}
+            if (value.get("gate_completed") != arm or value.get("width") != 32 or
+                    value["gate_sha256"] != checksum(local/f"gate-{arm}.json") or
+                    value["source_sha256"] != receipt["qualification"][arm+"_sha256"]):
+                raise ValueError("unbound completed ordinary product gate")
+            if args.stop_after_product_gate == arm:
+                return {**active,"stage":"product gate checkpointed","gate":value}
+        elif op == "qualify":
             if value.get("passed") is not True:
                 from training.restart_replan import declined
                 note = declined(state, checkout=args.checkout, product_dir=local)
@@ -376,6 +401,8 @@ def main():
     p.add_argument("--wait-seconds", type=int, default=0)
     p.add_argument("--serve-product", action="store_true", help="gate the ordinary HTTP startup, then serve it with the trained CPU head")
     p.add_argument("--verify-product-client", action="store_true", help="explicitly submit and score a separate client batch on the live port")
+    p.add_argument("--stop-after-product-gate", choices=("reference","candidate"), help="end this invocation after checkpointing the indicated v3 gate")
+    p.add_argument("--original-product-width", action="store_true", help="v3 original default numerical gate, followed by real local width selection")
     p.add_argument("--product-preflight", type=Path, help="separate v2 attempt after an actual corrected tokenizer preflight")
     p.add_argument("--product-reference-url", help="existing ordinary local product URL for other traffic")
     p.add_argument("--product-dedicated", action="store_true", help="run a separate scoped product lane")
@@ -404,7 +431,7 @@ def main():
     while True:
         outcome = cycle(a)
         print(json.dumps(outcome), flush=True)
-        if outcome["stage"] not in ("measuring", "activate", "run", "exercise", "pilot serving", "product qualify", "product exercise", "product serve") or time.monotonic() >= until:
+        if outcome["stage"] not in ("measuring", "activate", "run", "exercise", "pilot serving", "product gate-reference", "product gate-candidate", "product qualify", "product exercise", "product serve") or time.monotonic() >= until:
             return
         time.sleep(min(10, max(0, until - time.monotonic())))
 

@@ -153,6 +153,10 @@ The vocabulary-only tokenizer can complete while GGML reports that CUDA initiali
 
 Pass `--product-preflight "$STATE/product-preflight.json"` to the product campaign only after the original nested reference tokenizer has completed successfully on the corrected environment. The trusted control host checks the original failure, source and GATE_IDS digests, exit status, complete ID count, factual signature and package provenance. Receipts are written to a separate `product-v2/` directory. The original decisions remain available in `product/`.
 
+The explicit-width second attempt used the real A100 for both tokenization and the stock numerical reference. The stock reference offloaded 65/65 layers, constructed an unshared 32-sequence context with flash attention off, and aborted in the batched pointer CUDA kernel before scoring. Its strict failure remains in `product-v2/`. The historical K1 server starts differently. The PR57 launch exports the sequence context and leaves the number of sequences unset. The product CLI runs the unchanged numerical and factual gate at the GGUF engine's default of eight sequences. It then calls `_ggml_streams` on the measured settings and `choose_sequences` on the available hardware. The serving worker receives that measured width.
+
+Add `--original-product-width` for this distinct `product-v3/` attempt. Both arms must pass the original gate and then independently select 32 in the native width probe, with an actual 32-sequence measured rate. Every selected setting must match the qualified startup release. The unchanged HTTP checks then apply at serving width 32. Each arm checkpoints after its complete ordinary gate and releases the shared measurement lock. `--stop-after-product-gate reference` ends a run after the historical incumbent's gate, allowing another campaign to verify or schedule its next workload.
+
 ### Offline replay of the measured A100 experiment
 
 The complete Qwen3-32B Q4_K_M source qualification used the A100-SXM4-80GB with both W4
