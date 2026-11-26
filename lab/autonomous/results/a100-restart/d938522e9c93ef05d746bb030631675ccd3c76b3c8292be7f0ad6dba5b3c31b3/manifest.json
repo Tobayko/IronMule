@@ -119,6 +119,18 @@
       "original_sha256": "abca0323d88c38767275c2df6957c1e7504cd8da07f87d4a66b933b4fe9d04de",
       "sha256": "abca0323d88c38767275c2df6957c1e7504cd8da07f87d4a66b933b4fe9d04de"
     },
+    "pilot-comparison.json": {
+      "original_sha256": "772f2cdf4b0e28e6df456ae12a18cdfa64579ffb55eb8747060ca0d8bdfd190f",
+      "sha256": "772f2cdf4b0e28e6df456ae12a18cdfa64579ffb55eb8747060ca0d8bdfd190f"
+    },
+    "pilot-initial.json": {
+      "original_sha256": "bc12cc3a25dedbb971aa06f7e26a015e3df5ac8dc74bbb7d59f283e435b6dbe3",
+      "sha256": "bc12cc3a25dedbb971aa06f7e26a015e3df5ac8dc74bbb7d59f283e435b6dbe3"
+    },
+    "pilot-trained.json": {
+      "original_sha256": "dc4ead121929f18a65f8e7ef145ea0e5351ce972cd6ff7cae7cbecd1d7f2093f",
+      "sha256": "dc4ead121929f18a65f8e7ef145ea0e5351ce972cd6ff7cae7cbecd1d7f2093f"
+    },
     "qualified.json": {
       "original_sha256": "33a41bb200a1ba982b589cb353d6e6d4459e8acb4d6a7f368a0b9e503edfda87",
       "sha256": "33a41bb200a1ba982b589cb353d6e6d4459e8acb4d6a7f368a0b9e503edfda87"
