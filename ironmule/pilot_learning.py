@@ -9,19 +9,20 @@ Persisted weights are proposals until requalified in the current process.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import math
 import os
 import statistics
 import tempfile
 import time
-from zipfile import BadZipFile
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
+from zipfile import BadZipFile
 
 from .ggml_engine import ENGINE_VERSION, machine_key
-from .hardware_policy import HardwarePolicy, SCHEMA
+from .hardware_policy import SCHEMA, HardwarePolicy
 from .pilot import OBS, THREAD_FRACTIONS, predict
 
 VERSION = 2
@@ -43,14 +44,17 @@ class ThreadPolicy:
         self.pilot = pilot
         self.weights = dict(weights)
         self.visits: Counter[str] = Counter()
+        self.last_regime = None
 
     def choose(self, context: float, foreign: float, base: int, rows: int = 1) -> int:
+        self.last_regime = None
         if not (BIN <= context < MAX_CONTEXT and math.isfinite(foreign)):
             return base
         if not 1 <= rows <= MAX_ROWS:
             return base
         load = min(self.pilot.cores, int(max(0.0, foreign) + 0.5))
         key = f"{int(context) // BIN}:{base}:{rows}:{load}"
+        self.last_regime = key
         self.visits[key] += 1
         return base + self.weights.get(key, 0)
 
@@ -70,6 +74,9 @@ class ThreadLearning(ThreadPolicy):
                    "pilot_sha256": base_digest, "engine_version": ENGINE_VERSION, "sequences": engine.seqs,
                    "context_limit": engine.seq_ctx, "shared_pool": engine.shared, "capacity": engine.cap,
                    "settings": engine.settings, "step_costs": costs}
+        self.decode_geometry = {"backend": "ggml-cpu", "hardware_runtime": machine, "model_sha256": gguf_digest,
+                                "sequences": engine.seqs, "sequence_context": engine.seq_ctx, "capacity": engine.cap,
+                                "shared_cache": engine.shared, "settings": dict(engine.settings)}
         self.policy = HardwarePolicy(self.path.parent / f"thread-model-v{SCHEMA}.sqlite3", self.binding,
                                      hardware, self.pilot.cores, costs, profile)
         self.replay_rows, self.replay_load = 1, 0
@@ -86,6 +93,8 @@ class ThreadLearning(ThreadPolicy):
         except (OSError, ValueError, AttributeError):
             pass
         self.thread_candidate = None
+        self.margins = {}
+        self.last_thread_choice = None
         self.candidate_status = None
         path = os.environ.get("IRONMULE_PILOT_THREAD_CANDIDATE")
         if path:
@@ -98,7 +107,8 @@ class ThreadLearning(ThreadPolicy):
 
         self.thread_candidate = None
         try:
-            with np.load(path, allow_pickle=False) as checkpoint:
+            data = path.read_bytes()
+            with np.load(io.BytesIO(data), allow_pickle=False) as checkpoint:
                 if int(checkpoint["version"]) != 1 or str(checkpoint["binding"]) != self.binding:
                     raise ValueError("foreign binding or version")
                 weights = [checkpoint[k] for k in ("w1", "b1", "w2", "b2", "w3", "b3")]
@@ -107,30 +117,53 @@ class ThreadLearning(ThreadPolicy):
                    for w, shape in zip(weights, shapes)):
                 raise ValueError("invalid network")
             self.thread_candidate = weights
-            self.candidate_status = {"state": "available for local trial", "trials": 0, "qualified_decisions": 0,
+            self.candidate_status = {"state": "available for local trial", "sha256": hashlib.sha256(data).hexdigest(),
+                                     "trials": 0, "qualified_decisions": 0,
                                      "reference_decisions": 0, "inference_us": 0.0}
         except (OSError, KeyError, ValueError, EOFError, BadZipFile) as exc:
             self.candidate_status = {"state": "unavailable", "reason": type(exc).__name__}
 
     def choose(self, context: float, foreign: float, base: int, rows: int = 1) -> int:
-        allowed = super().choose(context, foreign, base, rows)
         if self.thread_candidate is None:
-            return allowed
+            return super().choose(context, foreign, base, rows)
+        started = time.perf_counter_ns()
+        allowed = super().choose(context, foreign, base, rows)
         state = self.candidate_status
-        if allowed == base:
-            state["reference_decisions"] += 1
-            return base
-        # The model can switch between the current reference and the locally qualified
-        # alternative. Scores for other thread counts cannot authorize them for serving.
-        start = time.perf_counter_ns()
-        scores = predict(self.thread_candidate, self.pilot.features(rows, 0, 0, context))
-        picked = self.pilot.threads_for(int(scores.argmax()))
-        state["inference_us"] += (time.perf_counter_ns() - start) / 1000
-        if picked == allowed:
-            state["qualified_decisions"] += 1
-            return picked
-        state["reference_decisions"] += 1
-        return base
+        regime = self.last_regime
+        receipt = self.margins.get(regime) if allowed != base else None
+        cost_us = None
+        selected = base
+        reason = "no local qualification" if regime else "outside measured workload"
+        if allowed != base and receipt and receipt["candidate_threads"] == allowed:
+            # The lower measured gain deducts the entire control-to-control difference in every window.
+            # Only run the network for a profile with positive headroom after that allowance.
+            headroom_us = receipt["min_gain_after_noise_us_per_step"]
+            reason = "gain within observed timing noise"
+            if headroom_us > 0:
+                scores = predict(self.thread_candidate, self.pilot.features(rows, 0, 0, context))
+                picked = self.pilot.threads_for(int(scores.argmax())) if all(map(math.isfinite, scores)) else None
+                cost_us = (time.perf_counter_ns() - started) / 1000
+                state["inference_us"] += cost_us
+                reason = "model chose a different profile"
+                if picked == allowed:
+                    reason = "decision cost exceeds measured headroom"
+                    if cost_us < headroom_us:
+                        selected, reason = allowed, "locally qualified"
+        state["qualified_decisions" if selected != base else "reference_decisions"] += 1
+        self.last_thread_choice = (regime, base, selected, rows, reason, cost_us, receipt)
+        return selected
+
+    def thread_decision(self):
+        if self.last_thread_choice is None:
+            return None
+        regime, base, selected, rows, reason, cost_us, receipt = self.last_thread_choice
+        return {"choice": "qualified" if selected != base else "reference", "reason": reason,
+                "profile": {**self.decode_geometry, "binding": self.binding, "operation": "plain_decode", "threads": selected,
+                            "sequence_rows": rows, "prompt_rows": 0, "draft_rows": 0, "padding_rows": 0,
+                            "pending_requests": 0},
+                "regime": regime, "reference_threads": base, "selection_us": cost_us,
+                "eligible_threads": [base, receipt["candidate_threads"]] if receipt else [base],
+                "qualification": dict(receipt) if receipt else None, "uncertainty": "local paired windows" if receipt else "unknown"}
 
     def _trial_actions(self, key, context, base, rows, actions):
         ranked = self.policy.rank(key, actions)
@@ -148,7 +181,8 @@ class ThreadLearning(ThreadPolicy):
     def status(self):
         return {"version": VERSION, "binding": self.binding, "generation": self.generation,
                 "weights": dict(self.weights), "model": self.policy.status(), "last": self.last,
-                **({"scratch_candidate": self.candidate_status} if self.candidate_status else {})}
+                **({"scratch_candidate": self.candidate_status, "thread_decision": self.thread_decision()}
+                   if self.candidate_status else {})}
 
     def _save(self) -> None:
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -197,7 +231,7 @@ class ThreadLearning(ThreadPolicy):
             self.last = {"key": key, "result": "no faster candidate"}
             return
         candidate = base + offset
-        ratios, noise = [], []
+        ratios, noise, gain_after_noise = [], [], []
         passed = True
         for index in range(REPETITIONS):
             arms = (base, candidate, base) if index % 2 == 0 else (candidate, base, base)
@@ -211,7 +245,9 @@ class ThreadLearning(ThreadPolicy):
                 observations[1], observations[0], observations[2])
             midpoint = (control[0] + repeat[0]) / 2
             ratios.append(changed[0] / midpoint)
-            noise.append(abs(control[0] - repeat[0]) / midpoint)
+            aa_difference = abs(control[0] - repeat[0])
+            noise.append(aa_difference / midpoint)
+            gain_after_noise.append((midpoint - changed[0] - aa_difference) * 1e6 / DECODE)
             if control[1] != changed[1] or control[1] != repeat[1]:
                 passed = False
                 break
@@ -221,8 +257,12 @@ class ThreadLearning(ThreadPolicy):
         previous = self.weights.get(key)
         if passed:
             self.weights[key] = offset
+            self.margins[key] = {"windows": len(ratios), "candidate_threads": candidate, "max_ratio": max(ratios),
+                                 "max_aa_fraction": max(noise),
+                                 "min_gain_after_noise_us_per_step": min(gain_after_noise)}
         else:
             self.weights.pop(key, None)
+            self.margins.pop(key, None)
         self.last = {"key": key, "candidate_threads": candidate, "ratios": ratios, "aa_spread": noise,
                      "result": "qualified" if passed else "reverted" if previous else "refused"}
         if self.weights.get(key) != previous:

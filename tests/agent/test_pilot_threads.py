@@ -1,11 +1,13 @@
 """Grouped Pilot replay does not silently turn partial trials into timing labels."""
+import json
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from training.pilot_threads import examples, fit, save
+from training.pilot_threads import examples, fit, holdout_uncertainty, save
 
 
 def record():
@@ -39,3 +41,14 @@ def test_grouped_fit_updates_scores_and_splits_context_families(tmp_path):
     assert all(g["scores_before"] != g["scores_after"] for g in report["heldout"])
     with np.load(args.weights) as weights:
         assert weights["binding"] == "test"
+
+
+def test_uncertainty_audit_keeps_incomplete_cells_in_coverage():
+    root = Path(__file__).resolve().parents[2] / "evidence/runtime"
+    record = json.loads((root / "cpu-pilot-four-slot-trials.json").read_text())
+    with np.load(root / "cpu-pilot-four-slot-candidate.npz", allow_pickle=False) as model:
+        weights = [model[k] for k in ("w1", "b1", "w2", "b2", "w3", "b3")]
+    audited = holdout_uncertainty(record, weights)
+    assert audited["observed_cells"] == 6 and audited["complete_cells"] == 2
+    assert audited["correct_among_resolved"] == 0 and audited["resolved_decisions"] == 1
+    assert audited["probability_calibration"] == "unknown"

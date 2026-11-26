@@ -260,3 +260,18 @@ completed 16 of 16 discovery tasks, planned with the observed phase counts and p
 development order in 9.62 seconds through the author handoff. The hosted Codex worker read the archived
 list-copy rejection and returned the original tokenizer. The evaluator resumed from its pinned checkout,
 recorded the no-change decision and consumed the ticket. [Hosted reply](../lab/autonomous/results/cpu-serving-demand/author-response.json) · [Measured ticket and order](../lab/autonomous/results/cpu-serving-demand/summary.json)
+
+### Uncertainty in the scratch CPU thread decision
+
+The opt-in scratch head acts on plain decode with equal-band contexts. Its status includes the selected thread count, host/runtime and model binding, context and slot capacities, actual sequence rows, absence of prompt, draft or padding rows, eligible thread counts and fallback reason. A new process requalifies each regime. The existing four paired windows must pass the output and timing gates. The head also compares its current selection cost with the smallest absolute time saved in any window, after deducting that window's entire difference between repeated reference timings. Both values are converted to microseconds per decode step. Where the reference is the only eligible profile, uncertainty is recorded as unknown. Check the serving trial's wall and first-visible-token times for the cost of the entire path.
+
+Audit held-out choices against the original paired timings without refitting the weights.
+
+```sh
+python -m training.pilot_threads audit \
+  --trials evidence/runtime/cpu-pilot-four-slot-trials.json \
+  --weights evidence/runtime/cpu-pilot-four-slot-candidate.npz \
+  --report four-slot-uncertainty.json
+```
+
+Of six observed held-out cells in two context families, two had complete matched measurements. In one, another thread count beat the selected profile in both repeats with disjoint times. In the other, the timings overlapped. This sample cannot estimate a calibrated probability of picking the fastest profile. The archive keeps the coverage denominator, unresolved outcomes and engineering bounds separately. [Held-out uncertainty audit](../evidence/runtime/cpu-pilot-four-slot-uncertainty.json)

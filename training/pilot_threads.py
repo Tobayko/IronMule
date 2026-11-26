@@ -7,10 +7,10 @@ import json
 import math
 import multiprocessing
 import os
-from pathlib import Path
 import random
 import statistics
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -144,6 +144,51 @@ def train(rows, seed):
 def action(weights, group, choices):
     logits = predict(weights, group["features"])
     return choices[int(np.argmax(logits))]
+
+
+def holdout_uncertainty(record, weights):
+    """Score whole unseen context groups using only timed actions with equal output in both orders."""
+    held = [g for g in record["groups"] if g["context"] // 64 in (6, 7)]
+    groups = {g["group"]: {"observed_cells": 0, "complete_cells": 0, "certain_best": 0,
+                           "certain_loss": 0, "unresolved": 0, "changed_from_reference": 0} for g in held}
+    for g in held:
+        groups[g["group"]]["observed_cells"] += 1
+    for group, _, choices in examples({**record, "groups": held}):
+        row = groups[group["group"]]
+        row["complete_cells"] += 1
+        selected = action(weights, group, choices)
+        row["changed_from_reference"] += int(selected != group["base"])
+        observations = group["observations"]
+        times = {n: [o["seconds"] for o in observations if o["threads"] == n] for n in set(choices)}
+        selected_times = times.pop(selected)
+        if all(max(selected_times) < min(other) for other in times.values()):
+            row["certain_best"] += 1
+        elif any(max(other) < min(selected_times) for other in times.values()):
+            row["certain_loss"] += 1
+        else:
+            row["unresolved"] += 1
+    count = sum(g["observed_cells"] for g in groups.values())
+    complete = sum(g["complete_cells"] for g in groups.values())
+    wins = sum(g["certain_best"] for g in groups.values())
+    losses = sum(g["certain_loss"] for g in groups.values())
+    return {"groups": groups, "observed_cells": count, "complete_cells": complete,
+            "measurement_coverage": complete / count if count else None,
+            "resolved_decisions": wins + losses, "correct_among_resolved": wins,
+            "optimum_fraction_bounds_across_observed_cells": [wins / count, 1 - losses / count] if count else None,
+            "probability_calibration": "unknown",
+            "scope": "Best measured thread count only. Bounds assign all overlapping or incomplete cells either outcome. "
+                     "Repeats sharing a context group are dependent. These bounds describe this sample."}
+
+
+def audit(args):
+    record = json.loads(args.trials.read_text())
+    with np.load(args.weights, allow_pickle=False) as checkpoint:
+        if int(checkpoint["version"]) != 1 or str(checkpoint["binding"]) != record["binding"]:
+            raise ValueError("thread checkpoint and trial source differ")
+        weights = [checkpoint[k] for k in ("w1", "b1", "w2", "b2", "w3", "b3")]
+    save(args.report, {"weights_sha256": hashlib.sha256(args.weights.read_bytes()).hexdigest(),
+                       "trials_sha256": hashlib.sha256(args.trials.read_bytes()).hexdigest(),
+                       **holdout_uncertainty(record, weights)})
 
 
 def fit(args):
@@ -305,6 +350,9 @@ def main():
     for key in ("trials", "weights", "report"):
         fit_parser.add_argument("--" + key, type=Path, required=True)
     fit_parser.add_argument("--seed", type=int, default=20261126)
+    replay_audit = sub.add_parser("audit")
+    for key in ("trials", "weights", "report"):
+        replay_audit.add_argument("--" + key, type=Path, required=True)
     live = sub.add_parser("exercise")
     live.add_argument("--slots", type=int, choices=(2, 4), default=2)
     live.add_argument("--prompt-tokens", type=int, default=97, choices=range(64, 448), metavar="64..447")
@@ -321,6 +369,8 @@ def main():
             acquire(args)
     elif args.cmd == "fit":
         fit(args)
+    elif args.cmd == "audit":
+        audit(args)
     else:
         exercise(args)
 

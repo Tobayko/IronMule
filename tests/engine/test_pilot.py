@@ -235,7 +235,19 @@ def test_scratch_thread_candidate_requires_local_replay_and_survives_foreign_che
             assert learner.choose(90, 0, 1) == 1
         learner.idle(lambda: False)
         assert learner.candidate_status["threads"] == learner.choose(90, 0, 1) == 3
+        report = learner.status()["thread_decision"]
+        assert report["reason"] == "locally qualified" and report["eligible_threads"] == [1, 3]
+        assert report["profile"]["threads"] == 3 and report["profile"]["sequence_rows"] == 1
+        assert report["qualification"]["windows"] == 4 and report["profile"]["binding"] == learner.binding
+        # A qualified offset can still cost more than its most conservative timed saving.
+        learner.margins["1:1:1:0"]["min_gain_after_noise_us_per_step"] = 1e-12
+        assert learner.choose(90, 0, 1) == 1
+        assert learner.status()["thread_decision"]["reason"] == "decision cost exceeds measured headroom"
+        learner.margins["1:1:1:0"]["min_gain_after_noise_us_per_step"] = 0.0
+        assert learner.choose(90, 0, 1) == 1
+        assert learner.status()["thread_decision"]["reason"] == "gain within observed timing noise"
         assert learner.choose(90, 1, 1) == 1
+        assert learner.status()["thread_decision"]["uncertainty"] == "unknown"
         assert ThreadLearning(e, tmp_path, "model", "base").choose(90, 0, 1) == 1
         other = ThreadLearning(e, tmp_path, "other-model", "base")
         assert other.thread_candidate is None and not other.proposals

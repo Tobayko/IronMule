@@ -1,0 +1,33 @@
+{
+  "weights_sha256": "492c5714352922f730cbc9d7a9b4d6e30d1b1a3aa2f33d6bf508634334b4f283",
+  "trials_sha256": "a6702799043c0141aa0ad4b4ceed7c71bdd1ebe9c1f489ca86d9ed8aa20c8565",
+  "groups": {
+    "ctx-bin-6": {
+      "observed_cells": 3,
+      "complete_cells": 1,
+      "certain_best": 0,
+      "certain_loss": 1,
+      "unresolved": 0,
+      "changed_from_reference": 1
+    },
+    "ctx-bin-7": {
+      "observed_cells": 3,
+      "complete_cells": 1,
+      "certain_best": 0,
+      "certain_loss": 0,
+      "unresolved": 1,
+      "changed_from_reference": 1
+    }
+  },
+  "observed_cells": 6,
+  "complete_cells": 2,
+  "measurement_coverage": 0.3333333333333333,
+  "resolved_decisions": 1,
+  "correct_among_resolved": 0,
+  "optimum_fraction_bounds_across_observed_cells": [
+    0.0,
+    0.8333333333333334
+  ],
+  "probability_calibration": "unknown",
+  "scope": "Best measured thread count only. Bounds assign all overlapping or incomplete cells either outcome. Repeats sharing a context group are dependent. These bounds describe this sample."
+}
