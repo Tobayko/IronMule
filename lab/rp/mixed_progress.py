@@ -1,4 +1,5 @@
 """Start and continuously collect one mixed-progress trial on an already budgeted lease."""
+
 import argparse
 import json
 from pathlib import Path
@@ -31,32 +32,38 @@ export LLAMA_CPP_LIB_PATH="$IRONMULE_GGML_BINDINGS/vendor/llama.cpp/build/bin"
 export PYTHONPATH="$PWD"
 exec python -m lab.pk6.mixed_progress.trial --out {TARGET} --state /work/state --vllm /opt/vllm --models /models
 """
-    files = ["target.json","completed.json","device-load.csv"]
+    files = ["target.json", "completed.json", "device-load.csv"]
     for arm in ARMS:
-        files.extend([f"serve-{arm}.log",f"waves-{arm}.jsonl",*(f"{s}-{arm}.json" for s in ("start","ready","end"))])
-        if arm!="vllm":
+        files.extend(
+            [
+                f"serve-{arm}.log",
+                f"waves-{arm}.jsonl",
+                *(f"{s}-{arm}.json" for s in ("start", "ready", "end")),
+            ]
+        )
+        if arm != "vllm":
             files.append(f"trace-{arm}.txt")
-    state.mkdir(mode=0o700,parents=True,exist_ok=True)
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
     while True:
-        pod=jobs.lease(pod_id)
+        pod = jobs.lease(pod_id)
         try:
-            if jobs.call(pod,"GET","/health").get("ok"):
-                status=sync.status(pod,JOB)
+            if jobs.call(pod, "GET", "/health").get("ok"):
+                status = sync.status(pod, JOB)
                 if not status.get("running") and status.get("rc") is None:
-                    jobs.job(pod,JOB,launch)
-                sync.collect(pod,state,target=TARGET,files=files)
+                    jobs.job(pod, JOB, launch)
+                sync.collect(pod, state, target=TARGET, files=files)
                 if status.get("rc") is not None and not status.get("running"):
-                    (state/"control-end.json").write_text(json.dumps(status))
+                    (state / "control-end.json").write_text(json.dumps(status))
                     return status["rc"]
         except (URLError, OSError, json.JSONDecodeError):
             pass  # the run and the two lease watchdogs survive a transient bridge outage
         time.sleep(6)
 
 
-if __name__=="__main__":
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pod-id",required=True)
-    parser.add_argument("--state",required=True,type=Path)
-    parser.add_argument("--commit",required=True)
-    args=parser.parse_args()
-    raise SystemExit(collect(args.pod_id,args.state,args.commit))
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pod-id", required=True)
+    parser.add_argument("--state", required=True, type=Path)
+    parser.add_argument("--commit", required=True)
+    args = parser.parse_args()
+    raise SystemExit(collect(args.pod_id, args.state, args.commit))

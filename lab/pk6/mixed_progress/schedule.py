@@ -1,4 +1,5 @@
 """Experimental packed native calls that advance generating jobs while a burst is prefilling."""
+
 from __future__ import annotations
 
 import time
@@ -26,7 +27,9 @@ def serve(engine, group, active, take, finish, budget, *, whole=False):
     positions = {seq: keep for seq, _, keep in group}
     waiting = sorted(jobs, key=lambda seq: lengths[seq] - positions[seq])
     if not len(group) < budget <= engine.batch_cap:
-        raise ValueError("row budget must leave room for prompt progress and fit the native context")
+        raise ValueError(
+            "row budget must leave room for prompt progress and fit the native context"
+        )
     while waiting:
         for seq in list(active):
             job = jobs[seq]
@@ -36,31 +39,46 @@ def serve(engine, group, active, take, finish, budget, *, whole=False):
         if not waiting:
             break
         producing = [seq for seq in active if jobs[seq].tokens]
-        segments = {seq: (start, end) for seq, start, end in
-                    slices(waiting, lengths, positions, budget - len(producing), whole=whole)}
+        segments = {
+            seq: (start, end)
+            for seq, start, end in slices(
+                waiting, lengths, positions, budget - len(producing), whole=whole
+            )
+        }
         rows, outputs = [], []
         for seq in sorted(set(producing) | segments.keys()):
             job = jobs[seq]
             if seq in segments:
                 start, end = segments[seq]
-                rows.extend((job.ids[i], i, seq, i + 1 == lengths[seq]) for i in range(start, end))
+                rows.extend(
+                    (job.ids[i], i, seq, i + 1 == lengths[seq])
+                    for i in range(start, end)
+                )
                 if end == lengths[seq]:
                     outputs.append(seq)
             else:
-                rows.append((job.tokens[-1], lengths[seq] + len(job.tokens) - 1, seq, True))
+                rows.append(
+                    (job.tokens[-1], lengths[seq] + len(job.tokens) - 1, seq, True)
+                )
                 outputs.append(seq)
         began = time.monotonic()
         picks = engine._decode(rows)
         elapsed = time.monotonic() - began
         prompt = len(rows) - len(producing)
         if engine.observer is not None:
-            engine.observer(len(producing), prompt,
-                            sum(positions[s] + len(jobs[s].tokens) for s in active), elapsed)
+            engine.observer(
+                len(producing),
+                prompt,
+                sum(positions[s] + len(jobs[s].tokens) for s in active),
+                elapsed,
+            )
         engine.pack_calls += 1
         engine.pack_rows += prompt
         for seq, (_, end) in segments.items():
             positions[seq] = end
         for seq, token in zip(outputs, picks, strict=True):
             take(seq, jobs[seq], token)
-        waiting = [seq for seq in waiting if positions[seq] < lengths[seq] and seq in active]
+        waiting = [
+            seq for seq in waiting if positions[seq] < lengths[seq] and seq in active
+        ]
     engine.pack_prompts += len(group)

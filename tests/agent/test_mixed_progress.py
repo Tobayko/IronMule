@@ -4,9 +4,12 @@ from lab.pk6.mixed_progress.schedule import serve
 
 
 def test_partial_prefills_share_real_decodes_and_keep_output_ownership():
-    jobs = {n: SimpleNamespace(ids=[n+100]*k, tokens=[], cancelled=None) for n,k in enumerate([3,21,4,19,5,20,6,18])}
-    kept = {s:s % 2 for s in jobs}
-    kv = {s:list(j.ids[:kept[s]]) for s,j in jobs.items()}
+    jobs = {
+        n: SimpleNamespace(ids=[n + 100] * k, tokens=[], cancelled=None)
+        for n, k in enumerate([3, 21, 4, 19, 5, 20, 6, 18])
+    }
+    kept = {s: s % 2 for s in jobs}
+    kv = {s: list(j.ids[: kept[s]]) for s, j in jobs.items()}
     active = dict(reversed(jobs.items()))
     calls = []
 
@@ -14,43 +17,115 @@ def test_partial_prefills_share_real_decodes_and_keep_output_ownership():
         assert len(rows) <= 19
         calls.append(rows)
         picks = []
-        for token,pos,seq,logits in rows:
+        for token, pos, seq, logits in rows:
             assert pos == len(kv[seq])
-            expected = jobs[seq].ids[pos] if pos < len(jobs[seq].ids) else jobs[seq].tokens[-1]
+            expected = (
+                jobs[seq].ids[pos] if pos < len(jobs[seq].ids) else jobs[seq].tokens[-1]
+            )
             assert token == expected
             kv[seq].append(token)
             if logits:
-                picks.append(1000*seq+len(kv[seq]))
+                picks.append(1000 * seq + len(kv[seq]))
         return picks
 
     def take(seq, job, pick):
-        assert pick == 1000*seq + len(job.ids) + len(job.tokens)
+        assert pick == 1000 * seq + len(job.ids) + len(job.tokens)
         job.tokens.append(pick)
-        if len(job.tokens)==3:
+        if len(job.tokens) == 3:
             del active[seq]
 
-    e=SimpleNamespace(_decode=decode, pack_calls=0, pack_rows=0, pack_prompts=0, observer=None, batch_cap=40)
-    serve(e,[(s,j,kept[s]) for s,j in jobs.items()],active,take,None,19)
+    e = SimpleNamespace(
+        _decode=decode,
+        pack_calls=0,
+        pack_rows=0,
+        pack_prompts=0,
+        observer=None,
+        batch_cap=40,
+    )
+    serve(e, [(s, j, kept[s]) for s, j in jobs.items()], active, take, None, 19)
     assert all(j.tokens for j in jobs.values())
-    assert e.pack_rows == sum(len(j.ids)-kept[s] for s,j in jobs.items())
-    assert any(any(pos>=len(jobs[s].ids) for _,pos,s,_ in call)
-               and any(pos<len(jobs[s].ids) for _,pos,s,_ in call) for call in calls)
+    assert e.pack_rows == sum(len(j.ids) - kept[s] for s, j in jobs.items())
+    assert any(
+        any(pos >= len(jobs[s].ids) for _, pos, s, _ in call)
+        and any(pos < len(jobs[s].ids) for _, pos, s, _ in call)
+        for call in calls
+    )
 
 
 def test_cancellation_of_partially_prefilled_job_discards_its_cache():
-    jobs={i:SimpleNamespace(ids=[i]*n,tokens=[],cancelled=None) for i,n in enumerate((3,4,40,60))}
-    group=[(s,j,0) for s,j in jobs.items()]
-    live=jobs.copy()
-    cancelled=[]
-    rows=[]
-    jobs[2].cancelled=lambda: any(s==2 for _,_,s,_ in rows)
+    jobs = {
+        i: SimpleNamespace(ids=[i] * n, tokens=[], cancelled=None)
+        for i, n in enumerate((3, 4, 40, 60))
+    }
+    group = [(s, j, 0) for s, j in jobs.items()]
+    live = jobs.copy()
+    cancelled = []
+    rows = []
+    jobs[2].cancelled = lambda: any(s == 2 for _, _, s, _ in rows)
+
     def decode(step):
         rows.extend(step)
-        return [s for _,_,s,logits in step if logits]
-    def finish(s,j,reason,keep):
-        assert reason=="cancelled" and not keep
+        return [s for _, _, s, logits in step if logits]
+
+    def finish(s, j, reason, keep):
+        assert reason == "cancelled" and not keep
         cancelled.append(s)
         del live[s]
-    e=SimpleNamespace(_decode=decode,pack_calls=0,pack_rows=0,pack_prompts=0,observer=None,batch_cap=32)
-    serve(e,group,live,lambda s,j,t:j.tokens.append(t),finish,16)
-    assert cancelled==[2] and not jobs[2].tokens and jobs[3].tokens
+
+    e = SimpleNamespace(
+        _decode=decode,
+        pack_calls=0,
+        pack_rows=0,
+        pack_prompts=0,
+        observer=None,
+        batch_cap=32,
+    )
+    serve(e, group, live, lambda s, j, t: j.tokens.append(t), finish, 16)
+    assert cancelled == [2] and not jobs[2].tokens and jobs[3].tokens
+
+
+def test_short_output_or_absent_eighth_chunk_cannot_become_a_fixed_work_win():
+    from lab.pk6.mixed_progress.grade import measure, paired
+
+    def wave(i):
+        return {
+            "width": 1,
+            "repeat": i,
+            "seed": 1,
+            "input_digest": "same",
+            "elapsed_s": 0.09,
+            "requests": [
+                {
+                    "server_id": str(i),
+                    "t_send": 1.0,
+                    "t_done": 1.08,
+                    "chunk_times": [1.02, 1.05],
+                    "ttft_ms": 20.0,
+                    "visible_ttft_ms": 20.0,
+                    "tokens": 3,
+                    "prompt_tokens": 33,
+                    "finish_reason": "stop",
+                    "output_sha256": "x",
+                }
+            ],
+        }
+
+    rows = [wave(i) for i in range(3)]
+    assert measure(rows[0])["eighth"] is None
+    compared = paired(rows, rows)
+    assert (
+        compared["same_fixed_work"] is False
+        and compared["candidate_over_reference"]["eighth"] is None
+    )
+
+
+def test_forecast_and_replay_bind_the_choice_to_the_historical_a100_observations():
+    import json
+    from lab.pk6.first_token.phases import RESULTS
+    from lab.pk6.mixed_progress.plan import plan
+
+    historic = json.loads(
+        (RESULTS / "mixed-prefill-progress" / "plan.json").read_bytes()
+    )
+    assert plan() == historic
+    assert historic["selected_rows"] == 2048 and len(historic["simulated"]) == 6
