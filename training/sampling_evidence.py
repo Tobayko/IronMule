@@ -13,7 +13,7 @@ import time
 from types import SimpleNamespace
 
 from lab.pk1 import followup_contract as rules, followup_release, followup_trial as trial
-from training import restart_evidence as prior, scoped_release
+from training import restart_evidence as prior
 from training.code_author import read_request, read_response, write_once
 from training.code_trial import read, save
 from training.native_evidence import COST_JOURNAL, ROOT, bounded, patch, persist_assets, sha
@@ -26,7 +26,7 @@ FRESH = tuple(f"fresh-{tag}-{seed}{suffix}.json" for seed in (97051, 97052)
 RELEASE = ("activate.json", "run.json", "exercise.json", "target-check.json")
 COST_PHASES = ("author-request", "after-verdict", "after-release")
 COST_FILES = tuple(f"cost-{phase}.json" for phase in COST_PHASES)
-NAMES = {*COST_FILES, "order.json", "decision.json", "request.json", "response.json", "candidate.diff", "outcome.json",
+NAMES = {"runtime-framework.json", *COST_FILES, "order.json", "decision.json", "request.json", "response.json", "candidate.diff", "outcome.json",
          "control.json", *TRIAL, *FRESH, *RELEASE}
 
 
@@ -135,6 +135,13 @@ def export(state, data):
     with TemporaryDirectory() as tmp:
         ref, source, verdict, rationale = verify(order, entries, data, Path(tmp))
     candidate = state / "authoring/candidate.py"
+    if (state / "campaign.json").is_file():
+        raw = bounded(state / "campaign.json")
+        framework = json.loads(raw)
+        require(source is not None and framework["source"] == sha(source) and framework["order"] == order["order_id"]
+                and all(not Path(n).is_absolute() and ".." not in Path(n).parts for n in framework["framework"]), "different target framework scope")
+        entries["runtime-framework.json"] = json.dumps({"campaign_sha256": sha(raw), "source": sha(source), "order": order["order_id"],
+                              "framework": framework["framework"]}, ensure_ascii=False, indent=2).encode() + b"\n"
     if source is not None:
         if candidate.is_file():
             require(bounded(candidate) == source, "worker actually received different candidate bytes")
@@ -161,6 +168,64 @@ def replay(folder, data):
         _, source, verdict, _ = verify(json.loads(inputs["order.json"]), inputs, data, Path(tmp))
     require((sha(source) if source else None) == index["candidate_sha256"] and verdict is index["qualified"], "different sampling replay")
     return {"order_id": index["order_id"], "candidate_sha256": index["candidate_sha256"], "qualified": verdict, "checked_files": len(inputs)}
+
+
+def experiences(root, source):
+    from training.experience_archive import record
+
+    folder = (root / source).parent
+    data = folder.parent.parent
+    index = manifest(folder)
+    files = index["files"]
+    order = read(folder / "order.json")
+    parent = read(data / "a100-restart" / rules.PARENT / "control.json")
+    key = order["order_id"]
+    def entry(kind, name, **fields):
+        return record(kind, str((folder / name).relative_to(root)), files[name]["sha256"], name, key, **fields,
+                      base_commit=order["base_commit"], hardware=parent["order"]["binding"]["fp"], model=parent["order"]["binding"]["gguf"],
+                      quantization="Q4_K_M", cost_reference=COST_JOURNAL, title=order["target"]["class"] + "." + order["target"]["function"])
+
+    yield entry("calibration_sampling_order", "order.json", provenance="simulated", reason="prospective_heldout_observations_admitted_experiment",
+                decision=None, measured_holdouts=order["observations"], selected_plan=order["selected_plan"], hypothesis=order["hypothesis"],
+                metrics=order["blind_results"], authorship="IronMule sampling planner", uncertainty="Simulated retained-sample costs do not qualify a program.")
+    if "response.json" in files:
+        answer = read(folder / "response.json")
+        yield entry("calibration_sampling_candidate", "response.json", provenance="reported", reason="actual_source_returned_to_planner",
+                    candidate_sha256=index["candidate_sha256"], request_id=answer["request_id"], authorship=answer["model"],
+                    note=index["rationale"], uncertainty="Return of a proposed source change does not measure a speedup.")
+    if "context.json" in files:
+        ctx = read(folder / "context.json")
+        for name in TRIAL:
+            if name not in files:
+                continue
+            row = read(folder / name)
+            if "source_label" not in row or "cold" not in row:
+                continue
+            label = row["source_label"]
+            try:
+                trial.validate(row, label, row["seed"], ctx, parent, name.startswith("facts-"), name.startswith("screen-"))
+                valid, error = True, None
+            except (KeyError, IndexError, ValueError, TypeError) as exc:
+                valid, error = False, str(exc)[:260]
+            yield entry("calibration_sampling_target_arm", name, provenance="measured", reason="raw_arm" if valid else "failed_or_unverified_arm",
+                        software={"source": row["source_sha256"], "evaluator": ctx["evaluator"]}, workload={"seed": row["seed"], "arm": label},
+                        metrics=[{"cold_s": row["cold_s"], "warm_s": row["warm"]["wall_s"], "broker_elapsed_s": row["broker_elapsed_s"],
+                                  "warm_ttft_p95_s": sorted(row["warm"]["ttfts_s"])[30] if len(row["warm"]["ttfts_s"]) == 32 else None,
+                                  "peak_rss_kib": row["peak_rss_kib"], "sampling": row.get("sampling")}],
+                        quality={"graded_correct": sum(row["facts"]), "cold_completed": row["cold"]["completed"], "warm_completed": row["warm"]["completed"]},
+                        error=error, authorship="Independent target evaluator", uncertainty="Single GPU arm; see the complete source gate for a causal score.")
+    for name in COST_FILES:
+        if name in files:
+            cost = read(folder / name)
+            yield entry("calibration_sampling_cost_observation", name, provenance="reported", reason=cost["phase"], metrics=[cost],
+                        authorship="Registered provider lease", uncertainty=cost["basis"])
+    if "result.json" in files:
+        checked = replay(folder, data)
+        verdict = read(folder / "result.json")
+        yield entry("calibration_sampling_code_verdict", "result.json", provenance="reported", reason=verdict.get("reason", "complete prospective gate"),
+                    decision=checked["qualified"], metrics=[verdict.get("summary", {}).get("metrics", {})],
+                    references=files, authorship="IronMule with independent frozen target evaluator",
+                    uncertainty="Only a separate merged, bound and freshly activated release may serve.")
 
 
 def observe_cost(state, target, phase):
