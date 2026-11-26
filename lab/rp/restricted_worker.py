@@ -71,8 +71,26 @@ def filter_syscalls():
         if lib.seccomp_rule_add_array(ctx, 0x00050000 | error, nr, int(args is not None), args) != 0:
             raise RuntimeError(f"cannot restrict syscall {name}")
 
+    cuda_ipc = Path("/dev/nvidiactl").is_char_device()
+    listener = None
     try:
-        for name in ("socket", "socketpair", "connect", "accept", "accept4", "bind", "listen", "sendto",
+        if cuda_ipc:
+            # CUDA 595 sets up an abstract SOCK_SEQPACKET UVM listener with backlog 128.
+            # Its optional MPS connection sees ENOENT. Accepting peers and passing fds are denied.
+            deny("socket", comparison=Comparison(0, 1, socket.AF_UNIX, 0))  # SCMP_CMP_NE
+            deny("socket", comparison=Comparison(1, 1, socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC, 0))
+            deny("socket", comparison=Comparison(2, 1, 0, 0))
+            deny("connect", errno.ENOENT)
+            deny("listen", comparison=Comparison(1, 1, 128, 0))
+            # An existing reachable endpoint makes the negative connect check meaningful.
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            address = b"\0ironmule-probe-" + os.urandom(16)
+            listener.bind(address)
+            listener.listen(1)
+        else:
+            for name in ("socket", "bind", "connect", "listen"):
+                deny(name)
+        for name in ("socketpair", "accept", "accept4", "sendto",
                      "sendmsg", "sendmmsg", "recvmsg", "recvmmsg", "io_uring_setup", "io_uring_register",
                      "io_uring_enter", "ptrace", "process_vm_readv", "process_vm_writev", "pidfd_getfd",
                      "keyctl", "add_key", "request_key", "bpf", "perf_event_open", "mount", "umount2",
@@ -84,7 +102,22 @@ def filter_syscalls():
             deny("clone", comparison=Comparison(0, 7, flag, flag))  # SCMP_CMP_MASKED_EQ
         if lib.seccomp_load(ctx) != 0:
             raise RuntimeError("cannot install worker seccomp filter")
+        if listener is not None:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as local:
+                local.bind(b"\0ironmule-bound-" + os.urandom(16))
+                try:
+                    local.connect(address)
+                except FileNotFoundError:
+                    pass  # the filter hid the live endpoint
+                else:
+                    raise RuntimeError("unexpected connection to local socket")
+                denied(lambda: local.listen(1))
+                local.listen(128)
+                local.setblocking(False)
+                denied(local.accept)
     finally:
+        if listener is not None:
+            listener.close()
         lib.seccomp_release(ctx)
 
 

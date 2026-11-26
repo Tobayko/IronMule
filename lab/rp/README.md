@@ -37,8 +37,11 @@ python /opt/ironmule-worker/restricted_worker.py --preflight \
 ```
 
 The launcher needs libseccomp and Landlock ABI 3 or newer. It drops supplementary groups and the
-entire capability bounding set, requires `no_new_privs`, denies sockets and applies a filesystem
-allowlist before running the preflight in every worker. The parent sets a wall deadline and terminates
+entire capability bounding set, requires `no_new_privs`, denies external networking and applies a
+filesystem allowlist before every worker starts. On an NVIDIA host the driver can bind a local
+`AF_UNIX / SOCK_SEQPACKET | SOCK_CLOEXEC` handle and register its backlog of 128 for UVM. The preflight checks that connecting to
+an existing private Unix socket and accepting a peer both fail. Internet sockets and descriptor
+passing remain blocked. The parent sets a wall deadline and terminates
 the process group. Per-process CPU time, descriptors, process count, core files and output file size
 are limited. CUDA access uses the pod's device files. Check GPU execution separately on each host.
 [Recorded A100 preflight](results/restricted-worker-preflight.json)
