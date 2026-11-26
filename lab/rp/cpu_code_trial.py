@@ -16,6 +16,10 @@ from training.code_author import digest, write_once
 from training.code_trial import PAIRS, judge, read, validate_arm, verify_deliveries
 
 SOURCE = "ironmule/ggml_engine.py"
+RULE = Path(__file__).with_name("cpu_four_thread_rule.py")
+SEQUENCES = (("reference", "candidate", "rule"), ("candidate", "reference", "rule"),
+             ("reference", "rule", "candidate"), ("candidate", "rule", "reference"),
+             ("rule", "reference", "candidate"), ("rule", "candidate", "reference"))
 
 
 def sha(path):
@@ -27,7 +31,7 @@ def scoring_hash(evaluator, helper):
     from training import code_trial
     return digest({k: sha(path) for k, path in (
         ("broker", restricted_worker.__file__), ("qualification", __file__), ("score", code_trial.__file__),
-        ("serving", evaluator), ("scratch_qualification", helper))})
+        ("serving", evaluator), ("scratch_qualification", helper), ("four_thread_rule", RULE))})
 
 
 def order_digest(order):
@@ -57,7 +61,7 @@ def worker(args, tree, mode, destination, seed):
     env = {k: os.environ[k] for k in ("IRONMULE_GGML_BINDINGS", "LD_LIBRARY_PATH", "LLAMA_CPP_LIB_PATH")}
     env.update(IRONMULE_GGML_GPU_LAYERS="0", IRONMULE_PILOT="1", CUDA_VISIBLE_DEVICES="",
                OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", PYTHONPATH=str(tree))
-    readonly = [tree, args.gguf, args.head, evaluator, helper, args.python.parent.parent, Path("/etc/machine-id"),
+    readonly = [tree, args.gguf, args.head, evaluator, helper, RULE, args.python.parent.parent, Path("/etc/machine-id"),
                 Path(env["IRONMULE_GGML_BINDINGS"]), Path(env["LLAMA_CPP_LIB_PATH"]),
                 *(Path(p) for p in env["LD_LIBRARY_PATH"].split(":") if p and not Path(p).resolve().is_relative_to("/usr"))]
     # Execute the venv entry point by its original path so Python picks up its pyvenv.cfg.
@@ -74,7 +78,8 @@ def worker(args, tree, mode, destination, seed):
                         [*python, "-m", "pytest", "-o", "addopts=", "-p", "no:cacheprovider", "-q",
                          "tests/engine/test_gguf_tokenizer.py", "tests/engine/test_ggml_engine.py"]]
         else:
-            commands = [[*python, str(evaluator), "--gguf", str(args.gguf), "--out", str(out / "arm.json"),
+            script = RULE if mode == "rule" else evaluator
+            commands = [[*python, str(script), "--gguf", str(args.gguf), "--out", str(out / "arm.json"),
                          "--thread-candidate", str(args.head), "--require-provider", "cpu", "--threads", "2",
                          "--clients", "4", "--waves", "4", "--seed", str(seed), "--revision", order["base_commit"]]]
         for index, argv in enumerate(commands):
@@ -89,10 +94,17 @@ def worker(args, tree, mode, destination, seed):
             copy_result(out / "arm.json", destination, 60000)
 
 
-def check_arm(args, tree, row, seed, *, on_target=True):
+def check_arm(args, tree, row, seed, *, on_target=True, rule=False):
     order, evaluator, _ = inputs(args, on_target=on_target)
     validate_arm(row, tree, order, seed, {"evaluator_sha256": sha(evaluator)})
-    if row.get("scratch_measured_decisions", 0) <= 0 or row["commit"] != order["base_commit"]:
+    if row["commit"] != order["base_commit"]:
+        raise ValueError("different reference revision")
+    if rule:
+        witness = row["simple_thread_rule"]
+        if (witness["source_sha256"] != sha(RULE) or witness["actual_threads"] != [4]
+                or witness["overrides"] <= 0 or row["scratch_measured_decisions"] != 0):
+            raise ValueError("unverified four-thread rule")
+    elif row.get("scratch_measured_decisions", 0) <= 0:
         raise ValueError("no bound scratch decision in the measured workload")
 
 
@@ -107,7 +119,7 @@ def verify_offline(args):
     if (expected_build.get("passed") is not True or expected_build["source_sha256"] != signature["candidate_sha256"]
             or expected_build["log_sha256"] != sha(args.state / "build-1.log")):
         raise ValueError("missing verified build and test run")
-    pairs = []
+    pairs, rule_pairs = [], []
     for i in range(PAIRS):
         seed = args.seed + i
         both = []
@@ -119,11 +131,22 @@ def verify_offline(args):
         if any((r["requests"], r["reused_prompt_tokens"]) != (c["requests"], c["reused_prompt_tokens"])
                for r, c in zip(ref["waves"], cand["waves"], strict=True)):
             raise ValueError("unequal prompt cache state or delivered work")
+        fixed = read(args.state / f"rule-{i}.json")
+        check_arm(args, args.reference, fixed, seed, on_target=False, rule=True)
+        if any((r["requests"], r["reused_prompt_tokens"]) != (f["requests"], f["reused_prompt_tokens"])
+               for r, f in zip(ref["waves"], fixed["waves"], strict=True)):
+            raise ValueError("rule measured different work or cache conditions")
         pairs.append(both)
+        rule_pairs.append((cand, fixed))
     verdict = judge(pairs)
+    challenger = judge(rule_pairs)
+    if challenger["reason"] != "paired hardware gate":
+        raise ValueError("unmatched simple rule comparison")
+    if challenger["passed"]:
+        verdict = {**verdict, "passed": False, "reason": "fixed four-thread rule dominates the candidate"}
     return {**signature, "passed": verdict["passed"], "binding": {**pairs[0][0]["binding"],
             "workload": {k: v for k, v in pairs[0][0]["workload"].items() if k != "seed"}},
-            "metrics": {**verdict, "correct_per_arm": [sum(pair[arm]["correct"] for pair in pairs) for arm in (0, 1)],
+            "metrics": {**verdict, "fixed_four_threads_vs_candidate": challenger, "correct_per_arm": [sum(pair[arm]["correct"] for pair in pairs) for arm in (0, 1)],
                         "measured_wall_s_per_arm": [sum(pair[arm]["wall_s"] for pair in pairs) for arm in (0, 1)],
                         "worker_s_including_qualification_per_arm": [
                             sum(pair[arm]["total_elapsed_s"] for pair in pairs) for arm in (0, 1)]}}
@@ -170,13 +193,13 @@ def main():
         if not (args.state / "build.json").exists():
             worker(args, args.candidate, "build", args.state / "build.json", args.seed)
         for i in range(PAIRS):
-            sequence = [("reference", args.reference), ("candidate", args.candidate)]
             seed = args.seed + i
-            for arm, tree in reversed(sequence) if i % 2 else sequence:
-                dest = args.state / f"{arm}-{seed}.json"
+            for arm in SEQUENCES[i]:
+                tree = args.candidate if arm == "candidate" else args.reference
+                dest = args.state / (f"rule-{i}.json" if arm == "rule" else f"{arm}-{seed}.json")
                 if not dest.exists():
-                    worker(args, tree, "arm", dest, seed)
-                check_arm(args, tree, read(dest), seed)
+                    worker(args, tree, "rule" if arm == "rule" else "arm", dest, seed)
+                check_arm(args, tree, read(dest), seed, rule=arm == "rule")
         print(f"qualify process wall seconds {time.monotonic() - start:.3f}", flush=True)
     verdict = verify(args)
     write_once(args.state / "verdict.json", verdict)
