@@ -256,6 +256,86 @@ def scratch_qualification(source, digest, run):
                   uncertainty="One run. No independent serving comparator for a throughput or latency reward.")
 
 
+def cpu_experiment(root, source, digest):
+    from training.code_author import digest as proposal_digest
+    from training.experiment_planner import digest as wave_digest
+
+    path = root / source
+    doc = json.loads(path.read_bytes())
+    if source.endswith("-replay.json"):
+        trials = path.with_name(path.name.replace("-replay.json", "-trials.json"))
+        weights = path.with_name(path.name.replace("-replay.json", "-candidate.npz"))
+        raw = trials.read_bytes()
+        inputs = json.loads(raw)
+        # The SQLite fitter serializes compatible cells newest-first within each band.
+        sorted_cells = sorted(reversed(inputs["groups"]), key=lambda g: g["context"] // 64)
+        fit_input = json.dumps({**inputs, "groups": sorted_cells}, sort_keys=True, allow_nan=False).encode()
+        if (doc["trials_sha256"] not in (canonical_sha256(raw), canonical_sha256(fit_input))
+                or doc["weights_sha256"] != canonical_sha256(weights.read_bytes())
+                or set(doc["train_groups"]) & {row["group"] for row in doc["heldout"]}):
+            raise ValueError("CPU replay input, checkpoint or grouped split changed")
+        profile = inputs["profile"]
+        yield record("pilot_heldout_replay", source, digest, "heldout", inputs["binding"],
+                     hardware=profile["machine"], model=profile["gguf"], software=doc["backend"],
+                     base_commit=profile["commit"], profiles=[profile], provenance="measured_replay",
+                     workload={"train_groups": doc["train_groups"], "new_groups": doc["new_experience_groups"]},
+                     metrics=doc["heldout"], changed_training_decisions=doc["training_decisions_changed"],
+                     weights_sha256=doc["weights_sha256"], seed=doc["seed"], parameters=doc["parameters"],
+                     fitting_seconds=doc["both_fits_seconds"], note=doc["interpretation"],
+                     reason="heldout_decode_replay", uncertainty="Held-out step times are from already indexed trials.")
+    elif doc.get("schema") == "ironmule.runpod.cpu-pilot.v1":
+        provenance = json.loads((path.parent / "provenance.json").read_bytes())
+        if provenance["base_commit"] != doc["commit"] or provenance["assigned_affinity"] != doc["cpus"]:
+            raise ValueError("RunPod CPU provenance does not match the campaign")
+        context = dict(hardware=provenance["physical_cpu"], base_commit=doc["commit"], model=doc["model_sha256"],
+                       quantization="Q4_K_M", workload={"affinity": doc["cpus"], "quota_cores": provenance["cgroup_quota_cores"]},
+                       cost_reference="lab/rp/results/campaign-costs.json", authorship="IronMule CPU Pilot")
+        for i, attempt in enumerate(provenance["attempts"]):
+            prior = str((path.parent / "provenance.json").relative_to(root))
+            yield record("cpu_campaign_attempt", prior, canonical_sha256((root / prior).read_bytes()),
+                         f"attempts/{i}", digest, **context, software=attempt["runtime"], reason=attempt["result"],
+                         note=attempt.get("reason"), metrics=[{"elapsed_s": attempt["elapsed_s"]}],
+                         uncertainty="An environment startup failure provides no timing comparison.")
+        yield record("cpu_thread_campaign", source, digest, "steps", digest, **context, reason=doc["result"],
+                     software=provenance["runtime"], metrics=doc["steps"], elapsed_s=doc["elapsed_s"],
+                     new_resource_bookings_usd=doc["new_resource_bookings_usd"], note=doc["cost_source"],
+                     uncertainty="The campaign occupied an existing paid lease.")
+    elif doc.get("schema") == "ironmule.deferred-code-experiment.v1":
+        bind = doc["binding"]
+        waves = []
+        for identity in doc["completed_observations"]:
+            if not re.fullmatch("[a-f0-9]{64}", identity):
+                raise ValueError("invalid CPU wave digest")
+            row = json.loads((path.parent / "waves" / f"wave-{identity}.json").read_bytes())
+            if (wave_digest(row) != identity or row["base_commit"] != doc["base_commit"] or row["binding"] != bind
+                    or row.get("correct") is not True):
+                raise ValueError("deferred CPU plan belongs to another wave or machine")
+            waves.append({"workload": row["workload"], "wall_s": row["wall_s"], "requests": len(row["requests"])})
+        yield record("cpu_deferred_experiment", source, digest, "plan", canonical_sha256(doc["completed_observations"]),
+                     hardware=bind["machine"], model=bind["model_name"], base_commit=doc["base_commit"], software=bind,
+                     provenance="simulated", decision=False, reason=doc["reason"], metrics=waves,
+                     measured_waves=doc["completed_observations"], strongest_site=doc.get("strongest_observed_site"),
+                     simulation=doc["simulation"], authorship="IronMule experiment planner",
+                     uncertainty=doc["simulation"]["assumption"])
+    else:
+        order = json.loads((path.parent / "prior/order.json").read_bytes())
+        response = json.loads((path.parent / "author-response.json").read_bytes())
+        if (order["order_id"] != doc["order_id"] or doc["author_request_id"] != response["request_id"]
+                or response["proposal_sha256"] != proposal_digest(response["proposal"]) or doc["queue_consumed"] is not True
+                or doc["evaluation_state"] != "complete" or doc["decision"] != {"passed": False, "reason": "no source change"}):
+            raise ValueError("unbound CPU no-change receipt")
+        yield record("cpu_serving_author_no_change", source, digest, "decision", doc["order_id"],
+                     hardware=doc["machine"], model=doc["model"], software=order["binding"]["native"],
+                     base_commit=order["base_commit"], workload=doc["producer_workload"], decision=False,
+                     reason=doc["decision"]["reason"], provenance="reported", title=doc["target"]["function"],
+                     quality={"producer_correct": doc["producer_correct"], "producer_answers": doc["producer_answers"],
+                              "discovery_correct": doc["offline_discovery"]["correct"]},
+                     metrics=[{"optimization_s": doc["total_recorded_optimization_s"]}], note=response["proposal"]["rationale"],
+                     new_resource_bookings_usd=doc["additional_bookings_usd"], api_charges_usd=doc["api_charges_usd"],
+                     authorship={"selector": "IronMule", "worker": response["model"]},
+                     uncertainty="The worker retained the reference using the archived rejection. No new code was timed.")
+
+
 def native_experiment(root, source, digest, calibration_seen):
     """Import native diagnostics, code provenance and raw trial outcomes as separate record types."""
     from training.native_evidence import verify_manifest
@@ -451,6 +531,12 @@ def build(root=ROOT) -> Iterator[dict]:
             else:
                 yield record("source", source, digest, "file", source, provenance="unclassified",
                              reason="no_scratch_qualification_reported")
+        elif (source.startswith("evidence/runtime/cpu-pilot-") and source.endswith("-replay.json")
+              or source in {"lab/autonomous/results/runpod-epyc-pilot/campaign.json",
+                            "lab/autonomous/results/runpod-epyc-pilot/planner-decision.json",
+                            "lab/autonomous/results/cpu-serving-demand/followup-plan.json",
+                            "lab/autonomous/results/cpu-serving-demand/summary.json"}):
+            yield from cpu_experiment(root, source, digest)
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
             doc = json.loads(path.read_bytes())
             if "trials" in doc:

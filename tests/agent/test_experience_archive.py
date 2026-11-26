@@ -162,3 +162,16 @@ def test_native_export_checks_worker_bytes_even_if_local_hash_was_rewritten(tmp_
                            tuning=None, tuner=None, table=None, prior_failure_log=None)
     with pytest.raises(ValueError, match="worker's replacement"):
         native_evidence.export(args)
+
+
+def test_cpu_heldout_comparators_and_no_change_stay_out_of_training():
+    rows = list(archive.build())
+    epyc = next(x for x in rows if x["kind"] == "pilot_heldout_replay" and "EPYC" in x["hardware"])
+    assert all(r["seconds"]["candidate"] == r["seconds"]["all_threads"] for r in epyc["metrics"])
+    assert epyc["parameters"] == 20232 and not epyc["label_eligible"] and epyc["changed_training_decisions"] == []
+    failures = [r for r in rows if r["kind"] == "cpu_campaign_attempt" and r["note"]]
+    assert any("no CUDA-capable device" in row["note"] for row in failures)
+    noop = next(x for x in rows if x["kind"] == "cpu_serving_author_no_change")
+    assert noop["decision"] is False and "list-copy" in noop["note"] and noop["quality"]["producer_correct"] == 32
+    defer = [x for x in rows if x["kind"] == "cpu_deferred_experiment"]
+    assert len(defer) >= 2 and all(not row["label_eligible"] and row["provenance"] == "simulated" for row in defer)
