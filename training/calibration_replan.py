@@ -114,7 +114,10 @@ def plan(folder, order, control):
                     "mode": t["mode"],
                     "reason": t["reason"],
                     "fresh_method_s": t["elapsed_s"],
-                    "native_counts": sorted({tuple(v) for v in t["counts"].values()}),
+                    "native_counts": [
+                        list(v)
+                        for v in sorted({tuple(v) for v in t["counts"].values()})
+                    ],
                     "ref_init_s": ref["initialized_s"],
                     "cand_init_s": cand["initialized_s"],
                     "ref_first_wave_s": ref["cold"]["wall_s"]
