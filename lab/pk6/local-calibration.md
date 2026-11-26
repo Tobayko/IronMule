@@ -110,3 +110,33 @@ OPENBLAS_NUM_THREADS=1 python -m lab.pk6.ordered_release fit \
   --archive "$trial/ordered" --state "$(mktemp -d)"
 OPENBLAS_NUM_THREADS=1 python -m lab.pk6.replay_ordered "$trial"
 ```
+
+## Submitting an ordered batch
+
+A separate local adapter accepts the caller's actual prompts and returns their
+text, token IDs and stop reasons. It runs one batch through the native engine.
+The payload carries `prompts`, `max_tokens`, and optionally `workload_seed`.
+A seed offers a workload match only when the submitted text and limit reproduce
+the measured family. Other supported inputs use the local reference. The native
+worker checks its source tree, device, model, kernel, masks and numerical settings.
+
+The caller adapter has an additional admission test. After the original native
+deployment and rollback exercise it measures seed 99601 (32 mixed prompts) and
+99602 (18 factual prompts), in opposite arm orders. Each pair must return the
+same complete answers and tokens and improve request-to-completion rate by at
+least 2%, including worker launch and checks. Both pairs must pass before the
+adapter uses the learned candidate on new requests. A withdrawal of the main
+deployment also applies to this entry.
+
+```sh
+d=/work/ordered-release
+opts=(--root "$d" --state "$d/state" --weights "$d/inputs/ordered-head.npz"
+      --weights-pin "$(sha256sum "$d/inputs/ordered-head.npz" | cut -d' ' -f1)"
+      --pin "$(sha256sum "$d/inputs/control.json" | cut -d' ' -f1)")
+python -m lab.pk6.ordered_client_trial "${opts[@]}"
+python -m lab.pk6.ordered_client "${opts[@]}" --requests /path/to/ordered-input.json
+```
+
+For example, `{"prompts":["How many days are in a week?"],"max_tokens":16}`
+sends one caller-provided question through the reference. Source generation,
+training, fresh trials and rollback exercises run separately from this invocation.

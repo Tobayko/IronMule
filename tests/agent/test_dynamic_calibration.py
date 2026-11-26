@@ -116,3 +116,13 @@ def test_gate_binds_the_actual_settings_board_facts_and_reference_likelihood():
         validate(damaged, settings)
     with pytest.raises(ValueError, match="different device"):
         validate({**observed, "device_sha256":"0"*64}, settings)
+
+
+def test_caller_workload_family_checks_submitted_text():
+    from ironmule.factual_gate import cases, MAX_TOKENS
+    from lab.pk6.ordered_client import family
+
+    request = {"workload_seed": 12345, "max_tokens": MAX_TOKENS, "prompts":[q.prompt for q in cases(12345)]}
+    assert family(request) == "factual-first-18"
+    request["prompts"][0] = "What is five plus nine?"
+    assert family(request) == "unknown"

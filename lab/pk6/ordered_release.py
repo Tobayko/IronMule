@@ -176,12 +176,8 @@ def activate(args):
     return release.activate(args.state,args.control,args.pin,fresh)
 
 
-def deliver(args):
-    started=time.monotonic()
-    receipt=release.pinned(args.state,args.pin)
-    selected=release.selected(args.state,args.pin)
+def choose_profile(args, receipt, selected, family):
     decision_start=time.perf_counter()
-    family="factual-first-18" if args.facts_first else "mixed-first-32"
     try:
         data=args.weights.read_bytes()
         require(len(data)<1<<20 and hashlib.sha256(data).hexdigest()==args.weights_pin
@@ -191,13 +187,22 @@ def deliver(args):
                     "unbound checkpoint")
             tag="prior" if args.ablate else "head"
             networks=[[model[f"{tag}{i}_{k}"] for k in pilot.PARAMS] for i in range(3)]
-            support=family=="mixed-first-32" or bool(model["holdout_admitted"])
+            support=family=="mixed-first-32" or (family=="factual-first-18" and bool(model["holdout_admitted"]))
             allowed=pilot.NAMES if selected=="candidate" else ("reference",)
             decision=pilot.Pilot.startup_profile(networks,pilot.features(family),pilot.NAMES,allowed,"reference",
                                                 in_support=support,margin_error=float(model["margin"]))
     except (OSError,ValueError,KeyError,TypeError,EOFError):
         decision={"profile":"reference","reason":"unavailable qualified startup model"}
     decision.update(cpu_ms=1000*(time.perf_counter()-decision_start),family=family,ablate_weights=args.ablate)
+    return decision
+
+
+def deliver(args):
+    started=time.monotonic()
+    receipt=release.pinned(args.state,args.pin)
+    selected=release.selected(args.state,args.pin)
+    family="factual-first-18" if args.facts_first else "mixed-first-32"
+    decision=choose_profile(args,receipt,selected,family)
     arm=decision["profile"]
     prefix="ablation" if args.ablate else "selected"
     request_id=uuid.uuid4().hex
