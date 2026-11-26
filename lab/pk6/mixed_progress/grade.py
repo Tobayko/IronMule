@@ -474,7 +474,7 @@ if __name__ == "__main__":
         for arm in ARMS[1:]:
             wave = lines(args.folder / f"waves-{arm}.jsonl")
             (args.folder / f"native-{arm}.json").write_text(
-                json.dumps(bindings(args.folder, arm, wave)) + "\n"
+                json.dumps(bindings(args.folder, arm, wave), indent=2) + "\n"
             )
     print(
         json.dumps(

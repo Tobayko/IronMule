@@ -9,6 +9,49 @@ from training.experience_archive import record
 def experiences(root, source, digest):
     path = root / source
     saved = json.loads(path.read_bytes())
+    if path.parent.name in {"l40s-vllm-034", "l40s-pool-admission"}:
+        from lab.pk6.mixed_progress import pool_score, release_score
+
+        primary = path.parent.parent / "l40s-mixed-prefill-progress"
+        contemporary = path.parent.name == "l40s-vllm-034"
+        observed = (release_score if contemporary else pool_score).score(
+            primary, path.parent
+        )
+        if observed != saved:
+            raise ValueError("supplement differs from its hardware replay")
+        target = observed["target"]
+        for tag, stats in (
+            observed["median_by_width"] if contemporary else observed["starts"]
+        ).items():
+            yield record(
+                "l40s_current_vllm" if contemporary else "l40s_pool_admission",
+                source,
+                digest,
+                str(tag),
+                "l40s-mixed-prefill-progress",
+                hardware=target["hardware"],
+                base_commit=target["source"],
+                model=target["awq_manifest_sha256"]
+                if contemporary
+                else target["gguf_sha256"],
+                quantization="AWQ-Marlin" if contemporary else "Q4_K_M",
+                software=target.get("versions")
+                or {"pool_engine_sha256": target["pool_engine_sha256"]},
+                cost_reference=str((primary / "cost.json").relative_to(root)),
+                workload={"width": int(tag), "output_tokens": 32}
+                if contemporary
+                else {"start": tag, "widths": [1, 8, 32]},
+                metrics=[stats],
+                quality=observed["quality"] if contemporary else stats["quality"],
+                reason="measured_external_reference"
+                if contemporary
+                else "discovery_requires_fresh_holdout",
+                authorship="External vLLM release"
+                if contemporary
+                else "Codex adapted the Pilot's shared-pool admission budget.",
+                uncertainty=observed["scope"],
+            )
+        return
     if path.name == "plan.json":
         if saved != plan.plan():
             raise ValueError("archived row selection disagrees with the CPU replay")
