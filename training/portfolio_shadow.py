@@ -148,15 +148,14 @@ def grade(data, control, weights, forecast_path, samples):
                 "complete": complete,
                 "dispatch": dispatch,
             }
-            probe = {"complete": {k: {"1": v} for k, v in sentinels.items()}}
-            x = min(
-                f["donors"],
-                key=lambda b: (
-                    portfolio.distance(b, probe, f["components"], sentinels=True)[0],
-                    -b["seed"],
-                ),
-            )
-            drift = portfolio.distance(x, probe, f["components"], sentinels=True)[0]
+            def sentinel_drift(donor):
+                return max(
+                    abs(donor["complete"][k]["1"] / sentinels[k] - 1.0)
+                    for k in f["components"]
+                )
+
+            x = min(f["donors"], key=lambda b: (sentinel_drift(b), -b["seed"]))
+            drift = sentinel_drift(x)
             error, per = portfolio.distance(x, current, f["components"])
             numerical = (
                 error <= f["max_complete_vector_relative_error"]
@@ -225,8 +224,8 @@ def grade(data, control, weights, forecast_path, samples):
     ]
     failed = [
         p
-        for p in proof
-        if p["within_sentinel_threshold"] and not p["complete_vector_guard_passed"]
+        for p in admitted
+        if not p["complete_vector_guard_passed"]
     ]
     result = (
         "numerical prediction refuted"
