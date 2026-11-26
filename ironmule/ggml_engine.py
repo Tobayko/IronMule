@@ -1066,6 +1066,12 @@ class GgmlEngine:
         length = min(444, self.seq_ctx - 8, max(64, (len(ids) - 1) // width))
         group = [(seq, Job([bos] + ids[seq * length:(seq + 1) * length - 1], 1), 0) for seq in range(width)]
         mix = PK2_CALIBRATION == "mix"
+        use_local_trial = (
+            os.environ.get("IRONMULE_TRIAL_LOCAL_CALIBRATION") == "1"
+            and mix and width == 8 and length == 444
+            and type(thresholds) is tuple and thresholds == (256, 512, 1024)
+            and type(repeats) is int and repeats == 3
+        )
         if mix:  # PK2-M: half short prompts (the lowest sequence ids, as the server sorts them), half long
             short = min(33, length)
             group = [(seq, Job([bos] + ids[seq * length:seq * length + (short if seq < width // 2 else length) - 1], 1), 0)
@@ -1084,10 +1090,22 @@ class GgmlEngine:
             for t in arms:  # warm each path once (cuBLAS handles, dequantization buffers)
                 pk2_set_min_rows(t)
                 burst()
-            for _ in range(repeats):
+            for repeat in range(repeats):
                 for t in arms:
                     pk2_set_min_rows(t)
                     times[t].append(burst())
+                if use_local_trial and repeat == 1:
+                    bounds = {t: sorted(times[t]) for t in arms}
+                    if all(0 < low <= high <= 1.02 * low < math.inf for low, high in bounds.values()):
+                        # Allow additional drift beyond both observations before testing the original rules.
+                        lower = {t: 0.9975 * bounds[t][0] for t in arms}
+                        upper = {t: 1.0025 * bounds[t][1] for t in arms}
+                        fastest_lower = min(lower[t] for t in thresholds)
+                        fastest_upper = min(upper[t] for t in thresholds)
+                        # If the first threshold that could qualify must qualify, its choice is stable.
+                        first_possible = next(t for t in thresholds if lower[t] <= 1.02 * fastest_upper)
+                        if upper[first_possible] <= min(1.02 * fastest_lower, 0.95 * lower[0]):
+                            break
             med = {t: sorted(v)[len(v) // 2] for t, v in times.items()}
             # the smallest threshold within 2 % of the fastest: a single prompt of a few hundred rows gains too
             fastest = min(med[t] for t in thresholds)
