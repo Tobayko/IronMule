@@ -27,7 +27,7 @@ PILOT_ARMS = ("pilot-initial.json", "pilot-trained.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
-HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "geometry.json", "decision.json", "withdrawn.json",
+HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "geometry.json", "decision.json", "withdrawn.json",
               "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json", "live-ready.json")
 COST_PHASES = ("during-qualification", "after-verdict", "after-release", "after-product")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
