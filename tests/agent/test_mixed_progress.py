@@ -191,3 +191,47 @@ def test_shared_markers_belong_to_the_measured_http_window():
         [wave],
     )
     assert count["changes"] == 1
+
+
+def test_new_seed_pool_holdout_replays_rollback_and_discovery_only_selection():
+    import json
+    from lab.pk6.first_token.phases import RESULTS
+    from lab.pk6.mixed_progress import holdout_score
+
+    for label in ("holdout", "balanced"):
+        expected = json.loads(
+            (RESULTS / f"l40s-pool-{label}" / "result.json").read_bytes()
+        )
+        replay = holdout_score.score(RESULTS, balanced=label == "balanced")
+        assert replay == expected and replay["rollback_served_correctly"]
+        assert all(v["same_fixed_work"] for v in replay["paired"].values())
+        assert all(s["quality"] == [32, 32] for s in replay["starts"].values())
+        if label == "balanced":
+            assert replay["selection"]["cap"] == 1024
+            assert all(
+                c["changes"] == 0
+                for c in replay["starts"]["L1"]["changes"]
+                if c["width"] <= 8
+            )
+
+
+def test_memory_screen_collector_accepts_json_map_growth_and_rejects_rewrites(
+    tmp_path, monkeypatch
+):
+    import json
+    import pytest
+    from lab.rp import mixed_footprint
+
+    observed = {"R1": 0}
+    monkeypatch.setattr(mixed_footprint.jobs, "shell", lambda *a: "present")
+    monkeypatch.setattr(
+        mixed_footprint.jobs, "call", lambda *a, **k: json.dumps(observed).encode()
+    )
+    mixed_footprint.sync_attempts(None, tmp_path)
+    observed["M1"] = 0
+    mixed_footprint.sync_attempts(None, tmp_path)
+    assert json.loads((tmp_path / "attempts.json").read_bytes()) == {"R1": 0, "M1": 0}
+    observed["M1"] = "timeout"
+    with pytest.raises(ValueError, match="changed"):
+        mixed_footprint.sync_attempts(None, tmp_path)
+    assert json.loads((tmp_path / "attempts.json").read_bytes())["M1"] == 0

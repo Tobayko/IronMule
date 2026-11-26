@@ -44,7 +44,7 @@ Two starts of the Qwen3-32B server spent almost 19 seconds each on one calibrati
 
 ### What changes on a smaller GPU?
 
-On an NVIDIA L40S, IronMule qualified a different path for the same Qwen3-32B family. At 32 concurrent requests its first text appeared in a median **0.56 seconds**. vLLM 0.11.0 delivered more total output per second on that card. You can replay the individual streams, inspect why a kernel ran out of memory, and see how one restart improved the CPU model's timing estimates for the next. [L40S measurements and replay](lab/pk6/mixed_progress/replay.md)
+On an NVIDIA L40S, the trade-off changes with the queue. With one client IronMule delivered **43.3 output tokens/s** and vLLM 0.34.0 delivered **37.7**. With 32 clients IronMule started streaming in a median **0.56 seconds**, versus **1.68 seconds** for vLLM. Across the full group vLLM finished faster at **266.6 vs 154.7 tokens/s**. Both served Qwen3-32B with the same inputs and fixed output length, using Q4_K_M and AWQ-Marlin respectively. These are three repeats from the first matched seed. [Per-request measurements, quality checks and replay](lab/pk6/mixed_progress/replay.md)
 
 ## Quick start
 

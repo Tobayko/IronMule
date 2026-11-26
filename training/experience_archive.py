@@ -1040,6 +1040,10 @@ def build(root=ROOT) -> Iterator[dict]:
         elif source in {"lab/autonomous/results/mixed-prefill-progress/plan.json",
                         "lab/autonomous/results/l40s-vllm-034/result.json",
                         "lab/autonomous/results/l40s-pool-admission/result.json",
+                        "lab/autonomous/results/l40s-pool-holdout/result.json",
+                        "lab/autonomous/results/l40s-pool-balanced/result.json",
+                        "lab/autonomous/results/l40s-bounded-w4/result.json",
+                        "lab/autonomous/results/l40s-mixed-prefill-progress/learned-step-cost.json",
                         "lab/autonomous/results/l40s-mixed-prefill-progress/failed-start.json",
                         "lab/autonomous/results/l40s-mixed-prefill-progress/result.json"}:
             from training.mixed_progress_evidence import experiences

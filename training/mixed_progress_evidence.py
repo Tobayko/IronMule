@@ -9,6 +9,93 @@ from training.experience_archive import record
 def experiences(root, source, digest):
     path = root / source
     saved = json.loads(path.read_bytes())
+    if path.parent.name == "l40s-bounded-w4":
+        from lab.pk6.mixed_progress import footprint_score
+
+        primary = path.parent.parent / "l40s-mixed-prefill-progress"
+        if footprint_score.score(primary, path.parent) != saved:
+            raise ValueError("W4 screen differs from its measured hardware evidence")
+        target = json.loads((primary / "target.json").read_bytes())
+        yield record(
+            "bounded_w4_screen",
+            source,
+            digest,
+            "shape-selection",
+            "l40s-mixed-prefill-progress",
+            hardware=saved["hardware"],
+            base_commit=target["source"],
+            model=target["gguf_sha256"],
+            quantization="Q4_K_M",
+            workload={"native_widths": [1, 8]},
+            profiles=[saved["selection"]],
+            metrics=[saved["pairs"]],
+            reason=saved["outcome"]["status"],
+            cost_reference=str((primary / "cost.json").relative_to(root)),
+            authorship="IronMule selected whole target-tuned shapes under a memory budget specified by Codex.",
+            uncertainty="Candidate performance requires a complete target worker pair.",
+        )
+        return
+    if path.name == "learned-step-cost.json":
+        from lab.pk6.mixed_progress import learning
+
+        if learning.replay(path.parent) != saved:
+            raise ValueError("timing checkpoint differs from its two source starts")
+        target = json.loads((path.parent / "target.json").read_bytes())
+        yield record(
+            "shared_kv_timing_update",
+            source,
+            digest,
+            "C1-fit/C2-holdout",
+            "l40s-mixed-prefill-progress",
+            hardware=target["hardware"],
+            base_commit=target["source"],
+            model=target["gguf_sha256"],
+            quantization="Q4_K_M",
+            metrics=[saved],
+            cost_reference=str((path.parent / "cost.json").relative_to(root)),
+            reason="target_measured_call_forecast",
+            authorship="IronMule fitted StepCost on its own L40S calls.",
+            uncertainty="One board and two starts. Native timing accuracy measures planning.",
+        )
+        return
+    if path.parent.name in {"l40s-pool-holdout", "l40s-pool-balanced"}:
+        from lab.pk6.mixed_progress import holdout_score
+
+        balanced = path.parent.name.endswith("balanced")
+        result_root = path.parent.parent
+        if holdout_score.score(result_root, balanced=balanced) != saved:
+            raise ValueError(
+                "holdout does not match its original HTTP and native traces"
+            )
+        primary = result_root / "l40s-mixed-prefill-progress"
+        target = json.loads((primary / "target.json").read_bytes())
+        for width, comparison in saved["paired"].items():
+            yield record(
+                "shared_pool_paired_holdout",
+                source,
+                digest,
+                width,
+                "l40s-mixed-prefill-progress",
+                hardware=saved["hardware"],
+                base_commit=target["source"],
+                model=target["gguf_sha256"],
+                quantization="Q4_K_M",
+                profiles=[saved["reference"], saved["candidate"]],
+                workload={
+                    "seed": saved["seed"],
+                    "width": int(width),
+                    "output_tokens": 32,
+                },
+                metrics=[comparison],
+                quality={a: s["quality"] for a, s in saved["starts"].items()},
+                reason="retain_reference",
+                cost_reference=str((primary / "cost.json").relative_to(root)),
+                authorship="Codex implemented the queue rule. IronMule ranked the intermediate budget on discovery seeds."
+                if balanced
+                else "Codex implemented the queue rule. IronMule gated the fresh experiment on two measured starts.",
+                uncertainty=saved["scope"],
+            )
+        return
     if path.parent.name in {"l40s-vllm-034", "l40s-pool-admission"}:
         from lab.pk6.mixed_progress import pool_score, release_score
 

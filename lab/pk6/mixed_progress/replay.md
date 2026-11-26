@@ -42,3 +42,28 @@ Rebuild the searchable archive with `python -m training.experience_archive build
 For the current-version comparison, replay the recorded vLLM process with `python -m lab.pk6.mixed_progress.release_score lab/autonomous/results/l40s-mixed-prefill-progress lab/autonomous/results/l40s-vllm-034`. The measured package set, device identity, sampled memory and power, and both factual seed blocks are in the output.
 
 For the shared-pool CPU regression, use the isolated worktree containing the scheduler patch, apply `pool-budget.patch` from this directory and run `python -m lab.pk6.mixed_progress.pool_cpu "$GGUF"` with GPU layers disabled. The stock and candidate cases share the same forced low CPU admission budget. The GPU run uses the actual trained Pilot. The archive distinguishes the initial split-stream experiment from this shared-pool follow-up.
+
+Replay the two discovery starts, the fresh holdout, the interpolated budget and the memory screen locally. The score commands re-read the raw HTTP rows and the compressed, request-bound native traces for serving comparisons. All commands run from the repository root.
+
+```sh
+root=lab/autonomous/results
+primary="$root/l40s-mixed-prefill-progress"
+python -m lab.pk6.mixed_progress.pool_score "$primary" "$root/l40s-pool-admission"
+python -m lab.pk6.mixed_progress.holdout_score "$root"
+python -m lab.pk6.mixed_progress.holdout_score "$root" --balanced
+python -m lab.pk6.mixed_progress.footprint_score "$primary" "$root/l40s-bounded-w4"
+```
+
+For another on-device holdout, start at the root of this checkout after the [RunPod collector](../../rp/mixed_pool.py) has prepared the isolated pool checkout at the original frozen revision. Copy the measurement modules into that checkout, keeping the measured engine and product sources from the collector. Reuse the target's primary stock state, two discovery series, GPU bindings and enforced lease deadline. Use fresh output directories. The holdout restores the original budget through the normal product server before testing the intermediate selection.
+
+```sh
+cp lab/pk6/mixed_progress/{grade,holdout_trial,pool_trial}.py /work/pool-source/lab/pk6/mixed_progress/
+cd /work/pool-source
+export PYTHONPATH="$PWD"
+export IRONMULE_GGML_BINDINGS="$HOME/.cache/ironmule/ggml/ironmule/cuda/llama_cpp_python-0.3.16"
+export LLAMA_CPP_LIB_PATH="$IRONMULE_GGML_BINDINGS/vendor/llama.cpp/build/bin"
+python -m lab.pk6.mixed_progress.holdout_trial \
+  --primary /work/mixed-recovered --pool /work/mixed-pool --current /work/mixed-current \
+  --out /work/pool-holdout --balanced /work/pool-balanced --checkout /work/pool-balanced-source \
+  --models /models --state /work/state
+```

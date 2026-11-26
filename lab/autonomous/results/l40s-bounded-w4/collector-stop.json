@@ -1,0 +1,14 @@
+{
+  "reason": "mutable_attempt_map_rejected",
+  "collector_error": "ValueError: target record was truncated or replaced",
+  "last_collected_attempts": {
+    "R1": 0
+  },
+  "candidate_worker_receipt": null,
+  "candidate_log_last_snapshot_sha256": "58f1858d8056bf9e152adbf5f1e6e538c93405cd86fe0b7384407086ba99c9fd",
+  "candidate_log_excerpts": [
+    "load_tensors: offloaded 65/65 layers to GPU",
+    "ironmule_kg_load: IRONMULE_KG_LIB /work/state/kernels/w4/f46ea762806d7d78a2b52f07/kernel.so: loaded"
+  ],
+  "note": "The collector stopped when attempts.json changed. The lease was terminated after the exception. The candidate process had loaded the selected library. Its measured qualification and throughput are unknown."
+}

@@ -284,3 +284,5 @@ target receipts, submit a bounded run and withdraw the scoped release.
 ### L40S cross-check
 
 The same model family on an L40S selected a shared KV pool and stock kernels after locally generated W4 exhausted memory. On this configuration Qwen3-32B started streaming earlier at width 32 but vLLM 0.11.0 completed the workload faster. Use the per-board gate, fixed-work traces and fresh-start instructions when continuing this comparison. [Run and replay](../lab/pk6/mixed_progress/replay.md) · [Measured L40S profiles](../lab/autonomous/results/l40s-mixed-prefill-progress/result.json)
+
+The subsequent current-release comparison used vLLM 0.34.0 on that same L40S. At 32 clients it delivered 264.2 output tokens/s over two seeds. Increasing IronMule's prompt admission budget raised throughput but delayed streamed text. The fresh rollback served 32/32 correct answers. The production path retains its qualified reference. The archived measurements identify the remaining high-concurrency gap. [Measurements and residual limits](LAB.md#l40s-qwen3-32b-and-the-wait-between-streamed-text-blocks-2026-11-26)

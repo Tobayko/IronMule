@@ -1,0 +1,22 @@
+{
+  "awq_manifest_sha256": "00fd219734c5f6ff13b31c0038317ed7d6631e626619c8abf76c87412ea1395b",
+  "awq_revision": "0499c3ac83fdef8810b907a23894ba91e95eddd8",
+  "engine_sha256": "a1985d5af074571d1cafd59e918f95f22f1bd16754d2229488da49d2d69288fd",
+  "external_waves_sha256": "5543ab721ff0579d88319d9d249cb35f5b22b5c5a899115583a765845f818e43",
+  "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "7a2f320d896258b67549ecebcae06a0c38e93f46c405d111e32888eeff161b02",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "pool_engine_sha256": "cc7a2467f00c138d8cfde890a0e025d7bd421c8ad5e9dd3de98c08f4bd9f1b9d",
+  "rows": 2048,
+  "source": "7fa0e4d8974c190192f056f6bc5b30dc72b82571",
+  "stock_retry_revision": "f97a05f74561a9b5bf4dbebcc727d900c108df29",
+  "stock_retry_sources": {
+    "ironmule/ggml_profiles.py": "17d71f1b480cda75540906e3f3fd803db6a60e4d239040e549c7ae1003718c4f",
+    "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955"
+  },
+  "vllm_version": "0.11.0"
+}

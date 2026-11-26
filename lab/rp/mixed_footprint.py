@@ -8,6 +8,29 @@ import time
 
 from lab.pk6.mixed_progress import footprint, grade
 from lab.rp import native_campaign as jobs, warm_repeat as sync
+from lab.rp.accounting import save
+
+
+def sync_attempts(pod, out):
+    """Mirror an atomically rewritten JSON map while preserving every completed attempt."""
+    remote = "/work/mixed-footprint/attempts.json"
+    if jobs.shell(pod, f"if test -f {remote}; then echo present; fi") != "present":
+        return
+    raw = jobs.call(pod, "GET", jobs.endpoint("get", remote), raw=True)
+    current = json.loads(raw)
+    dest = out / "attempts.json"
+    prior = json.loads(dest.read_bytes()) if dest.exists() else {}
+    if (
+        not isinstance(current, dict)
+        or any(
+            k not in ("R1", "M1", "M2", "R2") or not (type(v) is int or v == "timeout")
+            for k, v in current.items()
+        )
+        or any(k not in current or current[k] != v for k, v in prior.items())
+    ):
+        raise ValueError("completed W4 attempt changed")
+    if current != prior or not dest.exists():
+        save(dest, current)
 
 
 def collect(pod_id, primary, out):
@@ -47,13 +70,14 @@ exec python /work/footprint_runner.py --primary /work/mixed-recovered --out /wor
         str(max(peaks))
     )
     jobs.job(pod, "bounded-w4-screen", cmd)
-    files = ["selection.json", "attempts.json", "outcome.json", "selected.table"]
+    files = ["selection.json", "outcome.json", "selected.table"]
     for a in ("R1", "M1", "M2", "R2"):
         files.extend([f"worker-{a}.json", f"log-{a}.txt"])
     while time.time() < pod["deadline"] - 24:
         try:
             status = sync.status(pod, "bounded-w4-screen")
             sync.collect(pod, out, target="/work/mixed-footprint", files=files)
+            sync_attempts(pod, out)
             if status.get("rc") is not None and not status.get("running"):
                 (out / "control-end.json").write_text(json.dumps(status))
                 return "collected" if (out / "outcome.json").exists() else "incomplete"

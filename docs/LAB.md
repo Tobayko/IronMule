@@ -4777,3 +4777,25 @@ On a 46,068 MiB NVIDIA L40S the full generated W4 selection exhausted memory dur
 With 32 clients R1 delivered 154.7 output tokens/s, first content in 0.559 s and the eighth text chunk in 2.517 s. vLLM 0.11.0, pooled over its two seed blocks, delivered 240.5 tokens/s, 2.153 s and 3.369 s respectively. The complete fixed-work requests and paired per-seed ratios are archived. First-content p95 was 4.704 s on R1 and 3.165 s for vLLM. During the serving windows, peak sampled device memory was 36,122 vs 41,289 MiB. IronMule used Q4_K_M and vLLM used the official AWQ artifact. The recorded customer-visible and native timings include host overhead. [Replayable result](../lab/autonomous/results/l40s-mixed-prefill-progress/result.json)
 
 The explicit shared-pool starts also supplied real GPU call durations for the CPU world model. It learned from 83 mixed calls in C1 and predicted 84 calls from another seed and process in C2. Mean absolute error fell from 42.20 ms with the A100 parameters to 21.80 ms after the CPU update. A constant fitted to the same 83 observations scored 65.43 ms. These are prediction errors for native calls on this board. [Checkpoint, baseline and holdout replay](../lab/autonomous/results/l40s-mixed-prefill-progress/learned-step-cost.json)
+
+The same board subsequently served vLLM 0.34.0 (PyTorch 2.14.0, Transformers 5.22.2) with its official AWQ-Marlin model. The table uses the **same first seed** for all three processes, three repeats per width and 32 output tokens per performance request. IronMule ran the conservative stock kernel profile with shared KV. The experimental S1 used a 2,048-row budget when its queue held at least four requests. Each cell gives output tokens/s, median seconds to first content and p95 seconds for the longest gap per request. [vLLM 0.34.0 waves and package versions](../lab/autonomous/results/l40s-vllm-034) · [Shared-pool discovery traces](../lab/autonomous/results/l40s-pool-admission)
+
+| Concurrent requests | IronMule reference R1 | IronMule experiment S1 | vLLM 0.34.0 |
+| ---: | ---: | ---: | ---: |
+| 1 | 43.3 / 0.062 / 0.061 | 44.2 / 0.062 / 0.059 | 37.7 / 0.041 / 0.027 |
+| 8 | 110.5 / 0.222 / 0.283 | 111.3 / 1.063 / 1.002 | 164.1 / 0.716 / 0.563 |
+| 32 | 154.7 / 0.559 / 0.305 | 171.1 / 1.033 / 1.018 | 266.6 / 1.676 / 0.764 |
+
+Over both seed blocks vLLM 0.34.0 delivered 264.2 tokens/s at width 32. Its p95 first content came at 2.858 s and its p95 completion at 3.835 s. Its serving peak was 39,661 MiB across 21 telemetry samples, against 36,122 MiB across 15 for R1. Both vLLM seed blocks graded 32/32. R1 and R2 each graded 32/32 on their respective seed.
+
+The shared-pool variant raised width-32 throughput by 10.4% and 6.6% in matched discovery blocks. A fresh input seed reversed the process order, first serving the candidate H1 and then the restored stock B1. A second candidate L1 selected 1,024 rows and a queue threshold of 12 from the discovery seeds only. It exercised the change at width 32 and left widths 1 and 8 outside the rule. The next table reports median wave measurements on that fresh seed. Percent changes in the results use the median of three paired ratios.
+
+| Fresh-seed process, width 32 | Output tokens/s | Median first content | Median eighth chunk | p95 worst streaming pause | p95 completion |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| B1, stock after rollback | 155.8 | 0.548 s | 2.487 s | 0.305 s | 6.470 s |
+| H1, 2,048 rows | 168.5 | 1.053 s | 4.554 s | 1.034 s | 6.016 s |
+| L1, 1,024 rows | 162.3 | 0.554 s | 2.951 s | 0.504 s | 6.142 s |
+
+All three processes answered 32/32 fresh factual questions correctly. The 1,024-row rule slightly improved the tail time to first content and raised paired throughput by 3.8%, but the p95 streaming pause grew 65.3%. Both candidates stay experimental. Stock rollback served the full workload with zero budget-change markers. [Reversed fresh pair](../lab/autonomous/results/l40s-pool-holdout) · [Intermediate selection and measured result](../lab/autonomous/results/l40s-pool-balanced)
+
+A separate native screen used the measured memory headroom to select four complete W4 shape entries, representing 128 dispatch rows. Its stock worker answered 18/18 correctly. The GPU offloaded all 65 layers and loaded the candidate library. The collector treated the atomically rewritten attempt map as an append-only file and terminated before saving the candidate worker result. The corrected collector validates successive decoded maps and preserves previous attempts across restart. No paired W4 rate or quality result is available from that run. [W4 screen and diagnostic](../lab/autonomous/results/l40s-bounded-w4) · [Cumulative cost journal](../lab/autonomous/results/l40s-mixed-prefill-progress/cost.json)
