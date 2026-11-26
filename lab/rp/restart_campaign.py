@@ -139,8 +139,23 @@ def product(args, cfg, remote, check, active):
              *(f"{arm}-{seed}.json" for seed in restart_http.SEEDS for arm in ("reference", "candidate"))]
     snapshot(pod, evidence, files, local)
     for op in ("qualify", "exercise", "serve"):
-        name = "product-" + op + ".json"
+        name = ("product-listener" if op == "serve" else "product-" + op) + ".json"
         snapshot(pod, remote, [name], local)
+        if op == "serve":
+            from lab.pk1 import restart_live
+            helper = PurePosixPath(cfg["framework"]) / "lab/pk1/restart_live.py"
+            if shell(pod, shlex.join(["sha256sum", str(helper)])).split()[0] != checksum(restart_live.__file__):
+                raise ValueError("unbound passive listener or external client")
+            if args.verify_product_client:
+                snapshot(pod, evidence, ["live-ready.json"], local)
+                snapshot(pod, remote, ["product-client.json"], local)
+                if (local / "live-ready.json").exists() and not (local / "product-client.json").exists():
+                    # The passive server owns the GPU measurement lock. This separate client only submits HTTP requests.
+                    commandline = shlex.join([cfg["python"], "-m", "lab.pk1.restart_live", "--ready", str(evidence / "live-ready.json"),
+                                              "--out", str(remote / "product-client.json"), "--receipt-sha256", pin,
+                                              "--timeout", str(min(args.product_timeout, 240))])
+                    destdir = shlex.quote(cfg["framework"])
+                    job(pod, "external-product-" + active["order"][:16], f"cd {destdir} && PYTHONPATH={destdir} {commandline}")
         if not (local / name).exists():
             remaining = int(pod["deadline"] - time.time()) - 10
             timeout = min(args.product_timeout, remaining)
@@ -160,15 +175,24 @@ def product(args, cfg, remote, check, active):
         value = read(local / name)
         if op == "qualify":
             if value.get("passed") is not True:
-                return {**active, "stage": "product declined", "product_result": value}
+                from training.restart_replan import declined
+                note = declined(state, checkout=args.checkout)
+                return {**active, "stage": "product declined", "product_result": value, "next_experiment": note["next"]}
             if restart_http.assess(local, receipt) != value:
                 raise ValueError("product verdict differs from exported HTTP holdouts")
         elif op == "exercise":
             if (value.get("passed") is not True or value["before"]["arm"] != "candidate" or value["after"]["arm"] != "reference"
                     or value["before"]["work_sha256"] != value["after"]["work_sha256"]):
                 return {**active, "stage": "product withdrawn", "product_result": value}
-        elif value["arm"] != "candidate" or value["completions"][-1]["graded_correct"] != 18:
-            return {**active, "stage": "product retained reference", "product_result": value}
+        else:
+            if not args.verify_product_client:
+                return {**active, "stage": "product service completed", "product_result": value}
+            if not (local / "product-client.json").exists():
+                return {**active, "stage": "product client missing", "product_result": value}
+            value = restart_live.verify(value, read(local / "product-client.json"))
+            write_once(local / "product-serve.json", value)
+            if value["arm"] != "candidate" or value["completions"][-1]["graded_correct"] != 18:
+                return {**active, "stage": "product retained reference", "product_result": value}
     from training.restart_replan import replan
 
     next_run = replan(state, checkout=args.checkout)
@@ -253,6 +277,7 @@ def main():
     p.add_argument("--publish", action="store_true", help="publish a qualifying source and verify activation and rollback on its target")
     p.add_argument("--wait-seconds", type=int, default=0)
     p.add_argument("--serve-product", action="store_true", help="gate the ordinary HTTP startup, then serve it with the trained CPU head")
+    p.add_argument("--verify-product-client", action="store_true", help="explicitly submit and score a separate client batch on the live port")
     p.add_argument("--product-reference-url", help="existing ordinary local product URL for other traffic")
     p.add_argument("--product-dedicated", action="store_true", help="run a separate scoped product lane")
     p.add_argument("--product-port", type=int, default=8232)
@@ -262,6 +287,8 @@ def main():
     if a.serve_product and (not a.publish or bool(a.product_reference_url) == a.product_dedicated
             or not 1 <= a.product_port <= 65535 or not 1 <= a.product_timeout <= 3600 or not 1 <= a.product_lifetime <= 1800):
         p.error("product use needs publication, one route, valid port and bounded lifetime")
+    if a.verify_product_client and not a.serve_product:
+        p.error("the external product client needs --serve-product")
     if a.exercise_pilot and not a.publish:
         p.error("the startup policy operates on a merged and activated release; pass --publish")
     if not 0 <= a.wait_seconds <= 7200:
