@@ -26,7 +26,8 @@ from training.code_author import PendingAuthor, write_once
 from training.code_trial import PAIRS, read, save
 
 FILES = ["context.json", "aa-0.json", "aa-1.json", "receipt.json", "stale-receipt.json", "stale.json", "missing.json",
-         *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")), "result.json"]
+         *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")),
+         *(f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")), "result.json"]
 FRAMEWORK = ["lab/pk1/restart_trial.py", "lab/pk1/restart_arm.py", "lab/pk1/restart_order.py", "lab/pk1/native_trial.py"]
 
 
