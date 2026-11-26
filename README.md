@@ -5,9 +5,9 @@
   <a id="ironmule"></a>
   <h1>IronMule · Local LLM inference server</h1>
 
-  <p><strong>A 4-bit GGUF against vLLM's AWQ-Marlin on the same A100: neck and neck at 32 concurrent users, up to 93% ahead for a single chat. Your local inference server called. It wants its GPU back.</strong></p>
+  <p><strong>Run a language model on your own hardware. Give it a server that learns how your machine runs it best.</strong></p>
 
-  <p>IronMule serves GGUF on NVIDIA CUDA GPUs and CPUs, and MLX models on Apple Silicon (Metal), with its own CUDA kernels and a learned scheduler.</p>
+  <p>Chat in your browser or connect an app through the OpenAI-compatible API. IronMule streams the answers. A small CPU model called the Pilot helps decide how to serve the next request.</p>
 
   <p>
     <a href="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml"><img src="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -23,23 +23,26 @@
 
 [Quick start](#quick-start) · [Hardware support](#hardware-support) · [Benchmarks](#how-much-faster) · [How the Pilot learns](#the-pilot) · [HTTP API](docs/HTTP.md)
 
-## What is IronMule?
+## What changes when the server learns?
 
-Stop renting a cloud to serve your own model. IronMule is a self-hosted LLM server with its own CUDA kernels on NVIDIA GPUs and its own scheduler on every machine it runs on. It answers through an OpenAI-compatible chat API with streaming and concurrent requests.
+A quiet CPU can give one chat all its attention. Start a compile, or send a batch of long documents, and yesterday’s thread count can become today’s bottleneck. IronMule measures the machine it runs on. Its Pilot uses those timings to choose how to execute requests while your language model keeps its original weights.
 
-On one A100 it serves Qwen3-32B from a Q4_K_M GGUF level with to 3% behind vLLM's AWQ-Marlin at 32 concurrent users (four same-machine comparisons), and ahead of it for a single chat. At eight clients vLLM still leads clearly, as the table shows. The **Pilot** is a small neural network that makes the hardware decisions, such as how many threads to use when another program competes for the CPU. The language model's weights stay fixed.
+**Try a local chat.** On Apple Silicon or a supported Linux NVIDIA setup, install IronMule and open its local chat interface with these two commands.
 
-| Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, three repeats) | vLLM 0.11.0, AWQ-Marlin (three repeats) |
-| ---: | ---: | ---: |
-| 1 | 51.3 / 95.0 / 100.0 | 51.3 / 52.7 / 51.8 |
-| 8 | 165.7 / 167.4 / 169.8 | 190.2 / 197.3 / 194.6 |
-| 32 | 293.8 / 291.6 / 291.1 | 295.5 / 291.3 / 290.9 |
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tobayko/IronMule/main/install.sh | sh
+ironmule start
+```
 
-[Benchmark conditions and results](#how-much-faster)
+Already have a GGUF file? You can serve it on a Linux CPU and send your first streaming request with the commands below. [GGUF quick start](#serve-a-gguf-on-linux-cpu) · [Hardware support](#hardware-support)
+
+### What the Pilot found on an A100
+
+Two starts of the Qwen3-32B server spent almost 19 seconds each on one calibration. In the development loop, IronMule picked that step for investigation and asked Codex for a change. The new code still tried all five settings on the GPU. When the measurements agreed, it could finish in 15 calls instead of 20. Across six paired cold starts, the first 32 complete answers arrived in a median **51.06 seconds**, down from **55.29**, with identical output tokens. The trained Pilot selected the new code on fresh work, and a rollback restored the original worker. This result belongs to the ordered native worker tested in PR 57 on a RunPod A100 SXM4 80 GB. [Experiment, raw results and replay](https://github.com/Tobayko/IronMule/blob/4b6971e5ba59f0fb74bf56cf7a4249b5d88fb9d5/lab/pk6/local-calibration.md)
+
+**How does a warm server compare?** In a separate HTTP test at 32 concurrent clients on that A100, IronMule produced **297.54 tokens/s** with Qwen3-32B Q4_K_M GGUF. vLLM 0.11.0 produced **271.26 tokens/s** with Qwen3-32B AWQ. That gives IronMule 9.69% more output per second across the group. vLLM delivered the first token sooner, with a median of 1.71 seconds versus IronMule’s 2.41. [PR 57 measurements and per-request timings](https://github.com/Tobayko/IronMule/tree/4b6971e5ba59f0fb74bf56cf7a4249b5d88fb9d5/lab/autonomous/results/a100-pr57-warm-repeat)
 
 ## Quick start
-
-On a Linux server, `ironmule serve --gguf /path/to/model.gguf --placement auto` lets IronMule qualify CPU and GPU workers and learn where different requests finish fastest. Between requests it trains a C++17 hardware controller from its own timings. It checks completion time, first-token latency and answers on fresh local trials before using a learned route. [Native training, setup and cloud time estimates](training/hardware-placement.md)
 
 ### Serve a GGUF on Linux CPU
 
@@ -72,13 +75,6 @@ curl -N http://127.0.0.1:8080/v1/chat/completions \
 ```
 
 ### Run an MLX model
-
-On Apple Silicon or Linux with an NVIDIA GPU, install the CLI and start the local chat interface.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Tobayko/IronMule/main/install.sh | sh
-ironmule start
-```
 
 To choose and serve an MLX model explicitly, install from source with `python -m pip install -e .` on Apple Silicon or `python -m pip install -e '.[cuda]'` on supported NVIDIA hardware. Then register a model and serve it locally.
 
