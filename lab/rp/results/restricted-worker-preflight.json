@@ -1,0 +1,35 @@
+{
+  "schema": "ironmule.runpod.restricted-worker-preflight.v1",
+  "collected_at": "2026-11-26",
+  "base_commit": "a4e2fc4f7de48921b588587e21d12b8f2090e90d",
+  "gpu": {
+    "name": "NVIDIA A100-SXM4-80GB",
+    "compute_capability": "8.0",
+    "driver": "595.112.07",
+    "cuda_toolkit": "12.8"
+  },
+  "landlock_abi": 4,
+  "worker_sha256": "741455213bf96e0c924bd7011461be8a76f61387d17fe9ddc6aeb2ed2850cc03",
+  "receipt": {
+    "uid": 60000,
+    "gid": 60000,
+    "capabilities": {
+      "CapInh": 0,
+      "CapPrm": 0,
+      "CapEff": 0,
+      "CapBnd": 0,
+      "CapAmb": 0
+    },
+    "no_new_privs": true,
+    "seccomp": 2,
+    "unlisted_file_denied": true,
+    "network_denied": true,
+    "root_secrets_denied": true,
+    "fixture_write_denied": true,
+    "output_writable": true,
+    "immutable_inputs": [
+      "/opt/ironmule-worker/restricted_worker.py"
+    ]
+  },
+  "gpu_smoke_completed": false
+}
