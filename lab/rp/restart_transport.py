@@ -80,6 +80,10 @@ def cycle(a):
                "artifacts":{p.name:release.checksum(p) for p in copy.iterdir() if p.name in FILES}}
         write_once(copy/"incomplete.json",final)
         return final
+    if status.get("running"):
+        return {"stage":"running","folder":str(folder)}
+    if status.get("rc") == 0:
+        return {"stage":"pending export","folder":str(folder)}
     if not a.start:
         return {"stage":"not started","folder":str(folder)}
     if pod["deadline"]-time.time()<155:
