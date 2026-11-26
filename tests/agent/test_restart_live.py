@@ -64,3 +64,34 @@ def test_listener_generates_no_traffic_and_external_process_can_drive_selection(
             live.verify(listener,witness)
     else:
         assert listener["arm"]=="idle" and listener["requests_served"]==0 and not listener["selections"]
+
+
+def test_new_product_attempt_requires_old_failure_and_successful_original_tokenizer(tmp_path):
+    import hashlib
+
+    from lab.rp.restart_campaign import tokenizer_retry
+
+    code = "print('authenticated tokenizer')"
+    source = tmp_path / "ironmule/ggml_engine.py"
+    source.parent.mkdir()
+    source.write_text(f"GATE_IDS = {code!r}\n")
+    digest = release.checksum(source)
+    prior = tmp_path / "product/gate-reference.json"
+    prior.parent.mkdir()
+    release.save(prior, {"passes": False, "source_sha256": digest,
+                         "diagnostic": {"stage": "tokenize", "code": "missing_dependency"}})
+    verified = {"order": {"order_id": "order"}, "qualification": {"binding": {"runtime": {"model_sha256":"model"}}}}
+    preflight = tmp_path / "preflight.json"
+    good = {"schema": "ironmule.product-tokenizer-preflight.v1", "order_id": "order", "source_sha256":digest,
+            "gguf_sha256": "model", "gate_ids_sha256": hashlib.sha256(code.encode()).hexdigest(), "ids_count": 8193,
+            "facts_sha256":"a"*64, "diagnosed_dependency":"package", "correction":"bound installation"}
+    release.save(preflight, good)
+    args = SimpleNamespace(checkout=tmp_path)
+    assert tokenizer_retry(tmp_path, args, verified, preflight) == good
+    release.save(preflight, {**good, "ids_count":0})
+    with pytest.raises(ValueError):
+        tokenizer_retry(tmp_path, args, verified, preflight)
+    release.save(preflight, good)
+    release.save(prior, {"passes":False, "diagnostic":{"stage":"candidate","code":"quality_rejected"}})
+    with pytest.raises(ValueError):
+        tokenizer_retry(tmp_path, args, verified, preflight)

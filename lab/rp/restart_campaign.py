@@ -106,12 +106,39 @@ def release(args, cfg, remote, check):
             "work": work, "rollback_test": proof["passed"]}
 
 
+def tokenizer_retry(state, check, receipt, path):
+    """Bind a separate product attempt to the failed reference and an actual successful unmodified GATE_IDS."""
+    import ast
+    import hashlib
+    import re
+
+    prior = read(state / "product/gate-reference.json")
+    diagnosis = prior.get("diagnostic", {})
+    source = check.checkout / "ironmule/ggml_engine.py"
+    tree = ast.parse(source.read_text())
+    gate = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "GATE_IDS" for t in node.targets))
+    record = read(path)
+    if (prior.get("passes") is not False or diagnosis.get("stage") != "tokenize" or diagnosis.get("code") != "missing_dependency"
+            or prior.get("source_sha256") != checksum(source)
+            or record.get("schema") != "ironmule.product-tokenizer-preflight.v1" or record.get("order_id") != receipt["order"]["order_id"]
+            or record.get("source_sha256") != checksum(source) or record.get("gguf_sha256") != receipt["qualification"]["binding"]["runtime"]["model_sha256"]
+            or record.get("gate_ids_sha256") != hashlib.sha256(gate.encode()).hexdigest() or record.get("ids_count") != 8193
+            or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("facts_sha256"))) or not record.get("diagnosed_dependency")
+            or not record.get("correction")):
+        raise ValueError("need the recorded failed reference and an actual full corrected tokenizer preflight")
+    return record
+
+
 def product(args, cfg, remote, check, active):
     """Use the existing lease and ordinary HTTP broker only after the independent native release is active."""
     from lab.pk1 import restart_http
     from training import pilot_restart_profiles
 
-    local, state = args.state / "product", args.state
+    state = args.state
+    recovery = getattr(args, "product_preflight", None)
+    local = state / ("product-v2" if recovery else "product")
+    output = remote / "product-v2" if recovery else remote
     local.mkdir(exist_ok=True)
     control = state / "release"
     pod = lease(cfg["pod_id"])
@@ -128,11 +155,17 @@ def product(args, cfg, remote, check, active):
     hashes = shell(pod, shlex.join(["sha256sum", "--", *map(str, paths)])).splitlines()
     if hashes != [f"{checksum(root / n)}  {p}" for n, p in zip(require_hash, paths, strict=True)]:
         raise ValueError("different CPU head, product broker or release helper on target")
-    upload(pod, remote / "startup-head.npz", (state / "startup-head.npz").read_bytes())
+    geometry_record = restart_http.measured_geometry(check.trial)
+    if recovery:
+        proof = tokenizer_retry(state, check, receipt, recovery)
+        write_once(local / "tokenizer-preflight.json", proof)
+        geometry_record["runtime_preflight_sha256"] = checksum(local / "tokenizer-preflight.json")
+        shell(pod, shlex.join(["mkdir", "-p", str(output)]))
+    upload(pod, output / "startup-head.npz", (state / "startup-head.npz").read_bytes())
     geometry = local / "geometry.json"
-    write_once(geometry, restart_http.measured_geometry(check.trial))
+    write_once(geometry, geometry_record)
     geometry_sha = checksum(geometry)
-    upload(pod, remote / "geometry.json", geometry.read_bytes())
+    upload(pod, output / "geometry.json", geometry.read_bytes())
     bound = restart_http.key_for(SimpleNamespace(receipt_sha256=pin, head_sha256=head_sha, geometry_sha256=geometry_sha), receipt)
     evidence = remote / "active/deployment" / ("restart-http-" + bound)
     files = ["gate-candidate.json", "gate-reference.json", "decision.json",
@@ -140,7 +173,7 @@ def product(args, cfg, remote, check, active):
     snapshot(pod, evidence, files, local)
     for op in ("qualify", "exercise", "serve"):
         name = ("product-listener" if op == "serve" else "product-" + op) + ".json"
-        snapshot(pod, remote, [name], local)
+        snapshot(pod, output, [name], local)
         if op == "serve":
             from lab.pk1 import restart_live
             helper = PurePosixPath(cfg["framework"]) / "lab/pk1/restart_live.py"
@@ -148,14 +181,14 @@ def product(args, cfg, remote, check, active):
                 raise ValueError("unbound passive listener or external client")
             if args.verify_product_client:
                 snapshot(pod, evidence, ["live-ready.json"], local)
-                snapshot(pod, remote, ["product-client.json"], local)
+                snapshot(pod, output, ["product-client.json"], local)
                 if (local / "live-ready.json").exists() and not (local / "product-client.json").exists():
                     # The passive server owns the GPU measurement lock. This separate client only submits HTTP requests.
                     commandline = shlex.join([cfg["python"], "-m", "lab.pk1.restart_live", "--ready", str(evidence / "live-ready.json"),
-                                              "--out", str(remote / "product-client.json"), "--receipt-sha256", pin,
+                                              "--out", str(output / "product-client.json"), "--receipt-sha256", pin,
                                               "--timeout", str(min(args.product_timeout, 240))])
                     destdir = shlex.quote(cfg["framework"])
-                    job(pod, "external-product-" + active["order"][:16], f"cd {destdir} && PYTHONPATH={destdir} {commandline}")
+                    job(pod, "external-product-" + bound[:16], f"cd {destdir} && PYTHONPATH={destdir} {commandline}")
         if not (local / name).exists():
             remaining = int(pod["deadline"] - time.time()) - 10
             timeout = min(args.product_timeout, remaining)
@@ -164,19 +197,19 @@ def product(args, cfg, remote, check, active):
             common = ["--state", remote / "active", "--trial", remote / "trial", "--candidate-source", remote / "proposal.py",
                       "--checkout", cfg["checkout"], "--worker-root", cfg["worker_root"], "--gguf", cfg["gguf"],
                       "--reference-lib", cfg["reference_lib"], "--table", cfg["table"], "--receipt-sha256", pin,
-                      "--head", remote / "startup-head.npz", "--head-sha256", head_sha, "--port", args.product_port,
-                      "--geometry", remote / "geometry.json", "--geometry-sha256", geometry_sha,
+                      "--head", output / "startup-head.npz", "--head-sha256", head_sha, "--port", args.product_port,
+                      "--geometry", output / "geometry.json", "--geometry-sha256", geometry_sha,
                       "--timeout", timeout, "--lifetime", args.product_lifetime]
             route = ["--reference-url", args.product_reference_url] if args.product_reference_url else ["--dedicated"]
             cmd = command(cfg, "lab.pk1.restart_http", [op, *common, *route])
-            dest = shlex.quote(str(remote / name))
-            job(pod, "product-restart-" + op + "-" + active["order"][:16], cmd + " > " + dest + ".tmp && mv " + dest + ".tmp " + dest)
+            dest = shlex.quote(str(output / name))
+            job(pod, "product-restart-" + op + "-" + (bound if recovery else active["order"])[:16], cmd + " > " + dest + ".tmp && mv " + dest + ".tmp " + dest)
             return {"stage": "product " + op, "order": active["order"], "pr": active["pr"]}
         value = read(local / name)
         if op == "qualify":
             if value.get("passed") is not True:
                 from training.restart_replan import declined
-                note = declined(state, checkout=args.checkout)
+                note = declined(state, checkout=args.checkout, product_dir=local)
                 return {**active, "stage": "product declined", "product_result": value, "next_experiment": note["next"]}
             if restart_http.assess(local, receipt) != value:
                 raise ValueError("product verdict differs from exported HTTP holdouts")
@@ -195,9 +228,9 @@ def product(args, cfg, remote, check, active):
                 return {**active, "stage": "product retained reference", "product_result": value}
     from training.restart_replan import replan
 
-    next_run = replan(state, checkout=args.checkout)
+    next_run = replan(state, checkout=args.checkout, product_dir=local)
     return {**active, "stage": "product verified", "product_result": value, "head": head_sha, "http_binding": bound,
-            "next_experiment": next_run["next"], "replan_sha256": checksum(state / "replan-after-product.json")}
+            "next_experiment": next_run["next"], "replan_sha256": checksum((local if recovery else state) / "replan-after-product.json")}
 
 
 def cycle(args):
@@ -278,6 +311,7 @@ def main():
     p.add_argument("--wait-seconds", type=int, default=0)
     p.add_argument("--serve-product", action="store_true", help="gate the ordinary HTTP startup, then serve it with the trained CPU head")
     p.add_argument("--verify-product-client", action="store_true", help="explicitly submit and score a separate client batch on the live port")
+    p.add_argument("--product-preflight", type=Path, help="separate v2 attempt after an actual corrected tokenizer preflight")
     p.add_argument("--product-reference-url", help="existing ordinary local product URL for other traffic")
     p.add_argument("--product-dedicated", action="store_true", help="run a separate scoped product lane")
     p.add_argument("--product-port", type=int, default=8232)

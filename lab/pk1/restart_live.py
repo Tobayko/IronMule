@@ -60,7 +60,7 @@ def passive(args, receipt, evidence, withdrawal):
             if outer.backend:
                 completed += outer.backend.health()["completed_requests"]
     return {"arm": records[-1]["selection"]["arm"] if records else "idle", "selections": records,
-            "requests_served": completed, "self_generated_requests": 0, "receipt_sha256": args.receipt_sha256}
+            "pid": os.getpid(), "requests_served": completed, "self_generated_requests": 0, "receipt_sha256": args.receipt_sha256}
 
 
 def orders():
@@ -93,7 +93,7 @@ def verify(listener, witness):
     seen = first["selection"]
     ids = set(witness["server_ids"])
     responses = witness["responses"]
-    require(witness["pid"] != witness["listener_pid"] and listener["self_generated_requests"] == 0
+    require(witness["pid"] != witness["listener_pid"] == listener["pid"] and listener["self_generated_requests"] == 0
             and listener["receipt_sha256"] == witness["receipt_sha256"] and listener["requests_served"] >= len(tasks)
             and witness["work_sha256"] == http.digest(tasks) and len(ids) == len(tasks) and seen["first_request_id"] in ids
             and witness["started_ns"] <= seen["request_received_monotonic_ns"] < seen["worker_ready_monotonic_ns"] < witness["finished_ns"]
