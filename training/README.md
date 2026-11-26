@@ -304,5 +304,5 @@ To replay the decision following the Xeon serving-demand experiment, run the com
 
 ```sh
 evidence=lab/autonomous/results/cpu-serving-demand
-python -m training.experiment_planner --waves "$evidence/waves" --prior-orders "$evidence/prior" --output /tmp/ironmule-followup.json
+python -m training.experiment_planner --observations "$evidence/waves" --prior-orders "$evidence/prior" --output /tmp/ironmule-followup.json
 ```
