@@ -27,7 +27,7 @@ PILOT_ARMS = ("pilot-initial.json", "pilot-trained.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
-HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "geometry.json", "decision.json", "withdrawn.json",
+HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
               "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json", "live-ready.json")
 COST_PHASES = ("during-qualification", "after-verdict", "after-release", "after-product")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
@@ -218,6 +218,25 @@ def product_assets(state, order, verified, assets, *, attempt=None, checkout=Non
         if "geometry.json" in raw and json.loads(raw["geometry.json"]).get("runtime_preflight_sha256") != sha(data):
             raise ValueError("retry geometry differs from the validated tokenizer environment")
         assets["tokenizer-preflight.json"] = data
+    private = work / "guarded-child-raw.local.jsonl"
+    if private.is_file():
+        original = bounded(private)
+        logs = [json.loads(line) for line in original.splitlines()]
+        row, = [r for r in logs if r["stage"] == "reference" and r["status"] == -6]
+        trace = row["stderr"]
+        devices = json.loads(raw["gate-devices-reference.json"])
+        held = next(d for d in devices if d["stage"] == "GATE_CANDIDATE")
+        if (held["child_status"] != -6 or held["provider"] != "cuda" or "offloaded 65/65 layers to GPU" not in trace
+                or "CUDA error: invalid configuration argument" not in trace or "ggml_cuda_mul_mat_batched_cublas_impl" not in trace
+                or "ggml-cuda.cu:2077" not in trace or json.loads(raw["gate-reference.json"])["passes"] is not False):
+            raise ValueError("restricted stock CUDA failure differs from source-bound gate evidence")
+        public = {"schema": "ironmule.stock-product-reference-failure.v1", "private_raw_sha256": sha(original),
+                  "reference_sha256": verified["reference_sha256"], "gate_device_receipt_sha256": sha(raw["gate-devices-reference.json"]),
+                  "stage": held["stage"], "device": held["device"], "requested_gpu_layers": held["gpu_layers"],
+                  "actual_offloaded_layers": 65, "model_layers": 65, "exit_status": row["status"],
+                  "error": "CUDA error: invalid configuration argument", "function": "ggml_cuda_mul_mat_batched_cublas_impl",
+                  "location": "ggml-cuda.cu:2077"}
+        assets["stock-reference-diagnostic.json"] = json.dumps(public, sort_keys=True, indent=2).encode() + b"\n"
     head = sha(assets["startup-head.npz"])
     for name in HTTP_ARMS:
         if name not in raw:
@@ -404,7 +423,7 @@ def export(args):
                             raise ValueError("invalid isolated product attempt directory")
                         shared = dict(assets)
                         product_assets(state, order, verified, shared, attempt=work, checkout=check.checkout)
-                        additions = {n: b for n, b in shared.items() if n.startswith("http-") or n in PLANS or n == "tokenizer-preflight.json"}
+                        additions = {n: b for n, b in shared.items() if n.startswith("http-") or n in PLANS or n in ("tokenizer-preflight.json", "stock-reference-diagnostic.json")}
                         for n in ("cost-after-product.json",):
                             if (work / n).is_file():
                                 additions[n] = bounded(work / n)
@@ -458,7 +477,7 @@ def product_attempts(folder):
         index = read(path)
         if (index["schema"] != "ironmule.portable-product-attempt.v1" or index["attempt"] != out.name or index["order_id"] != folder.name
                 or index["control_sha256"] != base["control.json"]["sha256"] or index["head_sha256"] != base["startup-head.npz"]["sha256"]
-                or not set(index["files"]) <= {*("http-" + n for n in HTTP_FILES), *PLANS, "cost-after-product.json", "tokenizer-preflight.json"}
+                or not set(index["files"]) <= {*("http-" + n for n in HTTP_FILES), *PLANS, "cost-after-product.json", "tokenizer-preflight.json", "stock-reference-diagnostic.json"}
                 or any(sha(bounded(out / n)) != row["sha256"] for n, row in index["files"].items())):
             raise ValueError("product attempt scope or captured bytes differ")
         yield out
@@ -524,6 +543,10 @@ def product_rows(root, folder, files, key, context):
                              **{k: row[k] for k in ("perf_wall_s", "perf_ttft_s", "perf_tokens", "peak_rss", "device_bytes")}}],
                    authorship="Ordinary target ProductService and independent bounded workload",
                    uncertainty="Paired HTTP qualification combines all six independent seeds.")
+    if "stock-reference-diagnostic.json" in files:
+        diag = read(folder / "stock-reference-diagnostic.json")
+        yield emit("restart_stock_gpu_reference_failure", "stock-reference-diagnostic.json", reason=diag["error"], observed=diag,
+                   decision=False, authorship="Restricted A100 gate broker", uncertainty="No comparable product performance arms were run.")
     for name, kind in (("product-qualify.json", "restart_product_qualification"),
                        ("product-exercise.json", "restart_product_rollback"), ("product-serve.json", "restart_product_serving")):
         public = "http-" + name

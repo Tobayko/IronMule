@@ -26,9 +26,17 @@
       "original_sha256": "a7a0ecf771cdd2f004c8a40c55c9eba016e75bb08fc2e2fc6642caed05431ec7",
       "sha256": "a7a0ecf771cdd2f004c8a40c55c9eba016e75bb08fc2e2fc6642caed05431ec7"
     },
+    "http-trained-head.json": {
+      "original_sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37",
+      "sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37"
+    },
     "replan-after-product-declined.json": {
       "original_sha256": "61a651fbca6a35252742afdebb0bab8fd635fee743c95576136b56c69f54f016",
       "sha256": "61a651fbca6a35252742afdebb0bab8fd635fee743c95576136b56c69f54f016"
+    },
+    "stock-reference-diagnostic.json": {
+      "original_sha256": "a184cc10fd56029661f979318a9790f737fb936571fbf7a18b72a4463ea4f884",
+      "sha256": "a184cc10fd56029661f979318a9790f737fb936571fbf7a18b72a4463ea4f884"
     },
     "tokenizer-preflight.json": {
       "original_sha256": "5476ccee63801c06c82c39d9591c01ceb39104afb4aeb79edb2eb89c7a774051",
