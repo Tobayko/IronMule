@@ -45,7 +45,13 @@ def caller_results(folder, pin):
                 "different caller process or answers after rollback")
     require(recovery["passed"] and recovery["pin"]==pin and actual[0]["response"]["answers"]==actual[1]["response"]["answers"]
             and recovery["output_sha256"]==grade.canonical(actual[0]["response"]["answers"]), "failed external rollback")
-    return {"rates":[p["rate"] for p in gate["pairs"]],"live_complete_s":live["complete_s"],
+    monitored=read(caller/"monitored.json")
+    require(monitored["arm"]=="candidate" and monitored["answers"]==live["answers"] and
+            monitored["monitor"]==read(folder/"client-state/ordered-client-factual-first-18.json") and
+            read(folder/"client-state/ordered-client.json")==gate and monitored["monitor"]["pin"]==pin and
+            monitored["monitor"]["complete_s"]<=monitored["complete_s"] and monitored["monitor"]["consecutive_late"]==0,
+            "different real latency monitor or client gate")
+    return {"monitored_delivery_s":monitored["complete_s"],"rates":[p["rate"] for p in gate["pairs"]],"live_complete_s":live["complete_s"],
             "unknown_answer":other["answers"][0]["answer"],"rollback":recovery}
 
 

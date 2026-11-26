@@ -131,8 +131,8 @@ deployment also applies to this entry.
 ```sh
 d=/work/ordered-release
 opts=(--root "$d" --state "$d/state" --weights "$d/inputs/ordered-head.npz"
-      --weights-pin "$(sha256sum "$d/inputs/ordered-head.npz" | cut -d' ' -f1)"
-      --pin "$(sha256sum "$d/inputs/control.json" | cut -d' ' -f1)")
+      --weights-pin a699ed8a586ea5f8e8c470395b757ed657e61476399dd36074f02b31f73dd6ad
+      --pin c7840a9f67a42558f8027517b59fc79520f8dd73db3957aa29890824c49898e7)
 python -m lab.pk6.ordered_client_trial "${opts[@]}"
 python -m lab.pk6.ordered_client "${opts[@]}" --requests /path/to/ordered-input.json
 ```
@@ -157,3 +157,17 @@ OPENBLAS_NUM_THREADS=1 python -m lab.rp.ordered_campaign --pod-id "$POD_ID" \
   --state "$CAMPAIGN" --series "$series" --observations "$trial" \
   --author archived --publish --seconds 2500
 ```
+
+The JSON entry passed both additional target pairs. For the mixed-first input
+the complete replies took 56.761 and 52.889 s. For factual-first they took
+53.951 and 49.157 s. Reference and candidate returned identical tokens and
+stops. A new 18-question input selected the candidate and scored 18/18. A
+single unrelated question selected the reference and returned the correct
+answer, 7. Two consecutive complete requests exceeding 102% of the observed
+same-family reference time withdraw the client profile across process restarts.
+
+Run `python -m lab.pk6.client_recovery /work/ordered-release` on the bound
+target after caller admission. It starts separate client processes and times
+each complete CLI invocation, including Python startup and transfer of every
+returned answer to the caller. Its withdrawal drill uses isolated durable
+state and also compares all 18 answers and output tokens.

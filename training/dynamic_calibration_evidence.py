@@ -112,3 +112,9 @@ def experiences(root,source,digest):
         yield emit("local_calibration_rollback",folder/"proofs/recovery.json","real_rollback",
                    decision="reference", reason="A persisted withdrawal restored the previous worker on an identical new batch.",
                    quality={"identical_answers":True})
+        if "submitted_batches" in receipt:
+            yield emit("local_calibration_submitted_requests",folder/"client/gate.json","caller_input",
+                       decision="activated",metrics=[receipt["submitted_batches"]],
+                       quality={"matched_tokens_and_stops":True,"fresh_facts":18,"unknown_fallback":True},
+                       reason="Two measured families, a new factual input, an unsupported question and independent processes across withdrawal.",
+                       uncertainty="Only the two registered ordered text/limit families can select this particular generated method.")
