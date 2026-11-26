@@ -54,8 +54,6 @@ def main():
                 continue
             has_session = hasattr(lib, "im_prompt_begin")
             if has_session:
-                if kind != "Q4_K":
-                    continue
                 lib.im_prompt_begin()
             raw = weight["data"].reshape(n, -1)
             # 64 output channels spread across the actual tensor, including its last row.

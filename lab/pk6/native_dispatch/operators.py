@@ -21,7 +21,7 @@ WIDTHS = (64, 128, 143, 256, 448, 512, 1024, 2048)
 ARMS = ("stock", "cublas", "fp8")
 
 
-def build(directory):
+def build(directory, *, native_grid=False):
     tree = Path(os.environ["IRONMULE_GGML_BINDINGS"]) / "vendor/llama.cpp"
     library = Path(os.environ["LLAMA_CPP_LIB_PATH"])
     source = Path("lab/kg1/ref_ggml.c").read_text()
@@ -62,6 +62,9 @@ def build(directory):
         if (handle) dlclose(handle);
         fflush(stdout);""",
     )
+    if native_grid:
+        source = substitute(source, 'getenv("IRONMULE_KG_LIB")', 'getenv("IRONMULE_GRID_BACKEND")')
+        source = substitute(source, '"im_prompt_dispatches"', '"im_mmq_tile_calls"')
     path = directory / "operator.c"
     path.write_text(source)
     binary = directory / "operator"

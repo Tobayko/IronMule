@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--lib", type=Path)
     parser.add_argument("--routing-receipt", type=Path)
     parser.add_argument("--policy", type=Path)
+    parser.add_argument("--pool-plan", type=Path)
     parser.add_argument("--threshold", type=int, default=128)
     parser.add_argument("--seeds", type=int, nargs=2, default=SEEDS)
     args = parser.parse_args()
@@ -73,6 +74,17 @@ def main():
         )
         if policy_decision["profile"] != "stock":
             raise ValueError("use the qualified routed build for this policy")
+    pool = None
+    if any(a.startswith("H") for a in args.arms):
+        pool = json.loads(args.pool_plan.read_bytes())
+        if (
+            pool["hardware"] != hw
+            or pool["gguf"] != GGUF
+            or pool["context"] != 2048
+            or not 4096 <= pool["cells"] <= 65536
+            or pool["cells"] % 256
+        ):
+            raise ValueError("unknown workload or device for compact KV candidate")
     awq = verify(args.models / "qwen3-32b-awq")
     trial.SEEDS = tuple(args.seeds)
     version = subprocess.check_output(
@@ -101,6 +113,7 @@ def main():
             "library_sha256": checksum(args.lib) if args.lib else None,
             "threshold": args.threshold,
             "cpu_policy": policy_decision,
+            "pool_plan": pool,
         },
     )
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
@@ -109,6 +122,7 @@ def main():
             *FLAGS,
             "IRONMULE_LAB_ACTIVITY",
             "IRONMULE_LAB_MMQ_TILE",
+            "IRONMULE_LAB_POOL_CELLS",
             "IRONMULE_CUBLAS_MIN_ROWS",
             "IRONMULE_LAB_FP8",
             "IRONMULE_LAB_SHARED_PROFILE",
@@ -123,10 +137,16 @@ def main():
             IRONMULE_GGML_UBATCH="8192",
             IRONMULE_CUDA_GRAPHS_ROWS="32",
         )
+        if arm.startswith("H"):
+            os.environ["IRONMULE_LAB_POOL_CELLS"] = str(pool["cells"])
         if arm.startswith(("N", "G")):
             os.environ["IRONMULE_LAB_STREAM_ALTERNATIVE"] = "plain"
             if arm.startswith("G"):
                 os.environ.update(IRONMULE_PS1="1", IRONMULE_PK6="1")
+        if arm.startswith("X"):
+            os.environ.update(
+                IRONMULE_LAB_MMQ_TILE="grid", IRONMULE_LAB_KERNEL_TRACE="1"
+            )
         if arm.startswith("T"):
             os.environ.update(IRONMULE_LAB_MMQ_TILE="96", IRONMULE_LAB_KERNEL_TRACE="1")
         if arm.startswith(("U", "V")):
@@ -135,7 +155,7 @@ def main():
             os.environ["IRONMULE_LAB_ACTIVITY"] = str(args.out)
         elif arm.startswith(("P", "B")):
             os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = str(args.threshold)
-        elif arm.startswith(("F", "V", "I", "M", "Z")):
+        elif arm.startswith(("F", "V", "I", "M", "Z", "J")):
             if not args.lib:
                 raise ValueError("missing measured kernel library")
             os.environ.update(
@@ -143,7 +163,9 @@ def main():
                 IRONMULE_KG_LIB=str(args.lib.resolve()),
                 IRONMULE_LAB_FP8=str(args.threshold),
             )
-        elif arm != "vllm" and not arm.startswith(("R", "U", "N", "G", "T", "A", "L")):
+        elif arm != "vllm" and not arm.startswith(
+            ("R", "U", "N", "G", "T", "X", "A", "L", "H")
+        ):
             raise ValueError("unregistered arm")
         trial.measure(args, arm, hw, 0, deadline)
     save(args.out / "completed.json", {"hardware": trial.board(), "order": args.arms})

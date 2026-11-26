@@ -124,6 +124,31 @@ if os.environ.get("IRONMULE_LAB_ACTIVITY"):
             '    if os.getenv("IRONMULE_LAB_MMQ_TILE"):\n'
             '        key.extend(["qualified-native-tile", os.environ["IRONMULE_LAB_MMQ_TILE"]])\n    return key',
         )
+    if candidates:
+        code = substitute(
+            code,
+            "        params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, logical, physical",
+            """        cells = seqs * seq_ctx
+        if shared and self.gpu_layers and os.environ.get("IRONMULE_LAB_POOL_CELLS"):
+            requested = int(os.environ["IRONMULE_LAB_POOL_CELLS"])
+            if requested < 2 * seq_ctx or requested % 256:
+                raise ValueError("invalid experimental unified pool size")
+            cells = min(cells, requested)
+        params.n_ctx, params.n_batch, params.n_ubatch = cells, logical, physical""",
+        )
+        code = substitute(
+            code,
+            "self.pool = SharedPool(self, seqs * seq_ctx, self.cap, ids, MAX_DRAFT_SLACK) if shared else None",
+            """self.pool = SharedPool(self, cells, self.cap, ids, MAX_DRAFT_SLACK) if shared else None
+        if shared and TRACE and os.environ.get("IRONMULE_LAB_POOL_CELLS"):
+            trace_note(f"physical_pool cells={self.pool.cells} allocated={self.L.llama_n_ctx(self.ctx)} cap={self.pool.cap}")""",
+        )
+        cache = substitute(
+            cache,
+            "    return key",
+            '    if os.getenv("IRONMULE_LAB_POOL_CELLS"):\n'
+            '        key.extend(["unified-pool-cells", os.environ["IRONMULE_LAB_POOL_CELLS"]])\n    return key',
+        )
     engine.write_text(code)
     flags.write_text(cache)
 

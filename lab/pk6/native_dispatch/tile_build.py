@@ -51,6 +51,22 @@ def build(state, work):
     const int mmq_x_max = prompt_tile_limit(type,cc,args.nchannels_y*args.nsamples_y,args.ncols_y,native_limit);
     if (mmq_x_max < native_limit) ++tile_calls;""",
     )
+    cpp, tree = relink_q4(body, work, base)
+    save(
+        work / "build.json",
+        {
+            "request": request_id,
+            "header_sha256": NATIVE_MMQ,
+            "edited_header_sha256": checksum(work / "mmq.cuh"),
+            "reference_cuda": checksum(tree / "bin/libggml-cuda.so"),
+            "candidate_cuda": checksum(work / "bin/libggml-cuda.so"),
+            "observed_source": checksum(cpp),
+        },
+    )
+
+
+def relink_q4(body, work, base):
+    native = base / "ggml/src/ggml-cuda"
     (work / "mmq.cuh").write_text(body)
     cpp = work / "instance.cu"
     cpp.write_text('#include "mmq.cuh"\nDECL_MMQ_CASE(GGML_TYPE_Q4_K);\n')
@@ -77,17 +93,7 @@ def build(state, work):
     for path in (tree / "bin").glob("*.so*"):
         if path.name != "libggml-cuda.so":
             shutil.copy2(path, work / "bin" / path.name, follow_symlinks=True)
-    save(
-        work / "build.json",
-        {
-            "request": request_id,
-            "header_sha256": NATIVE_MMQ,
-            "edited_header_sha256": checksum(work / "mmq.cuh"),
-            "reference_cuda": checksum(tree / "bin/libggml-cuda.so"),
-            "candidate_cuda": checksum(work / "bin/libggml-cuda.so"),
-            "observed_source": checksum(cpp),
-        },
-    )
+    return cpp, tree
 
 
 if __name__ == "__main__":

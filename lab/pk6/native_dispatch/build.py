@@ -70,8 +70,11 @@ def compile_plugin(kind, output, model, policy=None):
             ),
         ]
     else:
-        if kind == "int8":
+        if kind in ("int8", "cached-int8"):
             args.append("-DIM_PROMPT_INT8")
+        if kind == "cached-int8":
+            args.append("-DIM_PROMPT_CACHE")
+            inputs.append(here / "weight_cache.cuh")
         args.append(str(inputs[0]))
     output.mkdir(parents=True, exist_ok=False)
     lib = output / (kind + ".so")
@@ -99,7 +102,7 @@ def compile_plugin(kind, output, model, policy=None):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("kind", choices=["fp8", "routed", "int8", "marlin"])
+    p.add_argument("kind", choices=["fp8", "routed", "int8", "marlin", "cached-int8"])
     p.add_argument("output", type=Path)
     p.add_argument("gguf", type=Path)
     p.add_argument("--policy", type=Path)

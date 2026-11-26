@@ -48,3 +48,23 @@ Use fresh output directories. The two native blocks run with different seeds. A 
 The threshold-only P measurements exposed the default-attention identity issue corrected in PR 70. They are excluded from selection. Preserve regression and fallback observations, including runs in which no candidate dispatch occurred. To restore the product reference, restart from the unmodified checkout and its original native binary. None of these research plugins is installed by default.
 
 [Raw measurements, development order and comparison](../../autonomous/results/l40s-native-dispatch/)
+
+
+## Pricing a candidate on this L40S
+
+The operator screen measures five Q4_K and two Q6_K projections with two activation seeds. Its graph timings include dispatch and synchronization. The alternative-kernel arithmetic check also reports an error against sampled dequantized source channels. That check times repeated operations on one tensor, so its ranking is a reason to run the full server.
+
+```bash
+python -m lab.pk6.native_dispatch.replay_policy "$results/pilot" /tmp/pilot-holdout.json
+python -m lab.pk6.native_dispatch.compact "$results/http/primary" /tmp/compact-pool.json
+python -m lab.pk6.native_dispatch.build int8 /work/prompt-int8 "$model"
+python -m lab.pk6.native_dispatch.build marlin /work/prompt-marlin "$model"
+python -m lab.pk6.native_dispatch.build cached-int8 /work/prompt-cached-int8 "$model"
+python -m lab.pk6.native_dispatch.grid_build /work/grid-calibration
+LLAMA_CPP_LIB_PATH=/work/grid-calibration/bin python -m lab.pk6.native_dispatch.grid_screen \
+  "$model" /work/grid-calibration /work/grid-measurements
+```
+
+The Q4_K grid screen varies the CUDA launch geometry and keeps the native quantization. Each alternate configuration must run all the timed graphs, agree numerically with stock and beat it by 10% on both activation seeds. Its output contains exact projection shapes and row counts. If the list is nonempty, build the proposed profile with `grid_build /work/grid-serving --plan /work/grid-measurements/plan.json` and qualify it with the full server.
+
+The H process sizes its unified KV pool from the first stock workload. The individual context stays at 2,048 tokens and the native and scheduler capacities are recorded together. The J process retains packed INT8 feed-forward weights during one model's lifetime. L lets the frozen CPU head choose before server initialization. Its decision and CPU wall time are included in the target receipt.

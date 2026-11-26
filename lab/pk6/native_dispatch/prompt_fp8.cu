@@ -13,6 +13,9 @@
 #include <map>
 #include <tuple>
 #include "prompt_codec.cuh"
+#ifdef IM_PROMPT_CACHE
+#include "weight_cache.cuh"
+#endif
 
 namespace {
 constexpr size_t scratch_limit = size_t{1536} << 20;
@@ -186,6 +189,10 @@ extern "C" int ironmule_kg_mul_mat(int type,const void *w,const float *x,float *
     static const int threshold=[](){ const char *s=std::getenv("IRONMULE_LAB_FP8"); return s?std::atoi(s):0; }();
     if (threshold<=0 || (type!=12 && type!=14) || b64<threshold || b64>4096 ||
         k64<=0 || k64>65536 || k64%256 || n64<=0 || n64>262144 || n64%16) return 1;
+#ifdef IM_PROMPT_CACHE
+    std::lock_guard<std::mutex> weight_lifetime(persistent_prompt::mutex);
+    if (persistent_prompt::sessions != 1 || (n64 != 25600 && k64 != 25600)) return 1;
+#endif
     int device;
     cudaStreamCaptureStatus capture;
     if (cudaGetDevice(&device)!=cudaSuccess || cudaStreamIsCapturing(stream,&capture)!=cudaSuccess ||
@@ -204,6 +211,9 @@ extern "C" int ironmule_kg_mul_mat(int type,const void *w,const float *x,float *
     if (!plan.ready) return 1;
     size_t wb=aligned(size_t(n)*k), xb=aligned(size_t(k)*padded), yb=aligned(size_t(n)*padded*sizeof(Accumulated));
     size_t ws=aligned(size_t(n)*4), xs=aligned(size_t(padded)*4);
+#ifdef IM_PROMPT_CACHE
+    wb=0; ws=0;
+#endif
     if (!ctx.reserve(wb+xb+yb+ws+xs+lt_bytes)) return 1;
     auto *weights=ctx.storage, *input=weights+wb;
     auto *result=reinterpret_cast<Accumulated *>(input+xb);
@@ -213,10 +223,16 @@ extern "C" int ironmule_kg_mul_mat(int type,const void *w,const float *x,float *
     int blocks=k/256;
     int64_t count=int64_t(n)*blocks;
     auto *raw=static_cast<const unsigned char *>(w);
-    if (type==12) {
+    bool fresh=true;
+#ifdef IM_PROMPT_CACHE
+    auto *entry=persistent_prompt::get(w,type,n,k,device,stream,fresh);
+    if (!entry) return 1;
+    weights=entry->weights; sw=entry->scales;
+#endif
+    if (fresh && type==12) {
         weight_scales<12><<<n,32,0,stream>>>(raw,sw,blocks);
         expand_weights<12><<<(count+7)/8,256,0,stream>>>(raw,sw,weights,blocks,count);
-    } else {
+    } else if (fresh) {
         weight_scales<14><<<n,32,0,stream>>>(raw,sw,blocks);
         expand_weights<14><<<(count+7)/8,256,0,stream>>>(raw,sw,weights,blocks,count);
     }

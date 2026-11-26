@@ -1,0 +1,52 @@
+{
+  "rejected_arm": "F1",
+  "fallback_receipt": "stock",
+  "bounds": [
+    [
+      1.0284279419467113,
+      1.005
+    ],
+    [
+      1.0312288719644611,
+      1.005
+    ],
+    [
+      1.0297214524771026,
+      1.005
+    ],
+    [
+      1.0311503250121978,
+      1.005
+    ],
+    [
+      1.0350864525074905,
+      1.005
+    ],
+    [
+      1.027976887518499,
+      1.005
+    ],
+    [
+      1.0297214524771026,
+      1.005
+    ],
+    [
+      1.0284279419467113,
+      1.005
+    ]
+  ],
+  "skipped": [
+    "F2",
+    "V1",
+    "V2"
+  ],
+  "reason": "All unshared kernel qualification candidates failed the fixed likelihood test. V changes only later shared-pool allocation and admission and cannot reach that stage. A new routed or integer plugin requires independent qualification.",
+  "continued": [
+    "U1",
+    "N1",
+    "G1",
+    "G2",
+    "N2",
+    "U2"
+  ]
+}

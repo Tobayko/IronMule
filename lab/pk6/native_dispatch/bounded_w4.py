@@ -29,7 +29,7 @@ def screen(primary, state, out, model):
     if len(rows) != 10 or not (primary / "end-R1.json").is_file():
         raise ValueError("incomplete stock process")
     peak = grade.sampled_resources(samples, rows)["peak_gpu_mib"]
-    library, table = ensure(str(model), state / "kernels/w4", log=lambda *_: None)
+    library, table = ensure(str(model), state / "kernels/w4", log=print)
     report = json.loads(table.with_name("measurement.json").read_bytes())
     geometry = []
     for kind, code in (("Q4_K", 12), ("Q6_K", 14)):

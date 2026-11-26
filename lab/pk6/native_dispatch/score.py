@@ -28,11 +28,25 @@ def waves(folder, arm):
 
 
 def exclusion(arm, proof):
+    if arm.startswith("B") and proof.get("fallback") == "stock":
+        return "verified recovery to stock after explicit cuBLAS rejection"
     if arm.startswith("D"):
         return "instrumented discovery"
     if arm.startswith("P"):
         return "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70"
-    if arm.startswith(("F", "V", "I", "M", "Z", "T")) and (
+    if (
+        arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "G"))
+        and proof.get("fallback") == "stock"
+    ):
+        return "product rejected the proposed numeric profile"
+    if arm.startswith("G") and any(
+        proof.get("profile_flags", {}).get(k) != "1"
+        for k in ("IRONMULE_PK6", "IRONMULE_PS1")
+    ):
+        return "requested PS1 and PK6 profile did not serve"
+    if arm.startswith("H") and not proof.get("verified_compact_pool"):
+        return "requested pool capacity not witnessed in the serving worker"
+    if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J")) and (
         not any(proof["prompt_plugin_dispatches_in_http_by_width"].values())
         or not proof["prompt_plugin_dispatches_in_http_quality"]
     ):
@@ -106,6 +120,8 @@ def inspect(folder, arm, target, telemetry):
         if r["repeat"] == 3
     }
     sample = grade.sampled_resources(telemetry, rows)
+    process_samples = [v for t, v, _ in telemetry if start["unix"] <= t <= end["unix"]]
+    sample["process_peak_gpu_mib"] = max(process_samples) if process_samples else None
     energy = {}
     for w in (1, 8, 32):
         block = [r for r in rows if r["width"] == w and r["repeat"] < 3]
@@ -131,13 +147,29 @@ def inspect(folder, arm, target, telemetry):
         )
         marks = []
         budgets = []
+        capacities = []
         for line in raw.decode().splitlines():
+            if line.startswith("# physical_pool "):
+                fields = dict(v.split("=") for v in line.split()[2:] if "=" in v)
+                capacities.append(
+                    [int(fields[k]) for k in ("cells", "allocated", "cap")]
+                )
             if line.startswith("# shared_budget "):
                 budgets.append(float(line.split()[-1]))
             if line.startswith("# prompt_kernel "):
                 event = dict(part.split("=") for part in line.split()[2:])
                 marks.append((float(event["t"]), int(event["launches"])))
         proof = {
+            "profile_flags": ready["health"].get("kernel_profile", {}).get("flags", {}),
+            "cpu_policy": target.get("cpu_policy"),
+            "verified_compact_pool": bool(
+                target.get("pool_plan")
+                and ready["health"].get("shared_pool")
+                and capacities
+                and capacities[-1][:2] == [target["pool_plan"]["cells"]] * 2
+                and capacities[-1][2] == ready["health"]["shared_pool"]["cap"]
+            ),
+            "observed_pool_capacities": capacities,
             "raised_budget_in_http": sum(
                 1
                 for r in rows
