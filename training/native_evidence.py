@@ -83,6 +83,18 @@ def export(args):
         if (authored["order"] != key or authored["candidate_sha256"] != sha(candidate_bytes)
                 or "response.json" not in assets):
             raise ValueError("candidate does not match worker handoff")
+        reply = json.loads(assets["response.json"])["proposal"]
+        # Independently reproduce the sole changed definition from the immutable, attributed source span.
+        lines = original.splitlines(keepends=True)
+        start = order["target"]["line"] - 1
+        if not 0 <= start < len(lines) or (order["target"]["function"] + "(").encode() not in lines[start]:
+            raise ValueError("authoring source location changed")
+        end = next(i + 1 for i in range(start + 1, len(lines)) if lines[i].rstrip() == b"}")
+        definition = reply["definition"].strip().encode()
+        reconstructed = b"".join(lines[:start]) + definition + b"\n" + b"".join(lines[end:])
+        if (candidate_bytes != reconstructed or authored["rationale"] != reply["rationale"]
+                or definition.split(b"{", 1)[0].strip() != b"".join(lines[start:end]).split(b"{", 1)[0].strip()):
+            raise ValueError("compiled source differs from the worker's replacement definition")
         assets.update({"authorship.json": bounded(author / "authorship.json"),
                        "candidate.diff": patch(original, candidate_bytes, SOURCE)})
     for name in TRIAL_FILES:
@@ -100,7 +112,10 @@ def export(args):
         compiled = state / "trial/candidate.so"
         if compiled.is_file():
             with compiled.open("rb") as f:
-                if hashlib.file_digest(f, "sha256").hexdigest() != binary_hash:
+                checksum = hashlib.sha256()
+                for block in iter(lambda: f.read(1 << 20), b""):
+                    checksum.update(block)
+                if checksum.hexdigest() != binary_hash:
                     raise ValueError("candidate binary changed since build")
     for name in ("outcome.json", "activate.json", "run.json"):
         if (state / name).is_file():

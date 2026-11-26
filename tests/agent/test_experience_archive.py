@@ -126,3 +126,27 @@ def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path):
     (manifest.parent / "order.profile.json").write_text("{}")
     with pytest.raises(ValueError, match="changed portable evidence"):
         native_evidence.verify_manifest(manifest.parent)
+
+
+def test_native_export_checks_worker_bytes_even_if_local_hash_was_rewritten(tmp_path):
+    import hashlib
+    import shutil
+    from types import SimpleNamespace
+
+    from training import native_evidence
+
+    scope = Path(__file__).resolve().parents[2] / "lab/autonomous/results/a100-native"
+    folder = next(scope.glob("*/candidate.diff")).parent
+    author = tmp_path / "authoring/author"
+    author.mkdir(parents=True)
+    for name in ("request.json", "response.json"):
+        shutil.copyfile(folder / name, author / name)
+    unbound = b"unrelated source"
+    (author.parent / "candidate.cu").write_bytes(unbound)
+    local_record = json.loads((folder / "authorship.json").read_text())
+    local_record["candidate_sha256"] = hashlib.sha256(unbound).hexdigest()
+    (author.parent / "authorship.json").write_text(json.dumps(local_record))
+    args = SimpleNamespace(state=tmp_path, order=folder / "order.json", destination=tmp_path / "export",
+                           tuning=None, tuner=None, table=None, prior_failure_log=None)
+    with pytest.raises(ValueError, match="worker's replacement"):
+        native_evidence.export(args)
