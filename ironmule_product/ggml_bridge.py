@@ -10,6 +10,7 @@ import time
 from typing import Any, Callable, Sequence
 
 from .engine_bridge import EngineBridgeResult
+from .errors import StateError
 
 
 
@@ -178,7 +179,7 @@ class GgmlBridge:
             if queue is not None:
                 try:
                     queue.idle(self._agent, self._gguf_sha256)
-                except (OSError, ValueError, RuntimeError):
+                except (OSError, ValueError, RuntimeError, StateError):
                     pass  # Retry during another idle spell. The serving reference is independent.
             learning = getattr(getattr(self._engine, "pilot", None), "learning", None)
             if learning is not None and self._run_lock.acquire(blocking=False):
