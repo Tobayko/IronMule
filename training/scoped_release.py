@@ -12,6 +12,8 @@ from tempfile import NamedTemporaryFile
 import json
 from pathlib import Path
 import re
+import shutil
+import tempfile
 
 from training.code_author import write_once
 from training.code_trial import git, prepare, read, save, submit_candidate
@@ -62,6 +64,90 @@ def validate(observation):
             and observation["reference_sha256"] != observation["candidate_sha256"], "incomplete qualification")
 
 
+# These fixed roots are exported with the engine to both target arms. Each remaining
+# file in the reviewed Git tree is identical by the single-file merge check.
+RUNTIME = ("ironmule", "ironmule_product", "ironmule_devices.py", "ironmule_inventory.py",
+           "lab", "training", "tests", "pytest.ini", "friday_evidence", "pyproject.toml")
+
+
+def runtime_manifest(tree):
+    tracked = git("ls-tree", "-r", "--name-only", "-z", "HEAD", "--", *RUNTIME, cwd=tree).rstrip("\x00")
+    return {name: checksum(tree / name) for name in tracked.split("\x00")}
+
+
+def check_tree(receipt, tree, candidate):
+    """Verify the exported tracked scope and reject importable additions, including orphaned bytecode."""
+    expected = dict(receipt["runtime_manifest"])
+    expected[SOURCE] = receipt["qualification"]["candidate_sha256" if candidate else "reference_sha256"]
+    for name, sha in expected.items():
+        path = tree / name
+        require(not path.is_symlink() and checksum(path) == sha, f"changed release input: {name}")
+    for root in RUNTIME:
+        for file in (tree / root).rglob("*") if (tree / root).is_dir() else ():
+            if file.suffix in (".py", ".so", ".pyc") and str(file.relative_to(tree)) not in expected:
+                raise ValueError(f"untracked import in release tree: {file.relative_to(tree)}")
+
+
+def projected_tree(receipt, base, worker_root, candidate_source=None):
+    """Build an importable, read-only projection of the reviewed tree, omitting local bytecode and unrelated files."""
+    candidate = candidate_source is not None
+    identity = receipt["publication"]["candidate_tree" if candidate else "reference_tree"]
+    require(re.fullmatch("[a-f0-9]{40}", identity), "invalid release tree")
+    parent = worker_root / "release-inputs"
+    parent.mkdir(mode=0o755, exist_ok=True)
+    parent.chmod(0o755)
+    dest = parent / identity
+    if not dest.exists():
+        with tempfile.TemporaryDirectory(dir=parent) as tmp:
+            stage = Path(tmp) / "tree"
+            stage.mkdir(mode=0o755)
+            for name in receipt["runtime_manifest"]:
+                source = Path(candidate_source) if candidate and name == SOURCE else base / name
+                target = stage / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                target.chmod(0o555 if source.stat().st_mode & 0o111 else 0o444)
+            for folder in stage.rglob("*"):
+                if folder.is_dir():
+                    folder.chmod(0o755)
+            stage.chmod(0o755)
+            check_tree(receipt, stage, candidate)
+            try:
+                stage.rename(dest)
+            except OSError:
+                if not dest.is_dir():
+                    raise
+    check_tree(receipt, dest, candidate)
+    return dest
+
+
+def exercise(state, expected_sha, run):
+    """Exercise candidate and persisted withdrawal in a separate target state with identical real input."""
+    require(selected(state, expected_sha) == "candidate", "there is no verified active release")
+    try:
+        with tempfile.TemporaryDirectory(dir=state) as tmp:
+            shadow = Path(tmp)
+            dest = shadow / "deployment"
+            dest.mkdir(mode=0o700)
+            original = state / "deployment"
+            with switch_lock(original):
+                for name in ("control.json", "selection.json", "target-check.json"):
+                    shutil.copyfile(original / name, dest / name)
+            before = run(shadow)
+            require(before["arm"] == "candidate" and selected(shadow, expected_sha) == "candidate", "candidate unavailable")
+            rollback(shadow, "target rollback exercise")
+            after = run(shadow)
+            require(after["arm"] == "reference" and selected(shadow, expected_sha) == "reference"
+                    and before["work_sha256"] == after["work_sha256"]
+                    and before["source_sha256"] != after["source_sha256"], "rollback did not restore equivalent real work")
+            result = {"passed": True, "before": before, "after": after, "receipt_sha256": expected_sha}
+            save(original / "rollback-exercise.json", result)
+            return result
+    except Exception as exc:
+        rollback(state, f"rollback exercise failed: {type(exc).__name__}: {exc}"[:400])
+        raise
+
+
 def publish(state, order, candidate_source, *, adapter, verify, rationale, submit=False):
     """verify() must reconstruct all measured pairs, scoring, provenance, and binding from raw evidence."""
     validate_order(adapter, order)
@@ -89,7 +175,8 @@ def publish(state, order, candidate_source, *, adapter, verify, rationale, submi
         number = submit_candidate(d, order, tree, body)
         merged = merged_source(d, number, order, allowed_targets={SOURCE})
         require(merged["candidate_tree"] == tree_id, "merged tree differs from measured source")
-        receipt = {"schema": SCHEMA, "adapter": adapter, "order": order, "publication": merged, "qualification": observed}
+        receipt = {"schema": SCHEMA, "adapter": adapter, "order": order, "publication": merged, "qualification": observed,
+                   "runtime_manifest": runtime_manifest(original)}
         write_once(d / "control.json", receipt)
         return {"pr": number, "receipt_sha256": checksum(d / "control.json"), "receipt": str(d / "control.json")}
 

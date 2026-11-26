@@ -8,7 +8,7 @@ import time
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
-from lab.pk1 import restart_order, restart_trial
+from lab.pk1 import restart_order, restart_release, restart_trial
 from lab.pk1.native_trial import checksum
 from lab.rp.native_campaign import (
     CONFIG_KEYS,
@@ -19,12 +19,72 @@ from lab.rp.native_campaign import (
     snapshot,
     upload,
 )
+from training import scoped_release
 from training.code_author import PendingAuthor, write_once
 from training.code_trial import PAIRS, read, save
 
 FILES = ["context.json", "aa-0.json", "aa-1.json", "receipt.json", "stale-receipt.json", "stale.json", "missing.json",
          *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")), "result.json"]
 FRAMEWORK = ["lab/pk1/restart_trial.py", "lab/pk1/restart_arm.py", "lab/pk1/restart_order.py", "lab/pk1/native_trial.py"]
+
+
+def release(args, cfg, remote, check):
+    local = args.state / "release"
+    publication = local / "published.json"
+    if not publication.exists():
+        result = restart_release.control(SimpleNamespace(**vars(check), state=local, publish=True))
+        write_once(publication, result)
+    result = read(publication)
+    order = read(args.order)
+    receipt = scoped_release.pinned(local, result["receipt_sha256"])
+    if (receipt["order"] != order or receipt["publication"]["pr"] != result["pr"]
+            or receipt["qualification"] != restart_release.approved(check)):
+        raise ValueError("cached publication differs from verified target evidence")
+    pod = lease(cfg["pod_id"])
+    key = order["order_id"]
+    release_files = ["lab/pk1/restart_release.py", "training/scoped_release.py", "training/trial_release.py",
+                     "training/code_trial.py", "training/code_author.py", "training/experiment_planner.py",
+                     "lab/rp/restricted_worker.py", *FRAMEWORK]
+    root = Path(__file__).resolve().parents[2]
+    paths = [PurePosixPath(cfg["framework"]) / name for name in release_files]
+    rows = shell(pod, shlex.join(["sha256sum", "--", *map(str, paths)])).splitlines()
+    if (len(rows) != len(paths) or any(row.split(maxsplit=1) != [checksum(root / name), str(path)]
+            for row, path, name in zip(rows, paths, release_files, strict=True))):
+        raise ValueError("different target release adapter")
+    pin = result["receipt_sha256"]
+    upload(pod, remote / "merged.json", Path(result["receipt"]).read_bytes())
+    common = ["--state", remote / "active", "--trial", remote / "trial", "--order", remote / "order.json",
+              "--candidate-source", remote / "proposal.py", "--checkout", cfg["checkout"], "--worker-root", cfg["worker_root"],
+              "--gguf", cfg["gguf"], "--reference-lib", cfg["reference_lib"], "--table", cfg["table"],
+              "--receipt-sha256", pin]
+    for op, extra in (("activate", ["--receipt", remote / "merged.json"]), ("run", ["--seed", "93742"]),
+                      ("exercise", ["--seed", "93743"])):
+        name = "release-" + op + ".json"
+        path = local / name
+        snapshot(pod, remote, [name], local)
+        if not path.exists():
+            cmd = command(cfg, "lab.pk1.restart_release", [op, *common, *extra])
+            out = shlex.quote(str(remote / name))
+            # The target can complete with an ordinary, bound withdrawal even at nonzero exit.
+            cmd = "(" + cmd + ") > " + out + ".tmp; rc=$?; if test -s " + out + ".tmp; then mv " + out + ".tmp " + out + '; fi; exit "$rc"'
+            try:
+                status = job(pod, "restart-release-" + op + "-" + key[:16], cmd)
+            except RuntimeError:
+                snapshot(pod, remote, [name], local)
+                if not path.exists() or op != "activate" or read(path).get("withdrawn") is not True:
+                    raise
+                status = "finished"
+            if status != "finished":
+                return {"stage": op, "order": key, "pr": result["pr"]}
+            snapshot(pod, remote, [name], local)
+        observed = read(path)
+        if op in ("activate", "run") and observed.get("arm") != "candidate":
+            return {"stage": "withdrawn", "order": key, "pr": result["pr"], "result": observed}
+        if op == "exercise" and not (observed.get("passed") is True and observed["receipt_sha256"] == pin):
+            raise ValueError("rollback evidence missing")
+    snapshot(pod, remote / "active/deployment", ["target-check.json", "rollback-exercise.json"], local)
+    return {"stage": "active", "order": key, "pr": result["pr"], "receipt_sha256": pin,
+            "work": read(local / "release-run.json"), "rollback_test": read(local / "release-exercise.json")["passed"]}
 
 
 def cycle(args):
@@ -82,6 +142,8 @@ def cycle(args):
                 "elapsed_s": result["elapsed_s"]}
     verified = restart_trial.qualification(check)
     save(state / "qualified.json", verified)
+    if getattr(args, "publish", False):
+        return release(args, cfg, remote, check)
     return {"stage": "qualified", "order": key, "metrics": verified["metrics"]}
 
 
@@ -90,6 +152,7 @@ def main():
     for name in ("config", "order", "checkout", "state"):
         p.add_argument("--" + name, required=True, type=Path)
     p.add_argument("--stage-only", action="store_true")
+    p.add_argument("--publish", action="store_true", help="publish a qualifying source and verify activation and rollback on its target")
     p.add_argument("--wait-seconds", type=int, default=0)
     a = p.parse_args()
     if not 0 <= a.wait_seconds <= 7200:
@@ -98,7 +161,7 @@ def main():
     while True:
         outcome = cycle(a)
         print(json.dumps(outcome), flush=True)
-        if outcome["stage"] != "measuring" or time.monotonic() >= until:
+        if outcome["stage"] not in ("measuring", "activate", "run", "exercise") or time.monotonic() >= until:
             return
         time.sleep(min(10, max(0, until - time.monotonic())))
 

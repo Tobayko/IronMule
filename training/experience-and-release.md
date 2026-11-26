@@ -32,3 +32,30 @@ python -m pytest -n 0 -q tests/agent/test_experience_archive.py tests/agent/test
 ```
 
 The active workload runner also watches for regressions in its completed requests. It compares wave position, short/document phase, each lane's input and generated token counts, and the amount of reused prompt work. A reference envelope requires at least two distinct evaluation seeds with the same shape. The controller withdraws after three successive runs in which every matched wave exceeds the slowest reference span or first-token latency, with both phases represented. An unmatched run or recovery resets the counter. The order-specific counter survives restarts. This guard reuses completed timings without starting another benchmark.
+
+### Scoped code releases on RunPod
+
+Two additional adapters admit a single attributed change to the engine. The four-client EPYC copy experiment targets `GgmlEngine._prefill` at revision `79ee889`. The A100 Qwen3-32B repeat-startup experiment targets `GgmlEngine.__init__` at revision `33dc7bf`. Their release paths check the actual method boundary, complete qualification evidence, clean Git tree and CI on the exact proposal PR. Each order gets a `qualification/<order-id-prefix>` branch. The control host can publish using:
+
+```sh
+python -m lab.rp.cpu_code_release control --state "$CONTROL" --trial "$CPU_REPORTS" \
+  --authorship "$AUTHOR" --reference "$AUTHOR/reference" --candidate "$AUTHOR/candidate" --order "$ORDER" --publish
+
+python -m lab.rp.restart_campaign --state "$GPU_CAMPAIGN" --config "$GPU_CONFIG" \
+  --order "$GPU_ORDER" --checkout "$QWEN_BASE" --publish --wait-seconds 3600
+```
+
+The control host transfers the merged receipt and its SHA-256 independently. All GitHub operations stay on that host. The target compares the observed model, hardware, runtime, code and workload against the receipt. A fresh candidate/reference measurement must pass before the atomic selection changes. The target checks exported Python packages, weights, tests and lab inputs against the hashes of the committed source. Use fresh worker-readable, immutable Git exports for both arms. Broker state belongs outside their read/write scope.
+
+To recheck or operate the CPU four-client copy lane on the registered CPU affinity, set the same native library environment used for qualification and run the following commands with the same Linux `taskset` as the trial:
+
+```sh
+cpu=(--state "$TARGET_STATE" --reference "$REF" --candidate "$CAND" --order "$ORDER" --gguf "$GGUF"
+     --head "$HEAD_NPZ" --worker-root "$WORKER_ROOT" --python "$WORKER_PYTHON" --receipt-sha256 "$TRUSTED_SHA")
+python -m lab.rp.cpu_code_release activate "${cpu[@]}" --receipt "$CONTROL_RECEIPT"
+python -m lab.rp.cpu_code_release run "${cpu[@]}" --seed 9352
+python -m lab.rp.cpu_code_release exercise "${cpu[@]}" --seed 9353
+python -m lab.rp.cpu_code_release rollback --state "$TARGET_STATE"
+```
+
+The CPU record covers six matched seeds including all actual delivered answers, the frozen scratch head and its qualification time, plus the fixed four-thread challenger. `run` uses the measured engine and seeded copy workload. It stores the actual selected source, scratch choices, serving time and full worker elapsed time. The restart campaign runs its corresponding commands on the current paid lease after successful native startup qualification. Its `run` records both 32-client completions, independently graded answers, cold time, warm time and full worker elapsed time. Both adapters exercise the persistent withdrawal in a copy of the target state by executing identical actual input on the selected candidate and the restored reference. Explicit rollback also survives a process restart. A product endpoint needs its own real product qualification.
