@@ -21,6 +21,7 @@ from training.code_trial import judge, read, save
 from training.serving_trial import COLORS, fixture
 
 WORKER = Path(__file__).with_name("cpu_product_worker.py")
+MATCHED = Path(__file__).with_name("cpu_matched_profile.py")
 SUITE = list(range(9821, 9827))
 COPY = re.compile(r"Record [0-9]{1,6}\. ((?:Notes for the copy task\. ){1,12})\nColor: red\nCopy: red\nColor: blue\nCopy: blue\nColor: (" + "|".join(COLORS) + r")\nCopy:")
 
@@ -39,10 +40,11 @@ def checked_line(proc):
 
 @contextmanager
 def arm(args, receipt, name):
+    from lab.rp.cpu_code_release import author_order
     tree = release.projected_tree(receipt, args.reference, args.worker_root,
                                   args.candidate / release.SOURCE if name == "candidate" else None)
     order, _, _ = trial.inputs(args)
-    if receipt["order"] != order:
+    if author_order(receipt) != order:
         raise ValueError("different product order")
     env = {k: os.environ[k] for k in ("IRONMULE_GGML_BINDINGS", "LD_LIBRARY_PATH", "LLAMA_CPP_LIB_PATH")}
     env.update(IRONMULE_GGML_GPU_LAYERS="0", IRONMULE_PILOT="1", OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
@@ -59,11 +61,29 @@ def arm(args, receipt, name):
         os.chown(out, 60000, 60000)
         cmd = ["/usr/bin/env", "-u", "CUDA_CACHE_PATH", str(args.python), str(WORKER), "--gguf", str(args.gguf),
                "--head", str(args.head), "--order", str(args.order), "--arm", name]
+        if receipt["adapter"] == "epyc-prefill-matched-v2":
+            from lab.rp.cpu_matched_profile import verify_profile
+
+            if not args.profile or trial.sha(args.profile) != receipt["order"]["paired_profile_sha256"]:
+                raise ValueError("expected the published matching CPU calibration")
+            verify_profile(read(args.profile), order)
+            readonly.extend([MATCHED, args.profile])
+            cmd.extend(["--profile", str(args.profile), "--matched-helper", str(MATCHED)])
         with (args.state / "deployment" / f"product-{name}.log").open("ab") as log, open_worker(
                 cmd, env=env, cwd=tree, output=out, readonly=readonly, timeout=args.timeout, stderr=log) as proc:
             started = checked_line(proc)
             if not started["ready"] or started["worker_sha256"] != trial.sha(WORKER):
                 raise ValueError("unverified product worker start")
+            if receipt["adapter"] == "epyc-prefill-matched-v2":
+                from lab.rp.cpu_matched_profile import measured_margin
+
+                profile = read(args.profile)
+                if started["profile_sha256"] != trial.sha(args.profile) or started["costs"] != profile["costs"]:
+                    raise ValueError("foreign product calibration")
+                for key, offset in profile["weights"].items() if started["qualified"] else ():
+                    checked = started["fresh"][key]
+                    if measured_margin(key, offset, checked["probes"]) != checked["margin"]:
+                        raise ValueError("unverified product admission")
             def request(prompts, limit):
                 start = time.monotonic()
                 proc.stdin.write(json.dumps({"prompts": prompts, "max_tokens": limit}) + "\n")
@@ -97,7 +117,8 @@ def grade(request, seed, binding):
 
 def binding(args, receipt):
     return {"receipt_sha256": args.receipt_sha256, "worker_sha256": trial.sha(WORKER), "broker_sha256": trial.sha(__file__),
-            "qualification_scope": receipt["qualification"]["binding"], "seeds": SUITE}
+            "qualification_scope": receipt["qualification"]["binding"], "seeds": SUITE,
+            "matched_profile_sha256": receipt["order"].get("paired_profile_sha256")}
 
 
 def qualify_inner(args, receipt):
@@ -194,6 +215,7 @@ def main():
     p.add_argument("--receipt-sha256", required=True)
     p.add_argument("--timeout", type=int, choices=range(1, 901), default=300)
     p.add_argument("--requests", type=Path, help="JSON object with prompts and max_tokens")
+    p.add_argument("--profile", type=Path, help="immutable CPU calibration for matched-v2")
     args = p.parse_args()
     receipt = release.pinned(args.state, args.receipt_sha256)
     if args.operation == "qualify":

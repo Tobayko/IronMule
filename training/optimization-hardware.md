@@ -61,3 +61,15 @@ batch sizes within one to four, and output limits up to 64 use the reference. Th
 limit is 512 tokens per request. A quality failure retries on the reference. Exceeding the measured
 reference timing envelope withdraws the candidate for subsequent requests and processes.
 This interface operates over private process pipes. HTTP measurement requires its own target run.
+
+In the initial independent-start EPYC comparison, both arms gave 16 correct answers at seed 8351.
+Their starting head profiles differed. The reference qualified one to four threads and the source
+variant qualified two to four. The resulting 6.239 s and 2.402 s cannot qualify the code variant.
+
+The matched protocol uses one new trusted reference calibration. Each isolated arm loads the
+same measured step prices, original head and eligible offsets. Recorded visits schedule the
+previously measured proposal for testing. Each process independently runs all four of the
+original counterbalanced triplets, checks outputs and re-evaluates its own A/A noise and
+controller cost. The serving head must choose the admitted action on real work. Supply this
+immutable artifact through `--profile PATH` to the matched product adapter. Both its warm workers
+verify the profile digest and requalify the same actions.

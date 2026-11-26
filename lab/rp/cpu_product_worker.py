@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import resource
@@ -48,6 +49,8 @@ def main():
     for key in ("gguf", "head", "order"):
         p.add_argument("--" + key, type=Path, required=True)
     p.add_argument("--arm", choices=("candidate", "reference"), required=True)
+    p.add_argument("--profile", type=Path)
+    p.add_argument("--matched-helper", type=Path)
     args = p.parse_args()
     from ironmule.ggml_binary import identity
     from ironmule.ggml_engine import file_sha256, machine_key
@@ -67,13 +70,36 @@ def main():
                     or e.gpu_layers or e.settings != b["engine_settings"] or e.pilot.weights_path is None
                     or e.prefix_reuse != b["prefix_reuse"] or file_sha256(str(e.pilot.weights_path)) != b["pilot_weights_sha256"]):
                 raise ValueError("foreign product runtime binding")
-            q = qualify_candidate(e, args.gguf, args.head, Path(state), profile_clients=4)
-            qualified = bool(q["binding"]["qualified_offsets"]) and q["binding"] == {
-                k: b["scratch_thread_head"][k] for k in q["binding"]}
+            extra = {}
+            expected = b["scratch_thread_head"]
+            if args.profile:
+                spec = importlib.util.spec_from_file_location("matched", args.matched_helper)
+                matched = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(matched)
+                profile = matched.read(args.profile)
+                matched.verify_profile(profile, matched.read(args.order))
+                expected = profile["binding"]["scratch_thread_head"]
+                try:
+                    q = matched.requalify(e, args.gguf, args.head, Path(state), profile)
+                except ValueError as exc:
+                    if args.arm != "reference":
+                        raise
+                    # This dedicated fallback still serves the unchanged base Pilot when the
+                    # active load regime cannot re-earn the former target's thread offset.
+                    if e.pilot.learning is None:
+                        raise
+                    e.pilot.learning.weights.clear()
+                    e.pilot.learning.margins.clear()
+                    q = {"binding": {"qualified_offsets": {}}, "fresh": {}, "search_and_warmup_s": None}
+                    extra["abstention"] = str(exc)[:250]
+                extra.update(profile_sha256=matched.sha(args.profile), costs=dict(e.pilot.costs), fresh=q["fresh"])
+            else:
+                q = qualify_candidate(e, args.gguf, args.head, Path(state), profile_clients=4)
+            qualified = bool(q["binding"]["qualified_offsets"]) and q["binding"] == {k: expected[k] for k in q["binding"]}
             if args.arm == "candidate" and not qualified:
                 raise ValueError("product worker could not requalify the measured head")
             emit({"ready": True, "qualified": qualified, "qualification": q["binding"], "search_s": q["search_and_warmup_s"],
-                  "worker_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
+                  "worker_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), **extra})
             for line in sys.stdin:
                 item = json.loads(line)
                 prompts, limit = item["prompts"], item["max_tokens"]
