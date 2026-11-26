@@ -27,7 +27,7 @@ RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
 HTTP_FILES = (*HTTP_ARMS, "gate-reference.json", "gate-candidate.json", "geometry.json", "decision.json", "withdrawn.json",
-              "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json")
+              "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json", "live-ready.json")
 COST_PHASES = ("during-qualification", "after-verdict", "after-release", "after-product")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 PLANS = ("replan-after-product.json", "replan-after-product-declined.json")
@@ -179,6 +179,14 @@ def product_assets(state, order, verified, assets):
                 raise ValueError("product decision differs from independently graded raw HTTP pairs")
     if "product-qualify.json" in raw and json.loads(raw["product-qualify.json"]) != json.loads(raw["decision.json"]):
         raise ValueError("product qualification differs from target decision")
+    if "product-serve.json" in raw:
+        from lab.pk1 import restart_live
+
+        listener, witness, ready = (json.loads(raw[n]) for n in ("product-listener.json", "product-client.json", "live-ready.json"))
+        if (ready["receipt_sha256"] != sha(assets["control.json"]) or witness["listener_pid"] != ready["pid"]
+                or witness["nonce"] != ready["nonce"] or ready["geometry_sha256"] != sha(raw["geometry.json"])
+                or ready["ready_ns"] > witness["started_ns"] or restart_live.verify(listener, witness) != json.loads(raw["product-serve.json"])):
+            raise ValueError("independent client or passive listener differs from the claimed delivered work")
     for name in ("product-serve.json", "product-exercise.json"):
         if name not in raw:
             continue
