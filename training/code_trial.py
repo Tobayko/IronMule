@@ -153,6 +153,11 @@ def runtime_env(provider):
     environment = {"PYTHONPATH": "/trial", "HOME": "/tmp", "TMPDIR": "/tmp", "PATH": "/usr/local/bin:/usr/bin:/bin",
                    "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "IRONMULE_PILOT": "1",
                    "IRONMULE_GGML_GPU_LAYERS": "999" if provider == "cuda" else "0"}
+    if provider == "cuda":
+        # The generic four-client copy trial has no device-bound PR57 qualification.
+        # The separate 32-client native evaluator supplies its complete K profile.
+        from ironmule.ggml_profiles import profile
+        environment.update(profile("conservative"))
     for k in ("IRONMULE_GGML_BINDINGS", "LLAMA_CPP_LIB_PATH", "LD_LIBRARY_PATH", "CUDA_VISIBLE_DEVICES"):
         if os.environ.get(k):
             environment[k] = os.environ[k]
@@ -346,27 +351,36 @@ def publish(state, order, candidate, gguf):
     """A qualification branch is a deployment record. Only its evaluated tree may be activated."""
     from training.trial_release import activate
 
+    body = ("## Problem\n\n" + order["hypothesis"] + "\n\n## Change\n\n" +
+            read(state / "proposal.json")["rationale"] + "\n\n## Paired qualification\n\n" +
+            "```json\n" + json.dumps(read(state / "result.json"), indent=2) + "\n```\n\n" +
+            "Qualified only on the recorded model, hardware, and fixed copy workload. "
+            "Rollback restores the previous checkout with training.trial_release rollback.")
+    number = submit_candidate(state, order, candidate, body)
+    status = activate(state, order, int(number), gguf)
+    save(state / "activation.json", status)
+    if status["withdrawn"]:
+        raise RuntimeError("qualification passed, target activation withdrawn")
+
+
+def submit_candidate(state, order, candidate, body):
+    """Publish the staged measured tree to its qualification PR and return the merged PR number."""
     prefix = order["order_id"][:16]
     deployment = "qualification/" + prefix
     branch = "experiment/" + prefix
     repo = "Tobayko/IronMule"
     origin = "https://github.com/" + repo + ".git"
     base = git("rev-parse", "HEAD", cwd=candidate)
-    body = ("## Problem\n\n" + order["hypothesis"] + "\n\n## Change\n\n" +
-            read(state / "proposal.json")["rationale"] + "\n\n## Paired qualification\n\n" +
-            "```json\n" + json.dumps(read(state / "result.json"), indent=2) + "\n```\n\n" +
-            "Qualified only on the recorded model, hardware, and fixed copy workload. "
-            "Rollback restores the previous checkout with training.trial_release rollback.")
     # commit-tree avoids changing the immutable detached base used for replay.
     stored = state / "release-commit.json"
     tree = git("write-tree", cwd=candidate)
     if stored.exists():
         commit = read(stored)["commit"]
-        if git("rev-parse", commit + "^{tree}", cwd=candidate) != tree:
+        if git("rev-parse", commit + "^{tree}", cwd=candidate) != tree or git("rev-parse", commit + "^", cwd=candidate) != base:
             raise ValueError("release content changed since qualification")
     else:
         msg = ("perf: reduce work in " + order["target"]["function"] +
-               "\n\nVerified: six counterbalanced serving pairs and engine tests.\n\n"
+               "\n\nVerified: six counterbalanced serving pairs and correctness checks.\n\n"
                "Co-Authored-By: Codex <noreply@openai.com>\n")
         commit = run(["git", "commit-tree", tree, "-p", base], cwd=candidate, input=msg)
         save(stored, {"commit": commit})
@@ -386,14 +400,11 @@ def publish(state, order, candidate, gguf):
     if len(prs) != 1 or prs[0]["headRefOid"] != commit:
         raise ValueError("remote candidate does not match evaluated source")
     number = str(prs[0]["number"])
+    # A resumed call also verifies checks on the exact head of an already merged PR.
+    wait_for_checks(repo, number, commit)
     if prs[0]["state"] != "MERGED":
-        # Checks may not be registered immediately after publishing. An empty set cannot admit code.
-        wait_for_checks(repo, number, commit)
         run(["gh", "pr", "merge", number, "--repo", repo, "--merge", "--match-head-commit", commit])
-    status = activate(state, order, int(number), gguf)
-    save(state / "activation.json", status)
-    if status["withdrawn"]:
-        raise RuntimeError("qualification passed, target activation withdrawn")
+    return int(number)
 
 
 def main():

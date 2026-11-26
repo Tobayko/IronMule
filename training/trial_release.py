@@ -77,7 +77,7 @@ def select(d, commit):
         sync_dir(d)
 
 
-def merged_source(d, pr, order):
+def merged_source(d, pr, order, *, allowed_targets=TARGETS):
     require(type(pr) is int and pr > 0, "missing pull request number")
     meta = json.loads(run(["gh", "api", f"repos/{REPOSITORY}/pulls/{pr}"]))
     branch = "qualification/" + order["order_id"][:16]
@@ -96,12 +96,14 @@ def merged_source(d, pr, order):
     head = git("rev-parse", "refs/heads/proposal", cwd=repo)
     base = order["base_commit"]
     require(merge == meta["merge_commit_sha"] and head == meta["head"]["sha"]
-            and git("rev-parse", f"{merge}^1", cwd=repo) == base, "PR moved or qualification base changed")
+            and (merge == head or git("show", "-s", "--format=%P", merge, cwd=repo).split() == [base, head])
+            and git("show", "-s", "--format=%P", head, cwd=repo).split() == [base],
+            "PR moved or qualification parents changed")
     candidate_tree = git("rev-parse", f"{merge}^{{tree}}", cwd=repo)
     require(candidate_tree == git("rev-parse", f"{head}^{{tree}}", cwd=repo),
             "merged source differs from the reviewed proposal")
     target = order["target"]["path"]
-    require(target in TARGETS and git("diff", "--name-only", base, merge, cwd=repo) == target,
+    require(target in allowed_targets and git("diff", "--name-only", base, merge, cwd=repo) == target,
             "changes outside the measured source file")
     return {"base": base, "candidate": merge, "pr": pr, "branch": branch, "order_id": order["order_id"],
             "reference_tree": git("rev-parse", f"{base}^{{tree}}", cwd=repo), "candidate_tree": candidate_tree}
