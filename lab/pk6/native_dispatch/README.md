@@ -85,3 +85,19 @@ The optional draft experiment pairs the Qwen3-32B target with the official Qwen3
 To rank the remaining arithmetic candidates on CPU, run `python -m lab.pk6.native_dispatch.next_kernel "$results" /tmp/prompt-order`. For a bounded GPU run in the prepared checkout, supply a library from the matching arithmetic test, for example `--library marlin-check=/work/prompt_marlin.so --max-seconds 1800`. The selector checks the GPU, model evidence and native binary, then launches both seeds under the existing reservation. Pass multiple libraries to let the planner choose among them. Each run writes a new directory with its decision and receipts.
 
 A separate vLLM control loads the identical 32B GGUF using the upstream out-of-tree GGUF plugin. The deployment comparison keeps its original AWQ-Marlin model. For the exact-weight control add `vllm-gguf-plugin==0.0.5` and `gguf==0.19.0` to an isolated Python path for vLLM 0.34.0. The x86-64 plugin wheel SHA-256 is `e795779830ad8907cb0e51bf661dd7784ebaf244b0b324af07a8d3925b6a9739`. Run `python -m lab.pk6.native_dispatch.same_weights --out /work/same-weights --arms vllm` with the same tokenizer, target and reserved lease. [Upstream plugin](https://github.com/vllm-project/vllm-gguf-plugin)
+
+#### Compact KV capacity and packed Q4_K
+
+H1 reduced peak sampled memory during requests from 36,122 to 23,834 MiB. Both processes peaked at 45,160 MiB when startup and calibration were included. The first 32-client block measured 159.5 output tokens/s with H1, 155.2 with R1 and 266.5 with vLLM AWQ-Marlin. H1 answered all 32 factual requests correctly. Capacity trials use a separate archive because their 900-word documents change the timed workload.
+
+The Marlin follow-up reserves 6 GiB beyond measured serving usage and limits the repack cache to the remaining whole GiB. A synchronized GGML screen compares disjoint weight buffers on two activation seeds. The generated header admits only measured widths whose complete graph used the plugin, had relative RMS error below 0.04 and cleared the 1.10 speed ratio twice. Each target model opens and closes its own packing session. W requires both its compiled program receipt and the compact-pool plan.
+
+```bash
+python -m lab.pk6.native_dispatch.compact "$results/http" /tmp/packed-memory.json --packed-memory
+python -m lab.pk6.native_dispatch.packed_screen "$model" /work/prompt_marlin.so \
+  "$results/marlin-check/result.json" /tmp/packed-memory.json /work/packed-screen
+python -m lab.pk6.native_dispatch.build packed-marlin /work/packed-serving "$model" --policy /work/packed-screen
+bash lab/pk6/native_dispatch/serve.sh /work/http/packed --arms W1 W2 \
+  --lib /work/packed-serving/packed-marlin.so --routing-receipt /work/packed-serving/build.json \
+  --pool-plan /tmp/compact-pool.json
+```

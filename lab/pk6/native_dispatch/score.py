@@ -35,7 +35,7 @@ def exclusion(arm, proof):
     if arm.startswith("P"):
         return "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70"
     if (
-        arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y", "G"))
+        arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y", "W", "G"))
         and proof.get("fallback") == "stock"
     ):
         return "product rejected the proposed numeric profile"
@@ -51,9 +51,9 @@ def exclusion(arm, proof):
             for v in proof.get("draft_verified_by_width", {}).values()
         ):
             return "the target did not verify the proposed draft source during performance measurement"
-    if arm.startswith("H") and not proof.get("verified_compact_pool"):
+    if arm.startswith(("H", "W")) and not proof.get("verified_compact_pool"):
         return "requested pool capacity not witnessed in the serving worker"
-    if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y")) and (
+    if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y", "W")) and (
         not any(proof["prompt_plugin_dispatches_in_http_by_width"].values())
         or not proof["prompt_plugin_dispatches_in_http_quality"]
     ):

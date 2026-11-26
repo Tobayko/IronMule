@@ -9,6 +9,10 @@
 #include <mutex>
 #include "mq1/mq1.cuh"
 
+#ifdef IM_MARLIN_ROUTED
+#include "packed_routes.h"
+#endif
+
 namespace {
 std::mutex guard;
 std::atomic<uint64_t> launches{0};
@@ -20,7 +24,10 @@ cudaStream_t owner_stream = nullptr;
 bool stream_bound = false;
 mq1::MarlinFuncPtr wide = nullptr;
 int threads = 0, shared_bytes = 0, sms = 0;
-const size_t max_cache = size_t{7} << 30;
+#ifndef IM_MARLIN_ROUTED
+constexpr size_t cache_gib = 7;
+#endif
+const size_t max_cache = size_t{cache_gib} << 30;
 
 void clear() {
     if (device >= 0) {
@@ -82,6 +89,13 @@ extern "C" int ironmule_kg_mul_mat(int type,const void *w,const float *x,float *
                                    int64_t b,cudaStream_t stream) {
     if (type != 12 || b < 16 || b > 2048 || n < 256 || n > 25600 || k <= 0 || k > 25600 ||
         n%256 || k%256) return 1;
+#ifdef IM_MARLIN_ROUTED
+    bool measured = false;
+    for (const auto &r : measured_routes) {
+        if (n == r.n && k == r.k && b == r.b) { measured = true; break; }
+    }
+    if (!measured) return 1;
+#endif
     cudaStreamCaptureStatus capture;
     int dev;
     if (cudaGetDevice(&dev)!=cudaSuccess || cudaStreamIsCapturing(stream,&capture)!=cudaSuccess ||

@@ -94,3 +94,26 @@ def test_grid_keeps_only_cells_confirmed_on_an_independent_seed(tmp_path):
 def test_compact_capacity_is_checked_against_actual_worker_allocation():
     assert exclusion("H1", {"verified_compact_pool": False})
     assert exclusion("H1", {"verified_compact_pool": True}) is None
+
+
+def test_packed_plan_preserves_unmeasured_widths_and_free_headroom():
+    from lab.pk6.native_dispatch.build import packed_routes
+
+    hardware = {"memory_mib": 46068}
+    plan = {
+        "hardware": hardware,
+        "ranges": [[1024, 5120, 143, 256]],
+        "memory": {
+            "hardware": hardware,
+            "reserve_mib": 6144,
+            "measured_serving_peak_mib": 23834,
+            "cache_gib": 15,
+        },
+    }
+    text = packed_routes(plan)
+    assert "{1024,5120,143}" in text and "{1024,5120,256}" in text
+    assert "{1024,5120,144}" not in text
+    plan["memory"]["cache_gib"] = 16
+    with pytest.raises(ValueError, match="reservation"):
+        packed_routes(plan)
+    assert exclusion("W1", {"verified_compact_pool": False})

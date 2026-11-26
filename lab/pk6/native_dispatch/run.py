@@ -81,7 +81,7 @@ def main():
         if policy_decision["profile"] != "stock":
             raise ValueError("use the qualified routed build for this policy")
     pool = None
-    if any(a.startswith("H") for a in args.arms):
+    if any(a.startswith(("H", "W")) for a in args.arms):
         pool = json.loads(args.pool_plan.read_bytes())
         if (
             pool["hardware"] != hw
@@ -91,6 +91,21 @@ def main():
             or pool["cells"] % 256
         ):
             raise ValueError("unknown workload or device for compact KV candidate")
+    packed_receipt = None
+    if any(a.startswith("W") for a in args.arms):
+        if not args.routing_receipt or not args.lib:
+            raise ValueError("missing measured packed program")
+        packed_receipt = json.loads(args.routing_receipt.read_bytes())
+        if (
+            packed_receipt["kind"] != "packed-marlin"
+            or packed_receipt["hardware"] != hw
+            or packed_receipt["gguf"] != GGUF
+            or packed_receipt["pool_cells"] != pool["cells"]
+            or packed_receipt["library_sha256"] != checksum(args.lib)
+            or packed_receipt["ggml_cuda"]
+            != checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
+        ):
+            raise ValueError("foreign packed kernel or KV capacity")
     awq = verify(args.models / "qwen3-32b-awq")
     trial.SEEDS = tuple(args.seeds)
     version = subprocess.check_output(
@@ -121,6 +136,7 @@ def main():
             "cpu_policy": policy_decision,
             "draft_gguf_sha256": DRAFT_SHA256 if draft else None,
             "pool_plan": pool,
+            "packed_program": packed_receipt,
         },
     )
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
@@ -165,7 +181,7 @@ def main():
                 "IRONMULE_W4_TABLE",
             ):
                 os.environ.pop(key, None)
-        if arm.startswith("H"):
+        if arm.startswith(("H", "W")):
             os.environ["IRONMULE_LAB_POOL_CELLS"] = str(pool["cells"])
         if arm.startswith(("N", "G")):
             os.environ["IRONMULE_LAB_STREAM_ALTERNATIVE"] = "plain"
@@ -183,7 +199,7 @@ def main():
             os.environ["IRONMULE_LAB_ACTIVITY"] = str(args.out)
         elif arm.startswith(("P", "B")):
             os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = str(args.threshold)
-        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y")):
+        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y", "W")):
             if not args.lib:
                 raise ValueError("missing measured kernel library")
             os.environ.update(

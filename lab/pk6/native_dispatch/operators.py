@@ -21,7 +21,7 @@ WIDTHS = (64, 128, 143, 256, 448, 512, 1024, 2048)
 ARMS = ("stock", "cublas", "fp8")
 
 
-def build(directory, *, native_grid=False):
+def build(directory, *, native_grid=False, model_lifetime=False):
     tree = Path(os.environ["IRONMULE_GGML_BINDINGS"]) / "vendor/llama.cpp"
     library = Path(os.environ["LLAMA_CPP_LIB_PATH"])
     source = Path("lab/kg1/ref_ggml.c").read_text()
@@ -63,8 +63,29 @@ def build(directory, *, native_grid=False):
         fflush(stdout);""",
     )
     if native_grid:
-        source = substitute(source, 'getenv("IRONMULE_KG_LIB")', 'getenv("IRONMULE_GRID_BACKEND")')
+        source = substitute(
+            source, 'getenv("IRONMULE_KG_LIB")', 'getenv("IRONMULE_GRID_BACKEND")'
+        )
         source = substitute(source, '"im_prompt_dispatches"', '"im_mmq_tile_calls"')
+    if model_lifetime:
+        # The harness frees and reallocates GGML weight buffers at each width.
+        # Tell a packing plugin where these immutable pointer lifetimes actually end.
+        source = substitute(
+            source,
+            "        for (int i = 0; i < 3; i++)",
+            """        const char *session_lib = getenv("IRONMULE_KG_LIB");
+        void *session = session_lib && *session_lib ? dlopen(session_lib,RTLD_NOW) : NULL;
+        void (*begin)(void) = session ? dlsym(session,"im_prompt_begin") : NULL;
+        void (*end)(void) = session ? dlsym(session,"im_prompt_end") : NULL;
+        if (session && (!begin || !end)) return 42;
+        if (begin) begin();
+        for (int i = 0; i < 3; i++)""",
+        )
+        source = substitute(
+            source,
+            "        ggml_backend_buffer_free(buf);",
+            "        if (end) end();\n        if (session) dlclose(session);\n        ggml_backend_buffer_free(buf);",
+        )
     path = directory / "operator.c"
     path.write_text(source)
     binary = directory / "operator"
