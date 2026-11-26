@@ -106,6 +106,11 @@ class ThreadLearning(ThreadPolicy):
         import numpy as np
 
         self.thread_candidate = None
+        self.last_thread_choice = None
+        # An updated head can propose the current action again. Its timing receipt belongs to the old head.
+        self.proposals.update(self.weights)
+        self.weights.clear()
+        self.margins.clear()
         try:
             data = path.read_bytes()
             with np.load(io.BytesIO(data), allow_pickle=False) as checkpoint:

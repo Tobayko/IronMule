@@ -251,5 +251,8 @@ def test_scratch_thread_candidate_requires_local_replay_and_survives_foreign_che
         assert ThreadLearning(e, tmp_path, "model", "base").choose(90, 0, 1) == 1
         other = ThreadLearning(e, tmp_path, "other-model", "base")
         assert other.thread_candidate is None and not other.proposals
+        learner._load_candidate(tmp_path / "missing.npz")
+        assert learner.thread_decision() is None and not learner.weights and not learner.margins
+        assert learner.choose(90, 0, 1) == 1
     finally:
         pilot.close()
