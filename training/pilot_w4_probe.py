@@ -62,10 +62,14 @@ def main():
                            for s in range(width)]
             lengths = [len(p) for p in prompts]
             rows = [(t, j, s, j + 1 == len(p)) for s, p in enumerate(prompts) for j, t in enumerate(p)]
+            first = []
             for offset in range(0, len(rows), e.batch_cap):
-                e._decode(rows[offset:offset + e.batch_cap])
+                first.extend(e._decode(rows[offset:offset + e.batch_cap]))
+            if len(first) != width:
+                raise ValueError("missing prefill logits")
             # One warm step then eight actual native steps at one row per independent sequence.
-            next_tokens = e._decode([(tokens[311 * s % len(tokens)], n, s, True) for s, n in enumerate(lengths)])
+            next_tokens = e._decode([(token, lengths[s], s, True) for s, token in enumerate(first)])
+            warm = list(next_tokens)
             predicted = []
             start = time.perf_counter_ns()
             for offset in range(1, 9):
@@ -74,7 +78,7 @@ def main():
                     raise ValueError("incomplete decode")
                 predicted.append(list(next_tokens))
             seconds = (time.perf_counter_ns() - start) / 1e9
-            cells.append({"context": context, "width": width, "prompt_lengths": lengths,
+            cells.append({"context": context, "width": width, "prompt_lengths": lengths, "warm_tokens": [first, warm],
                           "steps": 8, "seconds": seconds, "tokens": predicted})
     if [g() for g in getters] != profile["mask_bits"]:
         raise ValueError("native masks changed")

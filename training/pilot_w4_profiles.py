@@ -136,7 +136,7 @@ def fit_contexts(args, order):
         if w == 1:  # the synthetic short lane is identical at every context label
             continue
         observed = [next(row for row in run["cells"] if (row["context"], row["width"]) == (c, w)) for run in reports]
-        if any((r["tokens"], r["prompt_lengths"]) != (observed[0]["tokens"], observed[0]["prompt_lengths"]) for r in observed):
+        if any(any(r[k] != observed[0][k] for k in ("tokens", "warm_tokens", "prompt_lengths")) for r in observed):
             continue
         durations = [[r["seconds"] for r, run in zip(observed, reports, strict=True) if run["spec"]["name"] == name] for name in NAMES]
         if any(len(d) != 2 or not all(math.isfinite(t) and t > 0 for t in d) for d in durations):
@@ -290,7 +290,7 @@ def collect(args):
     for c in CONTEXTS:
         for w in STREAM_WIDTHS:
             observed = [next(r for r in row["cells"] if (r["context"], r["width"]) == (c, w)) for row in checks]
-            equivalent = all((r["tokens"], r["prompt_lengths"]) == (observed[0]["tokens"], observed[0]["prompt_lengths"]) for r in observed)
+            equivalent = all(all(r[k] == observed[0][k] for k in ("tokens", "warm_tokens", "prompt_lengths")) for r in observed)
             cells.append({"group": f"context-{c}", "context": c, "width": w, "tokens_identical": equivalent,
                           "prompt_lengths": observed[0]["prompt_lengths"],
                           "seconds": {n: [r["seconds"] for r, check in zip(observed, checks, strict=True)
