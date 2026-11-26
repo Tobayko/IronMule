@@ -110,3 +110,5 @@ python -m training.experiment_planner \
   --observations lab/autonomous/results/runpod-epyc-pilot/waves \
   --archive /tmp/epyc-experience.jsonl --require-headroom --output /tmp/epyc-plan.json
 ```
+
+The [EPYC source campaign](cpu-campaign.md) connects measured prefill attribution, a correlated Codex proposal, isolated source and rule trials, scoped PR publication, target use and withdrawal on the four-core CPU lane.
