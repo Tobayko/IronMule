@@ -255,3 +255,28 @@ def test_stopped_epyc_triplets_do_not_label_an_unqualified_source():
     assert all(r["quality"]["verified_deliveries"] == 16 for r in rows[:-1])
     assert rows[-1]["complete_triplets"] == 2
     assert rows[-1]["failed_arm"] == "rule-18353" and rows[-1]["decision"] is False
+
+
+def test_independent_product_retry_cannot_turn_partial_work_into_an_active_release(tmp_path):
+    from shutil import copytree
+    from training import restart_evidence as startup
+
+    repo = Path(__file__).resolve().parents[2]
+    original = next((repo / "lab/autonomous/results/a100-restart").glob("*/manifest.json")).parent
+    folder = tmp_path / original.name
+    copytree(original, folder, ignore=lambda _d, names: {name for name in names if name.startswith("product-v")})
+    previous = startup.manifest(folder)
+    retry = folder / "product-v2"
+    retry.mkdir()
+    raw = b'{"passed":false,"reason":"independent failed control"}'
+    (retry / "http-product-qualify.json").write_bytes(raw)
+    startup.save(retry / "manifest.json", {"schema": "ironmule.portable-product-attempt.v1", "order_id": folder.name,
+                 "attempt": "product-v2", "control_sha256": previous["files"]["control.json"]["sha256"],
+                 "head_sha256": previous["files"]["startup-head.npz"]["sha256"],
+                 "files": {"http-product-qualify.json": {"sha256": startup.sha(raw), "original_sha256": startup.sha(raw)}}})
+    assert list(startup.product_attempts(folder)) == [folder, retry]
+    assert startup.selected_product(folder) is None
+    assert previous == startup.manifest(folder)
+    (retry / "http-product-qualify.json").write_text('{"passed":true}')
+    with pytest.raises(ValueError, match="scope or captured bytes"):
+        startup.selected_product(folder)
