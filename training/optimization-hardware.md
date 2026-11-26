@@ -44,8 +44,10 @@ After the EPYC code release has a verified publication and a fresh active target
 separate product gate on that same target. Both root-owned checkouts must match the published receipt.
 The broker starts two unprivileged workers, qualifies the same thread head, and alternates six
 comparisons through `GgmlBridge.generate_many`. Each comparison includes four short/document waves
-of four public copy requests. Worker first-visible-token timing comes from the product callbacks.
-Total batch latency includes the request and completed reply over the broker pipe.
+of four public copy requests. Each lane sends its first visible text through the worker pipe.
+The gate times its arrival at the broker and checks the text against the completed answer.
+The receipt also preserves each worker callback timestamp. Total batch latency includes the
+request and completed reply over the broker pipe.
 
 ```sh
 python -m lab.rp.cpu_product_release qualify --state "$STATE" --order "$ORDER" \

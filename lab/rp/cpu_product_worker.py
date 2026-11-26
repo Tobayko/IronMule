@@ -18,7 +18,7 @@ def emit(value):
     print(json.dumps(value, allow_nan=False, separators=(",", ":")), flush=True)
 
 
-def serve(bridge, tokenizer, prompts, limit):
+def serve(bridge, tokenizer, prompts, limit, first_text=None):
     start = time.monotonic_ns()
     first = [None] * len(prompts)
     streams = [tokenizer.detokenizer for _ in prompts]
@@ -28,6 +28,8 @@ def serve(bridge, tokenizer, prompts, limit):
             streams[i].add_token(token)
             if first[i] is None and streams[i].last_segment:
                 first[i] = (time.monotonic_ns() - start) / 1e9
+                if first_text is not None:
+                    first_text({"event": "first_text", "lane": i, "text": streams[i].last_segment})
         return emit_token
 
     ids = [tokenizer.encode(p) for p in prompts]
@@ -36,8 +38,17 @@ def serve(bridge, tokenizer, prompts, limit):
     learning = bridge._engine.pilot.learning
     before = (learning.candidate_status or {}).get("qualified_decisions", 0)
     rows = bridge.generate_many(ids, limit, on_tokens=[callback(i) for i in range(len(ids))])
-    if any(t is None for t in first) or any(r.tokens != s.tokens for r, s in zip(rows, streams, strict=True)):
+    if any(r.tokens != s.tokens for r, s in zip(rows, streams, strict=True)):
         raise ValueError("incomplete streamed response")
+    for i, answer in enumerate(rows):
+        if first[i] is not None:
+            continue
+        if answer.text:
+            first[i] = (time.monotonic_ns() - start) / 1e9
+            if first_text is not None:
+                first_text({"event": "first_text", "lane": i, "text": answer.text})
+        elif first_text is not None:
+            first_text({"event": "empty_answer", "lane": i})
     return {"answers": [{"tokens": r.tokens, "text": r.text, "finish_reason": r.finish_reason} for r in rows],
             "prompt_tokens": [len(x) for x in ids], "ttfts_s": first, "wall_s": (time.monotonic_ns() - start) / 1e9,
             "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
@@ -105,7 +116,7 @@ def main():
                 prompts, limit = item["prompts"], item["max_tokens"]
                 if not 1 <= len(prompts) <= 4 or not all(isinstance(t, str) and 0 < len(t) <= 4096 for t in prompts) or not 1 <= limit <= 64:
                     raise ValueError("invalid worker input")
-                emit(serve(bridge, tok, prompts, limit))
+                emit(serve(bridge, tok, prompts, limit, first_text=emit))
 
 
 if __name__ == "__main__":

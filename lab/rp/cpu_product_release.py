@@ -38,6 +38,30 @@ def checked_line(proc):
     return json.loads(raw)
 
 
+def collect_reply(proc, start, lanes):
+    first = [None] * lanes
+    pieces = [None] * lanes
+    for _ in range(lanes):
+        packet = checked_line(proc)
+        lane = packet.get("lane")
+        if type(lane) is not int or not 0 <= lane < lanes or pieces[lane] is not None:
+            raise ValueError("missing or duplicate first visible text")
+        if packet.get("event") == "empty_answer":
+            pieces[lane] = ""
+        elif packet.get("event") == "first_text" and isinstance(packet.get("text"), str) and packet["text"]:
+            first[lane] = time.monotonic() - start
+            pieces[lane] = packet["text"]
+        else:
+            raise ValueError("invalid first-text event")
+    row = checked_line(proc)
+    row["broker_wall_s"] = time.monotonic() - start
+    if any(bool(answer["text"]) != bool(piece) or not answer["text"].startswith(piece)
+           for answer, piece in zip(row["answers"], pieces, strict=True)):
+        raise ValueError("streamed text differs from the completed answer")
+    row["worker_ttfts_s"], row["ttfts_s"] = row["ttfts_s"], first
+    return row
+
+
 @contextmanager
 def arm(args, receipt, name):
     from lab.rp.cpu_code_release import author_order
@@ -105,11 +129,10 @@ def arm(args, receipt, name):
                 start = time.monotonic()
                 proc.stdin.write(json.dumps({"prompts": prompts, "max_tokens": limit}) + "\n")
                 proc.stdin.flush()
-                row = checked_line(proc)
-                row["broker_wall_s"] = time.monotonic() - start
+                row = collect_reply(proc, start, len(prompts))
                 if (len(row["answers"]) != len(prompts) or len(row["ttfts_s"]) != len(prompts)
                         or any(len(a["tokens"]) > limit or a["finish_reason"] not in ("length", "stop") for a in row["answers"])
-                        or not all(math.isfinite(v) and 0 < v <= row["broker_wall_s"] for v in row["ttfts_s"])):
+                        or not all(v is None or math.isfinite(v) and 0 < v <= row["broker_wall_s"] for v in row["ttfts_s"])):
                     raise ValueError("incomplete product replies")
                 return row
             yield request, started
@@ -122,7 +145,10 @@ def grade(request, seed, binding):
         waves.append(request([t for t, _ in jobs], 3))
         expected.extend([target for _, target in jobs])
     answers = [answer for w in waves for answer in w["answers"]]
-    ttfts = sorted(t for w in waves for t in w["ttfts_s"])
+    ttfts = [t for w in waves for t in w["ttfts_s"]]
+    if any(t is None for t in ttfts):
+        raise ValueError("copy fixture did not deliver visible text to every client")
+    ttfts.sort()
     correct = sum(bool(re.match(r"\s*" + word + r"\b", answer["text"], re.IGNORECASE)) for word, answer in zip(expected, answers, strict=True))
     return {"waves": waves, "completed": len(answers), "correct": correct, "tokens": sum(len(a["tokens"]) for a in answers),
             "scratch_uses": sum(w["scratch_uses"] for w in waves),
