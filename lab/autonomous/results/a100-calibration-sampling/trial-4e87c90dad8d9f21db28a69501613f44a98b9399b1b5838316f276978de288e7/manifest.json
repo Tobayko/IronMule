@@ -27,6 +27,10 @@
       "original_sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb",
       "sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb"
     },
+    "invalid-followup.json": {
+      "original_sha256": "91c42acf8d7fc8ccf4c0625a7fe8836b639a7a67322e5dc38fd397449bc75d6e",
+      "sha256": "91c42acf8d7fc8ccf4c0625a7fe8836b639a7a67322e5dc38fd397449bc75d6e"
+    },
     "order.json": {
       "original_sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb",
       "sha256": "dfa326869b833d93b5bd193308223dee2adafc0b35df55d7736d348f2057d9eb"
@@ -50,6 +54,14 @@
     "sampling-profile.json": {
       "original_sha256": "aa2e7959f654b142c1cb6077ba13ec9658dd1a9caed1aa5079d12cf93d304e06",
       "sha256": "aa2e7959f654b142c1cb6077ba13ec9658dd1a9caed1aa5079d12cf93d304e06"
+    },
+    "screen-candidate.json": {
+      "original_sha256": "80cb4286d44b1175864cf0f77f2c7b2259a5e9196588b5c6dc5ea757bb35908e",
+      "sha256": "80cb4286d44b1175864cf0f77f2c7b2259a5e9196588b5c6dc5ea757bb35908e"
+    },
+    "screen-reference.json": {
+      "original_sha256": "dc3599807bfff1fcc4c8c6fda8a5c90d07f21838c33026351f259635c8ea825b",
+      "sha256": "dc3599807bfff1fcc4c8c6fda8a5c90d07f21838c33026351f259635c8ea825b"
     },
     "staging-attempts.json": {
       "original_sha256": "2420a5594683b37fb577b26606b1fe978975a5ebcf8c1edb81d48c4e206d6c57",
