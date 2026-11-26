@@ -41,6 +41,17 @@ python -m training.sampling_evidence replay "$child"
 The [bounded target commands](../lab/pk1/restart-trial.md) describe how to supply a new
 reserved device, a pinned checkout, the Codex author and a persistent campaign directory.
 
+The four-core EPYC serving experiment uses the Pilot's larger, 20,232-parameter thread
+head. Refit it independently from the recorded CPU trials and compare the archive bytes:
+
+```sh
+out=$(mktemp -d)
+OPENBLAS_NUM_THREADS=1 python -m training.pilot_threads fit \
+  --trials evidence/runtime/cpu-pilot-epyc-trials.json \
+  --weights "$out/thread-head.npz" --report "$out/heldout.json"
+cmp "$out/thread-head.npz" evidence/runtime/cpu-pilot-epyc-candidate.npz
+```
+
 ## Result and validity domain
 
 - **+10.02 % output throughput over vLLM at 32 concurrent clients** by the rule fixed before the run: median tok/s
