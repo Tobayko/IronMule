@@ -27,7 +27,7 @@ COST_PHASES = ("during-qualification", "after-verdict", "after-release")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
-NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
+NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "startup-fit.json", "startup-head.npz", "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
          "qualified.json", "control.json", *TRIAL, *RELEASE}
 
 
@@ -85,6 +85,24 @@ def observe_cost(state, phase):
                    "completed_worker_arms": arms, "cost_journal": COST_JOURNAL,
                    "basis": "A100 lease-to-date covers all work, waiting and concurrent CPU experiments. "
                             "Provider account delta can include other use and lag charges. Per-arm times are measured durations."})
+
+
+def checkpoint_assets(state, order, verified, assets):
+    key = order["order_id"]
+    from training.pilot_restart_profiles import binding as head_binding
+    weights = bounded(state / "startup-head.npz")
+    fit = read(state / "startup-fit.json")
+    def times(prefix, i):
+        rows = [json.loads(assets[f"{prefix}{tag}-{i}.json"]) for tag in ("ref", "cand")]
+        return [r["factual_first"][0]["completed_s"] if prefix else r["cold_s"] for r in rows]
+    if (len(weights) > 1 << 20 or fit["schema"] != "ironmule.restart-pilot.v1" or fit["weights_sha256"] != sha(weights)
+            or fit["binding"] != head_binding(order, verified) or fit["order"] != key
+            or fit["trial_result_sha256"] != sha(assets["result.json"])
+            or fit["training_pairs_s"] != [times("", i) for i in range(PAIRS)]
+            or fit["holdout_pairs_s"] != [times("facts-", i) for i in range(2)]):
+        raise ValueError("startup head is not bound to the measured training and held-out families")
+    assets["startup-fit.json"] = bounded(state / "startup-fit.json")
+    assets["startup-head.npz"] = weights
 
 
 def export(args):
@@ -174,7 +192,11 @@ def export(args):
                 base.write_bytes(original)
                 check = SimpleNamespace(order=state / "order.json", trial=state / "trial", checkout=Path(tmp),
                                         candidate_source=author / "candidate.py")
-                restart_trial.qualification(check)
+                if (state / "startup-fit.json").is_file():
+                    from lab.pk1 import restart_release
+                    checkpoint_assets(state, order, restart_release.approved(check), assets)
+                else:
+                    restart_trial.qualification(check)
             qualified = True
     folder.mkdir(parents=True, exist_ok=True)
     if folder.is_symlink():
@@ -221,6 +243,16 @@ def experiences(root, source):
                reason="reuse_recent_device_bound_mask_on_repeat_start", observations=order["evidence"],
                qualification_contract=order["contract"], authorship="IronMule selected the observed startup phase",
                uncertainty="Historical phases and local mask observations guide selection. Their timings do not establish a gain.")
+    if "startup-fit.json" in files:
+        fit = read(folder / "startup-fit.json")
+        yield emit("restart_pilot_heldout", "startup-fit.json", provenance="measured_replay",
+                   reason="heldout_factual_first_family", weights_sha256=fit["weights_sha256"],
+                   metrics=[{k: fit[k] for k in ("seed", "parameters_per_head", "train_family", "holdout_family",
+                       "training_cpu_wall_s", "train_complete_pairs", "holdout_complete_pairs", "holdout_decision",
+                       "holdout_correct_profile", "holdout_seconds", "matched_eligibility_ablation", "train_log_margin_error")}],
+                   initialization="Three independently seeded heads trained from random weights on CPU",
+                   authorship="IronMule fitted and replayed the CPU startup controller",
+                   uncertainty=fit["uncertainty"])
     for name in COST_FILES:
         if name in files:
             cost = read(folder / name)

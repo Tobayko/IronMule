@@ -162,6 +162,14 @@
     "stale.json": {
       "original_sha256": "79f60000cdd992b0892683e8398d74832f8efa2678507c60d26f7f553fcd9d0e",
       "sha256": "79f60000cdd992b0892683e8398d74832f8efa2678507c60d26f7f553fcd9d0e"
+    },
+    "startup-fit.json": {
+      "original_sha256": "2a0eb365846e6823ce173816a86f2f2566d28d06c05be6aa91fdee4322475b8a",
+      "sha256": "2a0eb365846e6823ce173816a86f2f2566d28d06c05be6aa91fdee4322475b8a"
+    },
+    "startup-head.npz": {
+      "original_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+      "sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254"
     }
   },
   "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
