@@ -150,3 +150,28 @@ def test_product_withdrawal_recovers_delivered_batch_without_restart(tmp_path, m
     assert result["selection"]["withdrawn"]
     assert result["product_arm"] == "reference"
     assert result["response"] == str(output / name)
+
+
+def test_refusal_requires_verified_prefix_before_first_missing_arm(tmp_path, monkeypatch):
+    from shutil import copytree
+
+    from lab.rp import cpu_matched_trial as matched
+
+    archived = campaign.ROOT / "lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2"
+    raw = tmp_path / "qualification"
+    copytree(archived, raw)
+    options = SimpleNamespace(state=raw, reference=tmp_path / "ref", candidate=tmp_path / "cand")
+    # The source, profile and arm verification calls are exercised in a full offline replay separately.
+    monkeypatch.setattr(matched, "identity", lambda _: campaign.read(raw / "context.json"))
+    monkeypatch.setattr(matched, "profile_source", lambda _: raw / "profile.json")
+    checked = []
+    monkeypatch.setattr(matched, "check_arm", lambda opts, tree, row, profile, mode, seed: checked.append(f"{mode}-{seed}.json"))
+    observed = campaign.matched_refusal(options)
+    assert observed["stage"] == "unqualified"
+    result = observed["result"]
+    assert checked == result["completed_arms"] and len(checked) == 7
+    assert result["complete_triplets"] == 2 and result["failed_arm"] == "rule-18353"
+    assert result["training_label"] is False
+    (raw / "candidate-18356.json").touch()
+    with pytest.raises(ValueError, match="out-of-sequence"):
+        campaign.matched_refusal(options)

@@ -1,0 +1,188 @@
+ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+........................................................................
+llama_context: n_ctx_per_seq (512) < n_ctx_train (8192) -- the full capacity of the model will not be utilized
+llama_model_loader: loaded meta data with 37 key-value pairs and 272 tensors from /opt/ironmule-worker/models/SmolLM2-135M-Instruct-Q4_K_M.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = llama
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Smollm2 135M 8k Lc100K Mix1 Ep2
+llama_model_loader: - kv   3:                       general.organization str              = HuggingFaceTB
+llama_model_loader: - kv   4:                           general.finetune str              = 8k-lc100k-mix1-ep2
+llama_model_loader: - kv   5:                           general.basename str              = smollm2
+llama_model_loader: - kv   6:                         general.size_label str              = 135M
+llama_model_loader: - kv   7:                            general.license str              = apache-2.0
+llama_model_loader: - kv   8:                          general.languages arr[str,1]       = ["en"]
+llama_model_loader: - kv   9:                          llama.block_count u32              = 30
+llama_model_loader: - kv  10:                       llama.context_length u32              = 8192
+llama_model_loader: - kv  11:                     llama.embedding_length u32              = 576
+llama_model_loader: - kv  12:                  llama.feed_forward_length u32              = 1536
+llama_model_loader: - kv  13:                 llama.attention.head_count u32              = 9
+llama_model_loader: - kv  14:              llama.attention.head_count_kv u32              = 3
+llama_model_loader: - kv  15:                       llama.rope.freq_base f32              = 100000.000000
+llama_model_loader: - kv  16:     llama.attention.layer_norm_rms_epsilon f32              = 0.000010
+llama_model_loader: - kv  17:                          general.file_type u32              = 15
+llama_model_loader: - kv  18:                           llama.vocab_size u32              = 49152
+llama_model_loader: - kv  19:                 llama.rope.dimension_count u32              = 64
+llama_model_loader: - kv  20:            tokenizer.ggml.add_space_prefix bool             = false
+llama_model_loader: - kv  21:               tokenizer.ggml.add_bos_token bool             = false
+llama_model_loader: - kv  22:                       tokenizer.ggml.model str              = gpt2
+llama_model_loader: - kv  23:                         tokenizer.ggml.pre str              = smollm
+llama_model_loader: - kv  24:                      tokenizer.ggml.tokens arr[str,49152]   = ["<|endoftext|>", "<|im_start|>", "<|...
+llama_model_loader: - kv  25:                  tokenizer.ggml.token_type arr[i32,49152]   = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...
+llama_model_loader: - kv  26:                      tokenizer.ggml.merges arr[str,48900]   = ["Ġ t", "Ġ a", "i n", "h e", "Ġ Ġ...
+llama_model_loader: - kv  27:                tokenizer.ggml.bos_token_id u32              = 1
+llama_model_loader: - kv  28:                tokenizer.ggml.eos_token_id u32              = 2
+llama_model_loader: - kv  29:            tokenizer.ggml.unknown_token_id u32              = 0
+llama_model_loader: - kv  30:            tokenizer.ggml.padding_token_id u32              = 2
+llama_model_loader: - kv  31:                    tokenizer.chat_template str              = {% for message in messages %}{% if lo...
+llama_model_loader: - kv  32:               general.quantization_version u32              = 2
+llama_model_loader: - kv  33:                      quantize.imatrix.file str              = /models_out/SmolLM2-135M-Instruct-GGU...
+llama_model_loader: - kv  34:                   quantize.imatrix.dataset str              = /training_dir/calibration_datav3.txt
+llama_model_loader: - kv  35:             quantize.imatrix.entries_count i32              = 210
+llama_model_loader: - kv  36:              quantize.imatrix.chunks_count i32              = 141
+llama_model_loader: - type  f32:   61 tensors
+llama_model_loader: - type q5_0:  166 tensors
+llama_model_loader: - type q8_0:   15 tensors
+llama_model_loader: - type q4_K:   16 tensors
+llama_model_loader: - type q6_K:   14 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q4_K - Medium
+print_info: file size   = 98.87 MiB (6.17 BPW) 
+init_tokenizer: initializing tokenizer for type 2
+load: control token:      7 '<gh_stars>' is not marked as EOG
+load: control token:     13 '<jupyter_code>' is not marked as EOG
+load: control token:     16 '<empty_output>' is not marked as EOG
+load: control token:     11 '<jupyter_start>' is not marked as EOG
+load: control token:     10 '<issue_closed>' is not marked as EOG
+load: control token:      6 '<filename>' is not marked as EOG
+load: control token:      8 '<issue_start>' is not marked as EOG
+load: control token:      3 '<repo_name>' is not marked as EOG
+load: control token:     12 '<jupyter_text>' is not marked as EOG
+load: control token:     15 '<jupyter_script>' is not marked as EOG
+load: control token:      1 '<|im_start|>' is not marked as EOG
+load: control token:      9 '<issue_comment>' is not marked as EOG
+load: control token:      5 '<file_sep>' is not marked as EOG
+load: control token:     14 '<jupyter_output>' is not marked as EOG
+load: printing all EOG tokens:
+load:   - 0 ('<|endoftext|>')
+load:   - 2 ('<|im_end|>')
+load:   - 4 ('<reponame>')
+load: special tokens cache size = 17
+load: token to piece cache size = 0.3170 MB
+print_info: arch             = llama
+print_info: vocab_only       = 1
+print_info: model type       = ?B
+print_info: model params     = 134.52 M
+print_info: general.name     = Smollm2 135M 8k Lc100K Mix1 Ep2
+print_info: vocab type       = BPE
+print_info: n_vocab          = 49152
+print_info: n_merges         = 48900
+print_info: BOS token        = 1 '<|im_start|>'
+print_info: EOS token        = 2 '<|im_end|>'
+print_info: EOT token        = 0 '<|endoftext|>'
+print_info: UNK token        = 0 '<|endoftext|>'
+print_info: PAD token        = 2 '<|im_end|>'
+print_info: LF token         = 198 'Ċ'
+print_info: FIM REP token    = 4 '<reponame>'
+print_info: EOG token        = 0 '<|endoftext|>'
+print_info: EOG token        = 2 '<|im_end|>'
+print_info: EOG token        = 4 '<reponame>'
+print_info: max token length = 162
+llama_model_load: vocab only - skipping tensors
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 4, n_threads_batch = 4
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 4, n_threads_batch = 4
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 4, n_threads_batch = 4
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 4, n_threads_batch = 4
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 4, n_threads_batch = 4
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 4, n_threads_batch = 4
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 1, n_threads_batch = 1
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 2, n_threads_batch = 2
+attach_threadpool: call
+detach_threadpool: call
+set_n_threads: n_threads = 4, n_threads_batch = 4
+attach_threadpool: call
+detach_threadpool: call

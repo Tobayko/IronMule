@@ -1,0 +1,13 @@
+{
+  "cost": {
+    "estimated_lease_usd_before_tail": 4.321271200307715,
+    "lease_elapsed_s": 7065.054125070572,
+    "requests_to_amortize_lease_time": null,
+    "reserved_usd_including_tail": 9.166666666666668,
+    "target_hourly_usd": 2.201904761904762
+  },
+  "diagnostic": "  File \"/opt/ironmule-worker/cpu-eval/trusted/81be048638fc2807084a200d0420bdb344a1e0b65d7bb88d12da030e5c54dea3/lab/rp/cpu_matched_trial.py\", line 66, in worker\n    raise RuntimeError(f\"isolated {mode} exited {proc.returncode}; see {dest.with_suffix('.log')}\")\nRuntimeError: isolated rule exited 1; see /opt/ironmule-worker/cpu-eval/runs/eb6b1472357c7d89-matched-v2/rule-18353.log",
+  "exit": 1,
+  "job": "epyc-qualify-eb6b1472357c7d89-matched-v2",
+  "stage": "incomplete"
+}

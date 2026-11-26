@@ -247,6 +247,53 @@ def profile_conflict(raw, order):
         raise ValueError("unsubstantiated v1 profile mismatch")
 
 
+def matched_refusal(options):
+    """Reconstruct a real profile refusal from the frozen broker's completed prefix and worker log."""
+    from lab.rp import cpu_matched_trial as matched
+
+    raw = options.state
+    if not all((raw / file).is_file() for file in ("context.json", "profile.json", "build-1.log", "build.json")):
+        return None
+    signature = matched.identity(options)
+    if read(raw / "context.json") != signature:
+        raise ValueError("unrelated matched-profile context")
+    built = read(raw / "build.json")
+    if (built.get("passed") is not True or built["source_sha256"] != signature["candidate_sha256"]
+            or built["log_sha256"] != sha(raw / "build-1.log")):
+        raise ValueError("unverified candidate build")
+    profile = matched.profile_source(options)
+    completed = []
+    for i, sequence in enumerate(cpu_code_trial.SEQUENCES):
+        for mode in sequence:
+            seed = matched.SEED + i
+            arm = f"{mode}-{seed}"
+            path = raw / (arm + ".json")
+            if path.exists():
+                tree = options.candidate if mode == "candidate" else options.reference
+                matched.check_arm(options, tree, read(path), profile, mode, seed)
+                completed.append(path.name)
+                continue
+            log = raw / (arm + ".log")
+            if not log.is_file():
+                return None
+            tail = log.read_text().splitlines()[-1:]
+            if not tail or not re.fullmatch(r"ValueError: fresh native requalification did not admit [0-9:]+: .{1,500}", tail[0]):
+                return None
+            if set(completed) != {p.name for p in raw.glob("*-18*.json")}:
+                raise ValueError("out-of-sequence artifacts after a failed mandatory arm")
+            result = {**signature, "schema": "ironmule.epyc-matched-code-stopped.v1", "profile_sha256": sha(profile),
+                      "passed": False, "training_label": False, "complete_triplets": i, "completed_arms": completed,
+                      "failed_arm": arm, "failed_log_sha256": sha(log), "reason": tail[0].removeprefix("ValueError: ")}
+            dest = raw / "qualification-stopped.json"
+            if dest.is_file():
+                if result != read(dest):
+                    raise ValueError("historical refusal differs from the raw observations")
+            else:
+                write_once(dest, result)
+            return {"stage": "unqualified", "result": result}
+    return None
+
+
 def summary(pod, trial, outcome, seed):
     cost = transport.cost_window(pod, trial, False)
     if outcome and outcome["passed"]:
@@ -270,6 +317,8 @@ def advance(args):
     lane = PurePosixPath(cfg["lane"])
     remote = lane / "runs" / (key[:16] + suite.suffix)
     raw = state / "qualification"
+    if suite.matched and (raw / "qualification-stopped.json").is_file():
+        return replay(args)
     old_context = raw / "context.json"
     if old_context.exists():
         context = read(old_context)
@@ -315,6 +364,8 @@ def advance(args):
                 ext = ".log" if suite.matched else "-0.log"
                 logs = [arm + ext for arm in suite.arms()]
                 transport.snapshot(pod, remote, ["build-0.log", "build-1.log", *logs, "profile.log"], raw)
+                if suite.matched and (stopped := matched_refusal(SimpleNamespace(**options))):
+                    return {**stopped, "exit": found["rc"], "cost": summary(pod, raw, None, suite.seed)}
                 return {"stage": "incomplete", "job": name, "exit": found["rc"], "diagnostic": found["tail"][-600:],
                         "cost": summary(pod, raw, None, suite.seed)}
         else:
@@ -511,6 +562,10 @@ def replay(args):
     reference, candidate = make_source(order, authorship, False)
     options = SimpleNamespace(state=raw, trial=raw, reference=reference, candidate=candidate,
                               order=args.order or args.state / "order.json", seed=suite.seed)
+    if suite.matched and not (raw / "verdict.json").exists():
+        stopped = matched_refusal(options)
+        if stopped:
+            return stopped
     observed = suite.broker.verify_offline(options)
     if observed != read(raw / "verdict.json"):
         raise ValueError("historical replay differs from its raw target verdict")
@@ -551,7 +606,7 @@ def main():
             save(args.state / "campaign-outcome.json", result)
             print(json.dumps(result, sort_keys=True), flush=True)
             left = begin + args.wait_seconds - time.monotonic()
-            if (left <= 0 or result["stage"] in {"deferred", "awaiting Codex", "declined", "incomplete", "confounded", "waiting for target",
+            if (left <= 0 or result["stage"] in {"deferred", "awaiting Codex", "declined", "incomplete", "confounded", "unqualified", "waiting for target",
                                                  "rejected", "qualified", "published", "active", "withdrawn", "product declined", "product served", "product incomplete"}):
                 return
             time.sleep(min(15, left))

@@ -4554,3 +4554,24 @@ That changed the execution conditions. Qualification stopped at the first pair, 
 excluded from speed training, and the reference stayed active. The complete source order, authored
 patch and first-pair receipts are preserved together.
 [Order](../lab/autonomous/results/runpod-epyc-pilot/prefill-order.json) · [Authored diff](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/candidate.diff) · [Rejection](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/comparison-rejected.json) · [Raw byte hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/sha256.json)
+
+### 2026-11-26 EPYC matched-profile prefill source qualification
+
+The matched trial reused the original code proposal and calibrated a complete reference profile on
+four pinned EPYC 7742 cores. The reference qualified offset +3 for bucket `1:1:4:4` after 79
+visits. It delivered 16 correct calibration answers with three scratch-head decisions. Its search
+and warm-up took 41.72 seconds. Each child then had to requalify the same profile on the live host.
+The two completed triplets delivered 16 correct answers and 48 identical tokens per arm and seed.
+
+| Seed | Incumbent wall | Authored prefill wall | Fixed four-thread rule wall |
+| --- | ---: | ---: | ---: |
+| 18351 | 6.207 s | 2.969 s | 1.753 s |
+| 18352 | 6.180 s | 2.963 s | 1.767 s |
+
+The third incumbent completed. During the following rule worker's startup, the native qualifier
+declined the required regime. Its traceback is preserved. That worker exited before writing its
+native timing samples or serving the scored batch. The experiment stopped with seven verified
+serving arms out of eighteen. The source remains unqualified and the two triplets supply no
+six-pair performance label. The code remained on the incumbent. The cost file records the entire
+shared lease to that point, before its billing tail.
+[Replayed refusal](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/qualification-stopped.json) · [Calibration and probe times](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/profile.json) · [Worker exit](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/rule-18353.log) · [Captured file hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/sha256.json)
