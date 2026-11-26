@@ -83,3 +83,5 @@ the provider posts delayed billing.
 ```sh
 python -m lab.rp.rp report --output lab/rp/results/campaign-costs.json
 ```
+
+The product subprocess can use `open_worker` from `lab.rp.restricted_worker` with the same read-only inputs and preflight as the batch evaluator. Its stdin and stdout carry the product protocol. Setup and preflight use separate file descriptors which close before exec. Use `text=False` for the product's binary pipes. Exiting the context terminates the worker process group. The broker also enforces an independent wall deadline while the service runs.

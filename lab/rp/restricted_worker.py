@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import ctypes as C
 import errno
 import json
@@ -9,12 +10,14 @@ import os
 from pathlib import Path
 import platform
 import resource
+import select
 import signal
 import socket
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 
 ALLOWED_ENV = {"PATH", "LD_LIBRARY_PATH", "LLAMA_CPP_LIB_PATH", "PYTHONPATH", "CUDA_VISIBLE_DEVICES",
                "CUDA_HOME", "CUDA_PATH", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "LANG", "LC_ALL"}
@@ -165,12 +168,13 @@ def denied(fn):
     raise RuntimeError("isolation preflight unexpectedly permitted a forbidden operation")
 
 
-def child(fd):
-    spec = json.load(sys.stdin)
+def child(fd, spec_fd):
+    # The preflight protocol has its own one-shot descriptor. Stdin belongs exclusively
+    # to the server's data protocol, even if a request arrives before worker startup.
+    with os.fdopen(spec_fd) as stream:
+        spec = json.load(stream)
     output = Path(spec["output"])
     os.umask(0o077)
-    with open(os.devnull) as null:
-        os.dup2(null.fileno(), 0)
     restrict(spec["uid"], spec["gid"], spec["timeout"])
     restrict_files(spec)
     status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
@@ -211,8 +215,8 @@ def child(fd):
         os.execvpe(spec["argv"][0], spec["argv"], spec["env"])
 
 
-def run(argv, *, env, cwd, output, readonly, timeout=300, uid=60000, gid=60000, secret_paths=()):
-    """Capture the bounded combined output. A missing preflight receipt or timeout raises."""
+@contextmanager
+def _worker(argv, *, env, cwd, output, readonly, timeout, uid, gid, secret_paths, stdin, stdout, stderr, text):
     if (os.geteuid() != 0 or not sys.platform.startswith("linux") or not 1000 <= uid < 65534
             or not 1000 <= gid < 65534 or not 1 <= timeout <= 3600):
         raise RuntimeError("worker needs an owned Linux root broker and a dedicated unprivileged uid/gid")
@@ -252,40 +256,88 @@ def run(argv, *, env, cwd, output, readonly, timeout=300, uid=60000, gid=60000, 
         spec = {"argv": [os.fspath(a) for a in argv], "cwd": str(cwd), "output": str(output), "uid": uid, "gid": gid,
                 "timeout": int(timeout), "readonly": inputs, "secret_paths": protected, "env": clean,
                 "sentinel": str(sentinel), "unlisted": str(unlisted), "fixture": str(fixture)}
-        read_fd, write_fd = os.pipe()
-        try:
-            with tempfile.TemporaryFile(dir=boundary) as log:
-                proc = subprocess.Popen([str(python), "-I", "-S", str(launcher), "_child", str(write_fd)],
-                                        stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
-                                        env={"PATH": "/usr/bin:/bin", "LANG": "C"}, cwd="/",
-                                        pass_fds=(write_fd,), start_new_session=True)
+        with tempfile.TemporaryFile(dir=boundary) as control:
+            control.write(json.dumps(spec).encode())
+            control.seek(0)
+            read_fd, write_fd = os.pipe()
+            try:
+                proc = subprocess.Popen([str(python), "-I", "-S", str(launcher), "_child",
+                                         str(write_fd), str(control.fileno())],
+                                        stdin=stdin, stdout=stdout, stderr=stderr, text=text, encoding="utf-8" if text else None,
+                                        errors="replace" if text else None, bufsize=1 if text else -1, env={"PATH": "/usr/bin:/bin", "LANG": "C"},
+                                        cwd="/", pass_fds=(write_fd, control.fileno()), start_new_session=True)
+            except BaseException:
+                os.close(read_fd)
+                raise
+            finally:
                 os.close(write_fd)
-                write_fd = None
+            def terminate_group():
                 try:
-                    proc.communicate(json.dumps(spec).encode(), timeout=timeout)
-                finally:
-                    try:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    proc.wait()
-                log.seek(max(0, log.seek(0, os.SEEK_END) - 65536))
-                tail = log.read().decode(errors="replace")
-                proof = os.read(read_fd, 65536)
-                if not proof:
-                    raise RuntimeError("restricted worker preflight failed: " + tail[-4000:])
-                if not argv:
-                    tail = proof.decode() + tail
-                return subprocess.CompletedProcess(list(argv), proc.returncode, tail, "")
-        finally:
-            os.close(read_fd)
-            if write_fd is not None:
-                os.close(write_fd)
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+            deadline = threading.Timer(timeout, terminate_group)
+            deadline.daemon = True
+            deadline.start()
+            try:
+                if not select.select([read_fd], [], [], timeout)[0]:
+                    raise TimeoutError("restricted worker preflight timed out")
+                # A preflight receipt can exceed one pipe write. The child closes the
+                # descriptor before exec, so reading to EOF never waits on the server.
+                with os.fdopen(read_fd, "rb", closefd=False) as pipe:
+                    raw = pipe.read(65536)
+                if not raw:
+                    raise RuntimeError("restricted worker preflight failed")
+                proof = json.loads(raw)
+                if proof["uid"] != uid or proof["gid"] != gid or not proof["network_denied"]:
+                    raise RuntimeError("incomplete restricted worker preflight")
+                yield proc, proof
+            finally:
+                os.close(read_fd)
+                deadline.cancel()
+                deadline.join()
+                terminate_group()
+                proc.wait()
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    if stream is not None:
+                        stream.close()
+
+
+@contextmanager
+def open_worker(argv, *, env, cwd, output, readonly, timeout=300, uid=60000, gid=60000, secret_paths=(), stderr=None, text=True):
+    """Yield an isolated pipe-protocol worker after preflight, with a hard group deadline."""
+    if not argv:
+        raise ValueError("interactive worker requires an executable")
+    with _worker(argv, env=env, cwd=cwd, output=output, readonly=readonly, timeout=timeout, uid=uid, gid=gid,
+                 secret_paths=secret_paths, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                 stderr=subprocess.DEVNULL if stderr is None else stderr, text=text) as (proc, _):
+        yield proc
+
+
+def run(argv, *, env, cwd, output, readonly, timeout=300, uid=60000, gid=60000, secret_paths=()):
+    """Capture bounded combined output after the same preflight as the interactive worker."""
+    with tempfile.TemporaryFile() as log:
+        try:
+            with _worker(argv, env=env, cwd=cwd, output=output, readonly=readonly, timeout=timeout, uid=uid, gid=gid,
+                         secret_paths=secret_paths, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, text=False) as (proc, proof):
+                proc.wait(timeout=timeout)
+                returncode = proc.returncode
+        except RuntimeError as exc:
+            if str(exc) != "restricted worker preflight failed":
+                raise
+            log.seek(max(0, log.seek(0, os.SEEK_END) - 4000))
+            raise RuntimeError(f"{exc}: {log.read().decode(errors='replace')}") from exc
+        log.seek(max(0, log.seek(0, os.SEEK_END) - 65536))
+        tail = log.read().decode(errors="replace")
+        if not argv:
+            tail = json.dumps(proof) + "\n" + tail
+        return subprocess.CompletedProcess(list(argv), returncode, tail, "")
 
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["_child"]:
-        child(int(sys.argv[2]))
+        child(int(sys.argv[2]), int(sys.argv[3]))
     else:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--preflight", action="store_true", required=True)
