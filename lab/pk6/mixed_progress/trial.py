@@ -142,8 +142,16 @@ def main():
          "awq_manifest_sha256":awq["manifest_sha256"],"vllm_version":version,"rows":selected,
          "source":output("git","rev-parse","HEAD"),"engine_sha256":phases.checksum(Path("ironmule/ggml_engine.py"))})
     deadline=time.monotonic()+float(os.environ["RP_DEADLINE"])-time.time()-35
-    for arm in ARMS:
-        measure(args, arm, hw, selected, deadline)
+    with (args.out / "device-load.csv").open("xb") as telemetry:
+        sampler = subprocess.Popen(["nvidia-smi", "--query-gpu=timestamp,utilization.gpu,memory.used,power.draw",
+                                    "--format=csv,noheader,nounits", "--loop=2"], stdout=telemetry,
+                                   env={**os.environ, "TZ":"UTC"})
+        try:
+            for arm in ARMS:
+                measure(args, arm, hw, selected, deadline)
+        finally:
+            sampler.terminate()
+            sampler.wait()
     save(args.out/"completed.json",{"order":ARMS,"hardware":board()})
 
 
