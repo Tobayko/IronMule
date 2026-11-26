@@ -1,0 +1,125 @@
+{
+  "source": "evidence/runtime/cpu-pilot-thread-trials.json",
+  "replayed_inputs": "The two recorded passes arrived successively via the JSONL archive.",
+  "entry_point": "GgmlBridge.generate_many with the standard idle worker",
+  "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+  "first_request": {
+    "wall_s": 0.19261537900001713,
+    "generated": 8,
+    "stop": "length",
+    "output_sha256": "9738d5679e0c7381513d38e8d71229b3642465e10cddf08babefaf48db3f885d",
+    "pilot_decisions": 9,
+    "scratch": {
+      "state": "available for local trial",
+      "sha256": "3967ab093866219ad2e2a35791a13e89b8075e93509a99149e2d94820dea092a",
+      "trials": 0,
+      "qualified_decisions": 0,
+      "reference_decisions": 7,
+      "inference_us": 0.0
+    },
+    "thread_choice": {
+      "choice": "reference",
+      "reason": "no local qualification",
+      "profile": {
+        "backend": "ggml-cpu",
+        "hardware_runtime": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+        "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+        "sequences": 2,
+        "sequence_context": 512,
+        "capacity": 2,
+        "shared_cache": false,
+        "settings": {
+          "flash_attn": false,
+          "kv_unified": false,
+          "kv_f32": false
+        },
+        "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+        "operation": "plain_decode",
+        "threads": 4,
+        "sequence_rows": 1,
+        "prompt_rows": 0,
+        "draft_rows": 0,
+        "padding_rows": 0,
+        "pending_requests": 0
+      },
+      "regime": "1:4:1:0",
+      "reference_threads": 4,
+      "selection_us": null,
+      "eligible_threads": [
+        4
+      ],
+      "qualification": null,
+      "uncertainty": "unknown"
+    }
+  },
+  "arrival": {
+    "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+    "checkpoint": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f.candidate.npz",
+    "fit_revision": "31eb7ad9ed92c320e096fedac6b663be7a9de554e900591c8ffa26f2f627371e",
+    "fit_rows": 16,
+    "new_rows": 14,
+    "state": "candidate published",
+    "stored_rows": 28,
+    "weights_sha256": "39d121e7e85d4103f22322440fdf806b7d1feaed6150e581b8d62d107dd0145d"
+  },
+  "second_request": {
+    "wall_s": 0.06382044099973427,
+    "generated": 8,
+    "stop": "length",
+    "output_sha256": "9738d5679e0c7381513d38e8d71229b3642465e10cddf08babefaf48db3f885d",
+    "pilot_decisions": 18,
+    "scratch": {
+      "state": "available for local trial",
+      "sha256": "39d121e7e85d4103f22322440fdf806b7d1feaed6150e581b8d62d107dd0145d",
+      "trials": 0,
+      "qualified_decisions": 0,
+      "reference_decisions": 7,
+      "inference_us": 0.0
+    },
+    "thread_choice": {
+      "choice": "reference",
+      "reason": "no local qualification",
+      "profile": {
+        "backend": "ggml-cpu",
+        "hardware_runtime": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+        "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+        "sequences": 2,
+        "sequence_context": 512,
+        "capacity": 2,
+        "shared_cache": false,
+        "settings": {
+          "flash_attn": false,
+          "kv_unified": false,
+          "kv_f32": false
+        },
+        "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+        "operation": "plain_decode",
+        "threads": 4,
+        "sequence_rows": 1,
+        "prompt_rows": 0,
+        "draft_rows": 0,
+        "padding_rows": 0,
+        "pending_requests": 0
+      },
+      "regime": "1:4:1:0",
+      "reference_threads": 4,
+      "selection_us": null,
+      "eligible_threads": [
+        4
+      ],
+      "qualification": null,
+      "uncertainty": "unknown"
+    }
+  },
+  "duplicate_delivery": {
+    "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+    "checkpoint": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f.candidate.npz",
+    "fit_revision": "31eb7ad9ed92c320e096fedac6b663be7a9de554e900591c8ffa26f2f627371e",
+    "fit_rows": 16,
+    "new_rows": 0,
+    "state": "checkpoint unchanged",
+    "stored_rows": 28,
+    "weights_sha256": "39d121e7e85d4103f22322440fdf806b7d1feaed6150e581b8d62d107dd0145d"
+  },
+  "elapsed_s": 4.368717748000108
+}

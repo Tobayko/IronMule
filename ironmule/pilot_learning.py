@@ -97,10 +97,24 @@ class ThreadLearning(ThreadPolicy):
         self.last_thread_choice = None
         self.candidate_status = None
         path = os.environ.get("IRONMULE_PILOT_THREAD_CANDIDATE")
-        if path:
-            self._load_candidate(Path(path))
+        self.candidate_path = Path(path) if path else self.path.with_suffix(".candidate.npz")
+        self.candidate_file_id = "initial explicit path" if path else None
+        self._refresh_candidate()
         self.generation = 0
         self.last = None
+
+    def _refresh_candidate(self):
+        # The offline trainer publishes by rename. No stat, file access or training runs on a decode step.
+        try:
+            st = self.candidate_path.stat()
+            file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+        except FileNotFoundError:
+            file_id = None
+        except OSError as exc:
+            file_id = type(exc).__name__
+        if file_id != self.candidate_file_id:
+            self._load_candidate(self.candidate_path)
+            self.candidate_file_id = file_id
 
     def _load_candidate(self, path: Path) -> None:
         import numpy as np
@@ -202,7 +216,10 @@ class ThreadLearning(ThreadPolicy):
                 Path(output.name).unlink(missing_ok=True)
 
     def idle(self, interrupted: Callable[[], bool]) -> None:
-        if not self.visits or interrupted():
+        if interrupted():
+            return
+        self._refresh_candidate()
+        if not self.visits:
             return
         key, visits = self.visits.most_common(1)[0]
         if visits < MIN_STEPS:

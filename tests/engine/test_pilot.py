@@ -256,3 +256,28 @@ def test_scratch_thread_candidate_requires_local_replay_and_survives_foreign_che
         assert learner.choose(90, 0, 1) == 1
     finally:
         pilot.close()
+
+
+def test_bound_archive_checkpoint_loads_only_at_idle_and_is_not_an_activation(tmp_path, monkeypatch):
+    from ironmule.pilot_learning import ThreadLearning
+
+    monkeypatch.delenv("IRONMULE_PILOT_THREAD_CANDIDATE", raising=False)
+    p = pl.Pilot(engine(), COSTS, max_cap=2, weights=weights(tmp_path))
+    e = types.SimpleNamespace(settings={}, seqs=2, seq_ctx=512, shared=False, cap=2, pilot=p)
+    try:
+        learning = ThreadLearning(e, tmp_path, "model", "base")
+        path = learning.path.with_suffix(".candidate.npz")
+        path.parent.mkdir(exist_ok=True)
+        with np.load(p.weights_path) as base:
+            np.savez(path, binding=learning.binding, version=1, **{k: base[k] for k in ("w1", "b1", "w2", "b2")},
+                     w3=np.zeros((8, 128), np.float32), b3=np.ones(8, np.float32))
+        learning.idle(lambda: True)
+        assert learning.thread_candidate is None
+        learning.idle(lambda: False)
+        assert learning.thread_candidate is not None and not learning.weights
+        # Removing the source returns serving to the base and clears all old qualifications.
+        path.unlink()
+        learning.idle(lambda: False)
+        assert learning.thread_candidate is None and not learning.weights and not learning.margins
+    finally:
+        p.close()

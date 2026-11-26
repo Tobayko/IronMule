@@ -58,9 +58,10 @@ def main():
            if k in ("PATH", "HOME", "LD_LIBRARY_PATH", "IRONMULE_GGML_BINDINGS", "LLAMA_CPP_LIB_PATH", "LANG")}
     env.update(OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", IRONMULE_GGML_GPU_LAYERS="0",
                CUDA_VISIBLE_DEVICES="", IRONMULE_PILOT="1", PYTHONPATH=str(ROOT))
-    record = {"scheme": "ironmule.runpod.cpu-pilot.v1", "commit": commit, "model_sha256": SMOL,
+    record = {"schema": "ironmule.runpod.cpu-pilot.v1", "commit": commit, "model_sha256": SMOL,
               "cpus": sorted(cpus), "physical_cores": topology, "cpu_max": Path("/sys/fs/cgroup/cpu.max").read_text().strip(),
-              "budget_seconds": args.seconds, "hypothesis": "Thread costs on this EPYC may differ from the Xeon trial.",
+              "budget_seconds": args.seconds, "new_resource_bookings_usd": 0,
+              "cost_source": "Occupied lease time is billed in the RunPod campaign journal.", "hypothesis": "Thread costs on this EPYC may differ from the Xeon trial.",
               "steps": []}
     start = time.monotonic()
     signal.signal(signal.SIGTERM, terminate)
@@ -68,8 +69,7 @@ def main():
     phases = [
         ("collect", ["training.pilot_threads", "collect", "--slots", "4", "--context-bands", "1", "4", "6",
                      "--widths", "1", "4", "--gguf", gguf, "--trials", state / "trials.json", "--state", state / "local"]),
-        ("fit", ["training.pilot_threads", "fit", "--trials", state / "trials.json", "--weights", state / "head.npz",
-                 "--report", state / "replay.json"]),
+        ("fit", ["training.pilot_archive", "--incoming", state / "trials.json", "--state", state / "local"]),
         ("serve", ["training.serving_trial", "--gguf", gguf, "--require-provider", "cpu", "--clients", "4",
                    "--threads", "2", "--waves", "4", "--tokens", "3", "--thread-candidate", state / "head.npz",
                    "--out", state / "serving.json", "--profile-dir", state / "waves"]),
@@ -79,6 +79,17 @@ def main():
             step = {"name": name, "started_s": time.monotonic() - start}
             record["steps"].append(step)
             note(state / "campaign.json", record)
+            if name == "serve":
+                from shutil import copyfile
+
+                trained = json.loads((state / "fit.log").read_text())
+                if trained["state"] not in ("candidate published", "checkpoint unchanged"):
+                    record["result"] = trained["state"]
+                    return 1
+                pilot_dir = state / "local" / "pilot"
+                copyfile(pilot_dir / trained["checkpoint"], state / "head.npz")
+                report = pilot_dir / (trained["binding"] + ".training") / (trained["fit_revision"] + ".json")
+                copyfile(report, state / "replay.json")
             with (state / f"{name}.log").open("wb") as log:
                 child = subprocess.Popen([sys.executable, "-m", *argv], stdout=log, stderr=subprocess.STDOUT,
                                          env=env, close_fds=True, start_new_session=True)

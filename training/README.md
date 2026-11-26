@@ -275,3 +275,27 @@ python -m training.pilot_threads audit \
 ```
 
 Of six observed held-out cells in two context families, two had complete matched measurements. In one, another thread count beat the selected profile in both repeats with disjoint times. In the other, the timings overlapped. This sample cannot estimate a calibrated probability of picking the fastest profile. The archive keeps the coverage denominator, unresolved outcomes and engineering bounds separately. [Held-out uncertainty audit](../evidence/runtime/cpu-pilot-four-slot-uncertainty.json)
+
+### Updating a running CPU worker from archived measurements
+
+An offline update imports the repository's measured thread profiles and an incoming trial file of
+the same engine binding. Set `STATE` to the store root used by the GGUF worker. This command performs
+a single bounded fit on one CPU process. Its published checkpoint becomes a proposal for that worker.
+
+```bash
+python -m training.pilot_archive --incoming pilot-run/trials.json --state "$STATE"
+```
+
+To replay an exported JSONL archive instead, pass `--archive experience.jsonl --binding BINDING`.
+The worker reports its binding under `pilot.thread_learning.binding`. The local SQLite journal
+retains observed and unresolved cells with their source digests. Selection keeps up to 16 recent
+cells per context band, reserves bands 6–7 for replay and recomputes output/timing eligibility from the
+raw arms. Repeated deliveries share one stored sample. Each distinct fit keeps its checkpoint, input
+sample IDs and grouped report under `pilot/BINDING.training/`.
+
+The trainer atomically replaces `pilot/BINDING.candidate.npz` when the fitted weights change.
+A learner-enabled CPU worker checks that path in idle time. A changed head discards its predecessor's
+serving qualifications and must earn local timing receipts before it can change a thread count.
+`IRONMULE_PILOT_THREAD_CANDIDATE` selects an explicit checkpoint in place of the store path.
+A real two-slot SmolLM2 worker reloaded a changed head after a second archive delivery and preserved
+both answers through the reload. [Live reload observation](../evidence/runtime/cpu-pilot-archive-live-reload.json)

@@ -52,3 +52,28 @@ def test_uncertainty_audit_keeps_incomplete_cells_in_coverage():
     assert audited["observed_cells"] == 6 and audited["complete_cells"] == 2
     assert audited["correct_among_resolved"] == 0 and audited["resolved_decisions"] == 1
     assert audited["probability_calibration"] == "unknown"
+
+
+def test_measured_archive_updates_only_its_binding_and_reuses_duplicate_delivery(tmp_path):
+    import hashlib
+
+    from training.experience_archive import pilot_trials, write_archive
+    from training.pilot_archive import update
+
+    src = Path(__file__).resolve().parents[2] / "evidence/runtime/cpu-pilot-thread-trials.json"
+    blob = src.read_bytes()
+    source = json.loads(blob)
+    bound = source["binding"]
+    rows = list(pilot_trials(src.name, hashlib.sha256(blob).hexdigest(), source))
+    first = tmp_path / "first.jsonl"
+    new = tmp_path / "new.jsonl"
+    write_archive(first, (r for r in rows if r["workload"].get("pass", 0) == 0))
+    write_archive(new, (r for r in rows if r["workload"].get("pass", 0) == 1))
+    a = update(tmp_path, bound, archive=first)
+    b = update(tmp_path, bound, archive=new)
+    duplicate = update(tmp_path, bound, archive=new)
+    assert a["state"] == b["state"] == "candidate published"
+    assert a["weights_sha256"] != b["weights_sha256"]
+    assert b["new_rows"] > 0 and duplicate["new_rows"] == 0
+    assert duplicate["state"] == "checkpoint unchanged"
+    assert update(tmp_path, "0" * 64, archive=first)["stored_rows"] == 0
