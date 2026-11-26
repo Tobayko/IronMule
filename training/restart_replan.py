@@ -1,0 +1,224 @@
+"""Plan one information experiment from measured serving after a qualified startup release."""
+
+from __future__ import annotations
+
+import argparse
+import math
+from pathlib import Path
+from statistics import median
+from types import SimpleNamespace
+
+from lab.pk1 import prefill_verdict, restart_order, restart_release
+from lab.pk1.native_trial import checksum
+from training import scoped_release
+from training.code_author import digest, write_once
+from training.code_trial import read
+
+
+def past_attempts(archive, order):
+    family = order["binding"]
+    # The canonical CUDA observation was the parent of both the W4 candidate and Lt screen.
+    dense = archive / "a100-prefill-lt"
+    plan, raw = read(dense / "plan.json"), read(dense / "measurement.json")
+    negative = prefill_verdict.decide(plan, raw)
+    if negative != read(dense / "decision.json") or any(
+        plan["binding"][k] != family[k] for k in ("fp", "gguf", "native", "w4_sha256", "table_sha256")
+    ):
+        raise ValueError("unrelated or changed prefill history")
+    folder = archive / "a100-native" / plan["parent_order"]
+    kernel, screen = read(folder / "order.json"), read(folder / "screen.json")
+    if (
+        kernel["order_id"] != restart_order.order_digest(kernel)
+        or kernel["order_id"] not in order["evidence"]["local_profile_ids"]
+        or checksum(folder / "order.profile.json") != kernel["profile_sha256"]
+        or read(folder / "result.json")["passed"] is not False
+        or screen["model"] != family["gguf"]
+        or screen["table"] != family["table_sha256"]
+        or screen["reference"] != family["w4_sha256"]
+        or screen["all_elements_identical"] is not True
+    ):
+        raise ValueError("incompatible native negative experience")
+    worst = max(screen["measurements"], key=lambda r: r["arms"][1]["microseconds"] / r["arms"][0]["microseconds"])
+    return {
+        "native_order": kernel["order_id"],
+        "native_screen_sha256": checksum(folder / "screen.json"),
+        "worst_width32_shape": worst["shape"],
+        "variant": worst["variant"],
+        "matched_microseconds": [r["microseconds"] for r in worst["arms"]],
+        "native_note": "Local numerical screen only. Paired serving did not qualify this candidate.",
+        "prefill_receipt_sha256": checksum(dense / "measurement.json"),
+        "prefill_history": negative,
+    }
+
+
+def rank(data, historic, history, cost):
+    """Model assumptions price diagnostic candidates; they never qualify code changes."""
+    cold = median(data["http_cold_s"])
+    required = cold * (1 - 1 / 1.02)
+    warm_required = median(data["http_mixed_warm_s"]) * (1 - 1 / 1.02)
+    # A conservative threshold from the existing native planner. Keep it fixed across phases.
+    fraction = 0.10
+    worker_residual = min(median(data["native_init_s"]), median(data["http_request_to_worker_ready_s"]))
+    times = {
+        k: median(v)
+        for k, v in historic.items()
+        if k in ("check_argmax", "warm_up", "measure_passes", "measure_padding")
+    }
+    diag_s = max(data["native_factual_worker_elapsed_s"])
+    rate = cost["quoted_compute_usd_per_h"] + cost["disk_rate_estimate_usd_per_h"]
+    estimate_usd = diag_s * rate / 3600
+    rows = []
+    for phase, old_s in times.items():
+        conditional = min(old_s, worker_residual) * fraction
+        rows.append(
+            {
+                "experiment": "time-active-startup-phase",
+                "phase": phase,
+                "historical_other_run_s": old_s,
+                "active_phase_time_s": None,
+                "hypothetical_10pct_saving_s": conditional,
+                "would_cross_2pct_cold": conditional >= required,
+                "decision_value_per_probe_s": conditional / diag_s,
+            }
+        )
+    rows.sort(key=lambda v: (v["would_cross_2pct_cold"], v["decision_value_per_probe_s"]), reverse=True)
+    chooser_s = median(data["cpu_decision_ms"]) / 1000
+    best = rows[0] if rows else None
+    unresolved = bool(best and best["would_cross_2pct_cold"])
+    next_test = {
+        "decision": "collect one passive startup trace" if unresolved else "defer further experimentation",
+        "selected_phase": best["phase"] if unresolved else None,
+        "book_additional_resources": False,
+        "maximum_new_paid_leases": 0,
+        "maximum_extra_author_calls": 0,
+        "when": "next already planned maintenance startup of this exact active profile" if unresolved else None,
+        "estimated_full_worker_seconds": diag_s,
+        "estimated_equivalent_lease_usd": estimate_usd,
+        "collection": "In a separate diagnostic worker use IRONMULE_GGML_TRACE in its private writable directory. Time the marked phase, capture cold/warm completed work and keep diagnostic timing outside qualification."
+        if unresolved
+        else None,
+        "acceptance_for_new_order": "Need an actual trace of the active source on this GPU, a reproducible phase cost, and a separate quality-preserving treatment with headroom above the full-serving gate. One exploratory trace cannot promote code.",
+    }
+    return {
+        "next": next_test,
+        "ranked_information_experiments": rows,
+        "current_correct_cold_s": cold,
+        "unattributed_worker_init_s": worker_residual,
+        "current_2pct_cold_s": required,
+        "current_2pct_mixed_warm_s": warm_required,
+        "realized_startup_choice_ms": 1000 * chooser_s,
+        "sensitivity_fraction": fraction,
+        "retired": [
+            {
+                "target": "identical W4 calibration-reuse change",
+                "reason": "already served, merged and exercised on this binding",
+            },
+            {
+                "target": "previous W4 CUDA variant",
+                "width32_microseconds": history["matched_microseconds"],
+                "reason": "recorded local slowdown and no qualified whole-serving benefit",
+            },
+            {
+                "target": "re-run same isolated Lt screen",
+                "best_projected_s": history["prefill_history"]["optimistic_best_sum_ms"] / 1000,
+                "required_s": warm_required,
+                "reason": "screen already completed; a new proposal requires new measured evidence",
+            },
+            {
+                "target": "remove startup CPU selection",
+                "upper_bound_s": chooser_s,
+                "required_s": required,
+                "could_meet_threshold": chooser_s >= required,
+            },
+        ],
+        "uncertainty": "Phase durations come from historical K1/K2. New residual initialization and HTTP latencies are observed in different processes and are not subtracted. Predicted savings are sensitivity estimates.",
+    }
+
+
+def replan(state, *, checkout, archive=None):
+    from lab.pk1 import restart_http
+
+    state = Path(state)
+    archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
+    trial, product, deployed = state / "trial", state / "product", state / "release"
+    published = read(deployed / "published.json")
+    control = scoped_release.pinned(deployed, published["receipt_sha256"])
+    order = read(state / "order.json")
+    if control["order"] != order or control["qualification"] != restart_release.approved(
+        SimpleNamespace(
+            trial=trial,
+            checkout=checkout,
+            order=state / "order.json",
+            candidate_source=state / "authoring/candidate.py",
+        )
+    ):
+        raise ValueError("source release differs from qualified trial")
+    verdict = restart_http.assess(product, control)
+    served, rollback = read(product / "product-serve.json"), read(product / "product-exercise.json")
+    if (
+        verdict != read(product / "product-qualify.json")
+        or verdict["passed"] is not True
+        or served["arm"] != "candidate"
+        or rollback["passed"] is not True
+        or rollback["before"]["arm"] != "candidate"
+        or rollback["after"]["arm"] != "reference"
+        or rollback["before"]["work_sha256"] != rollback["after"]["work_sha256"]
+        or served["completions"][-1]["graded_correct"] != 18
+    ):
+        raise ValueError("need actual passed product, serving and rollback measurements")
+    rows = [read(product / f"candidate-{seed}.json") for seed in restart_http.SEEDS]
+    native = [read(trial / f"facts-cand-{i}.json") for i in range(2)]
+    head = checksum(state / "startup-head.npz")
+    if not all(
+        a["startup_decision"]["profile"] == "candidate" and a["startup_decision"]["weights_sha256"] == head
+        for a in rows
+    ):
+        raise ValueError("product observations came from a different startup policy")
+    data = {
+        "http_cold_s": [a["cold_completed_s"] for a in rows],
+        "http_request_to_worker_ready_s": [a["startup_s"] for a in rows],
+        "http_mixed_warm_s": [a["perf_wall_s"] for a in rows],
+        "cpu_decision_ms": [a["startup_decision"]["cpu_ms"] for a in rows],
+        "native_init_s": [a["initialized_s"] for a in native],
+        "native_factual_worker_elapsed_s": [a["broker_elapsed_s"] for a in native],
+    }
+    if not all(all(math.isfinite(v) and v > 0 for v in vs) for vs in data.values()):
+        raise ValueError("missing measured positive duration")
+    history = past_attempts(archive, order)
+    # If final billing is pending always use this immutable comparable already-metered baseline;
+    # a newer after-product record belongs to actual accounting, never to the forecast.
+    cost_path = state / "cost-after-verdict.json"
+    cost = read(cost_path)
+    if cost["order_id"] != order["order_id"] or cost["phase"] != "after-verdict":
+        raise ValueError("cost observation belongs to another experiment")
+    result = {
+        "schema": "ironmule.restart-replan.v1",
+        "provenance": "planning after measured deployment",
+        "order": order["order_id"],
+        "source_receipt": published["receipt_sha256"],
+        "cpu_head": head,
+        "grade_sha256": checksum(product / "product-qualify.json"),
+        "served_sha256": checksum(product / "product-serve.json"),
+        "rollback_sha256": checksum(product / "product-exercise.json"),
+        "counterbalanced_native_sha256": checksum(trial / "result.json"),
+        "cost_observation_sha256": checksum(cost_path),
+        "cost_phase": cost["phase"],
+        "lease_estimate_at_source_verdict_usd": cost["estimated_lease_usd_before_tail"],
+        "provider_delta_at_source_verdict_usd": cost["provider_account_delta_since_lease_start_usd"],
+        "retained_campaign_reservation_usd": cost["campaign_reserved_usd"],
+        "hardware": order["binding"]["fp"]["devices"],
+        "observed": data,
+        "negative_history": history,
+    }
+    result.update(rank(data, order["evidence"]["historical_startup_seconds"], history, cost))
+    result["plan_id"] = digest(result)
+    write_once(state / "replan-after-product.json", result)
+    return result
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--state", required=True, type=Path)
+    p.add_argument("--checkout", required=True, type=Path)
+    args = p.parse_args()
+    print(replan(args.state, checkout=args.checkout)["next"])
