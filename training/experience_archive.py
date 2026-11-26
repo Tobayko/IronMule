@@ -301,6 +301,43 @@ def post_restart_observations(root, source, digest):
                  " (2 A/A, 2 negative controls, 12 mixed, 4 factual). The extra cost cannot make a deferred option profitable.")
 
 
+def confounded_native_inventory(root, source, digest):
+    from lab.pk1 import restart_trial
+    from training import restart_evidence
+
+    folder = (root / source).parent
+    plan = json.loads((root / source).read_bytes())
+    proof = plan["verification"]
+    start = folder.parent / "a100-restart" / plan["parent_order"]
+    manifest = restart_evidence.manifest(start)
+    control = json.loads((start / "control.json").read_bytes())
+    incident = plan["confounder"]
+    if (plan["schema"] != "ironmule.post-restart-native-deferred.v1" or plan["selected"] is not None
+            or any(plan[k] is not False for k in ("timing_eligible", "training_eligible", "authoring_eligible"))
+            or plan["control_receipt_sha256"] != manifest["files"]["control.json"]["sha256"] or plan["weights_sha256"] != manifest["files"]["startup-head.npz"]["sha256"]
+            or plan["observations"] != proof["observation_sha256"] or proof["seeds"] != [97151, 97152]
+            or plan["source_sha256"] != manifest["candidate_sha256"] or plan["base_commit"] != control["publication"]["candidate"]
+            or incident["evidence"] != "product-nested-diagnostic.json" or canonical_sha256((folder / incident["evidence"]).read_bytes()) != incident["sha256"]
+            or incident["sha256"] != manifest["files"]["product-tokenizer-diagnostic.json"]["original_sha256"]):
+        raise ValueError("unbound native inventory, GPU overlap, or timing eligibility")
+    for seed, sha in zip(proof["seeds"], proof["observation_sha256"], strict=True):
+        path = folder / f"{seed}.json"
+        row = json.loads(path.read_bytes())
+        if canonical_sha256(path.read_bytes()) != sha or row["control_receipt_sha256"] != plan["control_receipt_sha256"] or row["seed"] != seed:
+            raise ValueError("native inventory or device selection changed")
+        restart_trial.validate(row["arm"], seed, expected_source=plan["source_sha256"])
+        restart_trial.verify_binding(row["arm"], control["order"])
+        kernels = sorted({ev["symbol"] for cell in row["events"] for ev in cell["activity"]["events"]})
+        yield record("native_structural_inventory", str(path.relative_to(root)), sha, str(seed), plan["parent_order"],
+                     provenance="measured_confounded", hardware=control["order"]["binding"]["fp"], base_commit=plan["base_commit"],
+                     model=control["order"]["binding"]["gguf"], quantization="Q4_K_M", cost_reference="lab/rp/results/campaign-costs.json",
+                     workload={"seed": seed, "controlled_profile": row["selection"]["profile"]},
+                     software={"source_sha256": plan["source_sha256"], "abi_images": row["abi_images"]},
+                     abi_symbols=row["abi_symbols"], observed_kernel_symbols=kernels, reason="overlapping_reference_diagnostic",
+                     timing_eligible=False, training_eligible=False, authoring_eligible=False, references=[source, incident["evidence"]],
+                     uncertainty=incident["reason"], authorship="Two dependent physical native-activity traces")
+
+
 def stopped_epyc(root, source, digest):
     from lab.rp import cpu_code_trial, cpu_matched_profile
     from training.code_author import digest as proposal_digest
@@ -731,6 +768,8 @@ def build(root=ROOT) -> Iterator[dict]:
                          reason="head_missing_then_requalified_after_process_restart", weights_sha256=report["head_sha256"],
                          note=report["scope"], uncertainty=report["timing_scope"], authorship="Bound CPU target evaluator",
                          cost_reference="lab/rp/results/campaign-costs.json", new_resource_bookings_usd=report["new_resource_bookings_usd"])
+        elif source == "lab/autonomous/results/a100-post-restart-native-60/decision.json":
+            yield from confounded_native_inventory(root, source, digest)
         elif source == "lab/autonomous/results/a100-post-restart-60/decision.json":
             yield from post_restart_observations(root, source, digest)
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
