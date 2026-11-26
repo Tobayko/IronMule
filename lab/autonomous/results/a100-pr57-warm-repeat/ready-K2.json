@@ -1,0 +1,44 @@
+{
+  "device": "gpu",
+  "ggml": {
+    "admission_learning": {
+      "enabled": false,
+      "last": null,
+      "observations": 0,
+      "remaining_cooldown_s": 0,
+      "rules": 0,
+      "status": "disabled"
+    },
+    "answers": "may differ from the MLX plans, within the gate",
+    "gate": {
+      "interval": [
+        0.9851111812015977,
+        1.000845966611683
+      ],
+      "passes": true,
+      "ratio": 0.9940459236928927
+    },
+    "sequences": {
+      "fitting": [
+        8,
+        16,
+        32,
+        64
+      ],
+      "rates": {
+        "16": 674.7260409746758,
+        "32": 1027.667812154675,
+        "64": 752.1253461019185,
+        "8": 352.0395168186261
+      },
+      "reason": "the widest width whose doubling still bought the gain rule",
+      "sequences": 32
+    },
+    "stream_qualification": {
+      "passes": true
+    }
+  },
+  "model": "gguf/Qwen3-32B-Q4_K_M",
+  "startup_s": 80.03478527069092,
+  "time": 1795685856.2886486
+}
