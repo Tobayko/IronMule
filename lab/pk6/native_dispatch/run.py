@@ -125,6 +125,10 @@ def main():
     )
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
     for arm in args.arms:
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                "qualification window exhausted before starting another server"
+            )
         for flag in (
             *FLAGS,
             "IRONMULE_LAB_ACTIVITY",
@@ -202,5 +206,13 @@ if __name__ == "__main__":
     with Path(
         os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")
     ).open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        while True:
+            remaining = float(os.environ["RP_DEADLINE"]) - time.time() - 45
+            if remaining <= 0:
+                raise TimeoutError("device wait exhausted the reserved window")
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                time.sleep(min(remaining, 1.0))
         main()

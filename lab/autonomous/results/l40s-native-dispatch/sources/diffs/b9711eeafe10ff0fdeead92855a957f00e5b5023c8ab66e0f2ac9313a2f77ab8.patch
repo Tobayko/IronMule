@@ -1,0 +1,27 @@
+--- original
++++ actual
+@@ -16,3 +15,0 @@
+-#ifdef IM_PROMPT_CACHE
+-#include "weight_cache.cuh"
+-#endif
+@@ -192,4 +188,0 @@
+-#ifdef IM_PROMPT_CACHE
+-    std::lock_guard<std::mutex> weight_lifetime(persistent_prompt::mutex);
+-    if (persistent_prompt::sessions != 1 || (n64 != 25600 && k64 != 25600)) return 1;
+-#endif
+@@ -214,3 +206,0 @@
+-#ifdef IM_PROMPT_CACHE
+-    wb=0; ws=0;
+-#endif
+@@ -226,7 +216 @@
+-    bool fresh=true;
+-#ifdef IM_PROMPT_CACHE
+-    auto *entry=persistent_prompt::get(w,type,n,k,device,stream,fresh);
+-    if (!entry) return 1;
+-    weights=entry->weights; sw=entry->scales;
+-#endif
+-    if (fresh && type==12) {
++    if (type==12) {
+@@ -235 +219 @@
+-    } else if (fresh) {
++    } else {

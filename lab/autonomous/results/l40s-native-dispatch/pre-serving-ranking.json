@@ -1,0 +1,173 @@
+{
+  "candidates": [
+    {
+      "arm": "M",
+      "cells": [
+        {
+          "estimated_saved_us": 3.4400000977516143,
+          "native_graph_us": 46.575,
+          "shape": [
+            12,
+            1024,
+            5120,
+            448
+          ],
+          "warm_device_us": 43.03999990224838
+        },
+        {
+          "estimated_saved_us": 17.442002594470978,
+          "native_graph_us": 102.675,
+          "shape": [
+            12,
+            5120,
+            8192,
+            143
+          ],
+          "warm_device_us": 83.80799740552902
+        },
+        {
+          "estimated_saved_us": 32.16000390529632,
+          "native_graph_us": 203.965,
+          "shape": [
+            12,
+            5120,
+            8192,
+            448
+          ],
+          "warm_device_us": 170.71999609470367
+        },
+        {
+          "estimated_saved_us": 17.999997055530542,
+          "native_graph_us": 99.69999999999999,
+          "shape": [
+            12,
+            8192,
+            5120,
+            143
+          ],
+          "warm_device_us": 81.60000294446945
+        },
+        {
+          "estimated_saved_us": 30.529993877410902,
+          "native_graph_us": 200.95,
+          "shape": [
+            12,
+            8192,
+            5120,
+            448
+          ],
+          "warm_device_us": 170.0800061225891
+        },
+        {
+          "estimated_saved_us": 27.397999262809776,
+          "native_graph_us": 263.56,
+          "shape": [
+            12,
+            25600,
+            5120,
+            143
+          ],
+          "warm_device_us": 233.95200073719025
+        },
+        {
+          "estimated_saved_us": 5.224016990661653,
+          "native_graph_us": 602.86,
+          "shape": [
+            12,
+            25600,
+            5120,
+            448
+          ],
+          "warm_device_us": 595.6159830093384
+        },
+        {
+          "estimated_saved_us": 8.898007183074952,
+          "native_graph_us": 255.615,
+          "shape": [
+            12,
+            5120,
+            25600,
+            143
+          ],
+          "warm_device_us": 245.63199281692505
+        },
+        {
+          "estimated_saved_us": 25.28397092819216,
+          "native_graph_us": 622.21,
+          "shape": [
+            12,
+            5120,
+            25600,
+            448
+          ],
+          "warm_device_us": 594.8160290718079
+        }
+      ],
+      "estimated_saved_us": 168.3759918951989,
+      "family": "marlin-check",
+      "library_sha256": "0c08b08013fb1cc480a1a5120b09069b4bc000b7fcf0479a884a6880075d497f",
+      "source_sha256": "eb24e8cd2d5ce38461e05edde553ac726ff0d64a59fbf74ddc4436a21538640a"
+    },
+    {
+      "arm": "I",
+      "cells": [
+        {
+          "estimated_saved_us": 5.392000060081479,
+          "native_graph_us": 46.575,
+          "shape": [
+            12,
+            1024,
+            5120,
+            448
+          ],
+          "warm_device_us": 41.08799993991852
+        },
+        {
+          "estimated_saved_us": 12.322000861167908,
+          "native_graph_us": 102.675,
+          "shape": [
+            12,
+            5120,
+            8192,
+            143
+          ],
+          "warm_device_us": 88.92799913883209
+        },
+        {
+          "estimated_saved_us": 10.495995407104488,
+          "native_graph_us": 203.965,
+          "shape": [
+            12,
+            5120,
+            8192,
+            448
+          ],
+          "warm_device_us": 192.3840045928955
+        },
+        {
+          "estimated_saved_us": 6.0440007960796365,
+          "native_graph_us": 50.7,
+          "shape": [
+            14,
+            1024,
+            5120,
+            448
+          ],
+          "warm_device_us": 44.415999203920364
+        }
+      ],
+      "estimated_saved_us": 34.25399712443351,
+      "family": "int8-check",
+      "library_sha256": "1d46bbf5883339ddeece3f5fa9cc714e43f52625099c195f44ea86a7e61d28ca",
+      "source_sha256": "df56d6746984181870177704be4ae823fdd4e3342b9cf2862a0302ca71d0691b"
+    }
+  ],
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "interpretation": "Ranking hypothesis. Warm CUDA arithmetic and full GGML graph timing have different boundaries. Only matched full-server measurements determine benefit.",
+  "native": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab"
+}

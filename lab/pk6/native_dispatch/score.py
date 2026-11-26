@@ -284,7 +284,7 @@ def inspect(folder, arm, target, telemetry):
     return rows, summary
 
 
-def run(root):
+def run(root, *, comparator="awq_marlin"):
     # Each process directory contains its actual target manifest. A missing end receipt is a separate rejected/incomplete arm.
     finished = sorted(root.rglob("end-*.json"))
     data, arms, binding = {}, {}, None
@@ -304,7 +304,8 @@ def run(root):
             )
         ]
         if (
-            pin[0]["name"] != "NVIDIA L40S"
+            target.get("comparator_artifact", "awq_marlin") != comparator
+            or pin[0]["name"] != "NVIDIA L40S"
             or pin[1] != "2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d"
             or pin[2:] != [GGUF, _manifest_digest(), "0.34.0", list(SEEDS)]
             or (binding is not None and pin != binding)

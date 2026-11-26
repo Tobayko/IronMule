@@ -79,7 +79,7 @@ def quality_cases(seed):
     ]
 
 
-def measure(args, arm, board_id, row_budget, deadline, *, draft=None):
+def measure(args, arm, board_id, row_budget, deadline, *, draft=None, vllm_gguf=False):
     competitor = arm == "vllm"
     eng = "vllm" if competitor else "ironmule"
     model = "compare" if competitor else "gguf/Qwen3-32B-Q4_K_M"
@@ -140,6 +140,12 @@ def measure(args, arm, board_id, row_budget, deadline, *, draft=None):
             "--api-key-env",
             "IRONMULE_COMPARE_LOCAL_KEY",
         ]
+    if vllm_gguf:
+        if not competitor:
+            raise ValueError("GGUF comparator options belong to vLLM")
+        cmd[2] = str(args.models / GGUF_NAME)
+        cmd[cmd.index("--quantization") + 1] = "gguf"
+        cmd.extend(["--load-format", "gguf", "--hf-config-path", str(args.models / "tokenizers/qwen3-32b")])
     if draft is not None:
         if competitor:
             raise ValueError("native draft belongs to IronMule")
