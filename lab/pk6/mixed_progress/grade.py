@@ -187,11 +187,51 @@ def paired(a, b):
     }
 
 
+def summarize(cells):
+    return {
+        k: median([m[k] for m in cells])
+        if all(m[k] is not None for m in cells)
+        else None
+        for k in MEASURES
+    }
+
+
+def telemetry_samples(path):
+    telemetry = []
+    for dt, util, mem, power in csv.reader(path.read_text().splitlines()):
+        t = (
+            datetime.strptime(dt.strip(), "%Y/%m/%d %H:%M:%S.%f")
+            .replace(tzinfo=timezone.utc)
+            .timestamp()
+        )
+        telemetry.append((t, float(mem), float(power)))
+    return telemetry
+
+
+def sampled_resources(telemetry, rows):
+    samples = [
+        (m, p)
+        for t, m, p in telemetry
+        if rows[0]["unix_start"] <= t <= rows[-1]["unix_end"]
+    ]
+    return {
+        "samples": len(samples),
+        "peak_gpu_mib": max(m for m, _ in samples) if samples else None,
+        "mean_sampled_watts": sum(p for _, p in samples) / len(samples)
+        if samples
+        else None,
+    }
+
+
 def grade(folder):
     read = lambda name: json.loads((folder / name).read_bytes())
     target = read("target.json")
     if (
         target["hardware"]["name"] != "NVIDIA L40S"
+        or target["source"] != "7fa0e4d8974c190192f056f6bc5b30dc72b82571"
+        or target["engine_sha256"]
+        != "a1985d5af074571d1cafd59e918f95f22f1bd16754d2229488da49d2d69288fd"
+        or target["rows"] != 2048
         or target["gguf_sha256"] != GGUF
         or target["awq_revision"] != REVISION
         or target["awq_manifest_sha256"] != _manifest_digest()
@@ -203,16 +243,7 @@ def grade(folder):
         raise ValueError("incomplete run or changed device")
     data, stats, resources, quality, starts, proof = {}, {}, {}, {}, {}, {}
     prior = 0.0
-    telemetry = []
-    for dt, util, mem, power in csv.reader(
-        (folder / "device-load.csv").read_text().splitlines()
-    ):
-        t = (
-            datetime.strptime(dt.strip(), "%Y/%m/%d %H:%M:%S.%f")
-            .replace(tzinfo=timezone.utc)
-            .timestamp()
-        )
-        telemetry.append((t, float(mem), float(power)))
+    telemetry = telemetry_samples(folder / "device-load.csv")
     for arm in ARMS:
         start, ready, end = (read(f"{s}-{arm}.json") for s in ("start", "ready", "end"))
         if (
@@ -252,24 +283,8 @@ def grade(folder):
         stats[arm] = {}
         for width in (1, 8, 32):
             ms = [measure(w) for w in rows if w["repeat"] < 3 and w["width"] == width]
-            stats[arm][str(width)] = {
-                k: median([m[k] for m in ms])
-                if all(m[k] is not None for m in ms)
-                else None
-                for k in MEASURES
-            }
-        samples = [
-            (m, p)
-            for t, m, p in telemetry
-            if rows[0]["unix_start"] <= t <= rows[-1]["unix_end"]
-        ]
-        resources[arm] = {
-            "samples": len(samples),
-            "peak_gpu_mib": max(m for m, _ in samples) if samples else None,
-            "mean_sampled_watts": sum(p for _, p in samples) / len(samples)
-            if samples
-            else None,
-        }
+            stats[arm][str(width)] = summarize(ms)
+        resources[arm] = sampled_resources(telemetry, rows)
         if arm != "vllm":
             if ready["health"]["gate"]["passes"] is not True:
                 raise ValueError("native product gate failed")

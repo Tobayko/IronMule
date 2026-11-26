@@ -129,3 +129,16 @@ def test_forecast_and_replay_bind_the_choice_to_the_historical_a100_observations
     )
     assert plan() == historic
     assert historic["selected_rows"] == 2048 and len(historic["simulated"]) == 6
+
+
+def test_simulated_row_budgets_remain_grouped_and_outside_the_label_set():
+    from training.experience_archive import ROOT, canonical_sha256
+    from training.mixed_progress_evidence import experiences
+
+    source = "lab/autonomous/results/mixed-prefill-progress/plan.json"
+    rows = list(
+        experiences(ROOT, source, canonical_sha256((ROOT / source).read_bytes()))
+    )
+    assert len(rows) == 6 and len({r["group"] for r in rows}) == 1
+    assert all(r["provenance"] == "simulated" and not r["label_eligible"] for r in rows)
+    assert [r["profiles"] for r in rows if r["decision"]] == [[{"row_budget": 2048}]]
