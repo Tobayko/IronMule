@@ -159,3 +159,18 @@ def test_step_model_updates_only_on_the_training_start():
         slow["holdout_mean_absolute_error_s"] != fast["holdout_mean_absolute_error_s"]
     )
     assert fit([], train, prior)["status"] == "insufficient_observed_mixed_calls"
+
+
+def test_w4_screen_uses_only_whole_calibrated_shapes_within_the_stock_margin():
+    from lab.pk6.mixed_progress.footprint import choose
+
+    inventory = {
+        "measured_shapes": [
+            {"code": 12, "N": 32, "K": 256, "total_weight_bytes": 2**20},
+            {"code": 14, "N": 64, "K": 256, "total_weight_bytes": 5 * 2**20},
+        ]
+    }
+    selection = choose(inventory, 100, 90)
+    assert selection["allowed_shapes"] == [[12, 32, 256]]
+    assert selection["estimated_bytes"] <= selection["budget_bytes"]
+    assert choose(inventory, 100, 99)["allowed_shapes"] == []

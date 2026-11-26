@@ -1,0 +1,127 @@
+{
+  "measured_shapes": [
+    {
+      "kind": "Q4_K",
+      "code": 12,
+      "K": 5120,
+      "N": 1024,
+      "count": 96,
+      "total_weight_bytes": 283115520,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "Q4_K",
+      "code": 12,
+      "K": 8192,
+      "N": 5120,
+      "count": 64,
+      "total_weight_bytes": 1509949440,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "Q4_K",
+      "code": 12,
+      "K": 5120,
+      "N": 8192,
+      "count": 64,
+      "total_weight_bytes": 1509949440,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "Q4_K",
+      "code": 12,
+      "K": 5120,
+      "N": 25600,
+      "count": 128,
+      "total_weight_bytes": 9437184000,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "Q4_K",
+      "code": 12,
+      "K": 25600,
+      "N": 5120,
+      "count": 32,
+      "total_weight_bytes": 2359296000,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "Q6_K",
+      "code": 14,
+      "K": 5120,
+      "N": 151936,
+      "count": 1,
+      "total_weight_bytes": 638131200,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "Q6_K",
+      "code": 14,
+      "K": 5120,
+      "N": 1024,
+      "count": 32,
+      "total_weight_bytes": 137625600,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "Q6_K",
+      "code": 14,
+      "K": 25600,
+      "N": 5120,
+      "count": 32,
+      "total_weight_bytes": 3440640000,
+      "widths": [
+        1,
+        8,
+        16,
+        24,
+        32
+      ]
+    }
+  ],
+  "table_sha256": "b8d14b53a479d349ec90148781ed51b35908dc3ac9d00862d082d0f611267c83",
+  "measurement_sha256": "14303ff25a01cb3c7005e7e2e9d6068f6e6e7a130730feb5ad46ff90505d6085",
+  "tune_s": 345.4
+}
