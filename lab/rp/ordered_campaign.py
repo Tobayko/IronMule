@@ -59,7 +59,7 @@ def collect(pod,local):
 
 def deploy(pod,local,trained,publication):
     framework=git("rev-parse","HEAD")
-    new=read(publication["receipt"])["publication"]["candidate"]
+    new=read(Path(publication["receipt"]))["publication"]["candidate"]
     base=read(release.FOLDER/"order.json")["base_commit"]
     require(all(re.fullmatch(r"[0-9a-f]{40}",k) for k in (framework,base,new)),"unbound cloud checkout")
     target.shell(pod,f"""set -eu
