@@ -435,6 +435,12 @@ process, attached and detached in turn, 10.04 / 65.6 against 10.05 / 65.0 tokens
 240 s, 1,024 random machines) they make 12.5 % more tokens than the defaults with 45 % less waiting, and 1.8 % less
 waiting than the hand rule (reward -1408 against -1454; defaults -2547; the weights before -1434).
 
+### From Pilot experience to a measured code change on Linux
+
+A CPU learner can train an additional thread-choice head from grouped, matched measurements, publish its checkpoint atomically and let the running Pilot load it while idle. The incumbent remains selectable at every step. On four pinned EPYC 7742 cores a newly trained head used four locally qualified alternatives in 16 correct SmolLM2 requests. The all-four-thread rule tied it on the held-out decode cases. [Training and replay](../training/README.md) · [EPYC measurements](../lab/autonomous/results/runpod-epyc-pilot/)
+
+A GGUF service can publish a coarse ticket after completed requests. On a separate evaluator, the measured world model ranks editable source locations, includes relevant prior failures and commissions a source-bound Codex order. Fresh paired hardware results determine whether a change enters its qualification PR. The CUDA path binds the model, GPU, native binaries, complete dispatch and measured source. Its coordinator checkpoints build, screen and serving results to the control host. Released variants can be withdrawn and the selected profile survives a restart. [Demand worker and CLI](../training/README.md) · [Native campaign and rollback](../lab/pk1/native-trial.md) · [Hardware coverage](../training/optimization-hardware.md)
+
 ## What it knows about the hardware (AG3)
 
 The world model learns what this machine's work costs. The agent also knows the machine's architecture
