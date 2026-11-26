@@ -126,3 +126,21 @@ def test_caller_workload_family_checks_submitted_text():
     assert family(request) == "factual-first-18"
     request["prompts"][0] = "What is five plus nine?"
     assert family(request) == "unknown"
+
+
+def test_real_client_withdraws_a_regressed_profile_across_restarts(tmp_path):
+    from lab.pk6.ordered_client import monitor_completion
+    from training.code_trial import save
+
+    d = tmp_path/"deployment"
+    d.mkdir()
+    gate = d/"ordered-client.json"
+    save(gate,{"passed":True,"pin":"a","pairs":[{"family":"mixed-first-32","reference_s":10}]})
+    def complete(seconds):
+        return monitor_completion(tmp_path,"a","mixed-first-32",seconds)
+    assert complete(11)["consecutive_late"] == 1
+    assert complete(9)["consecutive_late"] == 0
+    assert complete(11)["consecutive_late"] == 1
+    assert complete(11)["consecutive_late"] == 2
+    assert read(gate)["passed"] is False
+    assert complete(9) is None

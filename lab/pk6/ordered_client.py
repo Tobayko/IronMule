@@ -14,7 +14,8 @@ from lab.pk6 import calibration_arm
 from lab.pk6 import ordered_release as deploy
 from lab.rp import restricted_worker
 from training import scoped_release as release
-from training.trial_release import require
+from training.trial_release import require, switch_lock
+from training.code_trial import read, save
 
 
 def family(request):
@@ -30,6 +31,29 @@ def family(request):
         if len(prompts) == 18 and limit == MAX_TOKENS and prompts == [q.prompt for q in cases(seed)]:
             return "factual-first-18"
     return "unknown"
+
+
+def monitor_completion(state, pin, family, elapsed):
+    directory = state/"deployment"
+    gate_file = directory/"ordered-client.json"
+    with switch_lock(directory):
+        gate = read(gate_file)
+        if not gate["passed"] or gate["pin"] != pin:
+            return
+        matching = [p["reference_s"] for p in gate["pairs"] if p["family"] == family]
+        if not matching:
+            return
+        limit = 1.02 * max(matching)
+        path = directory/("ordered-client-"+family+".json")
+        previous = read(path) if path.exists() else {}
+        count = previous.get("consecutive_late",0) if previous.get("pin") == pin else 0
+        count = count + 1 if elapsed > limit else 0
+        value = {"pin":pin,"limit_s":limit,"complete_s":elapsed,"consecutive_late":count}
+        save(path,value)
+        if count >= 2:
+            save(gate_file,{**gate,"passed":False,"reason":"two complete requests exceeded the reference time envelope",
+                           "withdrawal":value})
+        return value
 
 
 def serve(args, request, *, trial_arm=None):
@@ -105,12 +129,15 @@ def serve(args, request, *, trial_arm=None):
             raise
         if trial_arm is not None:
             raise
-        from training.code_trial import save
         save(args.state/"deployment"/"ordered-client.json",{"passed":False,"pin":args.pin,
              "reason":f"ordered client withdrew candidate: {exc}"[:300]})
         arm = "reference"
         result = run(arm)
-    return {**result,"arm":arm,"decision":decision,"family":kind,"complete_s":time.monotonic()-started}
+    monitoring = None
+    if arm == "candidate" and trial_arm is None:
+        monitoring = monitor_completion(args.state,args.pin,kind,time.monotonic()-started)
+    return {**result,"arm":arm,"decision":decision,"family":kind,"complete_s":time.monotonic()-started,
+            "monitor":monitoring}
 
 
 if __name__ == "__main__":

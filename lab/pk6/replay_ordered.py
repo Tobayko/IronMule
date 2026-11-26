@@ -14,6 +14,41 @@ from training.code_trial import read
 from training.trial_release import require
 
 
+def caller_results(folder, pin):
+    from ironmule.factual_gate import cases, correct
+    from lab.pk6.ordered_client import family
+
+    caller=folder/"client"
+    gate=read(caller/"gate.json")
+    require(gate["pin"]==pin and gate["passed"] and len(gate["pairs"])==2, "different caller gate")
+    for pair in gate["pairs"]:
+        seed=pair["seed"]
+        inputs=read(caller/f"input-{seed}.json")
+        ref,cand=(read(caller/f"{a}-{seed}.json") for a in ("reference","candidate"))
+        require(ref["arm"]=="reference" and cand["arm"]=="candidate" and pair["passed"]
+                and family(inputs)==pair["family"] and ref["answers"]==cand["answers"]
+                and len(cand["answers"])==len(inputs["prompts"])
+                and pair["output_sha256"]==grade.canonical(cand["answers"])
+                and pair["rate"]==ref["complete_s"]/cand["complete_s"] and pair["rate"]>=1.02, "different client pair")
+    live, other=(read(caller/(name+".json")) for name in ("live","unknown"))
+    require(live["arm"]=="candidate" and family(read(caller/"input-99603.json"))==live["family"]=="factual-first-18"
+            and all(correct(q,a["answer"]) for q,a in zip(cases(99603),live["answers"],strict=True))
+            and other["arm"]=="reference" and family(read(caller/"input-other.json"))==other["family"]=="unknown"
+            and len(other["answers"])==1 and other["answers"][0]["output_ids"], "invalid caller delivery or fallback")
+    recovery=read(caller/"caller-recovery.json")
+    actual=[read(caller/f"caller-{arm}-99604.json") for arm in ("candidate","reference")]
+    for arm, row in zip(("candidate","reference"),actual,strict=True):
+        require(row["pin"]==pin and row["request_sha256"]==release.checksum(caller/"input-99604.json")
+                and row["response"]["arm"]==arm and row["process_to_complete_reply_s"]==recovery[arm+"_s"]
+                and row["process_to_complete_reply_s"]>=row["response"]["complete_s"]
+                and all(correct(q,a["answer"]) for q,a in zip(cases(99604),row["response"]["answers"],strict=True)),
+                "different caller process or answers after rollback")
+    require(recovery["passed"] and recovery["pin"]==pin and actual[0]["response"]["answers"]==actual[1]["response"]["answers"]
+            and recovery["output_sha256"]==grade.canonical(actual[0]["response"]["answers"]), "failed external rollback")
+    return {"rates":[p["rate"] for p in gate["pairs"]],"live_complete_s":live["complete_s"],
+            "unknown_answer":other["answers"][0]["answer"],"rollback":recovery}
+
+
 def replay(folder):
     ordered = folder / "ordered"
     verified = deploy.qualification(ordered)
@@ -75,7 +110,7 @@ def replay(folder):
     saved = median(p["reference_s"] - p["candidate_s"] for p in pairs)
     evaluation_s = sum(read(path)["ledger_elapsed_s"] for path in ordered.glob("*.json")
                        if path.name.startswith(("aa-", "candidate-", "reference-")))
-    return {"pull_request": receipt["publication"]["pr"], "candidate": receipt["publication"]["candidate"],
+    result = {"pull_request": receipt["publication"]["pr"], "candidate": receipt["publication"]["candidate"],
             "measured_pairs": len(verified["metrics"]["pairs"]), "mixed_first_median_rate": median(p["rate"] for p in pairs),
             "mixed_first_median_paired_saving_s": saved, "controller_ms_random_trained": [r["decision"]["cpu_ms"] for r in (random,trained)],
             "first_delivery_with_broker_s_random_trained": [r["complete_first_work_s"] for r in (random,trained)],
@@ -83,6 +118,14 @@ def replay(folder):
             "fresh_rates": [p["rate"] for p in target["metrics"]["fresh"]], "stock_quality": numeric,
             "qualification_workers_elapsed_s": evaluation_s, "qualification_worker_payback_starts": math.ceil(evaluation_s / saved),
             "weights_sha256": fit["weights_sha256"], "rollback_completed": recovery["passed"]}
+
+    restart=read(proof/"controller-restart.json")
+    require(restart["restart_result_identical"] and restart["publication"]["receipt_sha256"]==pin and
+            restart["target_exit"]==0 and restart["activation"]==activation and
+            restart["trained_weights_sha256"]==fit["weights_sha256"], "controller restart differs")
+    if (folder/"client/caller-recovery.json").is_file():
+        result["submitted_batches"]=caller_results(folder,pin)
+    return result
 
 
 if __name__ == "__main__":
