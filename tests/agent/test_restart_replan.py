@@ -16,7 +16,10 @@ def test_complete_product_work_and_measured_history_bound_information_probe():
         "measure_passes": [3.6, 3.7],
         "measure_padding": [2, 2],
     }
-    history = {"matched_microseconds": [84, 107], "prefill_history": {"optimistic_best_sum_ms": 24}}
+    history = {
+        "matched_microseconds": [84, 107],
+        "prefill_history": {"optimistic_best_sum_ms": 24},
+    }
     cost = {"quoted_compute_usd_per_h": 2, "disk_rate_estimate_usd_per_h": 0.02}
     eligible = rank(data, historic, history, cost)
     assert eligible["next"]["selected_phase"] == "measure_passes"
@@ -25,3 +28,29 @@ def test_complete_product_work_and_measured_history_bound_information_probe():
     assert len(eligible["retired"]) == 4
     deferred = rank({**data, "http_cold_s": [50]}, historic, history, cost)
     assert deferred["next"]["selected_phase"] is None
+
+
+def test_completed_source_attribution_retains_the_timing_exclusion(tmp_path):
+    import json
+    import shutil
+    from pathlib import Path
+
+    import pytest
+
+    from training.restart_replan import checksum, completed_phase_probe
+
+    results = Path(__file__).parents[2] / "lab/autonomous/results"
+    folder = results / "a100-post-restart-native-60"
+    verdict = json.loads((folder / "decision.json").read_text())
+    released = results / "a100-restart" / verdict["parent_order"]
+    receipt = json.loads((released / "control.json").read_text())
+    head = verdict["weights_sha256"]
+    pin = checksum(released / "control.json")
+    proof = completed_phase_probe(results, receipt["order"], receipt, head, pin)
+    assert proof["timing_eligible"] is proof["training_eligible"] is False
+    assert len(proof["observed_cells"]) == len(proof["observation_sha256"]) == 2
+    copy = tmp_path / folder.name
+    shutil.copytree(folder, copy)
+    (copy / "product-nested-diagnostic.json").write_text("{}")
+    with pytest.raises(ValueError, match="conflict"):
+        completed_phase_probe(tmp_path, receipt["order"], receipt, head, pin)

@@ -22,7 +22,8 @@ def past_attempts(archive, order):
     plan, raw = read(dense / "plan.json"), read(dense / "measurement.json")
     negative = prefill_verdict.decide(plan, raw)
     if negative != read(dense / "decision.json") or any(
-        plan["binding"][k] != family[k] for k in ("fp", "gguf", "native", "w4_sha256", "table_sha256")
+        plan["binding"][k] != family[k]
+        for k in ("fp", "gguf", "native", "w4_sha256", "table_sha256")
     ):
         raise ValueError("unrelated or changed prefill history")
     folder = archive / "a100-native" / plan["parent_order"]
@@ -38,7 +39,10 @@ def past_attempts(archive, order):
         or screen["all_elements_identical"] is not True
     ):
         raise ValueError("incompatible native negative experience")
-    worst = max(screen["measurements"], key=lambda r: r["arms"][1]["microseconds"] / r["arms"][0]["microseconds"])
+    worst = max(
+        screen["measurements"],
+        key=lambda r: r["arms"][1]["microseconds"] / r["arms"][0]["microseconds"],
+    )
     return {
         "native_order": kernel["order_id"],
         "native_screen_sha256": checksum(folder / "screen.json"),
@@ -58,7 +62,9 @@ def rank(data, historic, history, cost):
     warm_required = median(data["http_mixed_warm_s"]) * (1 - 1 / 1.02)
     # A conservative threshold from the existing native planner. Keep it fixed across phases.
     fraction = 0.10
-    worker_residual = min(median(data["native_init_s"]), median(data["http_request_to_worker_ready_s"]))
+    worker_residual = min(
+        median(data["native_init_s"]), median(data["http_request_to_worker_ready_s"])
+    )
     times = {
         k: median(v)
         for k, v in historic.items()
@@ -81,17 +87,24 @@ def rank(data, historic, history, cost):
                 "decision_value_per_probe_s": conditional / diag_s,
             }
         )
-    rows.sort(key=lambda v: (v["would_cross_2pct_cold"], v["decision_value_per_probe_s"]), reverse=True)
+    rows.sort(
+        key=lambda v: (v["would_cross_2pct_cold"], v["decision_value_per_probe_s"]),
+        reverse=True,
+    )
     chooser_s = median(data["cpu_decision_ms"]) / 1000
     best = rows[0] if rows else None
     unresolved = bool(best and best["would_cross_2pct_cold"])
     next_test = {
-        "decision": "collect one passive startup trace" if unresolved else "defer further experimentation",
+        "decision": "collect one passive startup trace"
+        if unresolved
+        else "defer further experimentation",
         "selected_phase": best["phase"] if unresolved else None,
         "book_additional_resources": False,
         "maximum_new_paid_leases": 0,
         "maximum_extra_author_calls": 0,
-        "when": "next already planned maintenance startup of this exact active profile" if unresolved else None,
+        "when": "next already planned maintenance startup of this exact active profile"
+        if unresolved
+        else None,
         "estimated_full_worker_seconds": diag_s,
         "estimated_equivalent_lease_usd": estimate_usd,
         "collection": "In a separate diagnostic worker use IRONMULE_GGML_TRACE in its private writable directory. Time the marked phase, capture cold/warm completed work and keep diagnostic timing outside qualification."
@@ -120,7 +133,8 @@ def rank(data, historic, history, cost):
             },
             {
                 "target": "re-run same isolated Lt screen",
-                "best_projected_s": history["prefill_history"]["optimistic_best_sum_ms"] / 1000,
+                "best_projected_s": history["prefill_history"]["optimistic_best_sum_ms"]
+                / 1000,
                 "required_s": warm_required,
                 "reason": "screen already completed; a new proposal requires new measured evidence",
             },
@@ -135,12 +149,55 @@ def rank(data, historic, history, cost):
     }
 
 
+def completed_phase_probe(archive, order, control, head, receipt_sha):
+    """Recover completed source attribution, preserving the external GPU-load exclusion."""
+    folder = archive / "a100-post-restart-native-60"
+    if not folder.exists():
+        return None
+    decision = read(folder / "decision.json")
+    provenance = decision["verification"]
+    incident = folder / "product-nested-diagnostic.json"
+    if (
+        decision["schema"] != "ironmule.post-restart-native-deferred.v1"
+        or decision["parent_order"] != order["order_id"]
+        or decision["weights_sha256"] != head
+        or decision["control_receipt_sha256"] != receipt_sha
+        or decision["source_sha256"] != control["qualification"]["candidate_sha256"]
+        or decision["base_commit"] != control["publication"]["candidate"]
+        or decision["selected"] is not None
+        or any(
+            decision[key] is not False
+            for key in ("timing_eligible", "training_eligible", "authoring_eligible")
+        )
+        or decision["confounder"]["sha256"] != checksum(incident)
+    ):
+        raise ValueError("invalid diagnostics or conflict provenance")
+    hashes = [checksum(folder / f"{seed}.json") for seed in provenance["seeds"]]
+    if (
+        len(hashes) != 2
+        or hashes != provenance["observation_sha256"]
+        or hashes != decision["observations"]
+    ):
+        raise ValueError("partial active-source diagnosis")
+    return {
+        "decision_sha256": checksum(folder / "decision.json"),
+        "observation_sha256": hashes,
+        "incident_sha256": checksum(incident),
+        "observed_cells": [v["cell"] for v in provenance["selected_cells"]],
+        "timing_eligible": False,
+        "training_eligible": False,
+        "reason": decision["confounder"]["reason"],
+    }
+
+
 def verified_release(state, checkout):
     deployed, trial = state / "release", state / "trial"
     published = read(deployed / "published.json")
     control = scoped_release.pinned(deployed, published["receipt_sha256"])
     order = read(state / "order.json")
-    if control["order"] != order or control["qualification"] != restart_release.approved(
+    if control["order"] != order or control[
+        "qualification"
+    ] != restart_release.approved(
         SimpleNamespace(
             trial=trial,
             checkout=checkout,
@@ -157,20 +214,34 @@ def declined(state, *, checkout, archive=None, product_dir=None):
 
     state = Path(state)
     product = Path(product_dir) if product_dir is not None else state / "product"
-    archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
+    archive = (
+        Path(archive)
+        if archive
+        else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
+    )
     published, control, order = verified_release(state, checkout)
     observed = read(product / "product-qualify.json")
-    if observed.get("passed") is not False or observed != read(product / "decision.json"):
+    if observed.get("passed") is not False or observed != read(
+        product / "decision.json"
+    ):
         raise ValueError("need a saved rejected product qualification")
     history = past_attempts(archive, order)
-    names = [f"{name}-{seed}.json" for seed in restart_http.SEEDS for name in ("reference", "candidate")]
-    present = {name: checksum(product / name) for name in names if (product / name).is_file()}
+    names = [
+        f"{name}-{seed}.json"
+        for seed in restart_http.SEEDS
+        for name in ("reference", "candidate")
+    ]
+    present = {
+        name: checksum(product / name) for name in names if (product / name).is_file()
+    }
     complete = len(present) == len(names)
     rows = []
     if complete and "pairs" in observed:
         graded = restart_http.assess(product, control)
         if graded != observed:
-            raise ValueError("product rejection differs from independently graded pairs")
+            raise ValueError(
+                "product rejection differs from independently graded pairs"
+            )
         rows = observed["pairs"]
     next_test = {
         "decision": "retain reference product route and diagnose rejected gate",
@@ -191,13 +262,19 @@ def declined(state, *, checkout, archive=None, product_dir=None):
         "pair_count": len(rows),
         "completed_raw_files": present,
         "raw_medians": metrics,
-        "reason": observed.get("reason", "completed HTTP pairs outside predeclared bounds"),
+        "reason": observed.get(
+            "reason", "completed HTTP pairs outside predeclared bounds"
+        ),
         "retained_measured_history": history,
         "next": next_test,
         "new_serving_improvement": None,
     }
     result["plan_id"] = digest(result)
-    write_once((state if product == state / "product" else product) / "replan-after-product-declined.json", result)
+    write_once(
+        (state if product == state / "product" else product)
+        / "replan-after-product-declined.json",
+        result,
+    )
     return result
 
 
@@ -205,12 +282,19 @@ def replan(state, *, checkout, archive=None, product_dir=None):
     from lab.pk1 import restart_http
 
     state = Path(state)
-    archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
+    archive = (
+        Path(archive)
+        if archive
+        else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
+    )
     trial = state / "trial"
     product = Path(product_dir) if product_dir is not None else state / "product"
     published, control, order = verified_release(state, checkout)
     verdict = restart_http.assess(product, control)
-    served, rollback = read(product / "product-serve.json"), read(product / "product-exercise.json")
+    served, rollback = (
+        read(product / "product-serve.json"),
+        read(product / "product-exercise.json"),
+    )
     if (
         verdict != read(product / "product-qualify.json")
         or verdict["passed"] is not True
@@ -221,12 +305,15 @@ def replan(state, *, checkout, archive=None, product_dir=None):
         or rollback["before"]["work_sha256"] != rollback["after"]["work_sha256"]
         or served["completions"][-1]["graded_correct"] != 18
     ):
-        raise ValueError("need actual passed product, serving and rollback measurements")
+        raise ValueError(
+            "need actual passed product, serving and rollback measurements"
+        )
     rows = [read(product / f"candidate-{seed}.json") for seed in restart_http.SEEDS]
     native = [read(trial / f"facts-cand-{i}.json") for i in range(2)]
     head = checksum(state / "startup-head.npz")
     if not all(
-        a["startup_decision"]["profile"] == "candidate" and a["startup_decision"]["weights_sha256"] == head
+        a["startup_decision"]["profile"] == "candidate"
+        and a["startup_decision"]["weights_sha256"] == head
         for a in rows
     ):
         raise ValueError("product observations came from a different startup policy")
@@ -260,15 +347,45 @@ def replan(state, *, checkout, archive=None, product_dir=None):
         "cost_observation_sha256": checksum(cost_path),
         "cost_phase": cost["phase"],
         "lease_estimate_at_source_verdict_usd": cost["estimated_lease_usd_before_tail"],
-        "provider_delta_at_source_verdict_usd": cost["provider_account_delta_since_lease_start_usd"],
+        "provider_delta_at_source_verdict_usd": cost[
+            "provider_account_delta_since_lease_start_usd"
+        ],
         "retained_campaign_reservation_usd": cost["campaign_reserved_usd"],
         "hardware": order["binding"]["fp"]["devices"],
         "observed": data,
         "negative_history": history,
     }
-    result.update(rank(data, order["evidence"]["historical_startup_seconds"], history, cost))
+    result.update(
+        rank(data, order["evidence"]["historical_startup_seconds"], history, cost)
+    )
+    probe = completed_phase_probe(archive, order, control, head, published["receipt_sha256"])
+    if probe is not None:
+        result["completed_phase_probe"] = probe
+        result["retired"].append(
+            {
+                "target": "repeat nested startup call and device-symbol inventory",
+                "reason": "Source calls and device symbols have already been identified.",
+                "observation_sha256": probe["observation_sha256"],
+            }
+        )
+        result["next"] = {
+            "decision": "inspect archived complete calibration results and bound withheld starts",
+            "selected_phase": None,
+            "book_additional_resources": False,
+            "maximum_new_paid_leases": 0,
+            "maximum_extra_author_calls": 0,
+            "estimated_extra_lease_usd": 0,
+            "evidence_needed": "A fresh local complete calibration result, all observable side effects, repeatability "
+            "on independent held-out starts, measured full-work headroom and a qualified fallback "
+            "are required before any further candidate. The concurrent diagnostic supplies source "
+            "ownership and device symbols only.",
+        }
     result["plan_id"] = digest(result)
-    write_once((state if product == state / "product" else product) / "replan-after-product.json", result)
+    write_once(
+        (state if product == state / "product" else product)
+        / "replan-after-product.json",
+        result,
+    )
     return result
 
 
