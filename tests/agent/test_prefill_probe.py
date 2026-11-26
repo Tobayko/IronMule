@@ -57,3 +57,17 @@ def test_profile_cannot_be_substituted(files):
     profile.write_text(profile.read_text() + "\n")
     with pytest.raises(ValueError):
         prefill_probe.plan(trace, order)
+
+
+def test_cached_probe_needs_no_gpu(files, tmp_path, monkeypatch):
+    import ironmule.kernel_gen as kg
+
+    order = prefill_probe.plan(*files)
+    output = tmp_path / "screen.json"
+    result = {"request_id": prefill_probe.digest(order), "status": "completed"}
+    output.write_text(json.dumps(result))
+    monkeypatch.setattr(kg, "fingerprint", lambda: pytest.fail("no GPU work during replay"))
+    assert prefill_probe.run(order, output) == result
+    output.write_text(json.dumps({**result, "status": "failed", "reason": "short allocation"}))
+    with pytest.raises(RuntimeError, match="short allocation"):
+        prefill_probe.run(order, output)

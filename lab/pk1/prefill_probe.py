@@ -9,6 +9,7 @@ import math
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from statistics import median
 
@@ -85,10 +86,6 @@ def run(order, output):
 
     if order["schema"] != SCHEMA or order["source_sha256"] != checksum(SOURCE) or order["planner_sha256"] != checksum(Path(__file__)):
         raise ValueError("probe source or planner identity changed")
-    target = order["binding"]["fp"]
-    hardware = fingerprint()
-    if any(hardware[key] != target[key] for key in ("devices", "cc", "driver", "nvcc")) or len(hardware["devices"]) != 1:
-        raise ValueError("GPU, driver or CUDA toolkit differs from observed prefill")
     request = digest(order)
     output.parent.mkdir(parents=True, exist_ok=True)
     with Path(str(output) + ".lock").open("a") as lock:
@@ -97,12 +94,19 @@ def run(order, output):
             cached = json.loads(output.read_text())
             if cached["request_id"] != request:
                 raise ValueError("existing outcome belongs to another plan")
+            if cached["status"] != "completed":
+                raise RuntimeError(f"cached failed probe: {cached.get('reason')}")
             return cached
+        target = order["binding"]["fp"]
+        hardware = fingerprint()
+        if any(hardware[key] != target[key] for key in ("devices", "cc", "driver", "nvcc")) or len(hardware["devices"]) != 1:
+            raise ValueError("GPU, driver or CUDA toolkit differs from observed prefill")
         attempt = Path(str(output) + ".attempt.json")
         if attempt.exists():
             raise RuntimeError("a prior attempt exists without its final receipt; inspect before starting a new run")
         write_once(attempt, {"request_id": request, "targets": order["targets"]})
         result = {"schema": SCHEMA, "request_id": request, "kind": "isolated_measurement", "targets": []}
+        start = time.monotonic()
         try:
             compiler = cuda_compiler_for([hardware["cc"]])
             if not compiler:
@@ -111,12 +115,15 @@ def run(order, output):
                 binary = Path(work) / "prefill-probe"
                 subprocess.run([compiler, "-O3", "-std=c++17", f"-arch=sm_{hardware['cc']}", str(SOURCE),
                                 "-lcublas", "-lcublasLt", "-o", str(binary)], check=True, timeout=120)
+                result["compile_s"] = time.monotonic() - start
                 result["binary_sha256"] = checksum(binary)
                 for shape in order["targets"]:
                     command = [str(binary), *[str(shape[k]) for k in ("m", "n", "k")], "572"]
+                    trial_start = time.monotonic()
                     done = subprocess.run(command, text=True, capture_output=True, timeout=90, check=False)
                     rows = [json.loads(line) for line in done.stdout.splitlines()]
                     measured = {"shape": shape, "return_code": done.returncode, "stderr": done.stderr[-2000:], "events": rows}
+                    measured["elapsed_s"] = time.monotonic() - trial_start
                     result["targets"].append(measured)
                     if done.returncode or not rows or rows[0].get("kind") != "info":
                         raise RuntimeError("probe failed on real hardware")
@@ -134,8 +141,10 @@ def run(order, output):
         except Exception as error:
             result["status"] = "failed"
             result["reason"] = f"{type(error).__name__}: {error}"
+            result["elapsed_s"] = time.monotonic() - start
             write_once(output, result)
             raise
+        result["elapsed_s"] = time.monotonic() - start
         write_once(output, result)
         return result
 
