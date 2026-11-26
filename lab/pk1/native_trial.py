@@ -6,6 +6,7 @@ import ctypes
 import fcntl
 import hashlib
 import json
+import math
 import os
 import resource
 import shutil
@@ -17,7 +18,7 @@ from contextlib import closing
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
-FLAGS = {"PS1": "1", "PS1_WARM": "0", "PK6": "1", "DH2": "0", "SV5": "0", "GGML_PACK": "1",
+FLAGS = {"PS1": "1", "PS1_WARM": "0", "PS1_CONCAT": "0", "PK6": "1", "GGML_DH2": "0", "SV5": "0", "GGML_PACK": "1",
          "GGML_UBATCH": "8192", "CUBLAS_MIN_ROWS": "128", "CUDA_GRAPHS_ROWS": "32"}
 TEMPLATE = "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 SCHEMA = "ironmule.w4_target_trial.v1"
@@ -26,6 +27,49 @@ SCHEMA = "ironmule.w4_target_trial.v1"
 def checksum(path):
     with open(path, "rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def mask_bits(mask):
+    values = []
+    for field in ("tokens_served", "q6k_tokens_served"):
+        widths = mask[field]
+        if len(widths) != len(set(widths)) or any(t not in (*range(1, 9), 16, 24, 32) for t in widths):
+            raise ValueError("unrecognized measured W4 width")
+        bits = sum(1 << (w - 1) for t in widths for w in ([t] if t <= 8 else range(t - 7, t + 1)))
+        values.append(bits)
+    if not (values[0] & (1 << 31)):
+        raise ValueError("width-32 Q4 dispatch unavailable")
+    return values
+
+
+def fixture_engine(ge, requested):
+    if "padding" not in requested:  # Separate reference-only calibration, before either timed arm.
+        return ge.GgmlEngine
+
+    class BoundEngine(ge.GgmlEngine):
+        def measure_padding(self, repeats=5):
+            return {int(k): v for k, v in requested["padding"].items()}
+
+        def measure_pass_costs(self, repeats=3):
+            points = requested["pass_seconds"]
+            return ge.PassCosts({int(k): v for k, v in points.items()}) if points else None
+
+        def measure_costs(self):
+            return dict(requested["pilot_costs"])
+
+    return BoundEngine
+
+
+def validate_calibration(row, binding):
+    profile = row["profile"]
+    if (row["schema"] != SCHEMA or row["stage"] != "calibration" or row["evaluator_sha256"] != checksum(__file__)
+            or row["model"] != binding["gguf"] or row["reference"] != binding["w4_sha256"]
+            or row["table"] != binding["table_sha256"] or profile["mask_bits"] != mask_bits(binding["mask"])
+            or set(profile["pilot_costs"]) != {"step_one", "row", "prefill_1k", "kv_1k"}
+            or any(not math.isfinite(v) or v <= 0 for v in [*profile["pilot_costs"].values(), *profile["pass_seconds"].values()])
+            or any(not 0 < int(k) < v <= 32 for k, v in profile["padding"].items())):
+        raise ValueError("invalid reference profile calibration")
+    return profile
 
 
 def arm(args):
@@ -45,13 +89,38 @@ def arm(args):
     if any(os.environ.get("IRONMULE_" + k) != v for k, v in FLAGS.items()):
         raise ValueError("wrong engine reference settings")
     lib, table = (Path(os.environ[k]) for k in ("IRONMULE_KG_LIB", "IRONMULE_W4_TABLE"))
+    requested = json.loads(args.execution_profile.read_text())
+    plugin = ctypes.CDLL(str(lib))
+    getters = []
+    for suffix, bits in zip(("", "6"), requested["mask_bits"], strict=True):
+        setter = getattr(plugin, "ironmule_kg_set_mask" + suffix)
+        setter.argtypes = [ctypes.c_uint32]
+        getter = getattr(plugin, "ironmule_kg_get_mask" + suffix)
+        getter.restype = ctypes.c_uint32
+        setter(bits)
+        getters.append(getter)
+    if [get() for get in getters] != requested["mask_bits"]:
+        raise ValueError("failed to apply W4 profile before loading the model")
     perf = [(TEMPLATE.format(prompt), "") for prompt in performance_prompts(args.seed, 32, 32)]
-    with closing(ge.GgmlEngine(str(args.gguf), seqs=32, seq_ctx=2048, flash_attn=True, speculate=True)) as eng:
+    engine = fixture_engine(ge, requested)
+    with closing(engine(str(args.gguf), seqs=32, seq_ctx=2048, flash_attn=True, speculate=True, kernel_mask=False)) as eng:
         mapped = Path("/proc/self/maps").read_text().splitlines()
         executable = any(len(fields := line.split(maxsplit=5)) == 6 and "x" in fields[1]
                          and Path(fields[5]).resolve() == lib.resolve() for line in mapped)
-        if not executable or 32 not in eng.kg.get("tokens_served", []) or eng.pilot is None or eng.gpu_layers != 999:
+        if not executable or eng.pilot is None or eng.gpu_layers != 999:
             raise RuntimeError("full GPU configuration, active Pilot and width-32 W4 dispatch required")
+        effective = {"mask_bits": [get() for get in getters], "padding": {str(k): v for k, v in eng.pad_to.items()},
+                     "pass_seconds": {str(k): v for k, v in eng.pass_costs.points} if eng.pass_costs else {},
+                     "pilot_costs": dict(eng.pilot.costs)}
+        if effective["mask_bits"] != requested["mask_bits"]:
+            raise ValueError("engine changed the reference W4 profile during startup")
+        if args.mode == "calibrate":
+            save(args.output, {"schema": SCHEMA, "stage": "calibration", "profile": effective,
+                               "evaluator_sha256": checksum(__file__), "model": checksum(args.gguf),
+                               "reference": checksum(lib), "table": checksum(table)})
+            return
+        if effective != requested:
+            raise ValueError("arm differs from reference execution profile")
         def used_memory():
             devices = ggml_devices(eng.L)
             if len(devices) != 1 or devices[0]["provider"] != "cuda":
@@ -75,12 +144,14 @@ def arm(args):
         loaded = identity()
         if not loaded.get("sha256") or not decisions:
             raise ValueError("missing runtime identity or Pilot decisions")
+        if effective["mask_bits"] != [get() for get in getters]:
+            raise ValueError("active W4 masks changed during the serving workload")
         hardware = fingerprint()
         # The .cu variation is the only intended treatment; separately bind both loaded artifacts.
         runtime_sources = {m.__name__.replace(".", "/") + ".py": checksum(m.__file__)
                            for m in (ge, gguf_tokenizer, pilot, kernel_gen, w4_kernels)}
         binding = {"fp": hardware, "model_sha256": checksum(args.gguf), "native": loaded, "runtime_sources": runtime_sources,
-                   "pilot": checksum(eng.pilot.weights_path), "engine": eng.settings, "flags": FLAGS,
+                   "pilot": checksum(eng.pilot.weights_path), "engine": eng.settings, "flags": FLAGS, "profile": effective,
                    "affinity": sorted(os.sched_getaffinity(0)), "threads": eng.threads}
     if result["completed"] != 32 or not latency:
         raise ValueError("incomplete fixed workload")
@@ -322,15 +393,20 @@ def launch(args, output, arguments, mounts, env):
 
 
 
-def launch_arm(args, binary, seed, out):
+def launch_arm(args, binary, seed, out, profile, *, calibrate=False):
     """Run the fixed benchmark once in a fresh, constrained process. Caller binds and checks the evidence."""
     logical_table = "/kernel/dispatch.table"
     logical_lib = "/kernel/active.so"
     env = {"IRONMULE_" + k: v for k, v in FLAGS.items()}
-    launch(args, out, ["/trusted/native_trial.py", "--gguf", "/models/" + args.gguf.name, "--mode", "arm",
-                       "--seed", str(seed), "--output", "/output/" + out.name],
-           [(binary, logical_lib), (args.table, logical_table)],
-           {**env, "IRONMULE_KG_LIB": logical_lib, "IRONMULE_W4_TABLE": logical_table})
+    with TemporaryDirectory(dir=out.parent) as tmp:
+        profile_file = Path(tmp) / "profile.json"
+        profile_file.write_text(json.dumps(profile, allow_nan=False))
+        logical_profile = "/kernel/profile.json"
+        launch(args, out, ["/trusted/native_trial.py", "--gguf", "/models/" + args.gguf.name,
+                           "--mode", "calibrate" if calibrate else "arm", "--execution-profile", logical_profile,
+                           "--seed", str(seed), "--output", "/output/" + out.name],
+               [(binary, logical_lib), (args.table, logical_table), (profile_file, logical_profile)],
+               {**env, "IRONMULE_KG_LIB": logical_lib, "IRONMULE_W4_TABLE": logical_table})
     return json.loads(out.read_text())
 
 
@@ -404,6 +480,10 @@ def qualify(args):
                                "--table", "/kernel/dispatch.table"],
                    [(args.reference_lib, "/kernel/reference.so"), (cand, "/kernel/candidate.so"), tab], environment)
         validate_screen(json.loads(screening.read_text()), binding, checksum(cand), args.table)
+        calibration = state / "calibration.json"
+        if not calibration.exists():
+            launch_arm(args, args.reference_lib, 92740, calibration, {"mask_bits": mask_bits(binding["mask"])}, calibrate=True)
+        profile = validate_calibration(json.loads(calibration.read_text()), binding)
         pairs = []
         for i in range(PAIRS):
             rows = {}
@@ -411,9 +491,11 @@ def qualify(args):
                 binary = args.reference_lib if label == "ref" else cand
                 out = state / f"{label}-{i}.json"
                 if not out.exists():
-                    launch_arm(args, binary, 92741 + i, out)
+                    launch_arm(args, binary, 92741 + i, out, profile)
                 row = json.loads(out.read_text())
                 validate_arm(row, binding, {"binary": checksum(binary), "table": context["table"]}, 92741 + i)
+                if row["binding"]["profile"] != profile:
+                    raise ValueError("arm does not use the measured reference execution profile")
                 rows[label] = row
             pairs.append((rows["ref"], rows["cand"]))
         result = judge_native(pairs)
@@ -421,7 +503,7 @@ def qualify(args):
         save(args.output, {"schema": SCHEMA, "context": context, "passed": False, "reason": str(exc)[:600],
                            "incumbent": context["reference"], "elapsed_s": time.monotonic() - started})
         raise
-    receipts = {p.name: checksum(p) for p in [state / "build.json", state / "screen.json",
+    receipts = {p.name: checksum(p) for p in [state / "build.json", state / "screen.json", calibration,
                 *(state / f"{label}-{i}.json" for i in range(PAIRS) for label in ("ref", "cand"))]}
     save(args.output, {"schema": SCHEMA, "context": context, **result, "measurements_sha256": receipts,
                        "candidate": checksum(cand),
@@ -430,7 +512,8 @@ def qualify(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("arm", "screen", "qualify", "author", "build"), default="qualify")
+    parser.add_argument("--mode", choices=("arm", "calibrate", "screen", "qualify", "author", "build"), default="qualify")
+    parser.add_argument("--execution-profile", type=Path)
     parser.add_argument("--gguf", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--order", type=Path)
@@ -450,7 +533,7 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             qualify(args)
     else:
-        {"arm": arm, "screen": screen, "author": author, "build": build}[args.mode](args)
+        {"arm": arm, "calibrate": arm, "screen": screen, "author": author, "build": build}[args.mode](args)
 
 
 if __name__ == "__main__":

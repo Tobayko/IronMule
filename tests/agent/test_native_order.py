@@ -66,3 +66,21 @@ def test_next_experiment_requires_new_source_and_realistic_whole_wave_headroom()
     assert next_target(options, {"declined"}, 3.3, .1)["function"] == "plausible"
     assert next_target(options, {"declined", "plausible"}, 3.3, .1) is None
     assert next_target(options, {"declined"}, 3.3, .025) is None
+
+
+def test_profiles_preserve_separate_native_masks_and_incumbent_cpu_costs():
+    from types import SimpleNamespace
+
+    from ironmule.ggml_engine import PassCosts
+    from lab.pk1.native_trial import fixture_engine, mask_bits
+
+    mask = {"tokens_served": [1, 16, 32], "q6k_tokens_served": [3, 24]}
+    assert mask_bits(mask) == [0xFF00FF01, 0x00FF0004]
+    with pytest.raises(ValueError):
+        mask_bits(dict(mask, tokens_served=[1, 8]))
+    requested = {"mask_bits": mask_bits(mask), "padding": {"3": 8}, "pass_seconds": {"4": .002, "8": .003},
+                 "pilot_costs": {"step_one": .0005}}
+    engine = fixture_engine(SimpleNamespace(GgmlEngine=object, PassCosts=PassCosts), requested)()
+    assert engine.measure_padding() == {3: 8}
+    assert engine.measure_pass_costs().points == [(4, .002), (8, .003)]
+    assert engine.measure_costs() == {"step_one": .0005}

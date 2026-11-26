@@ -51,7 +51,10 @@ restricted UID worker. The operator stages root-owned read-only runtime, evaluat
 bindings in paths accessible to that UID. Its access and network preflight runs before each
 job. The broker imports only one bounded regular output from the worker each time.
 The screen checks the model's width-32 matrices with the existing float64 tolerance and compares
-all returned elements against the unmodified binary. Six fresh process pairs alternate arm order
+all returned elements against the unmodified binary. A separate incumbent startup records the
+padding table, measured prefill pass costs and Pilot step costs. Each arm restores those measurements
+and sets both W4 width masks using the canonical reference profile before model initialization.
+Each worker reads both mask registers before and after the workload. Six fresh process pairs alternate arm order
 with a warm wave in each. Each arm runs a 32-client short/document mix through the tokenizer,
 the CPU Pilot, native engine and output callbacks, then grades 18 factual answers. Reports bind
 the actually mapped W4 artifact and table separately from the hardware and native GGML identity.
