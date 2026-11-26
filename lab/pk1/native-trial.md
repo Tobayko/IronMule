@@ -113,3 +113,14 @@ fresh performance and correctness. A latency or elapsed-time excursion beyond th
 reference envelope triggers a matched reference check. Failed quality, hash, or matched
 performance checks persist withdrawal before reference fallback. A different target needs
 its own qualification. The release command has no effect on the default server configuration.
+
+## Run the native campaign from the control host
+
+A prepared RunPod lease can execute the handoffs above under one bounded control process. Save the existing pod ID and the following absolute **target** paths in a local JSON file. `framework` is the trusted evaluator checkout, `checkout` is the measured serving tree, `python` is the interpreter, and `env` is a root-owned shell file containing binding, runtime and CUDA paths. The remaining keys are `gguf`, `reference_lib`, `table`, `worker_root`, `state_root` and `pod_id`. Stage immutable assets for the restricted UID first. The control host has its own clean checkout of the order's base commit at `$BASE`.
+
+```sh
+python -m lab.rp.native_campaign --config "$TARGET_JSON" --state "$STATE" \
+    --order "$STATE/order.json" --checkout "$BASE" --publish --wait-seconds 3600
+```
+
+With hosted Codex, the process writes the attributed development request to `$STATE/authoring/author/request.json`. A connected dispatcher supplies the reply. With a locally authenticated subscription Codex CLI, add `--author-cli` for automatic consumption. Run the same command after a restart. Each poll checks the existing lease and retains completed result files on the control host. After six qualifying pairs, the publication gate checks the GitHub merge, sends the content-bound activation receipt to the target and runs a new independent process with a fresh seed. A rejected order retains its candidate, intermediate artifacts, reason and cost window. The provider journal records the final removal and billing tail. The upper-bound amortization estimate charges the whole elapsed lease to this candidate, including setup and author wait, and uses its measured median saving per 32 completed requests.
