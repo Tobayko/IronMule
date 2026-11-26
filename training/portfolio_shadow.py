@@ -123,7 +123,7 @@ def grade(data, control, weights, forecast_path, samples):
         pas = measures["measure_pass_costs"]
         full = {
             "padding": pad["direct_field_values"]["pad_prices"],
-            "passes": dict((str(w), p) for w, p in a["startup_prices"]["passes"]),
+            "passes": {str(w): p for w, p in a["startup_prices"]["passes"]},
         }
         require(
             pad["return_value"] == a["startup_prices"]["padding"]
@@ -141,13 +141,14 @@ def grade(data, control, weights, forecast_path, samples):
                 "unbound full calibration prices",
             )
 
-        def observed(context, complete, sentinels, dispatch, eligible):
+        def observed(seed, context, complete, sentinels, dispatch, eligible):
             current = {
                 "seed": seed,
                 "family": context,
                 "complete": complete,
                 "dispatch": dispatch,
             }
+
             def sentinel_drift(donor):
                 return max(
                     abs(donor["complete"][k]["1"] / sentinels[k] - 1.0)
@@ -182,6 +183,7 @@ def grade(data, control, weights, forecast_path, samples):
 
         proof.append(
             observed(
+                seed,
                 "full-original-initialization",
                 full,
                 {k: v["1"] for k, v in full.items()},
@@ -199,6 +201,7 @@ def grade(data, control, weights, forecast_path, samples):
                     "incomplete standalone sentinel",
                 )
             witness = observed(
+                seed,
                 "after-serving-outside-startup-qualification",
                 shadow["complete"],
                 {k: v["price_s"] for k, v in fresh.items()},
@@ -222,11 +225,7 @@ def grade(data, control, weights, forecast_path, samples):
         for p in proof
         if p["within_sentinel_threshold"] and p["context_eligible_for_research"]
     ]
-    failed = [
-        p
-        for p in admitted
-        if not p["complete_vector_guard_passed"]
-    ]
+    failed = [p for p in admitted if not p["complete_vector_guard_passed"]]
     result = (
         "numerical prediction refuted"
         if failed
