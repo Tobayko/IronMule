@@ -104,8 +104,8 @@
   }
  ],
  "confirmed_owned_pods_remaining": 0,
- "observed_unix_s": 1795690003.4954917,
- "provider_account_delta_since_first_reservation_usd": 15.9452392832,
+ "observed_unix_s": 1795690328.7823474,
+ "provider_account_delta_since_first_reservation_usd": 16.0216502082,
  "external_settlements_usd": 0,
  "approved_extensions_minutes": [
   90.0,
@@ -135,7 +135,7 @@
    "hourly_with_disk_usd": 2.2123214285714283,
    "disk_hourly_upper_usd": 0.022321428571428572,
    "posted_records": 1,
-   "posted_usd": 1.8107917011948302
+   "posted_usd": 1.9953386702109128
   }
  ],
  "basis": "Posted pod charges can lag. The account delta can include unrelated use. Booked cost conservatively includes a cleanup tail. Fees are USD."

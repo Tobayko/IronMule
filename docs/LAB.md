@@ -4727,3 +4727,9 @@ the candidate and 54.334 s after a persisted withdrawal for the exact same
 18 questions. A later request verified the durable latency monitor. Both
 owned RunPod leases were removed. The total conservative booking for this
 first development stage, including both cleanup tails, was $16.77. [Caller evidence](../lab/autonomous/results/a100-dynamic-calibration/client/) · [Campaign cost journal](../lab/rp/results/campaign-costs.json)
+
+After cleanup the RunPod account balance fell by $16.02165 relative to the
+initial reservation. Two successive queries returned the same delta and zero
+remaining owned pods. The provider's individual pod records were still posting
+when the journal was exported. The conservative total of $16.76980 includes
+a ten-minute cleanup tail for each lease and zero metered API charges.
