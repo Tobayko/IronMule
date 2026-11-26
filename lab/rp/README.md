@@ -60,3 +60,26 @@ with GPU visibility disabled and lowers its scheduling priority. `campaign.json`
 commit, affinity, phase timings and outcome. `trials.json` retains complete and interrupted series.
 An empty holdout, failed correctness check or lack of qualified model decisions leaves a failed phase.
 Send SIGTERM when GPU timing must resume. Preserve the state directory before terminating the pod.
+
+An owned pod may renew its current lease once, by at most 90 minutes. The operator first
+checks the provider's reported owner, balance and rate and reserves the additional duration
+in the shared journal. The deployed pod's immutable original watcher transfers enforcement
+to a replacement that initially uses the original deadline. The controller commits the new
+deadline after a positive remote acknowledgement. A lost reply retains the reservation and
+the earlier control deadline. Retry using identical minutes and reason. Start the handoff at
+least three minutes before the initial deadline. Calling `stop` still terminates early.
+
+```sh
+python -m lab.rp.rp renew --minutes 90 --reason 'finish paired tests on the same calibrated GPU'
+python -m lab.rp.rp spend
+```
+
+After verified teardown, export the redacted campaign journal. It contains the observed
+account delta, per-lease posted USD if billing has caught up, conservative charges including
+the retained cleanup tail, and external settlements. Pod IDs, account balances, job names,
+tokens and free-text reasons stay in the private control journal. Refresh the export after
+the provider posts delayed billing.
+
+```sh
+python -m lab.rp.rp report --output lab/rp/results/campaign-costs.json
+```
