@@ -77,6 +77,10 @@ def serve(root, arm, seed, run_id, factual):
                "IRONMULE_PS1":"1","IRONMULE_PK6":"1","IRONMULE_GGML_DH2":"0","IRONMULE_SV5":"0",
                "IRONMULE_ADMISSION_LEARN":"0","IRONMULE_GGML_TRACE":str(state/"trace.txt")}
         env["LD_LIBRARY_PATH"] = env["LLAMA_CPP_LIB_PATH"] + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+        from ironmule_devices import VISIBLE
+        for key in (*VISIBLE, "NVIDIA_DRIVER_CAPABILITIES", "IRONMULE_GGML_GPU_LAYERS", "IRONMULE_GGML_SPLIT"):
+            if key in os.environ:
+                env[key] = os.environ[key]
         if arm == "candidate":
             env["IRONMULE_TRIAL_LOCAL_CALIBRATION"]="1"
         gguf=Path("/models/Qwen3-32B-Q4_K_M.gguf")

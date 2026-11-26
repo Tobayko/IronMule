@@ -3,13 +3,12 @@ import argparse
 import ast
 import hashlib
 import json
-import math
 import re
+import textwrap
 from pathlib import Path
-from statistics import median
 
 from lab.pk6 import warm_result
-from training.code_author import hosted_proposal, write_once, PendingAuthor
+from training.code_author import hosted_proposal, read_request, read_response, write_once, PendingAuthor
 from training.code_trial import git, read
 from training.experiment_planner import digest
 
@@ -107,6 +106,30 @@ def commission(directory, observations, out):
     return {"status": "answered", "order": order["order_id"]}
 
 
+def materialize(folder):
+    """Rebuild the exact, attributed source artifact from the immutable Git parent and reply."""
+    order = read(folder / "order.json")
+    request_id, request = read_request(folder / "author")
+    source = git("show", order["base_commit"] + ":" + METHOD_PATH, cwd=ROOT) + "\n"
+    if (order["base_commit"] != warm_result.SOURCE or order != request["order"]
+            or hashlib.sha256(source.encode()).hexdigest() != order["source_sha256"]
+            or digest({k:v for k,v in order.items() if k != "order_id"}) != order["order_id"]):
+        raise ValueError("different order, baseline or source")
+    name = order["target"]["function"].split(".")[-1]
+    node = source_methods(source)[name]
+    proposal = read_response(folder / "author", request_id)
+    replacement = textwrap.dedent(proposal["definition"]).strip()
+    generated, = ast.parse(replacement).body
+    if (not isinstance(generated, ast.FunctionDef) or generated.name != name or generated.decorator_list
+            or ast.dump(generated.args) != ast.dump(node.args) or node.lineno != order["target"]["line"]):
+        raise ValueError("generated source is outside the ordered method")
+    lines = source.splitlines(keepends=True)
+    lines[node.lineno - 1:node.end_lineno] = [textwrap.indent(replacement," " * node.col_offset) + "\n"]
+    result = "".join(lines)
+    compile(result,METHOD_PATH,"exec")
+    return result.encode()
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -116,8 +139,14 @@ if __name__ == "__main__":
     run = sub.add_parser("commission")
     for key in ("directory", "observations", "out"):
         run.add_argument(key, type=Path)
+    build = sub.add_parser("materialize")
+    build.add_argument("folder", type=Path)
+    build.add_argument("output", type=Path)
     a = p.parse_args()
     if a.cmd == "project":
         write_once(a.out, last_init(a.trace))
+    elif a.cmd == "materialize":
+        with a.output.open("xb") as stream:
+            stream.write(materialize(a.folder))
     else:
         print(json.dumps(commission(a.directory, a.observations, a.out)))

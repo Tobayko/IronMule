@@ -4658,3 +4658,20 @@ paid prefix. The program produced Codex order `4e87c90d…` for a source experim
 The two separate prospective pairs consumed 141.36 s and an estimated $0.08646 of the
 existing lease. Source qualification has its own independent end-to-end release gate.
 [Bound order, costs, raw measurements and replay](../lab/autonomous/results/a100-calibration-sampling/)
+
+## 2026-11-26 — PR 57 warm HTTP replication on a second A100
+
+On a fresh RunPod A100 SXM4 80 GB, the ordinary PR 57 server selected 32 sequences on
+its local numerical and width gates. Qwen3-32B GGUF Q4_K_M delivered 297.535 tokens/s
+at 32 clients, versus 271.26 for vLLM 0.11.0 with the official Qwen3-32B AWQ checkpoint.
+The original scoring rule gives a ratio of 1.09686. The two IronMule process medians
+were 297.13 and 301.90 tokens/s. At eight clients the medians were 190.805 and
+184.005 tokens/s. At 32 clients the median of the per-wave median TTFT was 2405.9 ms
+for IronMule and 1706.1 ms for vLLM. All six factual batches scored 18/18.
+The nine timed 32-client waves delivered 1024 tokens apiece. The independent verifier
+checks all 288 client timelines against their aggregate token counts and TTFT.
+The complete first IronMule readiness took 1401.12 seconds including fresh calibration,
+vLLM took 158.43 seconds, and the second IronMule start using local state took 80.03
+seconds. The historical pod 37 result was 1.1002. Different quantizations and the
+scope of the single-device workload limit both comparisons. This replication measures
+Claude's existing warm path. [Registration, raw waves and target](../lab/autonomous/results/a100-pr57-warm-repeat/)

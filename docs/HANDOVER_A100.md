@@ -26,6 +26,7 @@ git clone https://github.com/Tobayko/IronMule.git /work/IronMule
 cd /work/IronMule
 git checkout --detach 8cf0a3106f09a3338eb53c28047af7e36fc7b340
 env JOBS=16 PIP_NO_CACHE_DIR=1 VLLM=1 bash lab/rp/setup.sh 80'
+mkdir -p "$RESULTS"
 cp lab/autonomous/results/a100-pr57-warm-repeat/protocol.json "$RESULTS/"
 python -m lab.rp.warm_repeat --state "$RESULTS" --pod-id "$POD_ID" --seconds 6000
 python -m lab.pk6.warm_result "$RESULTS"
@@ -244,3 +245,22 @@ Pod 37's logits files of the GPU check (2 x 19 MB) are not in the repository; th
 - Local watchdog scripts stopped and the scheduled reminders deleted after each pod.
 - Cost per pod from the session records: pod 36 about 1.45 h, about 3.2 USD; pod 37 about 0.62 h, 1.36 USD.
   Account balances are not given here: they were not re-checked for this handover.
+
+### Replay of the second A100
+
+The new reference series reached 1.09686× vLLM at 32 clients, with medians of 297.535
+and 271.26 tokens/s. Both IronMule starts individually exceeded vLLM. The pooled score
+fell below 1.10. The median TTFT at this width favored vLLM by 699.8 ms. The native
+startup trace shows 20 native packed bursts in the final threshold selection of each
+IronMule process. This stage took 18.807 and 18.752 seconds. The planner compared the
+recorded startup phases and used previous source outcomes to suppress duplicate
+experiments. It requested a guarded reduction of fresh threshold measurements.
+The replay, author reply and candidate source reconstruction use the original Git tree.
+
+```sh
+series=lab/autonomous/results/a100-pr57-warm-repeat
+trial=lab/autonomous/results/a100-dynamic-calibration
+python -m lab.pk6.warm_result "$series"
+python -m lab.pk6.startup_search commission "$series" "$trial" "$trial"
+python -m lab.pk6.startup_search materialize "$trial" /tmp/ironmule-pk2-candidate.py
+```
