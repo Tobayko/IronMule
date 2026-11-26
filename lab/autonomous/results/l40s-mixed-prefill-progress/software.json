@@ -1,0 +1,15 @@
+{
+  "python": "3.11.11",
+  "linux": "6.8.0-138-generic",
+  "cpu": "AMD EPYC 9354 32-Core Processor",
+  "cpu_affinity_count": 128,
+  "cpu_max": null,
+  "native_ggml_sdist": "0.3.16",
+  "mlx": "0.32.5",
+  "numpy": "2.1.2",
+  "competitor": {
+    "torch": "2.8.0",
+    "transformers": "4.57.1",
+    "vllm": "0.11.0"
+  }
+}

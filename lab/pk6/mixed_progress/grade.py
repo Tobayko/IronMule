@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import csv
+import gzip
+import hashlib
 from datetime import datetime, timezone
 import json
 import math
@@ -79,8 +81,13 @@ def bindings(folder, arm, waves):
     """Project native prompt/decode calls only from the counted, ID-matched HTTP windows."""
     path = folder / f"trace-{arm}.txt"
     ids = {r["server_id"] for w in waves for r in w["requests"]}
-    jobs, mixed = {}, []
-    for line in path.read_text().splitlines():
+    jobs, timings = {}, []
+    raw = (
+        path.read_bytes()
+        if path.is_file()
+        else gzip.decompress(path.with_suffix(".txt.gz").read_bytes())
+    )
+    for line in raw.decode().splitlines():
         if line.startswith("# job "):
             fields = dict(x.split("=", 1) for x in line.split()[2:])
             tag = fields["tag"]
@@ -89,22 +96,26 @@ def bindings(folder, arm, waves):
                     raise ValueError("duplicate native request")
                 jobs[tag] = {
                     "prompt": int(fields["prompt"]),
+                    "reused": int(fields["reused"]),
                     "seq": int(fields["seq"]),
                     "start": float(fields["seen"]),
                     "end": float(fields["end"]),
                 }
         elif line and line[0].isdigit():
-            t, seconds, _, _, _, prompt, decode, _, seqs, *_ = line.split()
-            if int(prompt) and int(decode):
-                mixed.append(
-                    (
-                        float(t),
-                        float(seconds),
-                        int(prompt),
-                        int(decode),
-                        {int(n) for n in seqs.removeprefix("seqs=").split(",")},
-                    )
+            t, seconds, _, _, _, prompt, decode, fill, seqs, build, native, read, *_ = (
+                line.split()
+            )
+            timings.append(
+                (
+                    float(t),
+                    float(seconds),
+                    int(prompt),
+                    int(decode),
+                    int(fill),
+                    {int(n) for n in seqs.removeprefix("seqs=").split(",")},
+                    [float(v.split("=", 1)[1]) / 1000 for v in (build, native, read)],
                 )
+            )
     if set(jobs) != ids:
         raise ValueError("unmatched HTTP/native ID")
     cells = []
@@ -119,8 +130,32 @@ def bindings(folder, arm, waves):
             raise ValueError("native identity, work or request clock differs")
         lo, hi = min(r["t_send"] for r in rows), max(r["t_done"] for r in rows)
         calls = []
-        for t, seconds, p, d, seqs in mixed:
-            if lo <= t <= hi:
+        phases = {}
+        for t, seconds, p, d, fill, seqs, stages in timings:
+            if not lo <= t <= hi:
+                continue
+            kind = (
+                "mixed" if p and d else "prefill" if p else "decode" if d else "filler"
+            )
+            agg = phases.setdefault(
+                kind,
+                dict(
+                    calls=0,
+                    seconds=0.0,
+                    llama_decode_s=0.0,
+                    build_s=0.0,
+                    readback_s=0.0,
+                    filler_rows=0,
+                ),
+            )
+            agg["calls"] += 1
+            agg["seconds"] += seconds
+            agg["filler_rows"] += fill
+            for k, v in zip(
+                ("build_s", "llama_decode_s", "readback_s"), stages, strict=True
+            ):
+                agg[k] += v
+            if p and d:
                 joined = {
                     s["seq"]
                     for s in spans
@@ -138,10 +173,13 @@ def bindings(folder, arm, waves):
                 "repeat": w["repeat"],
                 "matched": len(rows),
                 "mixed": calls,
+                "phases": phases,
+                "prompt_tokens": sum(s["prompt"] for s in spans),
+                "reused_tokens": sum(s["reused"] for s in spans),
             }
         )
     return {
-        "trace_sha256": checksum(path),
+        "trace_sha256": hashlib.sha256(raw).hexdigest(),
         "waves_sha256": checksum(folder / f"waves-{arm}.jsonl"),
         "cells": cells,
     }

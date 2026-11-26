@@ -142,3 +142,20 @@ def test_simulated_row_budgets_remain_grouped_and_outside_the_label_set():
     assert len(rows) == 6 and len({r["group"] for r in rows}) == 1
     assert all(r["provenance"] == "simulated" and not r["label_eligible"] for r in rows)
     assert [r["profiles"] for r in rows if r["decision"]] == [[{"row_budget": 2048}]]
+
+
+def test_step_model_updates_only_on_the_training_start():
+    from lab.pk6.mixed_progress.learning import fit
+
+    def call(p, d, s):
+        return {"prompt_rows": p, "decode_rows": d, "seconds": s}
+
+    train = [call(1000, 10, 0.32), call(1500, 8, 0.48)] * 3
+    prior = [0.09, 0, 0.29, 0]
+    slow = fit(train, [call(1000, 10, 1.0)], prior)
+    fast = fit(train, [call(1000, 10, 0.1)], prior)
+    assert slow["updated"] == fast["updated"] != fast["prior"]
+    assert (
+        slow["holdout_mean_absolute_error_s"] != fast["holdout_mean_absolute_error_s"]
+    )
+    assert fit([], train, prior)["status"] == "insufficient_observed_mixed_calls"
