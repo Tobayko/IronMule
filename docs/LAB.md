@@ -4543,3 +4543,14 @@ The optimistic sum of the best within-shape estimates was 24.83 ms. Even a wave 
 observed prefill would require 46.45 ms to meet the existing 2% throughput gate. The planner deferred
 a new source build. The trial measured isolated GEMMs and left the deployed cuBLAS path in place.
 [Raw timings and quality](../lab/autonomous/results/a100-prefill-lt/measurement.json) · [Planning decision](../lab/autonomous/results/a100-prefill-lt/decision.json) · [Replay](../lab/pk1/prefill-probe.md)
+
+### 2026-11-26 EPYC prefill code trial stopped on mismatched thread profiles
+
+On four pinned cores of an AMD EPYC 7742, a Codex-authored change to `GgmlEngine._prefill` passed
+84 engine and tokenizer tests (six skipped). The first pair of restricted real SmolLM2 135M workers
+each delivered 16 correct answers and 48 matching tokens. The incumbent independently qualified
+offset +3 for load bucket `1:1:4:4`. The candidate qualified offset +2 for `1:2:4:4`.
+That changed the execution conditions. Qualification stopped at the first pair, the raw times are
+excluded from speed training, and the reference stayed active. The complete source order, authored
+patch and first-pair receipts are preserved together.
+[Order](../lab/autonomous/results/runpod-epyc-pilot/prefill-order.json) · [Authored diff](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/candidate.diff) · [Rejection](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/comparison-rejected.json) · [Raw byte hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/sha256.json)
