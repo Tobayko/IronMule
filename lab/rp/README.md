@@ -71,13 +71,8 @@ commit, affinity, phase timings and outcome. `trials.json` retains complete and 
 An empty holdout, failed correctness check or lack of qualified model decisions leaves a failed phase.
 Send SIGTERM when GPU timing must resume. Preserve the state directory before terminating the pod.
 
-An owned pod may renew its current lease by up to 90 minutes per request. Each extension stays within the shared USD cap. The operator first
-checks the provider's reported owner, balance and rate and reserves the additional duration
-in the shared journal. The deployed pod's immutable original watcher transfers enforcement
-to a replacement that initially uses the original deadline. The controller commits the new
-deadline after a positive remote acknowledgement. A lost reply retains the reservation and
-the earlier control deadline. Retry using identical minutes and reason. Start the handoff at
-least three minutes before the initial deadline. Calling `stop` still terminates early.
+Request up to 90 additional minutes per renewal on the same owned pod. Start the handoff at least
+three minutes before the current deadline. An explicit stop terminates the lease early.
 
 ```sh
 python -m lab.rp.rp renew --minutes 90 --reason 'finish paired tests on the same calibrated GPU' --request-id first-paired-run

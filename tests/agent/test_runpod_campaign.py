@@ -118,6 +118,13 @@ def test_two_phase_renewal_reserves_once_and_keeps_original_cutoff_on_failure(tm
     pending = rp.load()
     assert calls == ["commit", "revert"] and pending["pod"]["deadline"] == old
     assert pending["pod"]["reserved"] == pytest.approx(2.5 * 160 / 60)
+    def failed_watch(_):
+        raise OSError("no local watchdog acknowledgement")
+    monkeypatch.setattr(rp, "launch_watch", failed_watch)
+    with pytest.raises(OSError, match="no local"):
+        rp.renew(rp.load(), 90, "same GPU")
+    assert calls == ["commit", "revert"] and rp.load()["pod"]["deadline"] == old
+    monkeypatch.setattr(rp, "launch_watch", lambda _: None)
     monkeypatch.setattr(rp, "remote_handoff", lambda *a: {"effective": old + 5400, "live": True})
     assert rp.renew(pending, 90, "same GPU")["deadline"] == old + 5400
     assert rp.renew(rp.load(), 90, "same GPU")["reserved"] == pytest.approx(2.5 * 160 / 60)
@@ -191,6 +198,8 @@ def test_real_process_handoff_arms_replacement_before_original_exits(tmp_path, m
         second = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(second)
         monkeypatch.setattr(second, "ORIGINAL", original)
+        # The container keeps its initial environment even after the old lease would have expired.
+        monkeypatch.setenv("RP_DEADLINE", str(int(time.time()) - 60))
         old_marker = watcher.MARKER.read_bytes()
         # A failed preparation does not touch the still-live previous monitor.
         watcher.MARKER.write_text("0")
