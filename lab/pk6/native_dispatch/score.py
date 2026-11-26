@@ -35,7 +35,7 @@ def exclusion(arm, proof):
     if arm.startswith("P"):
         return "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70"
     if (
-        arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "G"))
+        arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y", "G"))
         and proof.get("fallback") == "stock"
     ):
         return "product rejected the proposed numeric profile"
@@ -46,7 +46,7 @@ def exclusion(arm, proof):
         return "requested PS1 and PK6 profile did not serve"
     if arm.startswith("H") and not proof.get("verified_compact_pool"):
         return "requested pool capacity not witnessed in the serving worker"
-    if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J")) and (
+    if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y")) and (
         not any(proof["prompt_plugin_dispatches_in_http_by_width"].values())
         or not proof["prompt_plugin_dispatches_in_http_quality"]
     ):
@@ -122,15 +122,25 @@ def inspect(folder, arm, target, telemetry):
     sample = grade.sampled_resources(telemetry, rows)
     process_samples = [v for t, v, _ in telemetry if start["unix"] <= t <= end["unix"]]
     sample["process_peak_gpu_mib"] = max(process_samples) if process_samples else None
-    energy = {}
-    for w in (1, 8, 32):
-        block = [r for r in rows if r["width"] == w and r["repeat"] < 3]
-        estimates = [wave_energy(telemetry, r) for r in block]
-        tokens = sum(x["tokens"] for r in block for x in r["requests"])
-        energy[str(w)] = (
-            sum(estimates) / tokens if all(e is not None for e in estimates) else None
-        )
-    sample["estimated_board_joules_per_output_token"] = energy
+
+    def energy_by_width(group):
+        result = {}
+        for w in (1, 8, 32):
+            block = [r for r in group if r["width"] == w and r["repeat"] < 3]
+            estimates = [wave_energy(telemetry, r) for r in block]
+            tokens = sum(x["tokens"] for r in block for x in r["requests"])
+            result[str(w)] = (
+                sum(estimates) / tokens
+                if tokens and all(e is not None for e in estimates)
+                else None
+            )
+        return result
+
+    sample["estimated_board_joules_per_output_token"] = energy_by_width(rows)
+    sample["estimated_board_joules_per_output_token_by_seed"] = {
+        str(seed): energy_by_width([r for r in rows if r["seed"] == seed])
+        for seed in seeds
+    }
     quality = ready["health"].get("gate")
     if arm != "vllm" and not (
         quality and quality["passes"] is True and quality["interval"][1] <= 1.005

@@ -4,10 +4,10 @@ import argparse
 import json
 import math
 import os
-from pathlib import Path
 import random
 import subprocess
 import tempfile
+from pathlib import Path
 
 import numpy as np
 
@@ -87,6 +87,7 @@ def screen(gguf, built, out):
                         env=env,
                         text=True,
                         capture_output=True,
+                        check=False,
                     )
                     if proc.returncode:
                         raise RuntimeError(proc.stderr[-1200:])

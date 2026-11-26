@@ -20,19 +20,21 @@ static void reset() {
     }
     entries.clear(); bytes=0; owner=-1; only_stream=nullptr;
 }
-static Entry *get(const void *raw,int type,int n,int k,int device,cudaStream_t stream,bool &fresh) {
+static Entry *get(const void *raw,int type,int n,int k,int device,cudaStream_t stream,bool &fresh,int element_bytes=1) {
     if (sessions!=1 || (owner>=0 && (device!=owner || stream!=only_stream))) return nullptr;
     auto key=std::make_tuple(raw,type,n,k);
     auto found=entries.find(key);
     if (found!=entries.end()) { fresh=false; return &found->second; }
     // Only cache FFN projections. Small attention kernels have a different bandwidth crossover.
     if (n!=25600 && k!=25600) return nullptr;
-    const size_t requested=size_t(n)*k+size_t(n)*sizeof(float);
+    const size_t matrix_bytes=size_t(n)*k*element_bytes;
+    const size_t scale_bytes=element_bytes==1 ? size_t(n)*sizeof(float) : 0;
+    const size_t requested=matrix_bytes+scale_bytes;
     constexpr size_t cap=size_t{7}<<30;
     size_t free=0,total=0;
     if (bytes+requested>cap || cudaMemGetInfo(&free,&total)!=cudaSuccess || free<requested+(size_t{4}<<30)) return nullptr;
     Entry entry{};
-    if (cudaMalloc(&entry.weights,size_t(n)*k)!=cudaSuccess || cudaMalloc(&entry.scales,size_t(n)*sizeof(float))!=cudaSuccess) {
+    if (cudaMalloc(&entry.weights,matrix_bytes)!=cudaSuccess || (scale_bytes && cudaMalloc(&entry.scales,scale_bytes)!=cudaSuccess)) {
         cudaFree(entry.weights); cudaFree(entry.scales); cudaGetLastError(); return nullptr;
     }
     fresh=true; owner=device; only_stream=stream; bytes+=requested;

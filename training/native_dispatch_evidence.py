@@ -88,3 +88,44 @@ def experiences(root, source, digest):
                 authorship="IronMule fitted its CPU profile head from synchronized native matmuls.",
                 uncertainty="Operator times include GGML graph calls. Product qualification is separate.",
             )
+    elif path.name == "result.json" and path.parent.name == "gate-fix":
+        gate = result["gate"]
+        for i, trial in enumerate(gate.get("tried", [])):
+            yield record(
+                "native_numeric_qualification",
+                source,
+                digest,
+                str(i),
+                "l40s-explicit-cublas-128",
+                hardware=result["hardware"],
+                model=result["gguf"],
+                quantization="Q4_K_M",
+                profiles=[trial["settings"]],
+                metrics=[{"ppl_ratio_interval": trial.get("interval")}],
+                quality=trial.get("factual"),
+                decision="qualified" if trial["passes"] else "rejected",
+                reason=gate.get("reason"),
+                authorship="Codex corrected the identity check. IronMule evaluated the requested override.",
+                uncertainty="One target and gate corpus. A successful factual check alone cannot qualify a CUDA profile.",
+            )
+    elif path.name == "result.json":
+        family = path.parent.name
+        for i, cell in enumerate(result["cells"]):
+            yield record(
+                "native_prompt_arithmetic",
+                source,
+                digest,
+                str(i),
+                f"l40s-arithmetic-{cell['n']}-{cell['k']}",
+                hardware=result.get("hardware", result.get("board")),
+                model=result.get("weights", result.get("gguf_sha256")),
+                quantization=cell["type"],
+                software={"family": family, "library": result.get("library_sha256")},
+                workload={k: cell[k] for k in ("n", "k", "b")},
+                metrics=cell["variants"] if "variants" in cell else [cell],
+                reason="kernel declined this cell"
+                if cell.get("rc")
+                else "standalone operator screen",
+                authorship="Codex implemented the experiment. The GPU ran the real GGUF tensor.",
+                uncertainty="Warm arithmetic on sampled channels and generated activations. Full serving and quality require separate qualification.",
+            )

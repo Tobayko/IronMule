@@ -57,3 +57,40 @@ def test_foreign_pilot_scope_falls_back_before_loading_any_weights(tmp_path):
         )
     )
     assert choose(tmp_path, {"name": "other"}, "one")["profile"] == "stock"
+
+
+def test_grid_keeps_only_cells_confirmed_on_an_independent_seed(tmp_path):
+    from lab.pk6.native_dispatch.grid_screen import MODES, SEEDS, WIDTHS, select
+
+    protocol = {
+        "hardware": "local",
+        "reference_cuda": "native",
+        "gguf": "weights",
+        "backend": "isolated",
+    }
+    (tmp_path / "protocol.json").write_text(json.dumps(protocol))
+    for n in range(1, 6):
+        for seed in SEEDS:
+            cells = {}
+            for b in WIDTHS:
+                entries = {
+                    m: {"us": 12, "graphs": 8, "dispatches": 8, "relative_rms": 0}
+                    for m in MODES
+                }
+                entries["stock"]["us"] = 10
+                entries["xy"]["us"] = 6 if (n == 1 or seed == SEEDS[0]) else 11
+                if b != 448:
+                    entries["xy"]["dispatches"] = 0
+                cells[str(b)] = entries
+            (tmp_path / f"shape-{n}-{seed}.json").write_text(
+                json.dumps({"n": n, "k": 32, "seed": seed, "cells": cells})
+            )
+    assert select(tmp_path)["ranges"] == [[1, 32, 448, 448, 1]]
+    (tmp_path / f"shape-1-{SEEDS[1]}.json").unlink()
+    with pytest.raises(ValueError, match="incomplete"):
+        select(tmp_path)
+
+
+def test_compact_capacity_is_checked_against_actual_worker_allocation():
+    assert exclusion("H1", {"verified_compact_pool": False})
+    assert exclusion("H1", {"verified_compact_pool": True}) is None

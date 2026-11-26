@@ -52,6 +52,13 @@ def compile_plugin(kind, output, model, policy=None):
                 policy / "fit.json",
             ]
         )
+    elif kind == "cached-half":
+        inputs = [
+            here / "half_prompt.cu",
+            here / "weight_cache.cuh",
+            here / "block_values.cuh",
+        ]
+        args.append(str(inputs[0]))
     elif kind == "marlin":
         include = here.parents[2] / "native/kernels"
         args.extend(
@@ -102,7 +109,10 @@ def compile_plugin(kind, output, model, policy=None):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("kind", choices=["fp8", "routed", "int8", "marlin", "cached-int8"])
+    p.add_argument(
+        "kind",
+        choices=["fp8", "routed", "int8", "marlin", "cached-int8", "cached-half"],
+    )
     p.add_argument("output", type=Path)
     p.add_argument("gguf", type=Path)
     p.add_argument("--policy", type=Path)

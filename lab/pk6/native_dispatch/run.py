@@ -137,6 +137,18 @@ def main():
             IRONMULE_GGML_UBATCH="8192",
             IRONMULE_CUDA_GRAPHS_ROWS="32",
         )
+        if arm.startswith("E"):
+            # Exercise normal automatic generation on this board, sharing its real persistent calibration state.
+            for key in (
+                "IRONMULE_KG",
+                "IRONMULE_KG_LIB",
+                "IRONMULE_GGML_PACK",
+                "IRONMULE_GGML_UBATCH",
+                "IRONMULE_CUDA_GRAPHS_ROWS",
+                "IRONMULE_W4",
+                "IRONMULE_W4_TABLE",
+            ):
+                os.environ.pop(key, None)
         if arm.startswith("H"):
             os.environ["IRONMULE_LAB_POOL_CELLS"] = str(pool["cells"])
         if arm.startswith(("N", "G")):
@@ -155,7 +167,7 @@ def main():
             os.environ["IRONMULE_LAB_ACTIVITY"] = str(args.out)
         elif arm.startswith(("P", "B")):
             os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = str(args.threshold)
-        elif arm.startswith(("F", "V", "I", "M", "Z", "J")):
+        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y")):
             if not args.lib:
                 raise ValueError("missing measured kernel library")
             os.environ.update(
@@ -164,7 +176,7 @@ def main():
                 IRONMULE_LAB_FP8=str(args.threshold),
             )
         elif arm != "vllm" and not arm.startswith(
-            ("R", "U", "N", "G", "T", "X", "A", "L", "H")
+            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E")
         ):
             raise ValueError("unregistered arm")
         trial.measure(args, arm, hw, 0, deadline)

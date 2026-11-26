@@ -61,6 +61,36 @@ def build(work, plan=None):
     if (mode == 1 || mode == 2) args.use_stream_k = false;
     if (mode) ++grid_calls;""",
     )
+    # Ada compiles out the upstream XY device branch. Match each host grid to
+    # its own template specialization, including the dynamic shared-memory limit.
+    body = substitute(
+        body,
+        "template <ggml_type type, int mmq_x, bool need_check>\n#if defined(GGML_USE_HIP)",
+        "template <ggml_type type, int mmq_x, bool need_check, bool explicit_xy = false>\n#if defined(GGML_USE_HIP)",
+    )
+    body = substitute(
+        body,
+        "#if (defined(GGML_USE_HIP) && !defined(CDNA)) || __CUDA_ARCH__ < GGML_CUDA_CC_VOLTA\n    {\n        const int wt",
+        "#if !defined(GGML_USE_HIP) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA\n    if constexpr (explicit_xy)\n#endif\n    {\n        const int wt",
+    )
+    body = substitute(
+        body,
+        "    }\n#endif // (defined(GGML_USE_HIP) && !defined(CDNA3)) || __CUDA_ARCH__ < GGML_CUDA_CC_VOLTA\n\n    const     int64_t blocks_per_ne00",
+        "    }\n\n    const     int64_t blocks_per_ne00",
+    )
+    begin = body.index("    if (!args.use_stream_k) {")
+    end = body.index("    const dim3 block_nums_stream_k", begin)
+    xy = body[begin:end]
+    if xy.count("mul_mat_q<type, mmq_x, need_check>") != 2:
+        raise ValueError("unsupported XY kernel launch sites")
+    xy = xy.replace(
+        "mul_mat_q<type, mmq_x, need_check>", "mul_mat_q<type, mmq_x, need_check, true>"
+    )
+    xy = xy.replace(
+        "    if (!args.use_stream_k) {",
+        "    if (!args.use_stream_k) {\n        CUDA_SET_SHARED_MEMORY_LIMIT((mul_mat_q<type, mmq_x, false, true>), nbytes_shared);\n        CUDA_SET_SHARED_MEMORY_LIMIT((mul_mat_q<type, mmq_x, true, true>), nbytes_shared);",
+    )
+    body = body[:begin] + xy + body[end:]
     relink_q4(body, work, base)
     save(
         work / "build.json",
