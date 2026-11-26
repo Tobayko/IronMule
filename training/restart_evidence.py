@@ -34,7 +34,7 @@ COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 PLANS = ("replan-after-product.json", "replan-after-product-declined.json")
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
-NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "startup-fit.json", "startup-head.npz", "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
+NAMES = {"product-tokenizer-diagnostic.json", *REQUIRED, *COST_FILES, *RECOVERY, "startup-fit.json", "startup-head.npz", "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
          "qualified.json", "control.json", *PLANS, *("incident-" + n for n in INCIDENT), "pilot-comparison.json", *PILOT_ARMS, *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
 
 
@@ -111,6 +111,22 @@ def checkpoint_assets(state, order, verified, assets):
         raise ValueError("startup head is not bound to the measured training and held-out families")
     assets["startup-fit.json"] = bounded(state / "startup-fit.json")
     assets["startup-head.npz"] = weights
+
+
+def tokenizer_diagnosis(state, order, assets):
+    source = state / "product-nested-diagnostic.json"
+    if not source.is_file():
+        return
+    data = bounded(source)
+    report = json.loads(data)
+    prior = json.loads(assets["http-gate-reference.json"])
+    child = report["nested_diagnostic"]["tokenizer_child"]
+    if (report["order_id"] != order["order_id"] or report["source_sha256"] != prior["source_sha256"]
+            or report["gguf_sha256"] != order["binding"]["gguf"] or report["gate_diagnostic"] != prior["diagnostic"]
+            or report["ids_count"] != 0 or child["returncode"] == 0 or child["ids_count"] != 0
+            or "import mlx.core as mx" not in child["stderr"] or "ImportError: cudaMallocManaged(" not in child["stderr"]):
+        raise ValueError("nested reference failure differs from the initially diagnosed tokenizer gate")
+    assets["product-tokenizer-diagnostic.json"] = data
 
 
 def capture_incident(state, assets, order, verified):
@@ -392,6 +408,7 @@ def export(args):
                             extra_attempts[work.name] = additions
                     if (state / "product").is_dir():
                         product_assets(state, order, verified, assets)
+                        tokenizer_diagnosis(state, order, assets)
                 else:
                     restart_trial.qualification(check)
             qualified = True
@@ -549,6 +566,15 @@ def experiences(root, source):
                    initialization="Three independently seeded heads trained from random weights on CPU",
                    authorship="IronMule fitted and replayed the CPU startup controller",
                    uncertainty=fit["uncertainty"])
+    if "product-tokenizer-diagnostic.json" in files:
+        report = read(folder / "product-tokenizer-diagnostic.json")
+        child = report["nested_diagnostic"]["tokenizer_child"]
+        yield emit("restart_product_gate_correction", "product-tokenizer-diagnostic.json", provenance="corrected_interpretation",
+                   reason="nested_mlx_managed_allocation_import_failure", previous_report=report["gate_diagnostic"],
+                   observed_error=child["stderr"].strip().splitlines()[-1], packages=report["packages"],
+                   quality={"returned_ids": child["ids_count"], "factual_fixture": child["facts_sha256"]},
+                   note="The tokenization wrapper classified the ImportError as missing_dependency. The nested process imported MLX and CUDA rejected its managed-memory allocation.",
+                   authorship="Restricted physical reference diagnostic", uncertainty="This identifies the failing call. A successful repair requires a separate full tokenizer preflight.")
     if "incident-result.json" in files:
         failure = read(folder / "incident-result.json")
         yield emit("restart_automatic_withdrawal_incident", "incident-result.json", reason=failure["observed_error"],

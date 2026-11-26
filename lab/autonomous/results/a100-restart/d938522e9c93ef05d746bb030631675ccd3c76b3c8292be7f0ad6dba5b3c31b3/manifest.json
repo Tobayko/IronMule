@@ -171,6 +171,10 @@
       "original_sha256": "dc4ead121929f18a65f8e7ef145ea0e5351ce972cd6ff7cae7cbecd1d7f2093f",
       "sha256": "dc4ead121929f18a65f8e7ef145ea0e5351ce972cd6ff7cae7cbecd1d7f2093f"
     },
+    "product-tokenizer-diagnostic.json": {
+      "original_sha256": "76c9fe067c28a21d0eec98bf136c545f8fc8237b222c9d7f1333277656947016",
+      "sha256": "124d9389dfbfdb497e4835f59584c743b6486f9f39b490c0526d20653978c230"
+    },
     "qualified.json": {
       "original_sha256": "33a41bb200a1ba982b589cb353d6e6d4459e8acb4d6a7f368a0b9e503edfda87",
       "sha256": "33a41bb200a1ba982b589cb353d6e6d4459e8acb4d6a7f368a0b9e503edfda87"
