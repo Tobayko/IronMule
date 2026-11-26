@@ -66,6 +66,8 @@ def experiences(root,source,digest):
             row=read(name)
             yield emit("local_calibration_ordered_pair",name,str(seed),metrics=[entry],quality={"facts_correct":18,"identical_outputs":True},
                        workload={"seed":seed,"factual_first":entry["facts_first"],"warm":32,"cold":32},
+                       label_eligible=verdict["status"]=="qualified",label_scope="time to first complete ordered batch on this physical binding",
+                       family_fold="held-out-factual-first" if entry["facts_first"] else "training-mixed-first",
                        baseline_source=str((directory/f"reference-{seed}.json").relative_to(root)),program_sha256=row["source_sha256"],
                        reason="paired ordered worker, with target and exact-work validation",
                        uncertainty="Use whole workload-family holdouts. Each pair belongs to this same physical experiment.")

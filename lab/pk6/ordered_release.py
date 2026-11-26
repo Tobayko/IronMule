@@ -15,6 +15,7 @@ import uuid
 import numpy as np
 
 from lab.pk6 import ordered_grade as grade
+from lab.pk6 import ordered_quality
 from lab.pk6.startup_search import materialize
 from training import pilot_restart_profiles as pilot
 from training import scoped_release as release
@@ -140,6 +141,7 @@ def measured(root,receipt,arm,seed,name,factual):
 def activate(args):
     def fresh(receipt):
         require(receipt["qualification"]["evaluator_sha256"]==evaluator(),"changed trusted evaluator")
+        quality=ordered_quality.ensure(args.root.parent/"calibration",receipt["qualification"]["binding"]["runtime"]["settings"])
         pairs=[]
         for index,(seed,factual) in enumerate(((99301,False),(99401,True))):
             rows={}
@@ -149,7 +151,7 @@ def activate(args):
             require(pair["rate"]>=1.02 and max(pair["warm_wall"],pair["warm_p95"])<=1.02
                     and max(pair["rss_ratio"],pair["gpu_ratio"])<=1.05,"fresh serving regression")
             pairs.append(pair)
-        return {**receipt["qualification"],"metrics":{"fresh":pairs}}
+        return {**receipt["qualification"],"metrics":{"fresh":pairs,"numerical_quality":quality}}
     return release.activate(args.state,args.control,args.pin,fresh)
 
 
