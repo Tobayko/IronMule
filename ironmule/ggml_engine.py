@@ -803,6 +803,14 @@ class GgmlEngine:
                 import ctypes
 
                 mparams.tensor_buft_overrides = ctypes.cast(self._em1, ctypes.c_void_p)
+        restart_path = os.environ.get("IRONMULE_KG_RESTART_RECEIPT")
+        restart_pin = os.environ.get("IRONMULE_KG_RESTART_SHA256")
+        model_identity_before_load = None
+        if restart_path and restart_pin and model is None and self.gpu_layers and kernel_mask:
+            try:
+                model_identity_before_load = list(_file_identity(os.stat(gguf)))
+            except OSError:
+                pass  # ordinary model loading and calibration still report their own errors
         self.model = model or L.llama_model_load_from_file(str(gguf).encode(), mparams)
         if not self.model:
             raise ValueError(f"llama.cpp could not load {gguf}")
@@ -834,7 +842,120 @@ class GgmlEngine:
             # SD1 (2026-11-23): the library's token-count mask is one per process; a second engine in the same process
             # (a draft model, kernel_mask=False) must not measure and overwrite the served model's mask
             trace_note("init measure_kg begin")
-            self.kg = self.measure_kg(KG_LIB)
+            def replay_qualified_masks():
+                """Install a broker-pinned, locally verified pair of W4 masks on a fresh engine."""
+                import ctypes
+                import inspect
+
+                from .ggml_binary import identity
+                from .kernel_gen import fingerprint
+
+                def is_digest(value):
+                    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+                if (not is_digest(restart_pin) or model_identity_before_load is None or self.shared or draft_gguf
+                        or os.environ.get("IRONMULE_KG4_SCOPE") or type(self).measure_kg is not GgmlEngine.measure_kg):
+                    return None
+                try:
+                    # A read-only broker mount supplies the file; its separately supplied digest binds the exact bytes.
+                    fd = os.open(restart_path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+                    with os.fdopen(fd, "rb") as stream:
+                        info = os.fstat(stream.fileno())
+                        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 131072:
+                            return None
+                        data = stream.read(131073)
+                    if len(data) != info.st_size or hashlib.sha256(data).hexdigest() != restart_pin:
+                        return None
+                    receipt = json.loads(data)
+                    created = receipt["created_s"]
+                    quality = receipt["quality"]
+                    if (receipt["schema"] != "ironmule.w4-restart-qualified.v1" or type(created) not in (int, float)
+                            or not 0 <= time.time() - created <= 86400 or type(quality["completed"]) is not int
+                            or quality["completed"] != 32 or type(quality["facts"]) is not int or quality["facts"] != 18
+                            or not is_digest(quality["output_sha256"])):
+                        return None
+                    bound = receipt["binding"]
+                    expected_model = bound["model_sha256"]
+                    saved_stat = bound["model_stat"]
+                    if (not is_digest(expected_model) or not isinstance(saved_stat, list) or len(saved_stat) != 5
+                            or any(type(v) is not int for v in saved_stat) or saved_stat[2] <= 0):
+                        return None
+                    now = list(_file_identity(os.stat(gguf)))
+                    if now != model_identity_before_load:
+                        return None
+                    if now != saved_stat and file_sha256(str(gguf)) != expected_model:
+                        return None
+                    flags = ("PS1", "PS1_WARM", "PS1_CONCAT", "PK6", "GGML_DH2", "SV5", "GGML_PACK",
+                             "GGML_UBATCH", "CUBLAS_MIN_ROWS", "CUDA_GRAPHS_ROWS")
+                    current_flags = {"IRONMULE_" + k: os.environ["IRONMULE_" + k] for k in flags}
+                    fp, native = fingerprint(), identity()
+                    if (not fp["driver"] or not fp["nvcc"] or not fp["cc"] or not is_digest(fp["generator"])
+                            or len(fp["devices"]) != 1 or not fp["devices"][0].get("uuid")
+                            or not all(is_digest(native["sha256"][key]) for key in
+                                       ("llama_backend_init", "ggml_init", "ggml_backend_reg_count", "backend/CUDA"))):
+                        return None
+                    current = {"model_sha256": expected_model, "model_stat": saved_stat, "native": native, "fp": fp,
+                               "w4_sha256": file_sha256(KG_LIB), "table_sha256": file_sha256(os.environ["IRONMULE_W4_TABLE"]),
+                               "settings": self.settings, "seqs": self.seqs, "seq_ctx": self.seq_ctx, "threads": self.threads,
+                               "max_rows": self.max_rows, "speculate": self.speculate, "gpu_layers": self.gpu_layers,
+                               "affinity": sorted(os.sched_getaffinity(0)), "flags": current_flags,
+                               "measure_kg_sha256": hashlib.sha256(inspect.getsource(GgmlEngine.measure_kg).encode()).hexdigest()}
+                    if json.dumps(current, sort_keys=True, allow_nan=False) != json.dumps(bound, sort_keys=True, allow_nan=False):
+                        return None
+                    mask = receipt["mask"]
+                    widths = (*range(1, 9), 16, 24, 32)
+                    tables = ("step_ms_off", "step_ms_on", "step_ms_q6k")
+                    if set(mask) != {"lib", "entries", "tokens_served", "q6k_tokens_served", *tables}:
+                        return None
+                    for name in tables:
+                        timings = mask[name]
+                        if (not isinstance(timings, dict) or set(timings) != {str(w) for w in widths}
+                                or any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in timings.values())):
+                            return None
+                    bits = []
+                    for key in ("tokens_served", "q6k_tokens_served"):
+                        selected = mask[key]
+                        if (not isinstance(selected, list) or any(type(w) is not int or w not in widths for w in selected)
+                                or selected != sorted(set(selected))):
+                            return None
+                        bits.append(sum(1 << (w - 1) for t in selected for w in ((t,) if t <= 8 else range(t - 7, t + 1))))
+                    if mask["lib"] != os.path.basename(KG_LIB) or type(mask["entries"]) is not int or mask["entries"] < 1:
+                        return None
+                    lib = ctypes.CDLL(KG_LIB)
+                    lib.ironmule_kg_table.restype = ctypes.c_char_p
+                    if len(json.loads(lib.ironmule_kg_table())["entries"]) != mask["entries"]:
+                        return None
+                    setters = (lib.ironmule_kg_set_mask, lib.ironmule_kg_set_mask6)
+                    getters = (lib.ironmule_kg_get_mask, lib.ironmule_kg_get_mask6)
+                    for put, get in zip(setters, getters):
+                        put.argtypes, put.restype = [ctypes.c_uint32], None
+                        get.argtypes, get.restype = [], ctypes.c_uint32
+                    original = [get() for get in getters]
+                except Exception:  # noqa: BLE001 - an unavailable or incompatible receipt merely requests fresh measurement
+                    return None
+
+                try:
+                    for put, value in zip(setters, bits):
+                        put(value)
+                    if [get() for get in getters] != bits:
+                        raise ValueError("W4 mask readback differs")
+                    # Warm each real admitted graph shape once. _step_prices clears synthetic rows, retained prefixes
+                    # and pooled KV state at the end, just as the ordinary calibration does.
+                    self._step_prices(widths, repeats=1)
+                    if [get() for get in getters] != bits:
+                        raise ValueError("W4 mask changed during restart warm-up")
+                except Exception:
+                    for put, value in zip(setters, original):
+                        put(value)
+                    if [get() for get in getters] != original:
+                        raise RuntimeError("cannot restore the original W4 masks")
+                    self._clear()
+                    return None
+                self._kg_lib = lib
+                return {**mask, "restart_profile_reused": True}
+
+            restored = replay_qualified_masks() if restart_path and restart_pin else None
+            self.kg = restored if restored is not None else self.measure_kg(KG_LIB)
         trace_note("init measure_pk2 begin")
         self.pk2: dict[str, Any] = self.measure_pk2() if PK2_AUTO and getattr(self, "pack", False) else {}
         self.pass_costs: PassCosts | None = None
