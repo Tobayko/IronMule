@@ -15,8 +15,9 @@ def pairs():
     for seed in http.SEEDS:
         cells = {str(w): {"wall_s": 1., "ttft_s": .2, "output_sha256": "fixed", "completed": w, "tokens": w * 32}
                  for w in http.GENERATIONS}
-        row = {**cells["32"], "workload": {"seed": seed}, "binding": "hardware", "correct": 32,
-               "evaluator_sha256": "same", "facts": [[c.expected, "stop", 16, 3] for c in cases(seed)],
+        facts = http.graded_wave(seed, [[c.expected, "stop", 16, 3] for c in cases(seed)], 2., [100.] * 18)
+        row = {**cells["32"], "workload": {"seed": seed, "widths": list(http.GENERATIONS), "max_tokens": 32},
+               "binding": "hardware", "evaluator_sha256": "same", "factual": facts,
                "peak_rss_kib": 123, "device_used_bytes": 1000, "cells": cells}
         cand = copy.deepcopy(row)
         cand["wall_s"] = cand["cells"]["32"]["wall_s"] = .95
@@ -24,13 +25,21 @@ def pairs():
     return data
 
 
-@pytest.mark.parametrize("change", ["facts", "work", "slow-one", "memory", "nan", "lost-pair"])
+@pytest.mark.parametrize("change", ["facts", "work", "slow-one", "memory", "nan", "lost-pair",
+                                   "graded-rate", "graded-ttft", "false-score", "foreign-binding", "wrong-seed"])
 def test_http_pair_gate_requires_correct_work_across_widths_and_six_wins(change):
     rows = pairs()
-    assert http.verdict(rows)["passed"]
+    decision = http.verdict(rows)
+    assert decision["passed"]
+    wave = decision["waves"][0]
+    assert wave["performance_completed_per_arm"] == 32 and wave["performance_outputs_equivalent"]
+    assert wave["graded"]["cand"]["correct"] == 18 and wave["graded"]["cand"]["correct_completions_per_s"] == 9.
+    assert decision["factual_ttft_ratios"] == [1.] * 6
     if change == "facts":
         for row in rows[0]:
-            row["facts"][0][0] = "an incorrect factual answer"
+            fact = row["factual"]
+            fact["responses"][0][0] = "an incorrect factual answer"
+            row["factual"] = http.graded_wave(row["workload"]["seed"], fact["responses"], fact["wall_s"], fact["first_token_ms"])
     elif change == "work":
         rows[0][1]["cells"]["8"]["tokens"] -= 1
     elif change == "slow-one":
@@ -40,9 +49,41 @@ def test_http_pair_gate_requires_correct_work_across_widths_and_six_wins(change)
         rows[0][1]["device_used_bytes"] *= 2
     elif change == "nan":
         rows[0][1]["cells"]["8"]["wall_s"] = float("nan")
+    elif change in ("graded-rate", "graded-ttft"):
+        for _, cand in rows:
+            fact = cand["factual"]
+            wall = fact["wall_s"] * (1.01 if change == "graded-rate" else 1.)
+            ttft = [v * (1.01 if change == "graded-ttft" else 1.) for v in fact["first_token_ms"]]
+            cand["factual"] = http.graded_wave(cand["workload"]["seed"], fact["responses"], wall, ttft)
+    elif change == "false-score":
+        rows[0][1]["factual"]["correct_completions_per_s"] = 99
+    elif change == "foreign-binding":
+        rows[2][1]["binding"] = "other"
+    elif change == "wrong-seed":
+        rows[-1] = rows[0]
     else:
-        rows[0][1]["wall_s"] = rows[0][0]["wall_s"] * 1.01
+        rows[0][1]["cells"]["32"]["wall_s"] = rows[0][1]["wall_s"] = rows[0][0]["wall_s"] * 1.01
     assert not http.verdict(rows)["passed"]
+
+
+def test_measure_keeps_length_capped_completions_and_factual_rate_separate(monkeypatch):
+    import os
+    import ironmule_devices
+
+    seed = http.SEEDS[0]
+    def batch(engine, address, prompts, width, tokens, deadline):
+        answers = [q.expected for q in cases(seed)] if width == 18 else ["partial answer"] * width
+        return ([{"text": a, "finish_reason": "length" if width != 18 else "stop", "prompt_tokens": 52,
+                  "tokens": 32 if width != 18 else 3, "ttft_ms": 125.} for a in answers], 3.)
+    monkeypatch.setattr(http.compare, "batch", batch)
+    monkeypatch.setattr(ironmule_devices, "ggml_devices", lambda: [{"provider": "cuda", "total_memory": 20, "free_memory": 8}])
+    service = SimpleNamespace(live_samples=lambda: [])
+    client = SimpleNamespace(_process=SimpleNamespace(pid=os.getpid()))
+    row = http.measure({}, service, client, seed, "test-binding", 0)
+    assert "correct" not in row and "correct" not in row["cells"]["32"]
+    assert row["completed"] == 32 and row["tokens"] == 1024
+    assert row["factual"]["correct"] == 18 and row["factual"]["correct_completions_per_s"] == 6.
+    assert row["factual"]["first_token_ms"] == [125.] * 18 and row["factual"]["ttft_p95_s"] == .125
 
 
 def test_live_bounds_use_matched_requests_and_measured_totals():

@@ -33,7 +33,7 @@ from ironmule_product.types import ModelSpec
 from lab.pk1 import native_release
 from lab.pk1 import native_trial as trial
 from lab.rp.restricted_worker import open_worker
-from training.code_trial import PAIRS, judge, read, runtime_env, save
+from training.code_trial import PAIRS, read, runtime_env, save
 from training.trial_release import deployment, require
 
 WORKER = Path(__file__).with_name("native_http_worker.py")
@@ -264,14 +264,14 @@ def witness(batch):
 
 
 def measure(address, service, client, seed, binding, deadline):
-    from ironmule.factual_gate import MAX_TOKENS, cases, correct
+    from ironmule.factual_gate import MAX_TOKENS, cases
     from ironmule_devices import ggml_devices
 
     cells, gpu, samples = {}, [], []
     for width in GENERATIONS:
         prompts = compare.performance_prompts(seed, width, width)
         rows, elapsed = compare.batch("ironmule", address, prompts, width, 32, deadline)
-        ttft = sorted(r["ttft_ms"] for r in rows)[math.ceil(.95 * width) - 1] / 1000
+        ttft = compare.performance_metrics(rows, elapsed)["ttft_p95_ms"] / 1000
         cells[str(width)] = {"wall_s": elapsed, "ttft_s": ttft, "output_sha256": digest(witness(rows)),
                              "completed": len(rows), "tokens": sum(r["tokens"] for r in rows)}
         samples.extend(service.live_samples()[-width:])
@@ -279,39 +279,82 @@ def measure(address, service, client, seed, binding, deadline):
         require(len(devices) == 1 and devices[0]["provider"] == "cuda", "expected one visible CUDA device")
         gpu.append(devices[0]["total_memory"] - devices[0]["free_memory"])
     facts = cases(seed)
-    rows, _ = compare.batch("ironmule", address, [case.prompt for case in facts], len(facts), MAX_TOKENS, deadline)
-    require(len(rows) == 18 and all(correct(q, row["text"]) for q, row in zip(facts, rows, strict=True)),
-            "HTTP factual quality gate failed")
+    rows, wall_s = compare.batch("ironmule", address, [case.prompt for case in facts], len(facts), MAX_TOKENS, deadline)
+    graded = graded_wave(seed, witness(rows), wall_s, [r["ttft_ms"] for r in rows])
     rss = next(int(line.split()[1]) for line in Path(f"/proc/{client._process.pid}/status").read_text().splitlines()
                if line.startswith("VmHWM:"))
     return {**cells["32"], "binding": binding, "workload": {"seed": seed, "widths": list(GENERATIONS), "max_tokens": 32},
-            "evaluator_sha256": trial.checksum(__file__), "correct": 32, "facts": witness(rows),
+            "evaluator_sha256": trial.checksum(__file__), "factual": graded,
             "device_used_bytes": max(gpu), "peak_rss_kib": rss, "cells": cells, "samples": samples}
 
 
-def verdict(pairs):
+def graded_wave(seed, responses, wall_s, first_token_ms):
     from ironmule.factual_gate import cases, correct
-    for ref, cand in pairs:
-        facts = cases(ref["workload"]["seed"])
-        if (ref["facts"] != cand["facts"] or len(facts) != len(ref["facts"]) or len(facts) != 18
-                or not all(correct(q, row[0]) for q, row in zip(facts, ref["facts"], strict=True))):
-            return {"passed": False, "reason": "changed or incorrect factual answers"}
-        if not all(type(r["device_used_bytes"]) is int and r["device_used_bytes"] > 0 for r in (ref, cand)):
-            return {"passed": False, "reason": "unavailable GPU memory"}
-        if cand["device_used_bytes"] > 1.05 * ref["device_used_bytes"]:
-            return {"passed": False, "reason": "GPU memory grew beyond five percent"}
+
+    questions = cases(seed)
+    require(len(questions) == len(responses) == len(first_token_ms) == 18, "incomplete factual batch")
+    require(all(math.isfinite(t) and t > 0 for t in [wall_s, *first_token_ms]), "invalid factual timing")
+    require(all(isinstance(row, list) and len(row) == 4 and isinstance(row[0], str) and row[1] in ("stop", "length")
+                and type(row[2]) is int and row[2] > 0 and type(row[3]) is int and 0 < row[3] <= 32
+                for row in responses), "invalid factual response witness")
+    grades = [correct(q, row[0]) for q, row in zip(questions, responses, strict=True)]
+    n = sum(grades)
+    return {"responses": responses, "first_token_ms": first_token_ms, "wall_s": wall_s,
+            "ttft_p95_s": sorted(first_token_ms)[math.ceil(.95 * len(responses)) - 1] / 1000,
+            "grades": grades, "correct": n, "correct_completions_per_s": n / wall_s}
+
+
+def verdict(pairs):
+    if len(pairs) != len(SEEDS):
+        return {"passed": False, "reason": "incomplete HTTP holdouts"}
+    binding, evaluator = (pairs[0][0][k] for k in ("binding", "evaluator_sha256"))
+    waves = []
+    for seed, (ref, cand) in zip(SEEDS, pairs, strict=True):
+        for row in (ref, cand):
+            if (row["binding"] != binding or row["evaluator_sha256"] != evaluator or row.get("profiled")
+                    or row["workload"] != {"seed": seed, "widths": list(GENERATIONS), "max_tokens": 32}
+                    or any(row[k] != v for k, v in row["cells"]["32"].items())):
+                return {"passed": False, "reason": "mixed HTTP workload, binding, evaluator or profiling"}
+            if not all(type(row[k]) is int and row[k] > 0 for k in ("device_used_bytes", "peak_rss_kib")):
+                return {"passed": False, "reason": "unavailable HTTP resource observations"}
+            fact = row["factual"]
+            try:
+                recorded = graded_wave(seed, fact["responses"], fact["wall_s"], fact["first_token_ms"])
+            except (KeyError, IndexError, TypeError, ValueError):
+                return {"passed": False, "reason": "invalid factual responses or timing"}
+            if recorded != fact:
+                return {"passed": False, "reason": "factual grades or rates disagree with measured responses"}
         for width in map(str, GENERATIONS):
             a, b = ref["cells"][width], cand["cells"][width]
             if not all(math.isfinite(row[k]) and row[k] > 0 for row in (a, b) for k in ("wall_s", "ttft_s", "tokens")):
                 return {"passed": False, "reason": "invalid HTTP observation"}
             if any(a[k] != b[k] for k in ("output_sha256", "completed", "tokens")) or a["completed"] != int(width):
-                return {"passed": False, "reason": "changed HTTP answers, stop reasons or token counts"}
+                return {"passed": False, "reason": "changed performance outputs, stop reasons or token counts"}
+        waves.append({"seed": seed, "performance_completed_per_arm": ref["completed"], "performance_outputs_equivalent": True,
+                      "factual_outputs_equivalent": ref["factual"]["responses"] == cand["factual"]["responses"],
+                      "graded": {arm: {k: row["factual"][k] for k in ("correct", "correct_completions_per_s", "ttft_p95_s", "wall_s")}
+                                 for arm, row in (("ref", ref), ("cand", cand))}})
+    report = {"passed": False, "waves": waves}
+    if any(not w["factual_outputs_equivalent"] or any(g["correct"] != 18 for g in w["graded"].values()) for w in waves):
+        return {**report, "reason": "changed or incorrect factual answers"}
     for width in ("1", "8"):
         for metric in ("wall_s", "ttft_s"):
             ratios = [c["cells"][width][metric] / r["cells"][width][metric] for r, c in pairs]
             if statistics.median(ratios) > 1.05:
-                return {"passed": False, "reason": f"HTTP width {width} {metric} regressed"}
-    return judge(pairs)
+                return {**report, "reason": f"HTTP width {width} {metric} regressed"}
+    rates = [r["wall_s"] / c["wall_s"] for r, c in pairs]
+    ttfts = [c["ttft_s"] / r["ttft_s"] for r, c in pairs]
+    rss = [c["peak_rss_kib"] / r["peak_rss_kib"] for r, c in pairs]
+    gpu = [c["device_used_bytes"] / r["device_used_bytes"] for r, c in pairs]
+    factual_rates = [w["graded"]["cand"]["correct_completions_per_s"] / w["graded"]["ref"]["correct_completions_per_s"]
+                     for w in waves]
+    factual_ttfts = [w["graded"]["cand"]["ttft_p95_s"] / w["graded"]["ref"]["ttft_p95_s"] for w in waves]
+    passed = (min(rates) > 1 and statistics.median(rates) >= 1.02 and statistics.median(ttfts) <= 1
+              and max(rss) <= 1.05 and max(gpu) <= 1.05
+              and statistics.median(factual_rates) >= 1 and statistics.median(factual_ttfts) <= 1)
+    return {**report, "passed": passed, "reason": "paired HTTP performance and graded-task gate",
+            "performance_rate_ratios": rates, "performance_ttft_ratios": ttfts, "peak_rss_ratios": rss,
+            "device_memory_ratios": gpu, "factual_correct_rate_ratios": factual_rates, "factual_ttft_ratios": factual_ttfts}
 
 
 def roundtrip(server_address, service, client, seeds, binding, args):
@@ -372,7 +415,7 @@ def assess(evidence, key, pin):
                     for pair in pairs for r in pair), "incomplete or foreign HTTP holdouts")
     score, bounds = verdict(pairs), live_bounds(samples)
     if score["passed"] and not bounds:
-        score = {"passed": False, "reason": "no comparable live HTTP samples for regression detection"}
+        score = {**score, "passed": False, "reason": "no comparable live HTTP samples for regression detection"}
     return {"binding": key, "control_receipt": pin, "decision": score, "reference_bounds": bounds,
             "quality_sha256": {arm: trial.checksum(evidence / f"gate-{arm}.json") for arm in ("ref", "cand")}}
 
