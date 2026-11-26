@@ -136,6 +136,17 @@ def tokenizer_retry(state, check, receipt, path):
     return record
 
 
+def withdraw_product(pod, cfg, evidence, local, reason):
+    """The independent controller can stop a running passive worker without taking its measurement lock."""
+    script = ("from pathlib import Path; from training.code_trial import save; import sys; "
+              "p = Path(sys.argv[1]); p.exists() or save(p, {'withdrawn': True, 'reason': sys.argv[2]})")
+    shell(pod, "cd " + shlex.quote(cfg["framework"]) + " && " +
+          shlex.join([cfg["python"], "-c", script, str(evidence / "withdrawn.json"), reason]))
+    snapshot(pod, evidence, ["withdrawn.json"], local)
+    if not read(local / "withdrawn.json").get("withdrawn"):
+        raise ValueError("product withdrawal was not persisted")
+
+
 def product(args, cfg, remote, check, active):
     """Use the existing lease and ordinary HTTP broker only after the independent native release is active."""
     from lab.pk1 import restart_http
@@ -188,6 +199,13 @@ def product(args, cfg, remote, check, active):
             if args.verify_product_client:
                 snapshot(pod, evidence, ["live-ready.json"], local)
                 snapshot(pod, output, ["product-client.json"], local)
+                if (local / "product-client.json").exists():
+                    try:
+                        good = restart_live.grade(read(local / "product-client.json")) == 18
+                    except (IndexError, KeyError, TypeError, ValueError):
+                        good = False
+                    if not good:
+                        withdraw_product(pod, cfg, evidence, local, "external inventory answers failed independent grading")
                 if (local / "live-ready.json").exists() and not (local / "product-client.json").exists():
                     # The passive server owns the GPU measurement lock. This separate client only submits HTTP requests.
                     commandline = shlex.join([cfg["python"], "-m", "lab.pk1.restart_live", "--ready", str(evidence / "live-ready.json"),
@@ -228,7 +246,11 @@ def product(args, cfg, remote, check, active):
                 return {**active, "stage": "product service completed", "product_result": value}
             if not (local / "product-client.json").exists():
                 return {**active, "stage": "product client missing", "product_result": value}
-            value = restart_live.verify(value, read(local / "product-client.json"))
+            try:
+                value = restart_live.verify(value, read(local / "product-client.json"))
+            except (IndexError, KeyError, TypeError, ValueError):
+                withdraw_product(pod, cfg, evidence, local, "external client and live selection did not match")
+                return {**active, "stage": "product withdrawn", "product_result": value}
             write_once(local / "product-serve.json", value)
             if value["arm"] != "candidate" or value["completions"][-1]["graded_correct"] != 18:
                 return {**active, "stage": "product retained reference", "product_result": value}

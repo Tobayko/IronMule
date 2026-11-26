@@ -87,6 +87,14 @@ def client(ready_path, expected_receipt, timeout):
             "server_ids": [r["server_id"] for r in rows], "wall_s": wall, "first_token_ms": [r["ttft_ms"] for r in rows], "responses": http.witness(rows)}
 
 
+def grade(witness):
+    tasks = orders()
+    require(witness.get("work_sha256") == http.digest(tasks) and len(witness["responses"]) == len(tasks),
+            "external client did not complete the supported inventory workload")
+    return sum(row[0].strip().strip(".").strip() == answer
+               for row, (_, answer) in zip(witness["responses"], tasks, strict=True))
+
+
 def verify(listener, witness):
     tasks = orders()
     first, = [r for r in listener["selections"] if r["nonce"] == witness["nonce"]]
@@ -101,7 +109,7 @@ def verify(listener, witness):
             and all(isinstance(row, list) and len(row) == 4 and row[1] in ("stop", "length") and row[2] > 0 and 0 < row[3] <= 32
                     for row in responses) and all(math.isfinite(x) and x > 0 for x in [witness["wall_s"], *witness["first_token_ms"]]),
             "external requests do not match the actual listener")
-    graded = sum(row[0].strip().strip(".").strip() == answer for row, (_, answer) in zip(responses, tasks, strict=True))
+    graded = grade(witness)
     completion = {"arm": seen["arm"], "source_sha256": first["source_sha256"], "work_sha256": http.digest(responses),
                   "graded_correct": graded, "cold_to_18_correct_s": witness["wall_s"] if graded == 18 else None,
                   "correct_completions_per_s_including_startup": graded / witness["wall_s"], "first_token_ms": witness["first_token_ms"],
