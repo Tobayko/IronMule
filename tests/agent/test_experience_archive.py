@@ -52,3 +52,17 @@ def test_mismatched_output_is_preserved_without_a_reward():
     assert row["label_eligible"] is False
     assert row["reason"] == "different_completions"
     assert len(row["metrics"]) == 2
+
+
+def test_published_code_change_rejects_and_retains_codex_rationale(tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    raw = "lab/autonomous/results/cpu-tokenizer-01/result.json"
+    index = tmp_path / "index.jsonl"
+    rows = list(archive.code_experiment(root, raw, archive.canonical_sha256((root / raw).read_bytes())))
+    archive.write_archive(index, rows)
+    [rejected] = list(archive.search(index, "rejected GgufTokenizer.encode ctypes", 1))
+    assert rejected["decision"] is False and rejected["label_eligible"] is False
+    assert "4/6 pairs faster" in rejected["note"]
+    assert "Codex" in rejected["authorship"] and "IronMule" in rejected["authorship"]
+    assert len({r["group"] for r in rows}) == 1
+    assert len([r for r in rows if r["kind"] == "code_trial_pair"]) == 6

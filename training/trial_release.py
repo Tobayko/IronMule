@@ -44,6 +44,14 @@ def deployment(state):
         yield d
 
 
+@contextmanager
+def switch_lock(d):
+    # This lock protects only the small state update, never a measurement or a GitHub request.
+    with (d / ".switch.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
 def checkout(d, commit):
     """A checkout comes from an immutable tree, including when the caller resumes after a crash."""
     require(re.fullmatch(r"[a-f0-9]{40}", commit), "invalid Git commit")
@@ -104,6 +112,11 @@ def source_hashes(repo, commit):
         ["git", "show", f"{commit}:ironmule/{name}"], cwd=repo)).hexdigest() for name in SOURCES}
 
 
+def wave_shape(i, wave):
+    # Cache residency, wave position and each lane's actual work must match before timing is comparable.
+    return digest([i, wave["workload"], wave["requests"], wave["reused_prompt_tokens"]])
+
+
 def validate_arm(row, release, seed, arm):
     w = row["workload"]
     require(row["binding"] == release["binding"] and row["schema"] == EVALUATOR and row["profiled"] is False
@@ -122,11 +135,14 @@ def evidence(state, d, order, publication):
     release = {**publication, "reference_hashes": source_hashes(d / "repo.git", publication["base"]),
                "candidate_hashes": source_hashes(d / "repo.git", publication["candidate"]),
                "evaluator_sha256": hashlib.sha256((ROOT / "training/serving_trial.py").read_bytes()).hexdigest()}
+    signature = {k: release[k] for k in ("reference_tree", "candidate_tree", "order_id", "evaluator_sha256")}
+    signature["gate_sha256"] = hashlib.sha256((ROOT / "training/code_trial.py").read_bytes()).hexdigest()
+    require(signature == read(state / "evaluation.json"), "qualification source, gate, evaluator or order changed")
     pairs = []
     for i in range(PAIRS):
         pair = read(state / f"pair-{i}.json")
-        require(all(pair.get(k) == release[k] for k in ("reference_tree", "candidate_tree")),
-                "measured Git trees differ from merged PR")
+        require(all(pair.get(k) == v for k, v in signature.items()),
+                "paired data is from another source, gate, evaluator or order")
         ref, cand = pair["reference"], pair["candidate"]
         if i == 0:
             release["binding"] = ref["binding"]
@@ -142,15 +158,51 @@ def evidence(state, d, order, publication):
         validate_arm(cand, release, 8351 + i, "candidate")
         pairs.append((ref, cand))
     require(judge(pairs)["passed"], "stored pairs fail the current qualification gate")
+    cells = {}
+    for ref, _ in pairs:
+        for i, wave in enumerate(ref["waves"]):
+            group = cells.setdefault(wave_shape(i, wave), [])
+            group.append((wave["wall_s"], max(wave["ttfts_s"])))
+    # Each shape contains just one observation per independent pair seed.
+    release["reference_envelopes"] = {k: [max(t for t, _ in v), max(t for _, t in v)]
+                                      for k, v in cells.items() if len(v) >= 2}
     return release
 
 
-def restore(d, release, reason):
+def restore_locked(d, release, reason):
     # Persist withdrawal before pointing back. A restart completes either interrupted operation.
     save(d / "withdrawn.json", {"reason": reason, "order_id": release["order_id"]})
     sync_dir(d)
     select(d, release["base"])
     return {"active": release["base"], "reason": reason, "withdrawn": True}
+
+
+def restore(d, release, reason):
+    with switch_lock(d):
+        return restore_locked(d, release, reason)
+
+
+def observe_live(d, release, row):
+    """Three consecutive matched regressions withdraw locally. The completed answer is already available."""
+    phases = {}
+    for i, wave in enumerate(row["waves"]):
+        limits = release["reference_envelopes"].get(wave_shape(i, wave))
+        if limits is not None:
+            slower = wave["wall_s"] > limits[0] or max(wave["ttfts_s"]) > limits[1]
+            phases.setdefault(wave["workload"], []).append(slower)
+    # Require both shapes to miss throughout their comparable cells; unknown work cancels the run of misses.
+    missed = set(phases) == set(release["workload"]["phases"]) and all(all(values) for values in phases.values())
+    with switch_lock(d):
+        if (d / "withdrawn.json").exists():
+            return
+        path = d / "live-watch.json"
+        prior = read(path) if path.exists() else {}
+        count = prior.get("consecutive_misses", 0) if prior.get("order_id") == release["order_id"] else 0
+        count = count + 1 if missed else 0
+        save(path, {"order_id": release["order_id"], "consecutive_misses": count,
+                    "compared_phases": phases, "last_seed": row["workload"]["seed"]})
+        if count >= 3:
+            restore_locked(d, release, "three consecutive latency regressions on matched short and document waves")
 
 
 def activate(state: Path, order: dict, pr: int, gguf: Path):
@@ -176,7 +228,10 @@ def activate(state: Path, order: dict, pr: int, gguf: Path):
             validate_arm(measure(reference, args, 9351, state), release, 9351, "reference")
         except Exception as exc:
             return restore(d, release, f"target verification failed: {exc}")
-        select(d, release["candidate"])
+        with switch_lock(d):
+            if (d / "withdrawn.json").exists():
+                return restore_locked(d, release, read(d / "withdrawn.json")["reason"])
+            select(d, release["candidate"])
         return {"active": release["candidate"], "withdrawn": False, "pr": pr}
 
 
@@ -205,6 +260,10 @@ def check(state: Path, gguf: Path):
             require(result["passed"], result["reason"])
         except Exception as exc:
             return restore(d, release, f"recheck failed: {exc}")
+        with switch_lock(d):
+            if (d / "withdrawn.json").exists():
+                return restore_locked(d, release, read(d / "withdrawn.json")["reason"])
+            save(d / "live-watch.json", {"order_id": release["order_id"], "consecutive_misses": 0})
         return {"active": release["candidate"], "withdrawn": False, "result": result}
 
 
@@ -213,17 +272,20 @@ def run_active(state: Path, gguf: Path, seed: int):
     d = state.resolve() / "deployment"
     release = read(d / "release.json")
     args = SimpleNamespace(gguf=gguf, provider=release["binding"]["provider"])
-    active = (d / "active").readlink()
+    try:
+        active = (d / "active").readlink()
+    except FileNotFoundError:
+        active = Path(release["base"])
     candidate = active == Path(release["candidate"]) and not (d / "withdrawn.json").exists()
     if candidate:
         try:
             selected = checkout(d, release["candidate"])
             result = measure(selected, args, seed, state)
             validate_arm(result, release, seed, "candidate")
+            observe_live(d, release, result)
             return result
         except Exception as exc:
-            with deployment(state) as locked:
-                restore(locked, release, f"active workload failed: {exc}")
+            restore(d, release, f"active workload failed: {exc}")
     reference = checkout(d, release["base"])
     result = measure(reference, args, seed, state)
     validate_arm(result, release, seed, "reference")

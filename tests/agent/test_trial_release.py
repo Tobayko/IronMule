@@ -47,18 +47,25 @@ def campaign(tmp_path, monkeypatch):
     sha = hashlib.sha256((rel.ROOT / "training/serving_trial.py").read_bytes()).hexdigest()
     runs = {}
     def row(commit, seed):
+        elapsed = runs.get(commit, 1.1 if commit == base else 1)
+        waves = [{"workload": w["phases"][i % 2], "requests": [[40 + i, 3]] * 4,
+                  "reused_prompt_tokens": 0, "wall_s": elapsed / 4, "ttfts_s": [0.1] * 4} for i in range(4)]
         return {"binding": binding, "schema": rel.EVALUATOR, "profiled": False, "evaluator_sha256": sha,
                 "runtime_source_sha256": rel.source_hashes(source, commit), "pilot_decisions": 17,
-                "workload": {**w, "seed": seed}, "completed": 16, "waves": [{}] * 4, "correct": 16, "tokens": 48,
+                "workload": {**w, "seed": seed}, "completed": 16, "waves": waves, "correct": 16, "tokens": 48,
                 "output_sha256": "a" * 64, "wall_s": runs.get(commit, 1.1 if commit == base else 1),
                 "ttft_s": 0.1, "peak_rss_kib": 1024}
     monkeypatch.setattr(rel, "measure", lambda tree, args, seed, parent: row(tree.name, seed))
     rel.save(state / "context.json", {"provider": "cpu", "base": base})
     rel.save(state / "result.json", {"passed": True})
+    signature = {"reference_tree": git("rev-parse", base + "^{tree}"),
+                 "candidate_tree": git("rev-parse", candidate + "^{tree}"),
+                 "order_id": order["order_id"], "evaluator_sha256": sha,
+                 "gate_sha256": hashlib.sha256((rel.ROOT / "training/code_trial.py").read_bytes()).hexdigest()}
+    rel.save(state / "evaluation.json", signature)
     for i in range(rel.PAIRS):
         rel.save(state / f"pair-{i}.json", {"reference": row(base, 8351 + i), "candidate": row(candidate, 8351 + i),
-                                          "reference_tree": git("rev-parse", base + "^{tree}"),
-                                          "candidate_tree": git("rev-parse", candidate + "^{tree}")})
+                                          **signature})
     return state, base, candidate, meta, order, runs
 
 
@@ -116,3 +123,27 @@ def test_qualified_workload_consumes_active_or_withdrawn_revision(campaign):
     assert rel.run_active(state, Path("fixture"), 93)["runtime_source_sha256"] == release["candidate_hashes"]
     rel.rollback(state)
     assert rel.run_active(state, Path("fixture"), 94)["runtime_source_sha256"] == release["reference_hashes"]
+
+
+def test_live_observations_withdraw_without_extra_measurement(campaign, monkeypatch):
+    state, base, candidate, _, order, runs = campaign
+    model = Path("fixture")
+    rel.activate(state, order, 9, model)
+    measured = rel.measure
+    calls = []
+    def instrument(tree, args, seed, parent):
+        calls.append(tree.name)
+        row = measured(tree, args, seed, parent)
+        if seed == 42:
+            for wave in row["waves"]:
+                wave["reused_prompt_tokens"] = 100
+        return row
+    monkeypatch.setattr(rel, "measure", instrument)
+    runs[candidate] = 1.5
+    for seed in (40, 41, 42, 43, 44):
+        rel.run_active(state, model, seed)
+    assert (state / "deployment/active").readlink() == Path(candidate)
+    rel.run_active(state, model, 45)
+    assert (state / "deployment/active").readlink() == Path(base)
+    rel.run_active(state, model, 46)
+    assert calls == [candidate] * 6 + [base]

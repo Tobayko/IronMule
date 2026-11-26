@@ -19,6 +19,15 @@ from ironmule_product.placement_training import check_trace
 
 ROOT = Path(__file__).resolve().parents[1]
 PILOT_TRIALS = "evidence/runtime/cpu-pilot-thread-trials.json"
+# The trace schema records an opaque configuration hash and affinity. These five
+# file hashes are the specific runs attributed to the EPYC host in docs/LAB.md.
+EPYC_PLACEMENT_REPORTS = {
+    "104d1387456c77db5f8108f8c9cb5bf5173fdb7e1a879b9f2f94131f45ac443a",
+    "50b630e1d5e84588e4f9853fbc1194d2815748623873c57e6213b0ef3c12a945",
+    "4cb1637f4a0773c4b812b164e8149f452bf7bc2aa930508c382d2c6c7da7ec6f",
+    "9b5b1d2eb263aa4632987466650538cf5bed7854f7c8b2e3223b0e6cba38969d",
+    "13f9a940162dc46e61ff122e066f34fa23af94556694d39f3e07bf26a7440acc",
+}
 ARCHIVES = {
     36: "lab/pk1/results/pod36/ps1b_all.tgz",
     37: "lab/pk1/results/pod37/pk6_all.tgz",
@@ -42,10 +51,12 @@ def placement(source, digest, doc):
     check_trace(doc)
     binding = doc["binding"]
     context = {
-        "hardware": {"cpu": "AMD EPYC 9V74", "affinity": binding["affinity"], "cpu_quota": binding["cpu_budget"]},
+        "hardware": {"cpu": "AMD EPYC 9V74" if digest in EPYC_PLACEMENT_REPORTS else None,
+                     "affinity": binding["affinity"], "cpu_quota": binding["cpu_budget"], "devices": binding["devices"]},
         "software": {"protocol": doc["schema"], "trainer_sha256": binding["trainer"],
                      "configuration_sha256": binding["configuration"]},
-        "model": binding["revision"], "quantization": "Q4_K_M", "profiles": binding["gates"],
+        "model": binding["revision"], "quantization": "Q4_K_M" if digest in EPYC_PLACEMENT_REPORTS else None,
+        "profiles": binding["gates"],
         "authorship": "IronMule placement calibration; maintainer specified worker profiles",
     }
     for i, trial in enumerate(doc["trials"]):
@@ -158,11 +169,62 @@ def pilot_trials(source, digest, doc):
                  and all(re.fullmatch(r"[0-9a-f]{64}", r["tokens_digest"] or "") for r in obs))
         yield record("pilot_thread_trial", source, digest, f"groups/{i}", str(sample["group"]),
                      hardware=profile["machine"], software={"platform": profile["platform"], "numpy": profile["numpy"]},
-                     model=profile["gguf"], base_commit=profile["commit"], cost_usd=profile["cost_usd_incremental"],
+                     model=profile["gguf"], base_commit=profile["commit"], new_resource_bookings_usd=profile["cost_usd_incremental"],
                      profiles=[profile], binding=doc["binding"], metrics=obs,
                      workload={k: v for k, v in sample.items() if k not in ("group", "observations")},
                      label_eligible=valid, reason=None if valid else "unverified_comparison",
                      uncertainty="Per-step measurement on the recorded binding.")
+
+
+def code_experiment(root, source, result_hash):
+    """Index a published qualification in place. Each pair stays tied to its order and both Git trees."""
+    folder = (root / source).parent
+    result = json.loads((root / source).read_bytes())
+    metadata = {}
+    refs = {}
+    for name in ("order.json", "evaluation.json", "proposal.json", "candidate.diff"):
+        blob = (folder / name).read_bytes()
+        refs[str((folder / name).relative_to(root))] = canonical_sha256(blob)
+        if name.endswith(".json"):
+            metadata[name] = json.loads(blob)
+    order, signature, proposal = (metadata[k] for k in ("order.json", "evaluation.json", "proposal.json"))
+    if signature["order_id"] != order["order_id"]:
+        raise ValueError("reported candidate order differs from its evaluation manifest")
+    group = order["order_id"]
+    binding = order["binding"]
+    context = {"base_commit": order["base_commit"], "model": binding["model_name"], "hardware": binding["machine"],
+               "software": {"native": binding["native"], "python": binding["python"]}, "profiles": [signature],
+               "title": order["target"]["function"],
+               "authorship": "IronMule selected the target and evaluated the outcome. Codex authored the code."}
+    metrics = []
+    for path in sorted(folder.glob("pair-*.json")):
+        blob = path.read_bytes()
+        pair = json.loads(blob)
+        if any(pair.get(k) != value for k, value in signature.items()):
+            raise ValueError("published pair differs from its evaluation manifest")
+        arms = [pair["reference"], pair["candidate"]]
+        summaries = [{k: row.get(k) for k in ("wall_s", "ttft_s", "peak_rss_kib", "completed", "tokens",
+                                               "correct", "output_sha256", "device_free_bytes_after_waves")}
+                     for row in arms]
+        metric = {"pair": path.stem, "reference": summaries[0], "candidate": summaries[1]}
+        comparable = (all(arms[0][k] == arms[1][k] for k in ("workload", "binding", "output_sha256", "tokens", "completed"))
+                      and all(r["correct"] == r["completed"] and not r["profiled"] for r in arms))
+        if comparable and summaries[1]["wall_s"] > 0:
+            metric["rate_ratio"] = summaries[0]["wall_s"] / summaries[1]["wall_s"]
+        raw = str(path.relative_to(root))
+        refs[raw] = canonical_sha256(blob)
+        metrics.append(metric)
+        yield record("code_trial_pair", raw, refs[raw], "pair", group, **context,
+                     workload=arms[0]["workload"], binding=arms[0]["binding"], metrics=[metric],
+                     reason=None if comparable else "mismatched_work_or_conditions",
+                     uncertainty="One paired observation; admission uses the complete campaign.")
+    faster = sum(m.get("rate_ratio", 0) > 1 for m in metrics)
+    outcome = "Passed" if result["passed"] else "Rejected"
+    yield record("code_trial_decision", source, result_hash, "decision", group, **context,
+                 provenance="reported", decision=result["passed"], reason=f"{outcome}: {result['reason']}",
+                 note=f"{outcome}. {faster}/{len(metrics)} pairs faster. {proposal['rationale']}",
+                 hypothesis=order["hypothesis"], metrics=[result], references=refs,
+                 uncertainty="The decision covers only the measured fixture and runtime. Activation is recorded separately.")
 
 
 def build(root=ROOT) -> Iterator[dict]:
@@ -208,6 +270,10 @@ def build(root=ROOT) -> Iterator[dict]:
                              hardware=doc["hardware"], model=doc["model"], metrics=doc["holdout"],
                              workload={"requests": len(doc["requests"])}, decision=doc["policy_active"],
                              reason="campaign_summary")
+        elif (source.startswith("lab/autonomous/results/") and path.name == "result.json"
+              and all((path.parent / name).is_file() for name in
+                      ("order.json", "evaluation.json", "proposal.json", "candidate.diff"))):
+            yield from code_experiment(root, source, digest)
         elif source in ARCHIVES.values():
             pod = next(p for p, name in ARCHIVES.items() if name == source)
             yield from a100(root, pod, source, digest)

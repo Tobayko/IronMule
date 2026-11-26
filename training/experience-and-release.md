@@ -30,3 +30,5 @@ The check command measures six alternating pairs with fresh seeds, under the sam
 ```sh
 python -m pytest -n 0 -q tests/agent/test_experience_archive.py tests/agent/test_trial_release.py
 ```
+
+The active workload runner also watches for regressions in its completed requests. It compares wave position, short/document phase, each lane's input and generated token counts, and the amount of reused prompt work. A reference envelope requires at least two distinct evaluation seeds with the same shape. The controller withdraws after three successive runs in which every matched wave exceeds the slowest reference span or first-token latency, with both phases represented. An unmatched run or recovery resets the counter. The order-specific counter survives restarts. This guard reuses completed timings without starting another benchmark.
