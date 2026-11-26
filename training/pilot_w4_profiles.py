@@ -197,18 +197,73 @@ def load_heads(weights, order_id):
     return heads, error, seed, inputs
 
 
-def serve(args):
+def whole_profile(reference, name):
+    q4, q6 = reference["mask_bits"]
+    return {**reference, "mask_bits": {"stock": [0, 0], "q4": [q4, 0], "q4_q6": [q4, q6]}[name]}
+
+
+def equal_conditions(row, reference):
+    """Remove only the two explicitly treated mask registers when comparing the fixed-gate receipts."""
+    profile = row["binding"]["profile"]
+    return {**row["binding"], "profile": {**profile, "mask_bits": reference["mask_bits"]}}
+
+
+def check_target(args, binding):
     from ironmule.ggml_binary import identity
     from ironmule.kernel_gen import fingerprint
 
-    order, _, _ = sources(args.order, args.receipt)
-    binding = order["binding"]
-    state = args.state
-    state.mkdir(mode=0o700, parents=True, exist_ok=True)
     if (fingerprint() != binding["fp"] or identity() != binding["native"] or trial.checksum(args.gguf) != binding["gguf"]
             or trial.checksum(args.table) != binding["table_sha256"] or trial.checksum(args.reference_lib) != binding["w4_sha256"]
             or any(trial.checksum(args.checkout / k) != v for k, v in binding["serving_sources"].items())):
         raise ValueError("changed complete execution binding")
+
+
+def check_pairs(directory, order, reference, name):
+    from training.code_trial import PAIRS
+
+    binding = order["binding"]
+    treatment = {"binary": binding["w4_sha256"], "table": binding["table_sha256"]}
+    pairs = []
+    for i in range(PAIRS):
+        pair = []
+        for arm, bundled in (("ref", reference), ("cand", whole_profile(reference, name))):
+            row = read(directory / f"{arm}-{i}.json")
+            trial.validate_arm(row, binding, treatment, 92741 + i)
+            trial.verify_outputs(row, 92741 + i)
+            if row["binding"]["profile"] != bundled or row["binding"]["flags"] != trial.FLAGS or row.get("profiled") is not False:
+                raise ValueError("unexpected treatment in profile qualification")
+            pair.append({**row, "binding": equal_conditions(row, reference)})
+        pairs.append(tuple(pair))
+    return trial.judge_native(pairs)
+
+
+def qualify(args):
+    from training.code_author import write_once
+    from training.code_trial import PAIRS
+
+    order, _, _ = sources(args.order, args.receipt)
+    check_target(args, order["binding"])
+    reference = trial.validate_calibration(read(args.calibration), order["binding"])
+    args.state.mkdir(mode=0o700, parents=True, exist_ok=True)
+    setup = {"order": order["order_id"], "name": args.name, "reference": reference, "evaluator": trial.checksum(trial.__file__)}
+    write_once(args.state / "setup.json", setup)
+    for i in range(PAIRS):
+        arms = ("ref", "cand") if i % 2 == 0 else ("cand", "ref")
+        for arm in arms:
+            target = args.state / f"{arm}-{i}.json"
+            if not target.exists():
+                trial.launch_arm(args, args.reference_lib, 92741 + i, target,
+                                 reference if arm == "ref" else whole_profile(reference, args.name))
+    result = check_pairs(args.state, order, reference, args.name)
+    save(args.state / "qualification.json", {**setup, **result})
+
+
+def serve(args):
+    order, _, _ = sources(args.order, args.receipt)
+    binding = order["binding"]
+    state = args.state
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
+    check_target(args, binding)
     calibration = args.calibration or state / "calibration.json"
     if not calibration.is_file():
         trial.launch_arm(args, args.reference_lib, args.seed, calibration,
@@ -225,9 +280,16 @@ def serve(args):
         raise ValueError("reference serving receipt does not qualify this profile")
     started = time.perf_counter()
     heads, error, supported_seed, inputs = load_heads(args.weights, order["order_id"])
-    # Only this incumbent has a quality-tested whole-serving receipt. The model scores all
-    # three paths before eligibility. A predicted alternative must first pass its own serving gate.
     eligible = {"q4_q6": profile}
+    for directory in args.qualified:
+        proof = read(directory / "qualification.json")
+        name = proof["name"]
+        if (name not in ("q4", "stock") or proof["order"] != order["order_id"] or proof.get("passed") is not True
+                or proof["reference"] != profile or proof["evaluator"] != trial.checksum(trial.__file__)
+                or read(directory / "ref-0.json")["binding"] != ref["binding"]
+                or check_pairs(directory, order, profile, name).get("passed") is not True):
+            raise ValueError("alternate whole profile lacks the local paired serving qualification")
+        eligible[name] = whole_profile(profile, name)
     # The incumbent's startup measurement submits 32 successive tokens of ONE sequence.
     # The serving wave submits up to 32 independent streams. Matching row counts alone cannot authorize it.
     decision = Pilot.startup_profile(heads, inputs, NAMES, eligible, "q4_q6",
@@ -237,7 +299,7 @@ def serve(args):
     delivered = trial.launch_arm(args, args.reference_lib, args.seed, state / "delivery.json", picked)
     trial.validate_arm(delivered, binding, treatment, args.seed)
     trial.verify_outputs(delivered, args.seed)
-    if delivered["binding"]["profile"] != picked or delivered["binding"] != ref["binding"]:
+    if delivered["binding"]["profile"] != picked or equal_conditions(delivered, profile) != ref["binding"]:
         raise ValueError("loaded serving profile differs from the certified CPU head choice")
     if args.seed == ref["workload"]["seed"] and any(ref[k] != delivered[k] for k in ("output_sha256", "fact_digest", "tokens")):
         raise ValueError("matched-seed deliveries changed")
@@ -250,13 +312,14 @@ def serve(args):
          "wall_with_head_s": delivered["wall_s"] + selection_s, "p95_ttft_with_head_s": delivered["ttft_s"] + selection_s,
          "completed": delivered["completed"], "tokens": delivered["tokens"], "facts_correct": sum(delivered["facts"]),
          "pilot_online_decisions": delivered["pilot_decisions"], "output_sha256": delivered["output_sha256"],
-         "claim": "Selection of a local reference serving bundle; no gain relative to that incumbent claimed."})
+         "claim": "One startup selection and delivery. Relative performance evidence belongs to the separate paired gate."})
 
 
 def collect(args):
     """Six fresh same-device arms in reversed order. Context families, widths and both repeats stay together."""
     order, _, _ = sources(args.order, args.receipt)
     b = order["binding"]
+    check_target(args, b)
     state = args.state
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     if not args.calibration or args.worker_root is None:
@@ -266,8 +329,7 @@ def collect(args):
     checks = []
     for rnd, order_names in enumerate((NAMES, tuple(reversed(NAMES)))):
         for name in order_names:
-            bits = {"stock": [0, 0], "q4": [incumbent["mask_bits"][0], 0], "q4_q6": incumbent["mask_bits"]}[name]
-            spec = {"order": order["order_id"], "profile": {**incumbent, "mask_bits": bits}, "name": name, "round": rnd,
+            spec = {"order": order["order_id"], "profile": whole_profile(incumbent, name), "name": name, "round": rnd,
                     "gguf": b["gguf"], "native": b["native"], "devices": b["fp"]["devices"],
                     "table": b["table_sha256"], "reference": b["w4_sha256"]}
             out = state / f"{rnd}-{name}.json"
@@ -314,22 +376,25 @@ def main():
     train.add_argument("--contexts", type=Path, help="complete independent-stream counterbalanced collection")
     run = sub.add_parser("serve")
     gather = sub.add_parser("collect")
-    for cmd in (run, gather):
+    gate = sub.add_parser("qualify")
+    gate.add_argument("--name", choices=("q4", "stock"), required=True)
+    for cmd in (run, gather, gate):
         for field in ("state", "gguf", "checkout", "reference-lib", "table", "worker-root"):
             cmd.add_argument("--" + field, type=Path, required=True)
-        cmd.add_argument("--calibration", type=Path)
+        cmd.add_argument("--calibration", type=Path, required=cmd in (gather, gate))
         cmd.add_argument("--worker-uid", type=int, default=60000)
         cmd.add_argument("--timeout", type=int, default=900)
     run.add_argument("--reference-arm", type=Path)
+    run.add_argument("--qualified", type=Path, action="append", default=[], help="directory of a complete paired whole-profile qualification")
     train.add_argument("--seed", type=int, default=5723)
     run.add_argument("--seed", type=int, default=92741)
-    for cmd in (train, run, gather):
+    for cmd in (train, run, gather, gate):
         for name in ("order", "receipt"):
             cmd.add_argument("--" + name, type=Path, required=True)
     for cmd in (train, run):
         cmd.add_argument("--weights", type=Path, required=True)
     args = parser.parse_args()
-    {"fit": fit, "serve": serve, "collect": collect}[args.op](args)
+    {"fit": fit, "serve": serve, "collect": collect, "qualify": qualify}[args.op](args)
 
 
 if __name__ == "__main__":

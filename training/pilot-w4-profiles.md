@@ -4,8 +4,9 @@ This head selects a complete, locally measured execution profile before native g
 The reference is Qwen3-32B on its individually bound GPU, with the calibrated W4 library
 and dispatch table, warm-up, padding, prefill settings and CPU Pilot step costs. Selection
 scores the measured stock, Q4-only and Q4+Q6 paths. A profile can serve only with a local
-whole-serving qualification. This first lane recognizes the complete incumbent. A proposal
-for either alternative sends the workload to the incumbent. Each request in the selected
+whole-serving qualification. The first A100 receipt recognizes the complete incumbent.
+An alternate bundle enters the eligible set only after a six-pair qualification on the same
+target and mixed serving workload. Each request in the selected
 engine still passes through its normal serving Pilot. The implementation uses the existing
 Pilot's NumPy forward pass on CPU for each of three independently initialized heads.
 
@@ -70,3 +71,11 @@ It records the proposal, margin, eligible profiles, checkpoint-and-selection tim
 mask registers, full delivered outputs, wall time, TTFT and factual score. Unknown workloads,
 different bindings and unqualified proposals cannot activate another W4 bundle. A binding
 change requires a new local reference. The outer campaign budgets and schedules target jobs.
+
+If a new context fit proposes stock or Q4-only, use `qualify --name stock` or `qualify --name q4`
+with the same `--order`, `--receipt`, `--calibration`, model, checkout and worker arguments as
+`collect`, and a fresh `--state` directory. This compares two complete bundles in six pairs
+using the frozen native serving evaluator. The reader checks the two expected mask registers
+separately, then applies the existing output, quality, wall-time, TTFT and memory gates.
+A subsequent experimental `serve --qualified DIRECTORY` replays the underlying measurements
+before the startup head may select that entire alternate profile.
