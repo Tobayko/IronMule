@@ -63,6 +63,10 @@
       "original_sha256": "603ef7b9eaa47d681f54a2a489c182c40fa5a97358aa7e2248b1fac973efd014",
       "sha256": "603ef7b9eaa47d681f54a2a489c182c40fa5a97358aa7e2248b1fac973efd014"
     },
+    "cost-after-product.json": {
+      "original_sha256": "9dedf6c3198e4e16765c071520badd79467f3563457189b62c3913c72e663143",
+      "sha256": "9dedf6c3198e4e16765c071520badd79467f3563457189b62c3913c72e663143"
+    },
     "cost-after-release.json": {
       "original_sha256": "046903c69ac0d8e9ef03b6a9ca73425e710b3e7cf1b7bf69de5c93c4cbc069d7",
       "sha256": "046903c69ac0d8e9ef03b6a9ca73425e710b3e7cf1b7bf69de5c93c4cbc069d7"
@@ -91,9 +95,21 @@
       "original_sha256": "e3a15bae6463e41b6674b8f08a915c2b0627b40baa95a75c312f05d7d8cfd138",
       "sha256": "e3a15bae6463e41b6674b8f08a915c2b0627b40baa95a75c312f05d7d8cfd138"
     },
+    "http-decision.json": {
+      "original_sha256": "3cec67d828edd1433bea03ac387049e26524f168b69095c6a1ab74cbc58021b7",
+      "sha256": "3cec67d828edd1433bea03ac387049e26524f168b69095c6a1ab74cbc58021b7"
+    },
+    "http-gate-reference.json": {
+      "original_sha256": "9fef1d281d2dcf958f56614501e3970b5523d526abc95b48288ac4c3e9c91edd",
+      "sha256": "9fef1d281d2dcf958f56614501e3970b5523d526abc95b48288ac4c3e9c91edd"
+    },
     "http-geometry.json": {
       "original_sha256": "0c32618fff227866aaa666d043ae5f02bccc02433cb1cd43274f5af4e6496ba0",
       "sha256": "0c32618fff227866aaa666d043ae5f02bccc02433cb1cd43274f5af4e6496ba0"
+    },
+    "http-product-qualify.json": {
+      "original_sha256": "269c5a9e537d6c77b769b79c75ec05cac5f9f9d62e70c03ce3221dd932856966",
+      "sha256": "269c5a9e537d6c77b769b79c75ec05cac5f9f9d62e70c03ce3221dd932856966"
     },
     "missing.json": {
       "original_sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4",
@@ -178,6 +194,10 @@
     "release-run.json": {
       "original_sha256": "765725615d98e80a888f7ba968ac1691efb604a3df0299e4c3af285a0a0e9421",
       "sha256": "765725615d98e80a888f7ba968ac1691efb604a3df0299e4c3af285a0a0e9421"
+    },
+    "replan-after-product-declined.json": {
+      "original_sha256": "8695f7c4ac3b96e2bec683132963a1a8c3400bd9ebae0772912b3950091f0289",
+      "sha256": "8695f7c4ac3b96e2bec683132963a1a8c3400bd9ebae0772912b3950091f0289"
     },
     "request.json": {
       "original_sha256": "3cd45547ab5b5b3baa9ed9ae1bdba76151a9b5bef12986c1155e5043ff82fe88",
