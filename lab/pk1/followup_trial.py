@@ -118,6 +118,7 @@ def context(args):
 
 def live(args, label, seed, out, *, factual_first=False):
     """Time a fully verified, already admitted parent startup and one physical fresh reference/candidate worker."""
+    began = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
     order, receipt = parent(args)
     expected = receipt["qualification"]["binding"]
     tree = (
@@ -125,7 +126,6 @@ def live(args, label, seed, out, *, factual_first=False):
     )
     if label not in ("reference", "candidate"):
         raise ValueError("unknown source")
-    began = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
     active = release.selected(args.parent_state, rules.CONTROL) == "candidate"
     cache_ready = (
         prior.native.checksum(args.cache) == expected["cache_receipt_sha256"]
