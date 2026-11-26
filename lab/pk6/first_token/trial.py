@@ -1,7 +1,6 @@
 """Run the frozen ABBA warm HTTP test in an isolated checkout with the registered patch."""
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import subprocess
