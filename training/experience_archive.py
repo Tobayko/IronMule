@@ -256,6 +256,68 @@ def scratch_qualification(source, digest, run):
                   uncertainty="One run. No independent serving comparator for a throughput or latency reward.")
 
 
+def stopped_epyc(root, source, digest):
+    from lab.rp import cpu_code_trial, cpu_matched_profile
+    from training.code_author import digest as proposal_digest
+    from training.code_trial import verify_deliveries
+
+    folder = (root / source).parent
+    def doc(name):
+        return json.loads((folder / name).read_bytes())
+    hashes = doc("sha256.json")
+    stop = doc("qualification-stopped.json")
+    context, profile, build = (doc(n) for n in ("context.json", "profile.json", "build.json"))
+    req, reply, order = (doc(n) for n in ("../request-binding.json", "../response.json", "../../prefill-order.json"))
+    if (stop["schema"] != "ironmule.epyc-matched-code-stopped.v1" or stop["passed"] is not False or stop["training_label"] is not False
+            or stop["order_id"] != order["order_id"] or any(stop[k] != context[k] for k in context if k != "schema")
+            or any(Path(n).name != n or canonical_sha256((folder / n).read_bytes()) != h for n, h in hashes.items())
+            or hashes["qualification-stopped.json"] != digest or hashes["profile.json"] != stop["profile_sha256"]
+            or hashes[stop["failed_arm"] + ".log"] != stop["failed_log_sha256"] or stop["failed_arm"] + ".json" in hashes
+            or not build["passed"] or build["source_sha256"] != stop["candidate_sha256"] or build["log_sha256"] != hashes["build-1.log"]
+            or req["request_id"] != reply["request_id"] or req["proposal_sha256"] != proposal_digest(reply["proposal"])
+            or req["reference_source_sha256"] != stop["reference_sha256"] or req["candidate_source_sha256"] != stop["candidate_sha256"]
+            or req["patch_sha256"] != canonical_sha256((folder.parent / "candidate.diff").read_bytes())):
+        raise ValueError("unbound EPYC stopped verdict, source, profile or failure log")
+    modes = ("reference", "candidate", "rule")
+    expected = {f"{mode}-{seed}.json" for mode in modes for seed in range(18351, 18357)}
+    names = stop["completed_arms"]
+    triples = sum(all(f"{mode}-{seed}.json" in names for mode in modes) for seed in range(18351, 18357))
+    if (len(names) != len(set(names)) or set(names) != expected.intersection(hashes)
+            or triples != stop["complete_triplets"] or triples >= 6):
+        raise ValueError("EPYC partial arm coverage differs")
+    cpu_matched_profile.verify_profile(profile, order)
+    common = dict(base_commit=order["base_commit"], hardware=profile["binding"]["machine"], model=profile["model_sha256"],
+                  quantization="Q4_K_M", profiles=[profile["binding"]], cost_reference="lab/rp/results/campaign-costs.json")
+    for name in names:
+        mode, seed = name.removesuffix(".json").split("-")
+        seed = int(seed)
+        row = doc(name)
+        cpu_matched_profile.verify_arm(row, profile, stop["profile_sha256"], mode, order)
+        verify_deliveries(row, seed)
+        sources = {**profile["runtime_source_sha256"], "ggml_engine.py": stop["candidate_sha256" if mode == "candidate" else "reference_sha256"]}
+        if (row["binding"] != profile["binding"] or row["runtime_source_sha256"] != sources or row["commit"] != order["base_commit"]
+                or row["workload"] != {"seed": seed, "clients": 4, "waves": 4, "max_tokens": 3, "warmup_waves": 1,
+                                       "context": 512, "phases": ["short", "document"]}
+                or row["profiled"] or row["completed"] != 16 or row["correct"] != 16 or len(row["waves"]) != 4
+                or any(w["completed"] != 4 or w["correct"] != 4 for w in row["waves"])):
+            raise ValueError("EPYC source, workload or hardware mismatch")
+        if mode == "rule":
+            fixed = row["simple_thread_rule"]
+            if fixed["actual_threads"] != [4] or fixed["overrides"] < 1 or fixed["source_sha256"] != cpu_code_trial.sha(cpu_code_trial.RULE):
+                raise ValueError("unverified fixed CPU rule")
+        yield record("cpu_matched_partial_arm", str((folder / name).relative_to(root)), hashes[name], name, stop["order_id"],
+                     **common, software=sources, workload=row["workload"], mode=mode, reason="partial_trial",
+                     metrics=[{k: row[k] for k in ("completed", "correct", "tokens", "wall_s", "ttft_s", "total_elapsed_s", "peak_rss_kib")}],
+                     quality={"verified_deliveries": row["correct"], "output_sha256": row["output_sha256"]},
+                     authorship="Independent CPU evaluator", uncertainty="The six-triplet protocol ended early.")
+    yield record("cpu_matched_code_stopped", source, digest, "qualification-stopped", stop["order_id"], **common,
+                 software={"evaluator_sha256": stop["evaluator_sha256"], "profile_sha256": stop["profile_sha256"]},
+                 reason=stop["reason"], decision=False, failed_arm=stop["failed_arm"], complete_triplets=triples,
+                 completed_arms=names, references=hashes, note=reply["proposal"]["rationale"],
+                 authorship={"selector": "IronMule", "code_author": reply["model"]},
+                 uncertainty="Fresh native qualification failed during the third triplet. No comparative release score was issued.")
+
+
 def cpu_experiment(root, source, digest):
     from training.code_author import digest as proposal_digest
     from training.experiment_planner import digest as wave_digest
@@ -605,6 +667,8 @@ def build(root=ROOT) -> Iterator[dict]:
                             "lab/autonomous/results/cpu-serving-demand/followup-plan.json",
                             "lab/autonomous/results/cpu-serving-demand/summary.json"}):
             yield from cpu_experiment(root, source, digest)
+        elif source == "lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/qualification-stopped.json":
+            yield from stopped_epyc(root, source, digest)
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
             doc = json.loads(path.read_bytes())
             if "trials" in doc:

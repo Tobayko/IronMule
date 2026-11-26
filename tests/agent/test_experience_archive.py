@@ -242,3 +242,16 @@ def test_qwen_product_partial_and_rejected_evidence_preserve_bound_measurements(
     arm.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="unbound ordinary product arm"):
         startup.product_assets(tmp_path, order, verified, assets)
+
+
+def test_stopped_epyc_triplets_do_not_label_an_unqualified_source():
+    from training import experience_archive as archive
+
+    root = Path(__file__).resolve().parents[2]
+    path = next(root.glob("lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/qualification-stopped.json"))
+    rows = list(archive.stopped_epyc(root, str(path.relative_to(root)), archive.canonical_sha256(path.read_bytes())))
+    assert len(rows) == 8 and all(not row["label_eligible"] for row in rows)
+    assert {r["mode"] for r in rows[:-1]} == {"reference", "candidate", "rule"}
+    assert all(r["quality"]["verified_deliveries"] == 16 for r in rows[:-1])
+    assert rows[-1]["complete_triplets"] == 2
+    assert rows[-1]["failed_arm"] == "rule-18353" and rows[-1]["decision"] is False
