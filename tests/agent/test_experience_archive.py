@@ -35,6 +35,11 @@ def test_report_provenance_and_exclusions():
     assert metric["head_proposals"] == 5 and metric["scratch_measured_decisions"] == 0
     assert metric["search_and_warmup_s"] == pytest.approx(83.03, abs=.001)
 
+    head = next(row for row in rows if row["kind"] == "pilot_w4_profile_holdout")
+    assert head["reason"] == "unresolved model margin" and not head["label_eligible"]
+    assert head["workload"]["geometry"]["sequences"] == 1 and head["workload"]["held_out_widths"] == [32]
+    assert head["metrics"][0]["kernel_rejections"] == 196
+
 
 def test_failed_rebuild_keeps_previous_index(tmp_path):
     out = tmp_path / "index.jsonl"

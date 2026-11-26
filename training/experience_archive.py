@@ -448,6 +448,22 @@ def build(root=ROOT) -> Iterator[dict]:
                              hardware=doc["hardware"], model=doc["model"], metrics=doc["holdout"],
                              workload={"requests": len(doc["requests"])}, decision=doc["policy_active"],
                              reason="campaign_summary")
+        elif source == "lab/autonomous/results/a100-w4-startup-head/fit.json":
+            fit = json.loads(path.read_bytes())
+            weights = path.with_name("startup.npz")
+            if fit["schema"] != "ironmule.w4-profile-fit.v1" or canonical_sha256(weights.read_bytes()) != fit["weights_sha256"]:
+                raise ValueError("startup W4 profile result does not match its checkpoint")
+            yield record("pilot_w4_profile_holdout", source, digest, "holdout", fit["order"],
+                         hardware=fit["gpu"], model=fit["gguf_sha256"], base_commit=fit["native_base"],
+                         software={"weights_sha256": fit["weights_sha256"], "profile_sha256": fit["profile_sha256"],
+                                   "tuner_receipt_sha256": fit["tuner_receipt_sha256"], "seed": fit["seed"]},
+                         workload={"train_widths": fit["train_widths"], "new_widths": fit["new_widths"],
+                                   "calibration_widths": fit["margin_calibration_widths"], "geometry": fit["geometry"], "held_out_widths": fit["holdout_widths"]},
+                         metrics=[{k: fit[k] for k in ("step_ms_by_rows", "cpu_train_s", "measured_holdout_ms",
+                                   "shipped_pilot_with_local_mask_ms", "fixed_stock_ms", "kernel_attempts_diagnostic_only",
+                                   "kernel_rejections")}], profiles=[fit["holdout"]], decision=fit["holdout"]["profile"], reason=fit["holdout"]["reason"],
+                         authorship="IronMule fitted a CPU profile head against the measured GPU startup calibration.",
+                         uncertainty=fit["uncertainty"], references=[str(weights.relative_to(root))])
         elif source.startswith("lab/autonomous/results/a100-native/") and path.name == "manifest.json":
             yield from native_experiment(root, source, digest, calibration_seen)
         elif (source.startswith("lab/autonomous/results/") and path.name == "result.json"
