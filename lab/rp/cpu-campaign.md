@@ -103,3 +103,9 @@ cp "$trial_data/prefill-code/response.json" "$trial_replay/authoring/author/"
 cp -R "$trial_data/prefill-code/qualification-v2" "$trial_replay/qualification"
 python -m lab.rp.cpu_campaign --replay --matched --state "$trial_replay"
 ```
+
+The recorded EPYC source planner reads `ironmule/ggml_engine.py` at its original commit
+`79ee889e679f38835df5f30e215215aa9d0c60d2`. A shallow clone can replay the same plan using the
+compressed original Git blob beside the recorded host decision. Both paths verify the full
+uncompressed SHA-256 against the prefill attribution before locating the measured method.
+[Measured source](../autonomous/results/runpod-epyc-pilot/sources/79ee889e679f38835df5f30e215215aa9d0c60d2-ggml_engine.py.gz)

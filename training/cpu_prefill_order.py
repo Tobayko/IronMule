@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import gzip
 import hashlib
 import json
+import re
 import statistics
 import subprocess
 from pathlib import Path
@@ -44,7 +46,18 @@ def plan(prior_path, waves_dir, attribution_path, host_decision_path, archive, r
         raise ValueError("incompatible attribution or serving evidence")
     context = {"base_commit": a["base_commit"], "binding": prior["binding"], "evaluator": EVALUATOR}
     path = "ironmule/ggml_engine.py"
-    code = subprocess.check_output(["git", "show", a["base_commit"] + ":" + path], cwd=root)
+    commit = a["base_commit"]
+    if not re.fullmatch(r"[a-f0-9]{40}", commit):
+        raise ValueError("expected the measured full base commit")
+    revision = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=root, capture_output=True)
+    if revision.returncode == 0:
+        code = revision.stdout
+    else:
+        # Shallow clones can replay a measurement from its archived immutable source.
+        snapshot = host_decision_path.parent / "sources" / f"{commit}-ggml_engine.py.gz"
+        if not snapshot.is_file():
+            raise ValueError(f"missing measured source {commit}:{path} and its archive")
+        code = gzip.decompress(snapshot.read_bytes())
     if hashlib.sha256(code).hexdigest() != a["source_sha256"] or a["method"] != "GgmlEngine._prefill":
         raise ValueError("source does not match the instrumented method")
     node = next(f for c in ast.parse(code).body if isinstance(c, ast.ClassDef) and c.name == "GgmlEngine"

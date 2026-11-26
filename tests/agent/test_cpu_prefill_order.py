@@ -26,3 +26,25 @@ def test_native_prefill_order_requires_real_qualified_serving_and_bound_native_t
     a.write_text(json.dumps(trace))
     with pytest.raises(ValueError, match="changed fixed work"):
         plan(*args)
+
+
+def test_archived_prefill_source_must_match_measured_bytes_without_git_history(tmp_path):
+    import gzip
+    import subprocess
+
+    trace = CPU / "prefill-attribution.json"
+    host = tmp_path / "planner-decision.json"
+    host.write_bytes((CPU / host.name).read_bytes())
+    measured = json.loads(trace.read_text())
+    empty = tmp_path / "empty"
+    subprocess.run(["git", "init", "-q", empty], check=True)
+    snapshot = tmp_path / "sources" / f"{measured['base_commit']}-ggml_engine.py.gz"
+    snapshot.parent.mkdir()
+    snapshot.write_bytes((CPU / "sources" / snapshot.name).read_bytes())
+    args = (ROOT / "evidence/runtime/cpu-pilot-epyc-discovery.json", CPU / "waves", trace, host, None)
+    replay = plan(*args, empty)
+    assert replay == plan(*args, ROOT)
+    assert replay["base_commit"] == measured["base_commit"]
+    snapshot.write_bytes(gzip.compress(b"unrelated source"))
+    with pytest.raises(ValueError, match="source does not match"):
+        plan(*args, empty)
