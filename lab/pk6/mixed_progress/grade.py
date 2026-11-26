@@ -361,7 +361,13 @@ def grade(folder):
                     len(w["requests"]),
                 ):
                     raise ValueError("native wave disagrees with client")
+            shared = bool(ready["health"].get("shared_pool"))
             proof[arm] = {
+                "shared_pool": shared,
+                "candidate_split_kv_path_eligible": arm.startswith("C")
+                and not shared
+                and ready["health"].get("stream_qualification", {}).get("passes")
+                is True,
                 "performance_waves_with_mixed_calls": dict(
                     Counter(
                         str(c["width"])
@@ -414,7 +420,8 @@ def grade(folder):
         if "/R" in key
     )
     exercised = all(
-        proof[arm]["performance_waves_with_mixed_calls"].get("32", 0) > 0
+        proof[arm]["candidate_split_kv_path_eligible"]
+        and proof[arm]["performance_waves_with_mixed_calls"].get("32", 0) > 0
         and proof[arm]["quality_waves_with_mixed_calls"] > 0
         for arm in ("C1", "C2")
     )

@@ -1038,6 +1038,7 @@ def build(root=ROOT) -> Iterator[dict]:
             from training.dynamic_calibration_evidence import experiences
             yield from experiences(root, source, digest)
         elif source in {"lab/autonomous/results/mixed-prefill-progress/plan.json",
+                        "lab/autonomous/results/l40s-mixed-prefill-progress/failed-start.json",
                         "lab/autonomous/results/l40s-mixed-prefill-progress/result.json"}:
             from training.mixed_progress_evidence import experiences
             yield from experiences(root, source, digest)

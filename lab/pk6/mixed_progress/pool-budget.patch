@@ -1,0 +1,16 @@
+--- a/ironmule/ggml_engine.py
++++ b/ironmule/ggml_engine.py
+@@ -2036,6 +2036,13 @@
+                         if local is not None and local < budget and sum(len(j.ids) for j in pending) > local:
+                             budget = local
+                             self.admission_budget_hits += 1
++                if (os.environ.get("IRONMULE_LAB_POOL_BURST") == "1" and self.pool is not None
++                        and not PROMPT_BUDGET and len(pending) >= 4 and not any(j.hardware_probe for j in pending)):
++                    # Give a queued shared-pool burst one physical batch, preserving the Pilot's slot cap.
++                    limit = min(self.seq_ctx - len(active), self.batch_cap - len(active), 2048)
++                    if budget < limit:
++                        trace_note(f"shared_budget from={budget} to={limit} queued={len(pending)}")
++                        budget = limit
+                 mark("pilot_admit")
+                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
+                     if job.cancelled is not None and job.cancelled():

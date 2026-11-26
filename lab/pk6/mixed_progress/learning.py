@@ -85,6 +85,9 @@ def replay(folder):
         "holdout": "C2",
         "sources": sources,
         "production_decision": result["decision"],
+        "source_path": "ordinary shared KV"
+        if result["native_mechanism"]["C1"]["shared_pool"]
+        else "qualified split streams",
     }
 
 

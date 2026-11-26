@@ -35,6 +35,42 @@ def experiences(root, source, digest):
                 trace_sha256=saved["source_trace_sha256"],
             )
         return
+    if path.name == "failed-start.json":
+        device = json.loads((path.parent / "target.json").read_bytes())
+        attempts = saved["gate_attempts"]
+        libraries = saved["two_compiled_libraries"]
+        if (
+            saved["ready"]
+            or not any(
+                a["kernel_mode"] == "generated"
+                and a["diagnostic"]["code"] == "out_of_memory"
+                for a in attempts
+            )
+            or libraries["raw_engine_w4"]["mtime_unix"]
+            <= libraries["calibration_w4"]["mtime_unix"]
+        ):
+            raise ValueError("unbound kernel fallback failure")
+        yield record(
+            "packed_kernel_retry_failure",
+            source,
+            digest,
+            "original-R1",
+            "l40s-mixed-prefill-progress",
+            hardware=device["hardware"],
+            model=device["gguf_sha256"],
+            quantization="Q4_K_M",
+            base_commit=device["source"],
+            profiles=["locally tuned W4", "stock retry"],
+            error=attempts,
+            reason="out_of_memory_then_raw_w4_build_in_stock_retry",
+            workload={"phase": "before HTTP readiness"},
+            quality=None,
+            libraries=libraries,
+            cost_reference=str((path.parent / "cost.json").relative_to(root)),
+            authorship="Codex diagnosed the two-library retry. IronMule refused the generated kernel.",
+            uncertainty="Operator stopped the mislabeled retry before readiness. Its time to completion is unknown.",
+        )
+        return
     observed = grade.grade(path.parent)
     if saved != observed:
         raise ValueError("archived decision disagrees with hardware replay")
