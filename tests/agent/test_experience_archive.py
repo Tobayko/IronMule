@@ -97,7 +97,7 @@ def test_native_trial_preserves_calibration_failure_and_dream_boundaries():
     assert any(r["kind"] == "native_failed_attribution" and not r["decision"] for r in rows)
 
 
-def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path):
+def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     from training import native_evidence
@@ -108,6 +108,8 @@ def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path):
     trial = state / "trial"
     trial.mkdir(parents=True)
     (trial / "context.json").write_text(json.dumps({"order": order.parent.name}))
+    monkeypatch.setattr(native_evidence, "source_at", lambda base, path: None)
+    monkeypatch.setattr(native_evidence, "ROOT", tmp_path)  # Only the archived, hash-bound request survives.
     (trial / "ref-0.json").write_text(json.dumps({"ttft_s": 0.13}))
     (trial / "result.json").write_text(json.dumps({"passed": True, "reason": "claimed"}))
     args = SimpleNamespace(state=state, order=order, destination=tmp_path / "export",

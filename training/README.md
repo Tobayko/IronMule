@@ -338,7 +338,9 @@ are linked by digest. The comparison covers the reported target runtime and work
 To rebuild the compiled candidate, check out `base_commit` from the manifest, apply `candidate.diff`,
 and point `--candidate-source` to the resulting `native/kernels/w4mma.cu`. Use the evaluator revision,
 CUDA compiler and compute capability recorded in `manifest.json`. Supply the GGUF, engine libraries
-and reference W4 library matching the order's hashes. Restore the exported dispatch table. The reference
+and reference W4 library matching the order's hashes. A shallow clone can recover the original kernel
+from the worker request after checking its digest. When the base Git object is unavailable during export,
+a supplied tuner is retained in full as `tuner-source.txt`. Restore the exported dispatch table. The reference
 and candidate binaries stay outside Git. Recheck each binary digest before replaying qualification
 on its target. [Build and qualification commands](../lab/pk1/native-trial.md)
 

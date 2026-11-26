@@ -21,7 +21,7 @@ COST_JOURNAL = "lab/rp/results/campaign-costs.json"
 TRIAL_FILES = ["context.json", "calibration.json", "build.json", "screen.json", "result.json",
                *(f"{label}-{i}.json" for i in range(PAIRS) for label in ("ref", "cand"))]
 NAMES = {"order.json", "order.profile.json", "request.json", "response.json", "authorship.json", "candidate.diff",
-         "prior-failure.json", "control.json", "dispatch.table", "measurement.json", "tuner.diff", "outcome.json", "activate.json", "run.json", *TRIAL_FILES}
+         "prior-failure.json", "control.json", "dispatch.table", "measurement.json", "tuner.diff", "tuner-source.txt", "outcome.json", "activate.json", "run.json", *TRIAL_FILES}
 PRIVATE = re.compile(rb'(?i)"(?:password|api_key|authorization|pod_id|secret|access_token|refresh_token)"\s*:'
                      rb'|\b(?:sk-proj-|ghp_|github_pat_|rpa_)[A-Za-z0-9_-]{12,}')
 HOST_PATH = re.compile(rb'/(?:home|root|workspace|tmp|work)/[^\s"\\]+')
@@ -39,7 +39,29 @@ def bounded(path):
 
 
 def source_at(base, path):
-    return subprocess.check_output(["git", "show", f"{base}:{path}"], cwd=ROOT)
+    result = subprocess.run(["git", "show", f"{base}:{path}"], cwd=ROOT, capture_output=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def original_source(order, args):
+    original = source_at(order["base_commit"], SOURCE)
+    expected = order["binding"]["source_sha256"]
+    if original is not None:
+        if sha(original) != expected:
+            raise ValueError("original Git source differs from the measured hash")
+        return original
+    # Depth-one CI and exported campaigns may have no base object. Accept only identical content.
+    for path in (args.state / "authoring/author/request.json", args.order.with_name("request.json")):
+        if path.is_file():
+            payload = json.loads(bounded(path))
+            data = payload["source"].encode()
+            if payload["order"] == order and sha(data) == expected:
+                return data
+    if (ROOT / SOURCE).is_file():
+        data = bounded(ROOT / SOURCE)
+        if sha(data) == expected:
+            return data
+    raise ValueError("original source unavailable for the bound base; supply its author request or fetch the commit")
 
 
 def patch(original, actual, name):
@@ -56,7 +78,7 @@ def export(args):
             or order["target"]["path"] != SOURCE or order["schema"] != "ironmule.native-code-experiment.v1"):
         raise ValueError("invalid native order")
     binding = order["binding"]
-    original = source_at(order["base_commit"], SOURCE)
+    original = original_source(order, args)
     profile_data = bounded(args.order.with_suffix(".profile.json"))
     profile = json.loads(profile_data)
     if (sha(original) != binding["source_sha256"] or sha(profile_data) != order["profile_sha256"]
@@ -141,7 +163,9 @@ def export(args):
         tuner = bounded(args.tuner)
         if sha(tuner) != binding["tuner"]:
             raise ValueError("different calibration source")
-        if tuner != base_tuner:
+        if base_tuner is None:
+            assets["tuner-source.txt"] = tuner
+        elif tuner != base_tuner:
             assets["tuner.diff"] = patch(base_tuner, tuner, tuner_name)
     if args.prior_failure_log:
         log = bounded(args.prior_failure_log)
@@ -206,7 +230,8 @@ def publish(directory, key, order, original, binding, base_tuner, binary_hash, a
     if evaluator_hash:
         evaluator = "lab/pk1/native_trial.py"
         for revision in subprocess.check_output(["git", "log", "-32", "--format=%H", "--", evaluator], cwd=ROOT).decode().splitlines():
-            if sha(source_at(revision, evaluator)) == evaluator_hash:
+            content = source_at(revision, evaluator)
+            if content is not None and sha(content) == evaluator_hash:
                 evaluator_commit = revision
                 break
     document = {"schema": SCHEMA, "order_id": key, "base_commit": order["base_commit"], "files": files,
@@ -216,7 +241,8 @@ def publish(directory, key, order, original, binding, base_tuner, binary_hash, a
                 "rebuild": {"source": SOURCE, "base_kernel_sha256": sha(original), "compiler": binding["fp"]["nvcc"],
                             "evaluator_sha256": evaluator_hash, "evaluator_commit": evaluator_commit,
                             "target_cc": binding["fp"]["cc"], "tuner_sha256": binding["tuner"],
-                            "tuner_source_available": sha(base_tuner) == binding["tuner"] or "tuner.diff" in files,
+                            "tuner_source_available": (base_tuner is not None and sha(base_tuner) == binding["tuner"]
+                                                       or "tuner.diff" in files or "tuner-source.txt" in files),
                             "instructions": "Check out base_commit. Apply candidate.diff to a separate copy. "
                                             "Use native_trial --mode build on the original compute capability. "
                                             "Restore dispatch.table. Compare the build receipt and requalify."}}
