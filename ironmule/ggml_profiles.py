@@ -30,9 +30,17 @@ def select(layers, devices, model_sha256, native, overrides):
     return ("explicit" if overrides else name), {**profile(name), **overrides}
 
 
+def cublas_override():
+    """The native default is zero. Unrecognized explicit values also require qualification."""
+    value = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS", "")
+    return value if value not in ("", "0") else None
+
+
 def cache_key():
     """Include the stock-reference rule as well as each candidate's effective flags."""
     key = ["ps1-pk6-v1", *(os.environ.get(key) for key in (*FLAGS, "IRONMULE_GPU_PROFILE_GATE"))]
     if os.environ.get("IRONMULE_KG_LIB") == "" and os.environ.get("IRONMULE_GGML_PACK") == "1":
         key.append("explicit-packed-stock-v1")
+    if cublas_override() is not None:
+        key.extend(["explicit-cublas-quality-v1", cublas_override()])
     return key
