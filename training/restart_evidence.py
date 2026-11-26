@@ -27,7 +27,7 @@ PILOT_ARMS = ("pilot-initial.json", "pilot-trained.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
 HTTP_ARMS = tuple(f"{arm}-{seed}.json" for seed in range(95111, 95117) for arm in ("reference", "candidate"))
-HTTP_FILES = (*HTTP_ARMS, "product-binding.json", "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "product-gate-reference.json", "product-gate-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
+HTTP_FILES = (*HTTP_ARMS, "transport-diagnostic.json", "product-binding.json", "gate-reference.json", "gate-candidate.json", "gate-devices-reference.json", "gate-devices-candidate.json", "product-gate-reference.json", "product-gate-candidate.json", "trained-head.json", "geometry.json", "decision.json", "withdrawn.json",
               "product-qualify.json", "product-exercise.json", "product-serve.json", "product-client.json", "product-listener.json", "live-ready.json")
 # The frozen stock gate broker allows sixteen child calls per arm.
 STOCK_STAGES = tuple(f"http-stock-{arm}-{i}.json" for arm in ("reference", "candidate") for i in range(16))
@@ -223,6 +223,11 @@ def product_assets(state, order, verified, assets, *, attempt=None, checkout=Non
         if work.name == "product-v3" and "geometry.json" in raw:
             g = json.loads(raw["geometry.json"])
             previous = bounded(state / "product-v2/gate-reference.json")
+            if "transport-diagnostic.json" in raw:
+                from lab.rp import restart_transport
+
+                if restart_transport.original(work) != json.loads(raw["transport-diagnostic.json"]):
+                    raise ValueError("SSE diagnosis differs from the incomplete initial reference and its actual source")
             if "product-binding.json" in raw:
                 from lab.pk1 import restart_http
 
@@ -576,6 +581,13 @@ def product_rows(root, folder, files, key, context):
         return record(kind, str((folder / name).relative_to(root)), files[name]["sha256"], kind, key, **context,
                       attempt=folder.name if folder.name.startswith("product-v") else "product-v1", **values)
 
+    if "http-transport-diagnostic.json" in files:
+        observed = read(folder / "http-transport-diagnostic.json")
+        yield emit("restart_incomplete_product_stream", "http-transport-diagnostic.json", reason=observed["observation"],
+                   arm=observed["arm"], seed=observed["seed"], original_artifacts=observed["original_artifacts"],
+                   observed_source=observed["source_sha256"], quality={"completed_correct_answers":observed["completed_correct_answers"],
+                   "minimum_requests_with_service_event":observed["minimum_requests_with_service_event"]},
+                   error=observed["native_error"], uncertainty=observed["missing"])
     for arm in ("reference", "candidate"):
         name = f"http-product-gate-{arm}.json"
         if name in files:
