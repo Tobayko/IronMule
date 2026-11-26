@@ -218,6 +218,9 @@ def persist_assets(directory, previous, assets):
         if PRIVATE.search(data) or any(secret in data for secret in secrets):
             raise ValueError(f"private fields in {name}; review locally")
         public = HOST_PATH.sub(b"<private-path>", data) if name in ("result.json", "outcome.json") else data
+        if name == "coordinator-restart-intent.json":
+            intent = json.loads(data)
+            public = json.dumps({k: v for k, v in intent.items() if k != "stopped_control_pid"}, indent=2).encode() + b"\n"
         if name == "startup-retry.json":
             repair = json.loads(data)
             # Preserve the original checksum and final error text; discard the host traceback.

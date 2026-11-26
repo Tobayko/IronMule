@@ -22,11 +22,12 @@ TRIAL = ("context.json", "aa-0.json", "aa-1.json", "stale.json", "missing.json",
          *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")),
          *(f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")), "result.json")
 RELEASE = ("release-activate.json", "release-run.json", "release-exercise.json", "target-check.json", "rollback-exercise.json")
+RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 COST_PHASES = ("during-qualification", "after-verdict", "after-release")
 COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
-NAMES = {*REQUIRED, *COST_FILES, "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
+NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
          "qualified.json", "control.json", *TRIAL, *RELEASE}
 
 
@@ -138,10 +139,19 @@ def export(args):
             assets["candidate.diff"] = patch(original, candidatesrc, restart_order.PATH)
     if getattr(args, "cost_phase", None):
         observe_cost(state, args.cost_phase)
-    paths = {**{n: state / n for n in COST_FILES}, **{n: state / "trial" / n for n in TRIAL}, **{n: state / "release" / n for n in RELEASE},
+    paths = {**{n: state / n for n in (*COST_FILES, *RECOVERY)}, **{n: state / "trial" / n for n in TRIAL}, **{n: state / "release" / n for n in RELEASE},
              "control.json": state / "release/deployment/control.json", "qualified.json": state / "qualified.json",
              "campaign.json": state / "campaign.json"}
     assets.update({n: bounded(p) for n, p in paths.items() if p.is_file()})
+    if RECOVERY[1] in assets:
+        before, after = (json.loads(assets[n]) for n in RECOVERY)
+        hashes = before["receipts"]
+        if (before["remote_job"] != "restart-" + key[:18] or before["remote_running"] is not True
+                or after["intent_sha256"] != sha(assets[RECOVERY[0]]) or before["remote_job"] != after["remote_job"]
+                or after["old_control_exited"] is not True or after["same_live_job"] is not True
+                or after["preserved_receipts"] != len(hashes) or not hashes or after["resumed_s"] < before["at_s"]
+                or not all(n in TRIAL and n in assets and sha(assets[n]) == value for n, value in hashes.items())):
+            raise ValueError("startup restart witness or preserved trial receipts differ")
     if any(json.loads(assets[n])["order_id"] != key for n in COST_FILES if n in assets):
         raise ValueError("cost observation is bound to a different startup order")
     context = json.loads(assets["context.json"]) if "context.json" in assets else None
@@ -217,6 +227,13 @@ def experiences(root, source):
             yield emit("restart_cost_observation", name, provenance="reported", reason=cost["phase"],
                        metrics=[{k: v for k, v in cost.items() if k not in ("order_id", "basis", "cost_journal")}],
                        authorship="Registered RunPod campaign operator", uncertainty=cost["basis"])
+    if all(n in files for n in RECOVERY):
+        before, after = (read(folder / n) for n in RECOVERY)
+        yield emit("startup_coordinator_recovery", RECOVERY[1], reason="running_job_and_receipts_preserved",
+                   metrics=[{"interruption_s": after["resumed_s"] - before["at_s"],
+                             "immutable_receipts_verified": after["preserved_receipts"]}],
+                   note=before["reason"], authorship="Campaign coordinator",
+                   uncertainty="One observed restart during target qualification.")
     samples = [n for n in TRIAL if n.startswith(("ref-", "cand-", "aa-", "facts-")) or n in ("missing.json", "stale.json")]
     for name in samples:
         if name not in files:
