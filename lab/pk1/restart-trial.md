@@ -81,3 +81,37 @@ captured measurements without a GPU. Source publication, target activation, with
 a fresh-reference rollback exercise use the scoped release commands. Inspect the target
 runner entry points with `python -m lab.pk1.restart_release --help`. The current lease,
 watchdogs and cost journal remain authoritative throughout.
+
+After export, replay the frozen evaluator from the portable archive on an ordinary CPU.
+Supply the final campaign journal to include the entire paid lease, development work, idle
+time and conservative billing tail in a break-even scenario.
+
+```sh
+python -m lab.pk1.restart_payback lab/autonomous/results/a100-restart/"$ORDER_ID" \
+    --journal lab/rp/results/campaign-costs.json
+```
+
+The calculation uses elapsed seconds through the first completed workload and the full
+worker lifetime. It reports each absolute median difference and uses the smaller value to
+estimate how many matching restarts would recover the investment. Actual billed savings
+also require the worker to release paid capacity earlier.
+
+After a successful source qualification, fit the startup head used by the existing CPU Pilot.
+
+```sh
+python -m training.pilot_restart_profiles --order "$STATE/order.json" --checkout "$BASE" \
+    --trial "$STATE/trial" --candidate-source "$STATE/authoring/candidate.py" \
+    --weights "$STATE/startup-head.npz" --report "$STATE/startup-fit.json"
+```
+
+The trainer starts three small networks from independent random weights. The six mixed-first
+pairs form one family. Two factual-first pairs form a distinct held-out family and never enter
+the gradient or training-margin calculation. The fit records the shipped reference policy,
+fixed reuse rule, untrained and trained scores, and CPU fitting time. Reuse can win in both
+families. These observations therefore cannot establish superiority over a fixed reuse rule.
+The product broker supplies the verified merged release, a pinned checkpoint SHA and a valid
+local receipt. Before constructing the worker it calls the existing Pilot's whole-profile
+selector. Its decision includes complete checkpoint-load and inference latency. The controller
+falls back to the measured reference for a new family, unresolved prediction, unavailable
+receipt, different runtime binding or withdrawn source. The recorded previous state represents
+random initialization before any measured profile was admitted.

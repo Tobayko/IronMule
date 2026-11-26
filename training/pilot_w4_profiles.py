@@ -52,7 +52,7 @@ def sources(order_path, receipt_path):
     return order, receipt["measurement"], times
 
 
-def fit_head(times, widths, seed, inputs=None):
+def fit_head(times, widths, seed, inputs=None, epochs=550):
     rng = np.random.default_rng(seed)
     x = np.stack([features(w) if inputs is None else inputs[w] for w in widths])
     # Positive scores represent the log speedup of the complete profile versus stock.
@@ -61,9 +61,9 @@ def fit_head(times, widths, seed, inputs=None):
     n = x.shape[1]
     weights = [rng.normal(0, n ** -.5, (hidden, n)), np.zeros(hidden),
                rng.normal(0, hidden ** -.5, (hidden, hidden)), np.zeros(hidden),
-               rng.normal(0, hidden ** -.5, (3, hidden)), np.zeros(3)]
+               rng.normal(0, hidden ** -.5, (y.shape[1], hidden)), np.zeros(y.shape[1])]
     w1, b1, w2, b2, w3, b3 = weights
-    for _ in range(550):
+    for _ in range(epochs):
         a = np.tanh(x @ w1.T + b1)
         b = np.tanh(a @ w2.T + b2)
         out = (b @ w3.T + b3 - y) / len(widths)
