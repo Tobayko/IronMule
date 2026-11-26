@@ -23,7 +23,7 @@ PYTHONPATH="$PWD" python /work/first-token-driver/lab/pk6/first_token/trial.py \
   --checkout "$PWD" --models /models --state /work/state --output /work/first-token
 ```
 
-Copy the target results to persistent storage as they appear. Stop the pod and confirm its removal with the budget operator. Given the copied directory, run the following from the analysis checkout containing the scorer. Use a private copy when extracting projections alongside full traces.
+Launch the target command as a job named `first-token-trial`. On the control host, `python -m lab.rp.first_token --pod-id "$POD_ID" --state "$RESULTS"` copies the files to persistent storage every eight seconds. Reuse the same private directory when resuming that lease. Stop the pod with `python -m lab.rp.rp stop` and verify account and journal status. Given the copied directory, run the following from the analysis checkout containing the scorer. Use a private copy when extracting projections alongside full traces.
 
 ```sh
 python -m lab.pk6.first_token.phases --series "$RESULTS" --traces "$RESULTS" \

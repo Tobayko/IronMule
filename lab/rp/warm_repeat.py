@@ -21,8 +21,8 @@ for label in ("K1", "vllm", "K2"):
               f"benchmark-{label}.log", f"benchmark-{label}q.log", f"serve-{label}.log"]
 
 
-def collect(pod, state):
-    paths = [TARGET + "/" + name for name in FILES]
+def collect(pod, state, *, target=TARGET, files=FILES):
+    paths = [target + "/" + name for name in files]
     sizes = jobs.shell(pod, 'for path in ' + shlex.join(paths) +
                        '; do if test -f "$path"; then stat -c "%n %s" "$path"; fi; done')
     for line in sizes.splitlines():
