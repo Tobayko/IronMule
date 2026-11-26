@@ -42,7 +42,7 @@ The [bounded target commands](../lab/pk1/restart-trial.md) describe how to suppl
 reserved device, a pinned checkout, the Codex author and a persistent campaign directory.
 
 The four-core EPYC serving experiment uses the Pilot's larger, 20,232-parameter thread
-head. Refit it independently from the recorded CPU trials and compare the archive bytes:
+head. These commands refit it from the recorded CPU trials and compare the result with the archived weights.
 
 ```sh
 out=$(mktemp -d)
