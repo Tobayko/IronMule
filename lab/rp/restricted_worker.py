@@ -163,6 +163,10 @@ def restrict_files(spec):
         for dev in [Path("/dev/null"), Path("/dev/zero"), Path("/dev/urandom"), Path("/dev/random"),
                     *Path("/dev").glob("nvidia*")]:
             allow(dev, read_file | write | (read_dir if dev.is_dir() else 0))
+        # cuInit names newly spawned threads through /proc/self/task/<tid>/comm. Landlock
+        # resolves this directory in the worker before exec. Future TID inodes do not exist yet.
+        if Path("/dev/nvidiactl").is_char_device():
+            allow("/proc/self/task", write | (1 << 14))
         # Within the worker-owned private directory allow ordinary files and compiler outputs.
         allow(spec["output"], handled & ~((1 << 6) | (1 << 9) | (1 << 11)))
         if syscall(446, fd, 0) < 0:  # landlock_restrict_self
@@ -207,6 +211,45 @@ def denied(fn):
     raise RuntimeError("isolation preflight unexpectedly permitted a forbidden operation")
 
 
+def verify_cuda_task_scope():
+    """Exercise a new thread's comm and reject another process's same-UID procfs entry."""
+    completed = []
+
+    def writable(path):
+        # Check write permission independently of read permission, without modifying the entry.
+        return os.fdopen(os.open(path, os.O_WRONLY), "wb")
+
+    def rename_thread():
+        comm = Path(f"/proc/self/task/{threading.get_native_id()}/comm")
+        prior = comm.read_bytes().removesuffix(b"\n")
+        try:
+            comm.write_bytes(b"im-comm-probe")
+            completed.append(comm.read_bytes() == b"im-comm-probe\n")
+        finally:
+            comm.write_bytes(prior)
+
+    thread = threading.Thread(target=rename_thread)
+    thread.start()
+    thread.join()
+    if completed != [True]:
+        raise RuntimeError("cannot name a newly created CUDA worker thread")
+    denied(lambda: writable("/proc/self/oom_score_adj"))
+    reader, writer = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(writer)
+        try:
+            os.read(reader, 1)
+        finally:
+            os._exit(0)
+    os.close(reader)
+    try:
+        denied(lambda: writable(f"/proc/{pid}/task/{pid}/comm"))
+    finally:
+        os.close(writer)
+        os.waitpid(pid, 0)
+
+
 def child(fd, spec_fd):
     # The preflight protocol has its own one-shot descriptor. Stdin belongs exclusively
     # to the server's data protocol, even if a request arrives before worker startup.
@@ -228,6 +271,9 @@ def child(fd, spec_fd):
     denied(lambda: open(spec["unlisted"], "rb"))
     denied(lambda: open("/proc/1/environ", "rb"))
     denied(lambda: os.listdir("/root"))
+    cuda_task_scope = Path("/dev/nvidiactl").is_char_device()
+    if cuda_task_scope:
+        verify_cuda_task_scope()
     for name in spec["secret_paths"]:
         p = Path(name)
         denied(lambda: os.listdir(p) if p.is_dir() else p.open("rb"))
@@ -247,7 +293,8 @@ def child(fd, spec_fd):
     os.chdir(spec["cwd"])
     proof = {"uid": os.getuid(), "gid": os.getgid(), "capabilities": caps, "no_new_privs": True,
              "seccomp": 2, "unlisted_file_denied": True, "network_denied": True, "root_secrets_denied": True, "fixture_write_denied": True,
-             "output_writable": True, "immutable_inputs": spec["readonly"]}
+             "output_writable": True, "immutable_inputs": spec["readonly"],
+             "own_task_scope_verified": cuda_task_scope}
     os.write(fd, json.dumps(proof).encode() + b"\n")
     os.close(fd)
     if spec["argv"]:

@@ -46,6 +46,13 @@ the process group. Per-process CPU time, descriptors, process count, core files 
 are limited. CUDA access uses the pod's device files. Check GPU execution separately on each host.
 [Recorded A100 preflight](results/restricted-worker-preflight.json)
 
+The A100 driver sets a newly created thread's name through `/proc/self/task/<tid>/comm`.
+The worker's Landlock rule grants write and truncate beneath the launcher's own task directory.
+This also grants those two operations on other entries in that directory if Linux permissions
+allow them. The preflight renames a new thread and checks that a write-only open fails on another
+same-UID process's thread and on the worker's top-level `oom_score_adj`.
+[A100 scope checks, CUDA arithmetic and GGML doctor](results/a100-restricted-worker-final-20261126/summary.json)
+
 ## Four-core CPU trial during a GPU-idle window
 
 On a leased Linux host with an available five-minute interval, use a clean Git checkout and a working

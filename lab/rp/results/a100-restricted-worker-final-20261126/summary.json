@@ -1,0 +1,57 @@
+{
+  "schema": "ironmule.restricted-worker-a100.v1",
+  "captured_at_utc": "2026-11-26 01:27:49 UTC",
+  "worker_sha256": "989948fc14dedc5ecc3759785c1718e7fe7ee54dc5fdb4d6e7585e0f093b0f1a",
+  "cuda_probe_sha256": "f1d52eff24767b00884fce0b667a8e7c1445f75242a2171828e519a829b9ffa1",
+  "ggml_helper_sha256": "25303738129b3f80188c7320a33a5713b54ab14c7b68b83e411c758291b54aeb",
+  "baseline_source_commit": "33dc7bf544954f6c79a8a15536c0d6f5724b26a2",
+  "binding_path": "/opt/ironmule-worker/runtime/bindings",
+  "model_fixture_paths": [
+    "/opt/ironmule-worker/models/Qwen3-32B-Q4_K_M.gguf",
+    "/opt/ironmule-worker/models/SmolLM2-135M-Instruct-Q4_K_M.gguf"
+  ],
+  "probe_uid": 60000,
+  "probe_gid": 60000,
+  "capabilities": {
+    "CapInh": 0,
+    "CapPrm": 0,
+    "CapEff": 0,
+    "CapBnd": 0,
+    "CapAmb": 0
+  },
+  "no_new_privs": true,
+  "seccomp": 2,
+  "network_denied": true,
+  "root_secrets_denied": true,
+  "fixture_write_denied": true,
+  "unlisted_file_denied": true,
+  "own_task_scope_verified": true,
+  "cuda_saxpy": {
+    "rc": 0,
+    "diagnostic": "{\"uid\": 60000, \"cuda_devices\": 1, \"saxpy\": 7.0}\n"
+  },
+  "ggml_doctor": {
+    "returncode": 0,
+    "devices": [
+      {
+        "description": "NVIDIA A100-SXM4-80GB",
+        "driver": 13020,
+        "free_memory": 84649377792,
+        "name": "CUDA0",
+        "pci": "0000:47:00.0",
+        "provider": "cuda",
+        "runtime": 12080,
+        "total_memory": 85094825984,
+        "type": "gpu"
+      }
+    ]
+  },
+  "hardware": {
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "uuid": "GPU-8bada50e-b8f2-d961-5369-a30d9e1eade6",
+    "driver": "595.112.07",
+    "cuda_runtime": 12080
+  },
+  "candidate_code_executed": false,
+  "note": "Only fixed trusted CUDA arithmetic and GGML device enumeration ran; no candidate source or model inference was executed."
+}
