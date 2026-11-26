@@ -74,6 +74,15 @@ def replay(folder):
         data.append(native["cells"])
     if {c["seed"] for c in data[0]} & {c["seed"] for c in data[1]}:
         raise ValueError("holdout seed leaked into the supervised update")
+    if result["native_profiles"]["C1"] != result["native_profiles"]["C2"]:
+        return {
+            "status": "different_native_profiles",
+            "train": "C1",
+            "holdout": "C2",
+            "hardware": result["target"]["hardware"],
+            "sources": sources,
+            "production_decision": result["decision"],
+        }
     trained = fit(
         *([s for c in cells for s in c["mixed"]] for cells in data),
         plan()["step_cost_theta"],

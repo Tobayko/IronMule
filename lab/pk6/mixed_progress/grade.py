@@ -302,6 +302,7 @@ def grade(folder):
     if complete["order"] != list(ARMS) or complete["hardware"] != target["hardware"]:
         raise ValueError("incomplete run or changed device")
     data, stats, resources, quality, starts, proof = {}, {}, {}, {}, {}, {}
+    profiles = {}
     prior = 0.0
     telemetry = telemetry_samples(folder / "device-load.csv")
     for arm in ARMS:
@@ -361,7 +362,14 @@ def grade(folder):
                     len(w["requests"]),
                 ):
                     raise ValueError("native wave disagrees with client")
-            shared = bool(ready["health"].get("shared_pool"))
+            h = ready["health"]
+            profiles[arm] = {
+                "kernel_profile": h["kernel_profile"],
+                "serving_kernel": h.get("kernel_fallback", {}).get("serving"),
+                "shared_cap": h.get("shared_pool", {}).get("cap"),
+                "sequences": h["sequences"]["sequences"],
+            }
+            shared = bool(h.get("shared_pool"))
             proof[arm] = {
                 "shared_pool": shared,
                 "candidate_split_kv_path_eligible": arm.startswith("C")
@@ -400,7 +408,10 @@ def grade(folder):
                         if w["seed"] == seed and w["width"] == width and w["repeat"] < 3
                     ]
 
-                comparisons[f"{cand}/{ref}/{width}"] = paired(block(ref), block(cand))
+                comparison = paired(block(ref), block(cand))
+                if ref != "vllm":
+                    comparison["same_native_profile"] = profiles[cand] == profiles[ref]
+                comparisons[f"{cand}/{ref}/{width}"] = comparison
 
     def clear(row):
         return row["same_fixed_work"] and all(
@@ -414,6 +425,7 @@ def grade(folder):
     all_perf = all(clear(row) for key, row in comparisons.items() if "/vllm/" in key)
     native_gain = all(
         row["same_fixed_work"]
+        and row["same_native_profile"]
         and row["candidate_over_reference"]["tok_s"] >= 1.0
         and row["candidate_over_reference"]["first_p95"] <= 1.0
         for key, row in comparisons.items()
@@ -432,6 +444,7 @@ def grade(folder):
         "quality": quality,
         "resources": resources,
         "native_mechanism": proof,
+        "native_profiles": profiles,
         "comparisons": comparisons,
         "full_candidate_quality": candidate_quality,
         "clear_performance_win_at_all_widths": all_perf,

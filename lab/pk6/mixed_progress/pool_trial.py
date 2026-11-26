@@ -42,7 +42,20 @@ def main():
     args.out.mkdir(mode=0o700, exist_ok=False)
     save(args.out / "target.json", {**target, "pool_engine_sha256": ENGINE})
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
+    from ironmule.ggml_profiles import FLAGS
+
     for arm in ("S1", "S2"):
+        # The previous arm's client tokenizer can import raw defaults into the parent environment.
+        # Restore the reference's own observed product profile before launching this arm.
+        profile = json.loads((args.primary / f"ready-R{arm[1]}.json").read_bytes())[
+            "health"
+        ]["kernel_profile"]
+        for key in FLAGS:
+            os.environ.pop(key, None)
+        if profile["profile"] == "explicit":
+            os.environ.update(profile["flags"])
+        elif profile["profile"] != "conservative":
+            raise ValueError("unregistered reference profile")
         measure(args, arm, hw, 0, deadline)
     save(args.out / "completed.json", {"hardware": board(), "order": ["S1", "S2"]})
 

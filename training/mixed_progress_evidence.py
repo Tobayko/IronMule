@@ -135,7 +135,9 @@ def experiences(root, source, digest):
                 for arm in (candidate, reference)
             },
             cost_reference=str((path.parent / "cost.json").relative_to(root)),
-            reason=observed["decision"],
+            reason="different_native_profiles"
+            if counts.get("same_native_profile") is False
+            else observed["decision"],
             authorship="Codex implemented mixed scheduling. IronMule ranked its experimental row limit.",
             uncertainty="One device and synthetic chat traffic. Mixed-call evidence is bound to measured HTTP waves. "
             "Cross-engine comparisons use different quantizations.",
