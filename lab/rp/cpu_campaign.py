@@ -195,8 +195,11 @@ def job_command(cfg, pod, argv, affinity, lock, seconds):
     remaining = min(seconds, int(pod["deadline"] - time.time() - 10))
     if remaining < 1:
         raise ValueError("lease deadline reached")
-    cmd = ["timeout", "-k", "5", str(remaining), "flock", "-n", str(lock),
-           "taskset", "-c", ",".join(map(str, affinity)), *argv]
+    # Wait for custody of the whole host as well as protecting the individual order.
+    # Keep the lease deadline across both the wait and the subsequent CPU measurement.
+    measured = transport.exclusive_measurement(cfg, ["flock", "-n", str(lock),
+        "taskset", "-c", ",".join(map(str, affinity)), *argv], max(1, remaining - 1))
+    cmd = ["timeout", "-k", "5", str(remaining), "/bin/sh", "-ec", measured]
     return ("set -e; . " + shlex.quote(cfg["env"]) + "; cd " + shlex.quote(cfg["framework"]) + "; export PYTHONPATH=" +
             shlex.quote(os.pathsep.join(filter(None, (cfg["framework"], cfg.get("dependency_path"))))) + "; export PYTHONDONTWRITEBYTECODE=1; exec " + shlex.join(cmd))
 
@@ -304,7 +307,7 @@ def advance(args):
         found = state_of_job(pod, name)
         if found["running"] or active_qualifier(pod, cfg, remote):
             return {"stage": "measuring", "job": name, "completed_arms": sum((raw / (a + ".json")).is_file() for a in suite.arms())}
-        if found["rc"] is not None:
+        if found["rc"] not in (None, 75):
             snapshot_trial(pod, remote, raw, suite)
             if not (raw / "verdict.json").exists():
                 if not suite.matched and (stopped := profile_conflict(raw, order)):

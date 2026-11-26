@@ -85,10 +85,20 @@ def snapshot(pod, directory, names, local):
         os.replace(tmp.name, local / name)
 
 
+def exclusive_measurement(cfg, argv, wait_s):
+    """Serialize paid CPU and GPU timings sharing a host. Serving processes never take this lock."""
+    lock_dir = PurePosixPath(cfg["worker_root"]) / ".ironmule-measurement.lock"
+    if wait_s < 1:
+        raise ValueError("no measurement window remains")
+    return ("mkdir -p -m 0700 -- " + shlex.quote(str(lock_dir)) + "; " +
+            shlex.join(["flock", "--close", "--wait", str(wait_s), "--conflict-exit-code", "75", str(lock_dir), *argv]))
+
+
 def command(cfg, module, argv):
+    measured = exclusive_measurement(cfg, [cfg["python"], "-m", module, *map(str, argv)], 1800)
     return ("set -e; . " + shlex.quote(cfg["env"]) + "; cd " + shlex.quote(cfg["framework"]) +
             "; export PYTHONPATH=" + shlex.quote(cfg["framework"]) + "; " +
-            shlex.join([cfg["python"], "-m", module, *map(str, argv)]))
+            measured)
 
 
 def job(pod, name, cmd):
@@ -97,7 +107,8 @@ def job(pod, name, cmd):
     current = call(pod, "GET", query)
     if current.get("running"):
         return "running"
-    if current.get("rc") is not None:
+    # A bounded wait that never entered a measurement leaves no scientific result.
+    if current.get("rc") not in (None, 75):
         if current["rc"] != 0:
             raise RuntimeError(f"{name} failed: {current['tail'][-500:]}")
         return "finished"

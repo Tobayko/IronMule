@@ -103,3 +103,22 @@ def test_http_option_stops_at_negative_public_qualification(tmp_path, monkeypatc
     assert result["stage"] == "http_declined"
     assert campaign.published_http(args, cfg, {"order_id": key}, native) == result
     assert len(jobs) == 1
+def test_busy_cpu_or_gpu_broker_defers_until_shared_host_is_available(tmp_path):
+    import fcntl
+    import os
+    import subprocess
+
+    cfg = {"worker_root": str(tmp_path)}
+    lock = tmp_path / ".ironmule-measurement.lock"
+    lock.mkdir(mode=0o700)
+    completed = tmp_path / "ran"
+    cmd = ["/bin/sh", "-ec", campaign.exclusive_measurement(cfg, ["touch", str(completed)], 1)]
+    fd = os.open(lock, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        assert subprocess.run(cmd, check=False).returncode == 75
+        assert not completed.exists()
+    finally:
+        os.close(fd)
+    subprocess.run(cmd, check=True)
+    assert completed.is_file()

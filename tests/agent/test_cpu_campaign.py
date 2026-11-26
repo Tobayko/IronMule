@@ -86,9 +86,10 @@ def test_adopted_job_or_existing_process_blocks_duplicate_dispatch(tmp_path, mon
 
 def test_lease_deadline_and_single_writer_single_core_set(monkeypatch):
     monkeypatch.setattr(campaign.time, "time", lambda: 50)
-    cfg = {"env": "/etc/lane.env", "framework": "/repo"}
+    cfg = {"env": "/etc/lane.env", "framework": "/repo", "worker_root": "/workers"}
     cmd = campaign.job_command(cfg, {"deadline": 100}, ["/python", "-m", "arm"], [0, 1, 2, 3], "/runs/one.lock", 120)
-    assert "timeout -k 5 40 flock -n /runs/one.lock taskset -c 0,1,2,3 /python" in cmd
+    assert "timeout -k 5 40" in cmd and "--wait 39" in cmd
+    assert "/workers/.ironmule-measurement.lock flock -n /runs/one.lock taskset -c 0,1,2,3 /python" in cmd
     with pytest.raises(ValueError, match="deadline"):
         campaign.job_command(cfg, {"deadline": 52}, [], [], "/runs/one.lock", 120)
 
