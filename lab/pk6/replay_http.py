@@ -123,7 +123,12 @@ def fresh(directory):
     result = score(directory, historical=False)
     if any(result["source_files"][name] == value for name, value in historical()["source_files"].items() if name in names):
         raise ValueError("historical raw file supplied as a fresh arm")
-    return {**base, "status": "completed HTTP statistics", **result}
+    # The new registration is descriptive. Only pod 37 used a predeclared 1.10 threshold.
+    rates = result.pop("original_scoring")
+    ratios = rates.pop("verdict")
+    comparable = result["fixed_token_work"] and result["facts_all_18"]
+    return {**base, "status": "completed HTTP statistics" if comparable else "quality or fixed work differs",
+            "per_engine": rates, "throughput_ratio": ratios["ratio_tok_s"] if comparable else None, **result}
 
 
 def main():
