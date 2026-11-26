@@ -4603,3 +4603,24 @@ Replay all five original sets of answers offline with
 `python -m training.pilot_withdrawal_replay`. The experiment used the existing RunPod
 lease. Its elapsed time is included in the campaign cost journal.
 [Measured outcome and source digests](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/outcome.json) · [Raw receipts](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/raw/) · [Hardware driver](../lab/rp/cpu_pilot_withdrawal.py)
+
+### 2026-11-26 A100 source planning after the PR 60 startup improvement
+
+Two new, separately started Qwen3-32B Q4_K_M workers used the trained CPU startup head.
+Both selected the merged PR 60 source and reused its qualified W4 profile. Each cold worker
+delivered 32 full mixed requests, 32 warm requests and 18 correct factual answers. An
+independent control-host verifier checked source bytes, CUDA objects, masks, qualified
+head scores, executed decisions and complete deliveries.
+
+The planner received disjoint Python source timings from startup and all three serving
+phases. Six source methods had editable implementation time. Across those methods
+combined, startup plus the first wave accounted for only 6.89 ms and 3.67 ms on the two
+seeds. An optimistic 50% reduction at the largest individual site would save 1.58 ms.
+The preregistered 2% correct-work gate required 303.07 ms. The planner deferred authoring.
+These bounds apply to attributed Python implementation time. The 193 native-backed
+decode calls in startup require separate measurements inside their call paths.
+
+The diagnostic used 70.51 seconds of broker time, including the two trained selections.
+Its share of the already running lease was $0.0431 at the reserved hourly rate. The
+planner estimated $0.389 for a full follow-up qualification and left it unspent.
+[Measured source observations and decision](../lab/autonomous/results/a100-post-restart-60/) · [Discovery contract](../training/post_restart_contract.json) · [Qualification contract](../lab/pk1/followup_contract.py)
