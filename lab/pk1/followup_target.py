@@ -5,13 +5,14 @@ import argparse
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from lab.pk1 import followup_contract as rules, followup_release, followup_trial as trial, restart_release
 from training import scoped_release as release
-from training.code_author import digest
+from training.code_author import digest, write_once
 from training.code_trial import read
 from training.trial_release import require
 
@@ -53,6 +54,18 @@ def checked(args, receipt, label, seed, path, *, factual):
     return row
 
 
+def charged(args, receipt, label, seed, path, *, factual):
+    """Price source projection, hashing, selection and result validation without editing the raw worker evidence."""
+    start = time.monotonic()
+    row = checked(args, receipt, label, seed, path, factual=factual)
+    elapsed = time.monotonic() - start
+    outside = max(0.0, elapsed - row["broker_elapsed_s"])
+    write_once(path.with_name(path.stem + "-dispatch.json"),
+               {"elapsed_s": elapsed, "outside_arm_s": outside, "arm_sha256": release.checksum(path)})
+    return {**row, "broker_to_process_s": row["broker_to_process_s"] + outside,
+            "broker_elapsed_s": row["broker_elapsed_s"] + outside, "release_dispatch_and_validation_s": outside}
+
+
 def serving_metrics(row):
     return {"cold_s": row["broker_to_process_s"] + row["cold_s"], "warm_s": row["warm"]["wall_s"],
             "warm_p95_s": sorted(row["warm"]["ttfts_s"])[30], "facts_s": row["factual_timing"]["wall_s"],
@@ -66,8 +79,10 @@ def fresh(args, receipt, directory):
         rows = {}
         for label in (("reference", "candidate"), ("candidate", "reference"))[i]:
             file = directory / f"fresh-{label}-{seed}.json"
-            rows[label] = checked(args, receipt, label, seed, file, factual=factual)
+            rows[label] = charged(args, receipt, label, seed, file, factual=factual)
             evidence[file.name] = release.checksum(file)
+            outer = file.with_name(file.stem + "-dispatch.json")
+            evidence[outer.name] = release.checksum(outer)
         if not factual:
             reference = serving_metrics(rows["reference"])
         scores.append(trial.scores(rows["reference"], rows["candidate"]))
@@ -105,6 +120,7 @@ def preceding(args, seed, expected):
 
 
 def run(args, state, seed):
+    start = time.monotonic()
     order = read(args.order)
     try:
         followup_release.register_receipt(order, args.checkout, args.receipt, args.receipt_sha256)
@@ -117,7 +133,7 @@ def run(args, state, seed):
         return preceding(args, seed, baseline)
     try:
         with TemporaryDirectory(dir=state) as scratch:
-            row = checked(args, receipt, "candidate", seed, Path(scratch) / "work.json", factual=False)
+            row = charged(args, receipt, "candidate", seed, Path(scratch) / "work.json", factual=False)
             limits = read(state / "deployment/target-check.json")["metrics"]["reference"]
             metrics = serving_metrics(row)
             for name, value in metrics.items():
@@ -128,7 +144,8 @@ def run(args, state, seed):
                     "work_sha256": digest([row["cold"]["output_sha256"], row["warm"]["output_sha256"], row["factual"]]),
                     "graded_correct": sum(row["facts"]), "cold_performance_completions": row["cold"]["completed"],
                     "warm_performance_completions": row["warm"]["completed"], "selection": row["startup_selection"],
-                    "full_worker_wall_s": row["broker_elapsed_s"], **metrics}
+                    "full_worker_wall_s": row["broker_elapsed_s"], "release_dispatch_and_validation_s": row["release_dispatch_and_validation_s"],
+                    "elapsed_through_validated_work_s": time.monotonic() - start, **metrics}
     except (OSError, ValueError, TimeoutError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         release.rollback(state, f"follow-up target changed or regressed: {str(exc)[:320]}")
         return preceding(args, seed, baseline)
