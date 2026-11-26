@@ -39,6 +39,14 @@ def exclusion(arm, proof):
         and proof.get("fallback") == "stock"
     ):
         return "product rejected the proposed numeric profile"
+    if arm.startswith("Q") and (
+        not proof["shared_pool"]
+        or not proof.get("shared_chunks_in_http")
+        or not proof.get("shared_chunks_in_quality")
+    ):
+        return (
+            "chunked unified KV path absent from actual performance or quality requests"
+        )
     if arm.startswith("G") and any(
         proof.get("profile_flags", {}).get(k) != "1"
         for k in ("IRONMULE_PK6", "IRONMULE_PS1")
@@ -163,6 +171,7 @@ def inspect(folder, arm, target, telemetry):
             else gzip.decompress(trace.with_suffix(".txt.gz").read_bytes())
         )
         marks = []
+        chunks = []
         budgets = []
         capacities = []
         drafts = []
@@ -183,6 +192,11 @@ def inspect(folder, arm, target, telemetry):
                 capacities.append(
                     [int(fields[k]) for k in ("cells", "allocated", "cap")]
                 )
+            if line.startswith("# shared_chunks "):
+                shape = dict(s.split("=") for s in line.split()[2:-1])
+                if int(shape["rows"]) != target["shared_chunk_plan"]["rows"]:
+                    raise ValueError("wrong chunk execution profile")
+                chunks.append(float(line.split()[-1]))
             if line.startswith("# shared_budget "):
                 budgets.append(float(line.split()[-1]))
             if line.startswith("# prompt_kernel "):
@@ -258,6 +272,20 @@ def inspect(folder, arm, target, telemetry):
                 <= max(x["t_done"] for x in r["requests"])
             ),
         }
+        if target.get("shared_chunk_plan"):
+            for field, quality_wave in (
+                ("shared_chunks_in_http", False),
+                ("shared_chunks_in_quality", True),
+            ):
+                proof[field] = sum(
+                    1
+                    for r in rows
+                    if (r["repeat"] == 3) == quality_wave
+                    for t in chunks
+                    if min(x["t_send"] for x in r["requests"])
+                    <= t
+                    <= max(x["t_done"] for x in r["requests"])
+                )
     if arm.startswith("B") and proof.get("fallback") == "stock":
         worker = read(folder / f"worker-{arm}.json")
         if not (
@@ -284,9 +312,23 @@ def inspect(folder, arm, target, telemetry):
     return rows, summary
 
 
-def run(root, *, comparator="awq_marlin"):
+def run(root, *, comparator="awq_marlin", reference_archive=None):
     # Each process directory contains its actual target manifest. A missing end receipt is a separate rejected/incomplete arm.
     finished = sorted(root.rglob("end-*.json"))
+    historical = []
+    for receipt in sorted(root.rglob("reused-vllm.json")):
+        from lab.pk6.native_dispatch.reference import ARCHIVE, lookup
+
+        archived = reference_archive or ARCHIVE
+        target = read(receipt.with_name("target.json"))
+        stored = read(receipt)
+        if not stored or stored != lookup(archived, target, artifact=comparator):
+            raise ValueError("could not verify the recorded vLLM reference")
+        if stored["scope"] == "same_device":
+            if not any(f.name == "end-vllm.json" for f in finished):
+                finished.append(archived / "http/primary/end-vllm.json")
+        else:
+            historical.append(stored["waves_sha256"])
     data, arms, binding = {}, {}, None
     for end in finished:
         arm = end.stem.split("-", 1)[1]
@@ -382,6 +424,7 @@ def run(root, *, comparator="awq_marlin"):
         "arms": arms,
         "pairs": pairs,
         "two_seed_evaluation": complete,
+        **({"historical_vllm_targets": sorted(set(historical))} if historical else {}),
     }
 
 

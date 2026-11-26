@@ -480,6 +480,104 @@
       "start": 1795735771.183713,
       "startup_s": 486.3471065768972
     },
+    "L1": {
+      "end": 1795736938.6860087,
+      "excluded_from_promotion": null,
+      "gate": {
+        "interval": [
+          1.0,
+          1.0
+        ],
+        "passes": true,
+        "ratio": 1.0
+      },
+      "metrics": {
+        "1": {
+          "eighth": 0.2841955909971148,
+          "end_p95": 0.8579365919576958,
+          "first": 0.06084203498903662,
+          "first_p95": 0.06084203498903662,
+          "gap_p95": 0.058428673073649406,
+          "tok_s": 37.25741672704811,
+          "visible": 0.060842526028864086
+        },
+        "32": {
+          "eighth": 2.4794492715154774,
+          "end_p95": 6.389412690070458,
+          "first": 0.5546906350064091,
+          "first_p95": 4.625386230065487,
+          "gap_p95": 0.29810381098650396,
+          "tok_s": 159.76649400367387,
+          "visible": 0.5546911159763113
+        },
+        "8": {
+          "eighth": 1.2287013619788922,
+          "end_p95": 2.190561032970436,
+          "first": 0.2149972235201858,
+          "first_p95": 1.0862475670874119,
+          "gap_p95": 0.25639590807259083,
+          "tok_s": 116.59191894294764,
+          "visible": 0.2149979145033285
+        }
+      },
+      "proof": {
+        "cpu_policy": {
+          "cpu_us": 5319.372,
+          "evaluated_shapes": 56,
+          "fp8_proposals": 0,
+          "profile": "stock",
+          "reason": "no qualifying operator interval",
+          "weights_sha256": "f0d645647583d9bb54cb75d7d9979ace5931026116daffcf4718ad394e8b9080"
+        },
+        "draft_verified_by_width": {},
+        "fallback": null,
+        "matched_native_requests": 155,
+        "native_raw_sha256": "7f8cb7231f7514dbcb71132bd751bdaae5de358b880d20291de382a7ada8a527",
+        "observed_pool_capacities": [],
+        "profile_flags": {
+          "IRONMULE_GGML_DH2": "0",
+          "IRONMULE_PK6": "0",
+          "IRONMULE_PS1": "0",
+          "IRONMULE_PS1_CONCAT": "0",
+          "IRONMULE_PS1_WARM": "0",
+          "IRONMULE_SV5": "0"
+        },
+        "prompt_plugin_dispatches_in_http_by_width": {
+          "1": 0,
+          "32": 0,
+          "8": 0
+        },
+        "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
+        "shared_pool": true,
+        "streams_pass": false,
+        "verified_compact_pool": false
+      },
+      "quality": {
+        "180341": 32
+      },
+      "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 6.176611456994354,
+          "32": 2.099543721512825,
+          "8": 2.8174771040206905
+        },
+        "estimated_board_joules_per_output_token_by_seed": {
+          "180341": {
+            "1": 6.176611456994354,
+            "32": 2.099543721512825,
+            "8": 2.8174771040206905
+          }
+        },
+        "mean_sampled_watts": 327.548,
+        "peak_gpu_mib": 36122.0,
+        "process_peak_gpu_mib": 36122.0,
+        "samples": 30
+      },
+      "start": 1795736845.555811,
+      "startup_s": 62.03962104697712
+    },
     "P1": {
       "end": 1795732858.4817035,
       "excluded_from_promotion": "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70",
@@ -1548,6 +1646,114 @@
         "gap_p95": 0.4890346515766241,
         "tok_s": 0.6914791998167488,
         "visible": 0.36124234314798387
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "L1/R1/1": {
+      "candidate_over_reference": {
+        "eighth": 0.9803784007358951,
+        "end_p95": 0.9984723989280946,
+        "first": 0.9951181056953166,
+        "first_p95": 0.9951181056953166,
+        "gap_p95": 1.007331788436732,
+        "tok_s": 1.00125195754412,
+        "visible": 0.9951176417170826
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        true,
+        true
+      ]
+    },
+    "L1/R1/32": {
+      "candidate_over_reference": {
+        "eighth": 0.9760426054986153,
+        "end_p95": 0.9798477495015836,
+        "first": 0.9911964837627063,
+        "first_p95": 0.9761490011140471,
+        "gap_p95": 0.9776847251835116,
+        "tok_s": 1.0259006662949648,
+        "visible": 0.9911962912171611
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "L1/R1/8": {
+      "candidate_over_reference": {
+        "eighth": 0.9631941709392404,
+        "end_p95": 0.9569452219053687,
+        "first": 0.9591964644526038,
+        "first_p95": 0.9582416937371021,
+        "gap_p95": 0.970733717443964,
+        "tok_s": 1.0447378359234496,
+        "visible": 0.9591967827891976
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "L1/vllm/1": {
+      "candidate_over_reference": {
+        "eighth": 1.0547144407429019,
+        "end_p95": 0.8644515927689047,
+        "first": 1.3423421780777933,
+        "first_p95": 1.3423421780777933,
+        "gap_p95": 2.0225500302577464,
+        "tok_s": 1.1565873607014765,
+        "visible": 1.3423144497320711
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "L1/vllm/32": {
+      "candidate_over_reference": {
+        "eighth": 0.8198875305426183,
+        "end_p95": 1.6797426081537983,
+        "first": 0.312601076595079,
+        "first_p95": 1.6169161112629857,
+        "gap_p95": 0.37681941983892164,
+        "tok_s": 0.5975448717716882,
+        "visible": 0.3126013033890768
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "L1/vllm/8": {
+      "candidate_over_reference": {
+        "eighth": 1.3587303675824776,
+        "end_p95": 1.4171751156791714,
+        "first": 0.3012342506114293,
+        "first_p95": 1.516073446023652,
+        "gap_p95": 0.4566608855597169,
+        "tok_s": 0.7052047839227488,
+        "visible": 0.3012347739162916
       },
       "clear_win": false,
       "same_fixed_work": true,

@@ -101,3 +101,23 @@ bash lab/pk6/native_dispatch/serve.sh /work/http/packed --arms W1 W2 \
   --lib /work/packed-serving/packed-marlin.so --routing-receipt /work/packed-serving/build.json \
   --pool-plan /tmp/compact-pool.json
 ```
+
+#### Learning the size of a prefill chunk
+
+In the first 32-client reference wave, all document requests reached the worker within 70 ms. The final document started prefill after 4.11 s. IronMule fitted its existing CPU step-cost model on native calls from R1. On the independent R2 restart, the mean absolute prediction error was 25.5 ms, versus 49.7 ms with the A100 parameters and 60.9 ms with a constant fitted to R1. Its simulation ranked six budgets and selected 768 rows. The simulation assumed simultaneous arrivals and cold prefixes.
+
+Q allows already-admitted short answers to take one decode step alongside more prompt rows in the qualified unified KV pool. It preserves projected cell reservations for partially processed prompts. Each counted trial must show real chunk execution during performance and factual requests. The local SmolLM2 check uses 96 rows to exercise the same branch on a small model.
+
+```bash
+python -m lab.pk6.native_dispatch.chunk_plan "$results/http/primary" /tmp/chunk-plan.json
+# Inside a fresh study checkout with its evaluator sources restored
+python -m lab.pk6.native_dispatch.prepare . --shared-chunks
+python -m lab.pk6.mixed_progress.pool_cpu /path/to/SmolLM2-135M-Instruct-Q4_K_M.gguf --chunk-rows 96
+bash lab/pk6/native_dispatch/serve.sh /work/http/chunks --arms Q1 Q2 --policy /tmp/chunk-plan.json
+```
+
+#### Reuse the vLLM target
+
+Run `python -m lab.pk6.native_dispatch.reference` on CPU before reserving a GPU. It reads the original streams and returns medians and observed ranges for one, eight and 32 clients. On this L40S the six 32-client waves ranged from 265.08 to 269.20 output tokens/s. The median was 266.55. A 10% lead over that median requires 293.20 tokens/s with the same work. Each latency metric has its own reference and spread.
+
+The study runner checks the registered model, quantization, vLLM settings, workload, seeds and hardware before starting vLLM. A match writes `reused-vllm.json` with the original timestamps. A matching device class with a different physical fingerprint supplies a historical development target. Paired scoring requires the matching physical device and token digests. For an intentional recheck, record the concrete reason with `--vllm-recheck-reason`. A detached evaluator without the committed evidence can use `--reference-archive PATH`. The extra AWQ restart and optional same-GGUF control for this lease were both cancelled before either server started.

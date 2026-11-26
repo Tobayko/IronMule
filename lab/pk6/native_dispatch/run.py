@@ -18,7 +18,7 @@ SEEDS = (180341, 943819)
 DRAFT_SHA256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
 
 
-def main():
+def main(*, comparator="awq_marlin"):
     parser = argparse.ArgumentParser(description=__doc__)
     for field, default in (
         ("models", "/models"),
@@ -34,6 +34,11 @@ def main():
     parser.add_argument("--pool-plan", type=Path)
     parser.add_argument("--threshold", type=int, default=128)
     parser.add_argument("--seeds", type=int, nargs=2, default=SEEDS)
+    parser.add_argument("--reference-archive", type=Path)
+    parser.add_argument(
+        "--vllm-recheck-reason",
+        help="record what decision needs a fresh comparator process",
+    )
     args = parser.parse_args()
     args.out.mkdir(mode=0o700, parents=True, exist_ok=False)
     hw = trial.board()
@@ -106,6 +111,17 @@ def main():
             != checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
         ):
             raise ValueError("foreign packed kernel or KV capacity")
+    chunk_plan = None
+    if any(a.startswith("Q") for a in args.arms):
+        if args.policy is None:
+            raise ValueError("missing measured device forecast")
+        chunk_plan = json.loads(args.policy.read_bytes())
+        if (
+            chunk_plan["hardware"] != hw
+            or chunk_plan["gguf"] != GGUF
+            or chunk_plan["rows"] not in (256, 384, 512, 768, 1024, 1536)
+        ):
+            raise ValueError("foreign chunked prefill forecast")
     awq = verify(args.models / "qwen3-32b-awq")
     trial.SEEDS = tuple(args.seeds)
     version = subprocess.check_output(
@@ -137,10 +153,29 @@ def main():
             "draft_gguf_sha256": DRAFT_SHA256 if draft else None,
             "pool_plan": pool,
             "packed_program": packed_receipt,
+            "shared_chunk_plan": chunk_plan,
         },
     )
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
+    reused = []
     for arm in args.arms:
+        if arm == "vllm":
+            from lab.pk6.native_dispatch.reference import ARCHIVE, lookup
+
+            target = json.loads((args.out / "target.json").read_bytes())
+            known = lookup(
+                args.reference_archive or ARCHIVE, target, artifact=comparator
+            )
+            reason = (args.vllm_recheck_reason or "").strip()
+            if known and not reason:
+                save(args.out / "reused-vllm.json", known)
+                reused.append(arm)
+                continue
+            if reason:
+                save(
+                    args.out / "vllm-recheck.json",
+                    {"reason": reason, "previous": known},
+                )
         if time.monotonic() >= deadline:
             raise TimeoutError(
                 "qualification window exhausted before starting another server"
@@ -151,6 +186,7 @@ def main():
             "IRONMULE_LAB_DRAFT_MIX",
             "IRONMULE_LAB_MMQ_TILE",
             "IRONMULE_LAB_POOL_CELLS",
+            "IRONMULE_LAB_SHARED_CHUNK",
             "IRONMULE_CUBLAS_MIN_ROWS",
             "IRONMULE_LAB_FP8",
             "IRONMULE_LAB_SHARED_PROFILE",
@@ -181,6 +217,8 @@ def main():
                 "IRONMULE_W4_TABLE",
             ):
                 os.environ.pop(key, None)
+        if arm.startswith("Q"):
+            os.environ["IRONMULE_LAB_SHARED_CHUNK"] = str(chunk_plan["rows"])
         if arm.startswith(("H", "W")):
             os.environ["IRONMULE_LAB_POOL_CELLS"] = str(pool["cells"])
         if arm.startswith(("N", "G")):
@@ -208,14 +246,20 @@ def main():
                 IRONMULE_LAB_FP8=str(args.threshold),
             )
         elif arm != "vllm" and not arm.startswith(
-            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O")
+            ("Q", "R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O")
         ):
             raise ValueError("unregistered arm")
         if arm.startswith(("K", "O")):
             trial.measure(args, arm, hw, 0, deadline, draft=draft)
         else:
             trial.measure(args, arm, hw, 0, deadline)
-    save(args.out / "completed.json", {"hardware": trial.board(), "order": args.arms})
+    completed = {
+        "hardware": trial.board(),
+        "order": [a for a in args.arms if a not in reused],
+    }
+    if reused:
+        completed.update(requested=args.arms, reused=reused)
+    save(args.out / "completed.json", completed)
 
 
 if __name__ == "__main__":

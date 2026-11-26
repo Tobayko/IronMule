@@ -39,7 +39,7 @@ def main():
         os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")
     ).open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        run.main()
+        run.main(comparator="identical_gguf")
 
 
 if __name__ == "__main__":

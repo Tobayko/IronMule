@@ -1,0 +1,101 @@
+"""Read the existing vLLM target and its spread before allocating another GPU minute."""
+
+import argparse
+import hashlib
+import inspect
+import json
+from pathlib import Path
+from statistics import median
+
+from ironmule_product import compare
+from lab.pk6.mixed_progress import grade, trial
+from lab.pk6.replay_http import checksum
+
+ARCHIVE = (
+    Path(__file__).resolve().parents[2] / "autonomous/results/l40s-native-dispatch"
+)
+FILES = ("start-vllm.json", "ready-vllm.json", "end-vllm.json", "waves-vllm.jsonl")
+
+
+def protocol():
+    # Bind only the comparator, client, token accounting and workload. Native candidates change frequently.
+    from types import SimpleNamespace
+
+    paths = SimpleNamespace(models=Path("/models"), vllm=Path("/opt/vllm034"))
+    functions = (
+        compare.performance_prompts,
+        compare.stream,
+        compare.batch,
+        compare.conversation,
+        trial.wave,
+        trial.quality_cases,
+        trial.rendered_prompt_ids,
+        trial.cases,
+        trial.correct,
+    )
+    return {
+        "command": trial.vllm_command(paths),
+        "output_limit": 32,
+        "warmup": compare.WARMUP,
+        "client_sha256": hashlib.sha256(
+            "".join(inspect.getsource(f) for f in functions).encode()
+        ).hexdigest(),
+    }
+
+
+def lookup(root, target=None, *, artifact="awq_marlin"):
+    from lab.pk6.native_dispatch import score
+
+    certificate = root / "vllm-reference.json"
+    if not certificate.is_file():
+        return None
+    cert = score.read(certificate)
+    if artifact != cert["artifact"] or protocol() != cert["protocol"]:
+        return None
+    folder = root / "http/primary"
+    meta = score.read(folder / "target.json")
+    if target is not None:
+        keys = ("awq_manifest_sha256", "vllm_version", "seeds")
+        if any(meta[k] != target[k] for k in keys):
+            return None
+        if any(
+            meta["hardware"][k] != target["hardware"][k]
+            for k in ("name", "memory_mib", "driver")
+        ):
+            return None
+    if any(checksum(folder / f) != cert["files"][f] for f in FILES + ("target.json",)):
+        raise ValueError("archived comparator receipt changed")
+    ticks = grade.telemetry_samples(folder / "primary.csv")
+    rows, measured = score.inspect(folder, "vllm", meta, ticks)
+    spreads = {}
+    for w in (1, 8, 32):
+        runs = [grade.measure(r) for r in rows if r["width"] == w and r["repeat"] < 3]
+        spreads[str(w)] = {
+            k: {
+                "median": median(v[k] for v in runs),
+                "range": [min(v[k] for v in runs), max(v[k] for v in runs)],
+            }
+            for k in runs[0]
+            if k in measured["metrics"][str(w)]
+        }
+    same = target is not None and target["hardware"] == meta["hardware"]
+    return {
+        "scope": "same_device" if same else "historical_target",
+        "artifact": artifact,
+        "hardware": meta["hardware"],
+        "version": meta["vllm_version"],
+        "quantized_model": meta["awq_manifest_sha256"],
+        "seeds": meta["seeds"],
+        "metrics": spreads,
+        "factual_correct": measured["quality"],
+        "waves_sha256": cert["files"]["waves-vllm.jsonl"],
+        "original_start": measured["start"],
+        "original_end": measured["end"],
+    }
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--archive", type=Path, default=ARCHIVE)
+    args = p.parse_args()
+    print(json.dumps(lookup(args.archive), indent=2))

@@ -20,13 +20,18 @@ def slices(waiting, lengths, positions, room, *, whole=False):
             break
 
 
-def serve(engine, group, active, take, finish, budget, *, whole=False):
+def serve(engine, group, active, take, finish, budget, *, whole=False, shared=False):
     """All group slots are already owned by run(). Its take/finish manage tokens and KV lifetime."""
     jobs = {seq: job for seq, job, _ in group}
+    if shared:
+        jobs.update(active)
     lengths = {seq: len(job.ids) for seq, job in jobs.items()}
     positions = {seq: keep for seq, _, keep in group}
-    waiting = sorted(jobs, key=lambda seq: lengths[seq] - positions[seq])
-    if not len(group) < budget <= engine.batch_cap:
+    waiting = sorted(positions, key=lambda seq: lengths[seq] - positions[seq])
+    if shared:
+        for seq in active:
+            positions.setdefault(seq, lengths[seq])
+    if not len(active) < budget <= engine.batch_cap:
         raise ValueError(
             "row budget must leave room for prompt progress and fit the native context"
         )
@@ -78,6 +83,18 @@ def serve(engine, group, active, take, finish, budget, *, whole=False):
             positions[seq] = end
         for seq, token in zip(outputs, picks, strict=True):
             take(seq, jobs[seq], token)
+        if shared:
+            with engine._lock:
+                for seq, job in active.items():
+                    held = (
+                        lengths[seq] + len(job.tokens) - 1
+                        if job.tokens
+                        else positions[seq]
+                    )
+                    remaining = lengths[seq] + job.limit - held - bool(job.tokens)
+                    engine.pool.sync(seq, job.full_context(), remaining, length=held)
+            if engine.pilot is not None:
+                engine.pilot.observe(elapsed, len(outputs), 0, None)
         waiting = [
             seq for seq in waiting if positions[seq] < lengths[seq] and seq in active
         ]

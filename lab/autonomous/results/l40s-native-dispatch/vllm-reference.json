@@ -1,0 +1,42 @@
+{
+  "artifact": "awq_marlin",
+  "files": {
+    "end-vllm.json": "70360a4c4e1914af8d812c98478bda56f52c6c9fe3db7483264c48cba3839df6",
+    "ready-vllm.json": "1c0259b19190d9db65b2d263585b4040432f0c332fa837164efd1074bf2075f9",
+    "start-vllm.json": "2b5e2c4409d2dbb25441d6dd50cf387726365bd97a058237c855a74f3c4d2286",
+    "target.json": "c593bc23835a8c2f760099ffc9490832de04f2fc5ecbb850a6a0c11da647e3c6",
+    "waves-vllm.jsonl": "105d9197fe09e491a5a0eb94fbda5034cc4cda4eb73d961623ef2b08a2861610"
+  },
+  "protocol": {
+    "client_sha256": "7605a80cbf0072a0f9ef567cb2a5d9fd7cd6fa9d22a0d9f183380f390d800868",
+    "command": [
+      "/opt/vllm034/bin/vllm",
+      "serve",
+      "/models/qwen3-32b-awq",
+      "--served-model-name",
+      "compare",
+      "--tokenizer",
+      "/models/tokenizers/qwen3-32b",
+      "--dtype",
+      "half",
+      "--quantization",
+      "awq_marlin",
+      "--generation-config",
+      "vllm",
+      "--max-model-len",
+      "2048",
+      "--max-num-seqs",
+      "32",
+      "--gpu-memory-utilization",
+      "0.88",
+      "--tensor-parallel-size",
+      "1",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8002"
+    ],
+    "output_limit": 32,
+    "warmup": "Write two sentences describing how to read a map."
+  }
+}

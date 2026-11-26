@@ -117,3 +117,29 @@ def test_packed_plan_preserves_unmeasured_widths_and_free_headroom():
     with pytest.raises(ValueError, match="reservation"):
         packed_routes(plan)
     assert exclusion("W1", {"verified_compact_pool": False})
+
+
+def test_vllm_reuse_retains_scope_and_raw_reference(tmp_path):
+    from lab.pk6.native_dispatch import reference, score
+
+    root = reference.ARCHIVE
+    target = score.read(root / "http/primary/target.json")
+    measured = reference.lookup(root, target)
+    assert measured["scope"] == "same_device" and len(measured["factual_correct"]) == 2
+    assert measured["metrics"]["32"]["tok_s"]["median"] == pytest.approx(
+        266.55, abs=0.01
+    )
+    assert reference.lookup(root, target, artifact="identical_gguf") is None
+    assert reference.lookup(root, {**target, "vllm_version": "changed"}) is None
+    foreign = {
+        **target,
+        "hardware": {**target["hardware"], "device_sha256": "another device"},
+    }
+    assert reference.lookup(root, foreign)["scope"] == "historical_target"
+    (tmp_path / "target.json").write_text(json.dumps(target))
+    receipt = tmp_path / "reused-vllm.json"
+    receipt.write_text(json.dumps(measured))
+    assert list(score.run(tmp_path)["arms"]) == ["vllm"]
+    receipt.write_text(json.dumps({**measured, "original_start": 0}))
+    with pytest.raises(ValueError, match="verify"):
+        score.run(tmp_path)

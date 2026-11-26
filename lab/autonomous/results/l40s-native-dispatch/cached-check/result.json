@@ -1,0 +1,227 @@
+{
+  "cells": [
+    {
+      "b": 32,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 1024,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 143,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 1024,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 448,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 1024,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 32,
+      "k": 8192,
+      "lt_status": 0,
+      "n": 5120,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 143,
+      "k": 8192,
+      "lt_status": 0,
+      "n": 5120,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 448,
+      "k": 8192,
+      "lt_status": 0,
+      "n": 5120,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 32,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 8192,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 143,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 8192,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "b": 448,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 8192,
+      "rc": 1,
+      "type": "Q4_K"
+    },
+    {
+      "absolute_max": 0.2200041562318802,
+      "b": 32,
+      "finite": true,
+      "k": 5120,
+      "median_ms": 0.22111999988555908,
+      "n": 25600,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.01616571471095085,
+      "tensor": "blk.0.ffn_gate.weight",
+      "type": "Q4_K"
+    },
+    {
+      "absolute_max": 0.26834309101104736,
+      "b": 143,
+      "finite": true,
+      "k": 5120,
+      "median_ms": 0.26287999749183655,
+      "n": 25600,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.01606089435517788,
+      "tensor": "blk.0.ffn_gate.weight",
+      "type": "Q4_K"
+    },
+    {
+      "absolute_max": 0.27520495653152466,
+      "b": 448,
+      "finite": true,
+      "k": 5120,
+      "median_ms": 0.42163199186325073,
+      "n": 25600,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.01622859574854374,
+      "tensor": "blk.0.ffn_gate.weight",
+      "type": "Q4_K"
+    },
+    {
+      "absolute_max": 1.852950096130371,
+      "b": 32,
+      "finite": true,
+      "k": 25600,
+      "median_ms": 0.25088000297546387,
+      "n": 5120,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.037205278873443604,
+      "tensor": "blk.8.ffn_down.weight",
+      "type": "Q4_K"
+    },
+    {
+      "absolute_max": 3.0596542358398438,
+      "b": 143,
+      "finite": true,
+      "k": 25600,
+      "median_ms": 0.2722240090370178,
+      "n": 5120,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.03570518642663956,
+      "tensor": "blk.8.ffn_down.weight",
+      "type": "Q4_K"
+    },
+    {
+      "absolute_max": 3.4157485961914062,
+      "b": 448,
+      "finite": true,
+      "k": 25600,
+      "median_ms": 0.4140160083770752,
+      "n": 5120,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.03705340251326561,
+      "tensor": "blk.8.ffn_down.weight",
+      "type": "Q4_K"
+    },
+    {
+      "b": 32,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 1024,
+      "rc": 1,
+      "type": "Q6_K"
+    },
+    {
+      "b": 143,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 1024,
+      "rc": 1,
+      "type": "Q6_K"
+    },
+    {
+      "b": 448,
+      "k": 5120,
+      "lt_status": 0,
+      "n": 1024,
+      "rc": 1,
+      "type": "Q6_K"
+    },
+    {
+      "absolute_max": 1.5611659288406372,
+      "b": 32,
+      "finite": true,
+      "k": 25600,
+      "median_ms": 0.24928000569343567,
+      "n": 5120,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.05435047671198845,
+      "tensor": "blk.0.ffn_down.weight",
+      "type": "Q6_K"
+    },
+    {
+      "absolute_max": 2.9210548400878906,
+      "b": 143,
+      "finite": true,
+      "k": 25600,
+      "median_ms": 0.27296000719070435,
+      "n": 5120,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.06465782970190048,
+      "tensor": "blk.0.ffn_down.weight",
+      "type": "Q6_K"
+    },
+    {
+      "absolute_max": 3.4113717079162598,
+      "b": 448,
+      "finite": true,
+      "k": 25600,
+      "median_ms": 0.41260799765586853,
+      "n": 5120,
+      "native_launches": 8,
+      "rc": 0,
+      "relative_rms": 0.06806233525276184,
+      "tensor": "blk.0.ffn_down.weight",
+      "type": "Q6_K"
+    }
+  ],
+  "condition": "Real GGUF weights. Gaussian activations. 64 uniformly spaced channels checked; all channels computed.",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "library_sha256": "1f5161ab9d77b7ebaa7f6aaaf42fc60c859b79a618974ee9a33eb9f080364e52",
+  "seed": 530891,
+  "weights": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689"
+}

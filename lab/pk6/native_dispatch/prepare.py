@@ -14,7 +14,7 @@ def substitute(source, old, new):
     return source.replace(old, new)
 
 
-def prepare(root, candidates=True, draft_mix=False):
+def prepare(root, candidates=True, draft_mix=False, shared_chunks=False):
     engine = root / "ironmule/ggml_engine.py"
     flags = root / "ironmule/ggml_profiles.py"
     if checksum(engine) != BASE_ENGINE:
@@ -149,6 +149,39 @@ if os.environ.get("IRONMULE_LAB_ACTIVITY"):
             '    if os.getenv("IRONMULE_LAB_POOL_CELLS"):\n'
             '        key.extend(["unified-pool-cells", os.environ["IRONMULE_LAB_POOL_CELLS"]])\n    return key',
         )
+    if shared_chunks:
+        code = substitute(
+            code,
+            '                mark("pilot_admit")',
+            """                chunk_rows = int(os.getenv("IRONMULE_LAB_SHARED_CHUNK", "0"))
+                chunk_cohort = (self.pool is not None and not PROMPT_BUDGET
+                                and len(pending) >= 4 and len(active) < chunk_rows <= self.batch_cap
+                                and not any(j.hardware_probe for j in pending))
+                if chunk_cohort:
+                    budget = max(budget, self.batch_cap)
+                mark("pilot_admit")""",
+        )
+        code = substitute(
+            code,
+            '                mark("select")',
+            """                if (chunk_cohort and len(fresh) >= 2
+                        and sum(len(j.ids)-keep for _,j,keep in fresh) + len(active) > chunk_rows
+                        and len(active) + len(fresh) < chunk_rows):
+                    from lab.pk6.mixed_progress.schedule import serve as serve_shared_chunks
+
+                    active.update((seq, job) for seq, job, _ in fresh)
+                    trace_note(f"shared_chunks rows={chunk_rows} fresh={len(fresh)} running={len(active)-len(fresh)}")
+                    serve_shared_chunks(self, fresh, active, take, finish, chunk_rows, shared=True)
+                    arrived = 0
+                    continue
+                mark("select")""",
+        )
+        cache = substitute(
+            cache,
+            "    return key",
+            '    if os.getenv("IRONMULE_LAB_SHARED_CHUNK"):\n'
+            '        key.extend(["unified-chunk-profile", os.environ["IRONMULE_LAB_SHARED_CHUNK"]])\n    return key',
+        )
     if draft_mix:
         code = substitute(
             code,
@@ -197,5 +230,6 @@ if __name__ == "__main__":
     p.add_argument("root", type=Path)
     p.add_argument("--baseline", action="store_true")
     p.add_argument("--draft-mix", action="store_true")
+    p.add_argument("--shared-chunks", action="store_true")
     args = p.parse_args()
-    prepare(args.root, not args.baseline, args.draft_mix)
+    prepare(args.root, not args.baseline, args.draft_mix, args.shared_chunks)

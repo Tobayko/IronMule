@@ -47,6 +47,44 @@ def experiences(root, source, digest):
                     authorship="Codex wrote the Ada candidates. IronMule ranked the native Q4_K tile order.",
                     uncertainty="System comparison on one board with distinct official quantizations. Diagnostic and rejected paths supply no production labels.",
                 )
+    elif path.name == "chunk-plan.json":
+        from lab.pk6.native_dispatch.chunk_plan import propose
+
+        if result != propose(folder / "http/primary"):
+            raise ValueError("unified chunk forecast differs from its device traces")
+        yield record(
+            "native_chunk_forecast",
+            source,
+            digest,
+            "budget",
+            "l40s-native-dispatch",
+            hardware=result["hardware"],
+            model=result["gguf"],
+            quantization="Q4_K_M",
+            decision={"rows": result["rows"]},
+            metrics=result["simulated"],
+            provenance="simulated",
+            reason="ranked prefill slices from timed mixed calls",
+            uncertainty=result["scope"],
+            authorship="IronMule fitted its CPU step-cost model and chose the experiment. Codex adapted the shared-pool scheduler.",
+        )
+        yield record(
+            "native_chunk_step_cost",
+            source,
+            digest,
+            "prediction-error",
+            "l40s-native-dispatch",
+            hardware=result["hardware"],
+            model=result["gguf"],
+            quantization="Q4_K_M",
+            metrics=[result["model"]["holdout_mean_absolute_error_s"]],
+            workload={
+                "train_calls": result["model"]["train_calls"],
+                "holdout_calls": result["model"]["holdout_calls"],
+            },
+            reason="predicted durations on an independent server restart and input seed",
+            uncertainty="Real native calls from the stock deployment. End-to-end improvement requires a candidate run.",
+        )
     elif path.name == "order.json":
         yield record(
             "native_prompt_development_order",
