@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
@@ -192,8 +193,22 @@ def product(args, cfg, remote, check, active):
     files = ["gate-candidate.json", "gate-reference.json", "decision.json",
              *(f"{arm}-{seed}.json" for seed in restart_http.SEEDS for arm in ("reference", "candidate"))]
     snapshot(pod, evidence, files, local)
-    if recovery and (local / "decision.json").exists():
-        snapshot(pod, evidence, ["gate-devices-reference.json","gate-devices-candidate.json"], local)
+    if recovery:
+        names = ["gate-devices-reference.json", "gate-devices-candidate.json"]
+        if (local / "decision.json").exists():
+            snapshot(pod, evidence, names, local)
+        else:
+            with tempfile.TemporaryDirectory(dir=local) as tmp:
+                observed = Path(tmp)
+                snapshot(pod, evidence, names, observed)
+                for log in observed.glob("*.json"):
+                    partial = local / (log.stem + ".partial.json")
+                    old = read(partial) if partial.exists() else []
+                    rows = read(log)
+                    if rows[:len(old)] != old:
+                        raise ValueError("protected GPU stage journal lost prior receipts")
+                    if rows != old:
+                        save(partial, rows)
     for op in ("qualify", "exercise", "serve"):
         name = ("product-listener" if op == "serve" else "product-" + op) + ".json"
         snapshot(pod, output, [name], local)
