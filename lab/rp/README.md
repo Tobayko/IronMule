@@ -20,3 +20,25 @@ Deployment checks the account balance and quotes the specified cloud, GPU count 
 After restarting the control host, run `python lab/rp/rp.py resume` to restart its deadline watcher or clean up an expired lease. Run `stop` for immediate cleanup. If the provider has yet to confirm removal, retry `stop`. A create whose outcome cannot be resolved holds its reservation for operator reconciliation. The history records the observed account delta and the wall-time estimate including a ten-minute tail separately. Admission uses the higher value. Account deltas may include unrelated usage. Historical executions appear in the existing ledger if the same state path was used.
 
 Price basis for container disk is USD 0.10 per GB-month, conservatively spread over 28 days. Only ephemeral container disk is requested. [RunPod storage pricing](https://docs.runpod.io/pods/pricing) · [Pod-scoped credentials](https://docs.runpod.io/pods/references/environment-variables)
+
+## Running an isolated native candidate
+
+On a dedicated Linux pod, the root broker places the model, reference binary, bindings, evaluator and
+candidate sources in root-owned trees with read-only access for a dedicated worker uid. Copy bindings
+out of a private root home before starting the worker. The worker receives its own empty directory.
+The following checks the boundary without compiling or loading candidate code.
+
+```bash
+install -d -m 0755 /opt/ironmule-worker
+install -m 0444 lab/rp/restricted_worker.py /opt/ironmule-worker/restricted_worker.py
+install -d -m 0700 -o 60000 -g 60000 /opt/ironmule-worker/preflight-out
+python /opt/ironmule-worker/restricted_worker.py --preflight \
+  --output /opt/ironmule-worker/preflight-out --readonly /opt/ironmule-worker/restricted_worker.py
+```
+
+The launcher needs libseccomp and Landlock ABI 3 or newer. It drops supplementary groups and the
+entire capability bounding set, requires `no_new_privs`, denies sockets and applies a filesystem
+allowlist before running the preflight in every worker. The parent sets a wall deadline and terminates
+the process group. Per-process CPU time, descriptors, process count, core files and output file size
+are limited. CUDA access uses the pod's device files. Check GPU execution separately on each host.
+[Recorded A100 preflight](results/restricted-worker-preflight.json)
