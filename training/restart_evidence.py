@@ -22,6 +22,7 @@ TRIAL = ("context.json", "aa-0.json", "aa-1.json", "stale.json", "missing.json",
          *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")),
          *(f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")), "result.json")
 RELEASE = ("release-activate.json", "release-run.json", "release-exercise.json", "target-check.json", "rollback-exercise.json", "automatic-withdrawal.json")
+INCIDENT = ("previous-selection.json", "selection.json", "result.json", "broker.log", "restarted-reference.json", "withdrawn-reference-arm.json")
 PILOT_ARMS = ("pilot-initial.json", "pilot-trained.json")
 RECOVERY = ("coordinator-restart-intent.json", "coordinator-restart.json")
 # Store benchmark and HTTP receipts under separate names; both protocols use decision/gate files.
@@ -34,7 +35,7 @@ PLANS = ("replan-after-product.json", "replan-after-product-declined.json")
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
 NAMES = {*REQUIRED, *COST_FILES, *RECOVERY, "startup-fit.json", "startup-head.npz", "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
-         "qualified.json", "control.json", *PLANS, "pilot-comparison.json", *PILOT_ARMS, *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
+         "qualified.json", "control.json", *PLANS, *("incident-" + n for n in INCIDENT), "pilot-comparison.json", *PILOT_ARMS, *TRIAL, *RELEASE, *("http-" + n for n in HTTP_FILES)}
 
 
 def manifest(path):
@@ -110,6 +111,31 @@ def checkpoint_assets(state, order, verified, assets):
         raise ValueError("startup head is not bound to the measured training and held-out families")
     assets["startup-fit.json"] = bounded(state / "startup-fit.json")
     assets["startup-head.npz"] = weights
+
+
+def capture_incident(state, assets, order, verified):
+    folder = state / "release/automatic-withdrawal-incident"
+    if not (folder / "result.json").is_file():
+        return
+    raw = {n: bounded(folder / n) for n in INCIDENT if (folder / n).is_file()}
+    prior, withdrawn, failure = (json.loads(raw[n]) for n in INCIDENT[:3])
+    if (prior["receipt_sha256"] != sha(assets["control.json"]) or prior["arm"] != "candidate" or prior["withdrawn"]
+            or failure["original_order"] != order["order_id"] or failure["passed"] is not False or failure["incumbent_returned_work"] is not False
+            or withdrawn != failure["automatic_withdrawal"] or withdrawn["arm"] != "reference" or withdrawn["withdrawn"] is not True
+            or failure["observed_error"].encode() not in raw["broker.log"]):
+        raise ValueError("incompatible cache incident differs from the bound release or observed failure")
+    if "restarted-reference.json" in raw and "withdrawn-reference-arm.json" in raw:
+        recovered, row = (json.loads(raw[n]) for n in INCIDENT[-2:])
+        work = recovered["result"]
+        restart_trial.validate(row, work["seed"], expected_source=verified["reference_sha256"])
+        restart_trial.verify_binding(row, order)
+        from training.code_author import digest
+        actual = digest([row["cold"]["output_sha256"], row["warm"]["output_sha256"], row["factual"]])
+        if (recovered["passed"] is not True or recovered["selection_after"] != withdrawn or recovered["receipt_sha256"] != prior["receipt_sha256"]
+                or recovered["frozen_evaluator_sha256"] != sha(bounded(Path(restart_trial.__file__))) or row["reused"] or work["arm"] != "reference"
+                or work["cache_used"] or work["work_sha256"] != actual or work["source_sha256"] != row["source_sha256"]):
+            raise ValueError("restarted incumbent recovery has different source, cache, output or selection")
+    assets.update({"incident-" + n: data for n, data in raw.items()})
 
 
 def verify_withdrawal(assets, order, verified):
@@ -330,6 +356,7 @@ def export(args):
                     from lab.pk1 import restart_release
                     verified = restart_release.approved(check)
                     checkpoint_assets(state, order, verified, assets)
+                    capture_incident(state, assets, order, verified)
                     if "automatic-withdrawal.json" in assets:
                         verify_withdrawal(assets, order, verified)
                     if (state / "native-pilot").is_dir():
@@ -500,6 +527,16 @@ def experiences(root, source):
                    initialization="Three independently seeded heads trained from random weights on CPU",
                    authorship="IronMule fitted and replayed the CPU startup controller",
                    uncertainty=fit["uncertainty"])
+    if "incident-result.json" in files:
+        failure = read(folder / "incident-result.json")
+        yield emit("restart_automatic_withdrawal_incident", "incident-result.json", reason=failure["observed_error"],
+                   decision=False, observed=failure, authorship="Physical shadow release",
+                   uncertainty="The first incumbent attempt failed its frozen calibration check.")
+    if "incident-restarted-reference.json" in files and "incident-withdrawn-reference-arm.json" in files:
+        recovered = read(folder / "incident-restarted-reference.json")
+        yield emit("restart_withdrawn_reference_recovery", "incident-restarted-reference.json", reason="persisted_withdrawal_fresh_process",
+                   decision=True, observed=recovered, authorship="Physical shadow release",
+                   uncertainty="Subsequent fresh reference completed the fixed workload and retained the withdrawal.")
     if "automatic-withdrawal.json" in files:
         withdrawal = read(folder / "automatic-withdrawal.json")
         yield emit("restart_automatic_withdrawal", "automatic-withdrawal.json", reason=withdrawal["withdrawal"]["reason"],

@@ -1,0 +1,27 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_release.py", line 148, in <module>
+    main()
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_release.py", line 140, in main
+    result = run(a, a.state, a.seed)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_release.py", line 97, in run
+    row, elapsed = measured(args, receipt, arm, seed, Path(clean))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_release.py", line 62, in measured
+    trial.verify_binding(row, order)
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_trial.py", line 194, in verify_binding
+    raise ValueError("restart binding differs from calibrated target")
+ValueError: restart binding differs from calibrated target
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_withdrawal.py", line 166, in <module>
+    exercise(cmd.parse_args())
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_withdrawal.py", line 102, in exercise
+    first = run("incompatible", changed)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ironmule-worker/controller/lab/pk1/restart_withdrawal.py", line 98, in run
+    raise RuntimeError(f"fresh release process returned {proc.returncode}")
+RuntimeError: fresh release process returned 1

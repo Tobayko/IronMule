@@ -111,6 +111,30 @@
       "original_sha256": "269c5a9e537d6c77b769b79c75ec05cac5f9f9d62e70c03ce3221dd932856966",
       "sha256": "269c5a9e537d6c77b769b79c75ec05cac5f9f9d62e70c03ce3221dd932856966"
     },
+    "incident-broker.log": {
+      "original_sha256": "188bc2cfcc99ed945cf9d009a10a0c9c559d38c1480793acbc469028344543fa",
+      "sha256": "188bc2cfcc99ed945cf9d009a10a0c9c559d38c1480793acbc469028344543fa"
+    },
+    "incident-previous-selection.json": {
+      "original_sha256": "f5795afc39cee5e62466948271aa5540451b35dd6268050138d8619a08c563f8",
+      "sha256": "f5795afc39cee5e62466948271aa5540451b35dd6268050138d8619a08c563f8"
+    },
+    "incident-restarted-reference.json": {
+      "original_sha256": "7efcac3d5e2cad8809b0ce3d4b0f6eadaf4fd032656642e55d59c22534e60698",
+      "sha256": "7efcac3d5e2cad8809b0ce3d4b0f6eadaf4fd032656642e55d59c22534e60698"
+    },
+    "incident-result.json": {
+      "original_sha256": "37d47efa6f6e9b03565b4e58d8ac0f9b2db3fa964d869eebef009e6dc6dc1df0",
+      "sha256": "37d47efa6f6e9b03565b4e58d8ac0f9b2db3fa964d869eebef009e6dc6dc1df0"
+    },
+    "incident-selection.json": {
+      "original_sha256": "9e101f97eec037e690bef409495f0a171068fade8c67b408d347e2a14484d1d0",
+      "sha256": "9e101f97eec037e690bef409495f0a171068fade8c67b408d347e2a14484d1d0"
+    },
+    "incident-withdrawn-reference-arm.json": {
+      "original_sha256": "6896c424d1cbac2c6ea1cb68ae287adaa21009f5825ebcb343cf6111c8365566",
+      "sha256": "6896c424d1cbac2c6ea1cb68ae287adaa21009f5825ebcb343cf6111c8365566"
+    },
     "missing.json": {
       "original_sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4",
       "sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4"
