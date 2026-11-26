@@ -4480,3 +4480,16 @@ decode rows. Eight series met the complete-pair and output checks. On fresh held
 [Four-slot corpus](../evidence/runtime/cpu-pilot-four-slot-trials.json) ·
 [Four-slot replay](../evidence/runtime/cpu-pilot-four-slot-replay.json) ·
 [Experimental checkpoint](../evidence/runtime/cpu-pilot-four-slot-candidate.npz)
+
+### 2026-11-26: four-slot scratch Pilot in the development loop on Linux CPU
+
+On a four-core quota on an Intel Xeon Platinum 8573C, the locally trained thread head proposed
+five alternatives during 83.030 s of bounded qualification. None passed the fresh on-machine gate.
+The reference completed 16/16 correct copy requests on SmolLM2-135M-Instruct Q4_K_M, produced all
+48 tokens, and made 16 Pilot decisions. The four profiled waves took 2.709 s in total, with engine
+p95 time to first visible token of 1.021 s. The full discovery took 89.813 s. No scratch choice
+qualified in the timed waves, so the experiment stopped before code authoring. The measurements
+came from source 9c9618d, with both raw repeats and rejection reasons retained. Reproduce on the
+matching machine with the bounded CPU command and the four-slot checkpoint in the method guide.
+[Measured discovery and qualification](../evidence/runtime/cpu-pilot-four-slot-discovery.json) ·
+[Experiment commands](OPTIMIZATION_METHODS.md#run-one-development-experiment-on-linux)
