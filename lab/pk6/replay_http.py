@@ -23,6 +23,8 @@ FRESH_REGISTRATIONS = {
     "e7870dd37d96c3e3df558fd1947544462307ebdc726bca69f0aeb8a107364c50": "PR60 ordinary product r1",
     "2e6eeb2d7030d1dab7898c799197aabe088bf7875690c95e0353442c42abe51e": "current fixed-128 product r2",
 }
+R2_BINDING_SHA = "78e41a0b2014d8a1c7210d751475c1d99287029d606c7da475edbe5d1272a472"
+STOCK_GATE = ROOT / "lab/autonomous/results/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3/product-v3"
 
 
 def checksum(path):
@@ -107,6 +109,38 @@ def historical():
                 "ironmule_model": "Qwen3-32B GGUF Q4_K_M", "reference": "vLLM 0.11.0 Qwen3-32B AWQ-Marlin"}
 
 
+def fixed128_binding(directory, doc):
+    path = directory / "product-binding.json"
+    if not path.is_file() or checksum(path) != R2_BINDING_SHA:
+        raise ValueError("missing or changed pre-K1 fixed-128 product selection")
+    selected = json.loads(path.read_bytes())
+    expected = doc["product_binding"]["shared_w4"]
+    stock = doc["product_binding"]["product_v3_reference"]
+    source = selected["product_selection"]
+    if (selected["preregistration_sha256"] != checksum(directory / "preregistration.json")
+            or source["source_commit"] != stock["base_commit"] or source["engine_source_sha256"] != stock["engine_sha256"]
+            or selected["environment"]["sha256"] != expected["environment_sha256"]
+            or selected["environment"]["flags"] != expected["flags"] or source["ordinary_product_adoption"]
+            or any(selected["w4"][k] != expected[k] for k in ("library_sha256", "table_sha256"))
+            or any(v != expected[k] for k, v in selected["workload"].items() if k != "gguf_path")):
+        raise ValueError("selected product settings or source differs from the pre-data agreement")
+    receipts = {}
+    for key, name in (("gate", "gate-reference"), ("devices", "gate-devices-reference"), ("product_gate", "product-gate-reference")):
+        record = STOCK_GATE / f"http-{name}.json"
+        if checksum(record) != selected["gate_receipts"][key]["sha256"]:
+            raise ValueError("archived quality or device receipt differs from the product selection")
+        receipts[key] = json.loads(record.read_bytes())
+    if (not receipts["gate"]["passes"] or receipts["gate"]["settings"] != stock["setting"]
+            or receipts["product_gate"]["width"] != stock["width"]
+            or receipts["product_gate"]["source_sha256"] != stock["engine_sha256"]
+            or not receipts["devices"] or not all(row["provider"] == "cuda" and row["gpu_layers"] == expected["gpu_layers"]
+                                                  and row["child_status"] == 0 for row in receipts["devices"])):
+        raise ValueError("quality receipt does not qualify the registered stock source")
+    return {"sha256": R2_BINDING_SHA, "engine_source_sha256": source["engine_source_sha256"],
+            "base_commit": source["source_commit"], "gate_sha256": stock["gate_sha256"],
+            "qualified_width": stock["width"], "scope": "selected V3 stock source, before K1"}
+
+
 def fresh(directory):
     registration = directory / "preregistration.json"
     registration_sha = checksum(registration)
@@ -125,6 +159,8 @@ def fresh(directory):
             "registered_product_lane": FRESH_REGISTRATIONS[registration_sha],
             "declared_hardware": doc["target"]["gpu"], "reference_repo": doc["models"]["vllm_reference"]["repo"],
             "ironmule_model_sha256": doc["models"]["ironmule_product"]["sha256"], "matched_quantization": False}
+    if "product_binding" in doc and ((directory / "product-binding.json").exists() or len(missing) < len(names)):
+        base["product_binding"] = fixed128_binding(directory, doc)
     labels = [label for label in ("K1", "K2", "vllm") if all(name not in missing for name in filenames((label,)))]
     if not labels:
         return {**base, "status": "incomplete", "missing": missing}
