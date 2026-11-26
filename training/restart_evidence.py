@@ -173,7 +173,7 @@ def pilot_serving_assets(state, verified, assets):
         assets["pilot-comparison.json"] = comparison
 
 
-def product_assets(state, order, verified, assets, *, attempt=None):
+def product_assets(state, order, verified, assets, *, attempt=None, checkout=None):
     """Bind held-out product measurements to the independently approved source and deployed scratch head."""
     from training import scoped_release
 
@@ -184,6 +184,15 @@ def product_assets(state, order, verified, assets, *, attempt=None):
     control = scoped_release.pinned(state / "release", sha(assets["control.json"]))
     if control["order"] != order or control["qualification"] != verified:
         raise ValueError("HTTP evidence belongs to a different release")
+    if attempt is not None and raw:
+        from lab.rp.restart_campaign import tokenizer_retry
+
+        proof = work / "tokenizer-preflight.json"
+        tokenizer_retry(state, SimpleNamespace(checkout=checkout), control, proof)
+        data = bounded(proof)
+        if "geometry.json" in raw and json.loads(raw["geometry.json"]).get("runtime_preflight_sha256") != sha(data):
+            raise ValueError("retry geometry differs from the validated tokenizer environment")
+        assets["tokenizer-preflight.json"] = data
     head = sha(assets["startup-head.npz"])
     for name in HTTP_ARMS:
         if name not in raw:
@@ -365,9 +374,9 @@ def export(args):
                         if not re.fullmatch(r"product-v(?:[2-9]|[1-9][0-9]+)", work.name) or work.is_symlink() or not work.is_dir():
                             raise ValueError("invalid isolated product attempt directory")
                         shared = dict(assets)
-                        product_assets(state, order, verified, shared, attempt=work)
-                        additions = {n: b for n, b in shared.items() if n.startswith("http-") or n in PLANS}
-                        for n in ("cost-after-product.json", "protocol.json", "preflight.json"):
+                        product_assets(state, order, verified, shared, attempt=work, checkout=check.checkout)
+                        additions = {n: b for n, b in shared.items() if n.startswith("http-") or n in PLANS or n == "tokenizer-preflight.json"}
+                        for n in ("cost-after-product.json",):
                             if (work / n).is_file():
                                 additions[n] = bounded(work / n)
                         if additions:
@@ -419,7 +428,7 @@ def product_attempts(folder):
         index = read(path)
         if (index["schema"] != "ironmule.portable-product-attempt.v1" or index["attempt"] != out.name or index["order_id"] != folder.name
                 or index["control_sha256"] != base["control.json"]["sha256"] or index["head_sha256"] != base["startup-head.npz"]["sha256"]
-                or not set(index["files"]) <= {*("http-" + n for n in HTTP_FILES), *PLANS, "cost-after-product.json", "preflight.json", "protocol.json"}
+                or not set(index["files"]) <= {*("http-" + n for n in HTTP_FILES), *PLANS, "cost-after-product.json", "tokenizer-preflight.json"}
                 or any(sha(bounded(out / n)) != row["sha256"] for n, row in index["files"].items())):
             raise ValueError("product attempt scope or captured bytes differ")
         yield out
@@ -437,6 +446,10 @@ def selected_product(folder):
             continue
         from lab.pk1 import restart_http, restart_live
 
+        if attempt != folder:
+            proof = bounded(attempt / "tokenizer-preflight.json")
+            if read(attempt / "http-geometry.json").get("runtime_preflight_sha256") != sha(proof):
+                raise ValueError("retry was not performed with the verified tokenizer recovery")
         control = read(folder / "control.json")
         if (control["order"]["order_id"] != folder.name or control["qualification"]["passed"] is not True
                 or exercise["before"]["arm"] != "candidate" or exercise["after"]["arm"] != "reference"
