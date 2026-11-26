@@ -24,12 +24,32 @@ FRESH_REGISTRATIONS = {
     "2e6eeb2d7030d1dab7898c799197aabe088bf7875690c95e0353442c42abe51e": "current fixed-128 product r2",
 }
 R2_BINDING_SHA = "78e41a0b2014d8a1c7210d751475c1d99287029d606c7da475edbe5d1272a472"
+R2_COMMITMENT_SHA = "fe819e7b5dc6f2ed873f2002ffe48d7520bfe864014ee4905e01d80743eab6f0"
 STOCK_GATE = ROOT / "lab/autonomous/results/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3/product-v3"
 
 
 def checksum(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def registered_input(directory, stem):
+    """Accept an original file or the exact path-only projection witnessed before K1."""
+    original = directory / (stem + ".json")
+    public = directory / (stem + ".portable.json")
+    if public.is_file():
+        commitment = directory / "commitments.json"
+        if checksum(commitment) != R2_COMMITMENT_SHA:
+            raise ValueError("changed pre-data private/public commitments")
+        pins = json.loads(commitment.read_bytes())
+        expected = pins[stem.replace("-", "_") + "_original_private_sha256"]
+        if checksum(public) != pins["portable_projections"][public.name]["sha256"]:
+            raise ValueError(f"changed public projection of {stem}")
+        if not original.is_file():
+            return public, expected
+        if checksum(original) != expected:
+            raise ValueError(f"changed private original of {stem}")
+    return original, checksum(original)
 
 
 def filenames(labels):
@@ -110,14 +130,14 @@ def historical():
 
 
 def fixed128_binding(directory, doc):
-    path = directory / "product-binding.json"
-    if not path.is_file() or checksum(path) != R2_BINDING_SHA:
+    path, pin = registered_input(directory, "product-binding")
+    if pin != R2_BINDING_SHA:
         raise ValueError("missing or changed pre-K1 fixed-128 product selection")
     selected = json.loads(path.read_bytes())
     expected = doc["product_binding"]["shared_w4"]
     stock = doc["product_binding"]["product_v3_reference"]
     source = selected["product_selection"]
-    if (selected["preregistration_sha256"] != checksum(directory / "preregistration.json")
+    if (selected["preregistration_sha256"] != registered_input(directory, "preregistration")[1]
             or source["source_commit"] != stock["base_commit"] or source["engine_source_sha256"] != stock["engine_sha256"]
             or selected["environment"]["sha256"] != expected["environment_sha256"]
             or selected["environment"]["flags"] != expected["flags"] or source["ordinary_product_adoption"]
@@ -136,14 +156,13 @@ def fixed128_binding(directory, doc):
             or not receipts["devices"] or not all(row["provider"] == "cuda" and row["gpu_layers"] == expected["gpu_layers"]
                                                   and row["child_status"] == 0 for row in receipts["devices"])):
         raise ValueError("quality receipt does not qualify the registered stock source")
-    return {"sha256": R2_BINDING_SHA, "engine_source_sha256": source["engine_source_sha256"],
+    return {"sha256": R2_BINDING_SHA, "file_sha256": checksum(path), "engine_source_sha256": source["engine_source_sha256"],
             "base_commit": source["source_commit"], "gate_sha256": stock["gate_sha256"],
             "qualified_width": stock["width"], "scope": "selected V3 stock source, before K1"}
 
 
 def fresh(directory):
-    registration = directory / "preregistration.json"
-    registration_sha = checksum(registration)
+    registration, registration_sha = registered_input(directory, "preregistration")
     if registration_sha not in FRESH_REGISTRATIONS:
         raise ValueError("fresh run registration differs from the immutable agreement")
     doc = json.loads(registration.read_bytes())
@@ -156,10 +175,11 @@ def fresh(directory):
     names = filenames(("K1", "K2", "vllm"))
     missing = [name for name in names if not (directory / name).is_file()]
     base = {"experiment": doc["experiment_id"], "registration_sha256": registration_sha,
+            "registration_file_sha256": checksum(registration),
             "registered_product_lane": FRESH_REGISTRATIONS[registration_sha],
             "declared_hardware": doc["target"]["gpu"], "reference_repo": doc["models"]["vllm_reference"]["repo"],
             "ironmule_model_sha256": doc["models"]["ironmule_product"]["sha256"], "matched_quantization": False}
-    if "product_binding" in doc and ((directory / "product-binding.json").exists() or len(missing) < len(names)):
+    if "product_binding" in doc and (any(directory.glob("product-binding*.json")) or len(missing) < len(names)):
         base["product_binding"] = fixed128_binding(directory, doc)
     labels = [label for label in ("K1", "K2", "vllm") if all(name not in missing for name in filenames((label,)))]
     if not labels:
@@ -183,8 +203,8 @@ def verify_assets(directory):
     """Check staged checkpoint and wheel bytes against the independently pinned registration."""
     from lab.portable_gpu.fetch_awq import verify
 
-    registration = directory / "preregistration.json"
-    if checksum(registration) not in FRESH_REGISTRATIONS:
+    registration, registration_sha = registered_input(directory, "preregistration")
+    if registration_sha not in FRESH_REGISTRATIONS:
         raise ValueError("unknown asset registration")
     doc = json.loads(registration.read_bytes())
     model = verify(directory / "assets/qwen3-32b-awq")

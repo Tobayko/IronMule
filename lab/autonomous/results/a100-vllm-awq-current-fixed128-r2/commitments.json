@@ -1,0 +1,25 @@
+{
+  "experiment_id": "a100-vllm-awq-current-fixed128-20261126-r2",
+  "portable_projections": {
+    "preregistration.portable.json": {
+      "format": "sorted UTF-8 JSON, 2-space indent, final newline",
+      "sha256": "c97c4c85ae93b61b32a1267b5fe8d5bf109180095adfa266d71fdc3efafb157b"
+    },
+    "product-binding.portable.json": {
+      "format": "sorted UTF-8 JSON, 2-space indent, final newline",
+      "sha256": "da23c542d65b451d4f26e74aa1dc77746ce451e84f4d7b68e37fcf9e9207932e"
+    },
+    "wheelhouse-receipt.portable.json": {
+      "format": "sorted UTF-8 JSON, 2-space indent, final newline",
+      "sha256": "9d2785cc9d0ae59ec66d07e776840f775cae63c3e414f1b6b30b7e1b1c7842ad"
+    }
+  },
+  "preregistration_original_private_sha256": "2e6eeb2d7030d1dab7898c799197aabe088bf7875690c95e0353442c42abe51e",
+  "product_binding_original_private_sha256": "78e41a0b2014d8a1c7210d751475c1d99287029d606c7da475edbe5d1272a472",
+  "projection_rule": "Only absolute machine-local filesystem paths are replaced by stable placeholders or evidence-relative paths. All non-path values, including protocol, model and wheel hashes, pins, sizes, thresholds and ordering, are preserved. Private originals remain available to the operator for independent byte verification.",
+  "registration_status": "committed before any K1/vLLM/K2 throughput rows; K1 startup gate may be running",
+  "schema": "ironmule.vllm-awq-r2-private-input-commitments.v1",
+  "wheel_artifact_lock_sha256": "3c6d2e74ee1f5ce115781a9c702be495e45a07ebb1ad272f682c826d853ebabb",
+  "wheel_metadata_sha256": "188c9d7048a2d5d03a84764291eb77d88b29d344ca69763bea66f3e40591d2d2",
+  "wheelhouse_receipt_original_private_sha256": "2c9e13783c3f7518c65d8042a6f0c6b2d99e9bc4f6854dd058bd9d2b2116e065"
+}

@@ -1,0 +1,77 @@
+{
+  "experiment": "a100-vllm-awq-current-fixed128-20261126-r2",
+  "registration_sha256": "2e6eeb2d7030d1dab7898c799197aabe088bf7875690c95e0353442c42abe51e",
+  "registered_product_lane": "current fixed-128 product r2",
+  "declared_hardware": "NVIDIA A100-SXM4-80GB",
+  "reference_repo": "Qwen/Qwen3-32B-AWQ",
+  "ironmule_model_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "matched_quantization": false,
+  "product_binding": {
+    "sha256": "78e41a0b2014d8a1c7210d751475c1d99287029d606c7da475edbe5d1272a472",
+    "engine_source_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+    "base_commit": "33dc7bf544954f6c79a8a15536c0d6f5724b26a2",
+    "gate_sha256": "508e42527831ebda8f0655eab9f57ea3b9eb1c7bb205dc2f7225d6863030f16f",
+    "qualified_width": 32,
+    "scope": "selected V3 stock source, before K1"
+  },
+  "status": "incomplete",
+  "missing": [
+    "http_K1_32.jsonl",
+    "http_K1q_8.jsonl",
+    "http_K2_32.jsonl",
+    "http_K2q_8.jsonl",
+    "http_vllm_32.jsonl",
+    "http_vllmq_8.jsonl"
+  ],
+  "assets": {
+    "scope": "staged bytes on the replay host",
+    "model_sha256_manifest": "00fd219734c5f6ff13b31c0038317ed7d6631e626619c8abf76c87412ea1395b",
+    "model_bytes": 19341507104,
+    "model_revision": "0499c3ac83fdef8810b907a23894ba91e95eddd8",
+    "tokenizer_revision": "9216db5781bf21249d130ec9da846c4624c16137",
+    "wheels": {
+      "vllm": {
+        "version": "0.11.0",
+        "filename": "vllm-0.11.0-cp38-abi3-manylinux1_x86_64.whl",
+        "bytes": 438217982,
+        "sha256": "3861c75ff2b12e24f6d179ff5c084d791b42ded8675d76c8706697c79f68cd62"
+      },
+      "torch": {
+        "version": "2.8.0",
+        "filename": "torch-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "bytes": 888063640,
+        "sha256": "c12fa219f51a933d5f80eeb3a7a5d0cbe9168c0a14bbb4055f1979431660879b"
+      },
+      "transformers": {
+        "version": "4.57.1",
+        "filename": "transformers-4.57.1-py3-none-any.whl",
+        "bytes": 11990925,
+        "sha256": "b10d05da8fa67dc41644dbbf9bc45a44cb86ae33da6f9295f5fbf5b7890bd267"
+      },
+      "torchaudio": {
+        "version": "2.8.0",
+        "filename": "torchaudio-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "bytes": 4011716,
+        "sha256": "776c0b4ba84b9e3ddf6304b9c47cd63549d7896a6f3d5184ece074cc3d76ed6b"
+      },
+      "torchvision": {
+        "version": "0.23.0",
+        "filename": "torchvision-0.23.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "bytes": 8628388,
+        "sha256": "35c27941831b653f5101edfe62c03d196c13f32139310519e8228f35eae0e96a"
+      },
+      "xformers": {
+        "version": "0.0.32.post1",
+        "filename": "xformers-0.0.32.post1-cp39-abi3-manylinux_2_28_x86_64.whl",
+        "bytes": 117199943,
+        "sha256": "5f245b5555188da112070d8fefb6b7ae1ae47422856521d66c837e9d2352fbe4"
+      },
+      "tokenizers": {
+        "version": "0.22.1",
+        "filename": "tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "bytes": 3250221,
+        "sha256": "e2ef6063d7a84994129732b47e7915e8710f27f99f3a3260b8a38fc7ccd083f4"
+      }
+    }
+  }
+}

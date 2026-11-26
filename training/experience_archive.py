@@ -836,16 +836,18 @@ def fresh_http_comparison(root, source, checksum):
     shared = {"hardware": {k:target[k] for k in ("gpu","compute_capability","driver","cuda_toolkit")},
               "cost_reference": "lab/rp/results/campaign-costs.json", "quantization_match": False}
     yield record("external_http_registration", source, checksum, "http_protocol", group, **shared, provenance="reported",
-                 workload=data["http_protocol"]["fixture"], comparison_order=data["http_protocol"]["order"],
+                 workload=data["http_protocol"]["fixture"], comparison_order=data["http_protocol"]["order"], original_registration_sha256=result["registration_sha256"],
                  base_commit=data["immutable_source_manifest"]["base_commit"], models=[models["ironmule_product"]["sha256"], models["vllm_reference"]["manifest_sha256"]],
                  reason="distinct_prospective_system_comparison", authorship="Registered hardware experiment",
                  uncertainty=models["quantization_note"])
     if "product_binding" in result:
         selected = result["product_binding"]
-        yield record("external_http_qualified_product", str((directory / "product-binding.json").relative_to(root)), selected["sha256"],
+        local_binding = directory / ("product-binding.portable.json" if (directory / "product-binding.portable.json").is_file() else "product-binding.json")
+        yield record("external_http_qualified_product", str(local_binding.relative_to(root)), replay_http.checksum(local_binding),
                      "product_selection", group, **shared, base_commit=selected["base_commit"], observed_source_sha256=selected["engine_source_sha256"],
                      model=models["ironmule_product"]["sha256"], quantization=models["ironmule_product"]["format"], reason=selected["scope"],
-                     provenance="reported", gate_sha256=selected["gate_sha256"], workload={"qualified_width":selected["qualified_width"]},
+                     provenance="reported", original_binding_sha256=selected["sha256"],
+                     gate_sha256=selected["gate_sha256"], workload={"qualified_width":selected["qualified_width"]},
                      uncertainty="Independent selection and real stock quality receipt before K1. No fresh throughput evidence is implied.")
     historical_hashes = set(replay_http.historical()["source_files"].values()) if any(directory.glob("http_*.jsonl")) else set()
     for start in ("K1","K2","vllm"):
@@ -980,7 +982,9 @@ def build(root=ROOT) -> Iterator[dict]:
             yield from prefill_experiment(root, source, digest)
         elif source == "lab/autonomous/results/a100-portfolio-shadow/result.json":
             yield from portfolio_observations(root, source, digest)
-        elif source == "lab/autonomous/results/a100-vllm-awq-current-fixed128-r2/preregistration.json":
+        elif (path.parent == root / "lab/autonomous/results/a100-vllm-awq-current-fixed128-r2"
+              and (path.name == "preregistration.portable.json" or path.name == "preregistration.json"
+                   and not path.with_name("preregistration.portable.json").is_file())):
             yield from fresh_http_comparison(root, source, digest)
         elif source.startswith("lab/autonomous/results/a100-calibration-sampling/trial-") and path.name == "manifest.json":
             from training.sampling_evidence import experiences
