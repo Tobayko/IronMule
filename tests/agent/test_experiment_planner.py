@@ -60,3 +60,14 @@ def test_captures_only_completed_measured_python_work(tmp_path):
     with pytest.raises(RuntimeError), observe_wave(tmp_path, "failed", {"hardware": "test-cpu"}, root):
         raise RuntimeError("interrupted trial")
     assert len(list(tmp_path.glob("wave-*.json"))) == 1
+
+
+def test_followup_can_save_the_cost_of_an_uninformative_experiment():
+    from training.experiment_planner import DEFERRED
+    observations = [wave(i, "document", .03, .0002) for i in (1, 2)]
+    first = plan(observations)
+    decision = plan(observations, [first])
+    assert decision["schema"] == DEFERRED and "order_id" not in decision
+    assert decision["simulation"]["highest_remaining_measured_self_fraction"] == .0001
+    changed = [wave(i, "document", .03, .5) for i in (3, 4)]
+    assert plan(changed, [first])["target"]["function"] == "piece"

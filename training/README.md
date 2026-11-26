@@ -299,3 +299,10 @@ serving qualifications and must earn local timing receipts before it can change 
 `IRONMULE_PILOT_THREAD_CANDIDATE` selects an explicit checkpoint in place of the store path.
 A real two-slot SmolLM2 worker reloaded a changed head after a second archive delivery and preserved
 both answers through the reload. [Live reload observation](../evidence/runtime/cpu-pilot-archive-live-reload.json)
+
+To replay the decision following the Xeon serving-demand experiment, run the command below. The first order had targeted tokenizer input conversion. Across the four observed waves, the largest remaining single Python function occupied 0.0214% of wall time. Under the planner's same-work assumption even removing all that self time fell below the existing 2% throughput gate. The worker saved its decision to defer further host-only proposals for those observations. A new binding, new source or additional serving evidence can change that decision.
+
+```sh
+evidence=lab/autonomous/results/cpu-serving-demand
+python -m training.experiment_planner --waves "$evidence/waves" --prior-orders "$evidence/prior" --output /tmp/ironmule-followup.json
+```

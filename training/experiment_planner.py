@@ -25,6 +25,7 @@ from ironmule_product.state import _atomic_write
 
 OBSERVATION = "ironmule.measured-wave.v1"
 ORDER = "ironmule.code-experiment.v1"
+DEFERRED = "ironmule.deferred-code-experiment.v1"
 EVALUATOR = "ironmule.serving_trial.v1"
 TARGETS = ("ironmule/ggml_engine.py", "ironmule/gguf_tokenizer.py")
 MAX_WAVES = 48
@@ -212,6 +213,17 @@ def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None, dem
                              "measured_self_share_range": [min(shares), max(shares)],
                              "predicted_saved_s": expected_s, "sensitivity_saved_s": [0.0, 0.5 * exposed_s],
                              "score": expected_s / measured_cost_s})
+    # After exploring this binding, even removing all exclusive time from one remaining
+    # site must plausibly clear the existing evaluator. New workloads can reopen a site.
+    max_share = max((a["measured_self_share_range"][1] for a in alternatives), default=0.0)
+    if seen and max_share < 1 - 1 / 1.02:
+        return {"schema": DEFERRED, **context, "reason": "remaining host sites lack measured headroom",
+                "simulation": {"kind": "simulated", "required_wall_fraction": 1 - 1 / 1.02,
+                               "highest_remaining_measured_self_fraction": max_share,
+                               "assumption": "Removing all exclusive host time at one site; indirect effects unknown.",
+                               "paired_profiled_wave_cost_s": measured_cost_s},
+                "completed_observations": [digest(w) for w in waves], "remaining_sites": len(alternatives),
+                "prior_sites": [dict(zip(("path", "function", "line"), site)) for site in sorted(seen)]}
     if not alternatives:
         raise ValueError("no remaining observed source function with positive modeled headroom")
     alternatives.sort(key=lambda item: -item["score"])
@@ -256,7 +268,7 @@ def main():
     order = plan(waves, prior, archive=args.archive)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(args.output, order)
-    print(json.dumps({"order_id": order["order_id"], "target": order["target"]}))
+    print(json.dumps({k: order[k] for k in ("schema", "order_id", "target", "reason") if k in order}))
 
 
 if __name__ == "__main__":

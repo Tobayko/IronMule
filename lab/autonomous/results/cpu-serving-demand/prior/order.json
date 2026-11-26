@@ -1,0 +1,504 @@
+{
+  "allowed_paths": [
+    "ironmule/gguf_tokenizer.py"
+  ],
+  "base_commit": "bf0a3c636c9839d8c9a88b219ed7e3b3de9b4bcf",
+  "binding": {
+    "affinity": [
+      0,
+      1
+    ],
+    "cores": 2,
+    "devices": [
+      {
+        "description": "INTEL(R) XEON(R) PLATINUM 8573C",
+        "name": "CPU",
+        "provider": "cpu",
+        "total_memory": 18882662400,
+        "type": "cpu"
+      }
+    ],
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_f32": false,
+      "kv_unified": false
+    },
+    "env_sha256": "2f042c8fc06fabcad82de1ebc177df871d5c62d206839de1e2643996a664abdb",
+    "gpu_layers": 0,
+    "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+    "model_bytes": 105454432,
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "native": {
+      "sha256": {
+        "backend/CPU": "e88e2a86e0b21ce1b919f27c63cd38f071b49941f5a886914dc4036f79a37ec0",
+        "ggml_backend_reg_count": "404b639819bd535e6aeeedfbf2574308d04633899899978be05d66992782bd3a",
+        "ggml_init": "57df2f8555cbe24df5e9fcf5c2c7ffac58b8754b3ed6c576feff293f79ac3349",
+        "llama_backend_init": "502f5da4b2c5865c6b8eded3cdc5fa85cbeb84193bada168456aa7b43775ec8b"
+      }
+    },
+    "offloaded_layers": [],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "prefix_reuse": true,
+    "provider": "cpu",
+    "python": "3.12.14",
+    "speculate": true,
+    "threads": 2
+  },
+  "constraints": [
+    "Preserve full request outputs, stop reasons and quality on fresh inputs.",
+    "Measure throughput and TTFT on matching real hardware with the profiler disabled.",
+    "Keep the evaluator, workload, reference, model weights and budget fixed."
+  ],
+  "dreams": [
+    {
+      "function": "GgufTokenizer.encode",
+      "line": 115,
+      "measured_self_share_range": [
+        0.000592017889430415,
+        0.0009504955931188966
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 0.0001542015112616711,
+      "score": 1.6763409524965034e-05,
+      "sensitivity_saved_s": [
+        0.0,
+        0.0003084030225233422
+      ]
+    },
+    {
+      "function": "GgufTokenizer.piece",
+      "line": 104,
+      "measured_self_share_range": [
+        6.596560512767359e-05,
+        0.00021331689061824518
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 2.561012682473826e-05,
+      "score": 2.7841039976635526e-06,
+      "sensitivity_saved_s": [
+        0.0,
+        5.122025364947652e-05
+      ]
+    },
+    {
+      "function": "GgmlEngine.run.<locals>.take",
+      "line": 1772,
+      "measured_self_share_range": [
+        4.956628483891843e-05,
+        0.00019081969993594298
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 1.9760804906257342e-05,
+      "score": 2.1482180198895945e-06,
+      "sensitivity_saved_s": [
+        0.0,
+        3.9521609812514683e-05
+      ]
+    },
+    {
+      "function": "GgmlEngine._claim",
+      "line": 1537,
+      "measured_self_share_range": [
+        4.322323993582693e-05,
+        0.00019028130592555408
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 1.8039231991817637e-05,
+      "score": 1.9610640059262194e-06,
+      "sensitivity_saved_s": [
+        0.0,
+        3.6078463983635274e-05
+      ]
+    },
+    {
+      "function": "GgmlEngine._prefill",
+      "line": 1547,
+      "measured_self_share_range": [
+        6.890376200875986e-05,
+        9.168312293850619e-05
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 1.5343304095172378e-05,
+      "score": 1.6679868304078013e-06,
+      "sensitivity_saved_s": [
+        0.0,
+        3.0686608190344756e-05
+      ]
+    },
+    {
+      "function": "GgufDetokenizer.add_token",
+      "line": 49,
+      "measured_self_share_range": [
+        4.163667939910585e-05,
+        9.47840546464984e-05
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 1.2736096056201011e-05,
+      "score": 1.3845544845347964e-06,
+      "sensitivity_saved_s": [
+        0.0,
+        2.5472192112402022e-05
+      ]
+    },
+    {
+      "function": "GgmlEngine.run.<locals>.finish",
+      "line": 1737,
+      "measured_self_share_range": [
+        3.685676475457686e-05,
+        6.441317846631609e-05
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 1.0088394973725424e-05,
+      "score": 1.09672009703704e-06,
+      "sensitivity_saved_s": [
+        0.0,
+        2.0176789947450847e-05
+      ]
+    },
+    {
+      "function": "GgmlEngine.eog",
+      "line": 1356,
+      "measured_self_share_range": [
+        1.9926982968311374e-05,
+        4.087881025910605e-05
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 6.7692210936791354e-06,
+      "score": 7.358891909030264e-07,
+      "sensitivity_saved_s": [
+        0.0,
+        1.3538442187358271e-05
+      ]
+    },
+    {
+      "function": "Job.full_context",
+      "line": 525,
+      "measured_self_share_range": [
+        1.5117215467917527e-05,
+        4.4469192700393874e-05
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 6.562051323383424e-06,
+      "score": 7.133675458669625e-07,
+      "sensitivity_saved_s": [
+        0.0,
+        1.3124102646766848e-05
+      ]
+    },
+    {
+      "function": "_complete_prefix",
+      "line": 59,
+      "measured_self_share_range": [
+        2.253891969818015e-05,
+        4.4447844492424324e-05
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 6.3591045839890685e-06,
+      "score": 6.913049909906306e-07,
+      "sensitivity_saved_s": [
+        0.0,
+        1.2718209167978137e-05
+      ]
+    },
+    {
+      "function": "GgmlEngine._take_sequence",
+      "line": 1511,
+      "measured_self_share_range": [
+        1.4019741238969515e-05,
+        3.9091731515129296e-05
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 4.825310002224109e-06,
+      "score": 5.245645583520209e-07,
+      "sensitivity_saved_s": [
+        0.0,
+        9.650620004448217e-06
+      ]
+    },
+    {
+      "function": "GgmlEngine._batch_for",
+      "line": 1189,
+      "measured_self_share_range": [
+        1.1326435691357363e-05,
+        2.790798411698428e-05
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 3.566552394697562e-06,
+      "score": 3.87723686333423e-07,
+      "sensitivity_saved_s": [
+        0.0,
+        7.133104789395124e-06
+      ]
+    },
+    {
+      "function": "GgmlEngine._common",
+      "line": 1498,
+      "measured_self_share_range": [
+        8.606065317706536e-06,
+        2.626412283519071e-05
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 3.054516319632961e-06,
+      "score": 3.32059702578439e-07,
+      "sensitivity_saved_s": [
+        0.0,
+        6.109032639265922e-06
+      ]
+    },
+    {
+      "function": "GgufTokenizer.detokenizer",
+      "line": 143,
+      "measured_self_share_range": [
+        3.212352249736614e-06,
+        9.513732026823239e-06
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 1.191690913675311e-06,
+      "score": 1.2954998073410257e-07,
+      "sensitivity_saved_s": [
+        0.0,
+        2.383381827350622e-06
+      ]
+    },
+    {
+      "function": "GgmlEngine.run.<locals>.mark",
+      "line": 1809,
+      "measured_self_share_range": [
+        2.8641172021051432e-06,
+        6.75870453657083e-06
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 9.174468276567344e-07,
+      "score": 9.973661583181028e-08,
+      "sensitivity_saved_s": [
+        0.0,
+        1.8348936553134689e-06
+      ]
+    },
+    {
+      "function": "GgufDetokenizer.__init__",
+      "line": 40,
+      "measured_self_share_range": [
+        2.016763940572255e-06,
+        5.869985991328117e-06
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 7.315905907892332e-07,
+      "score": 7.953198757695576e-08,
+      "sensitivity_saved_s": [
+        0.0,
+        1.4631811815784664e-06
+      ]
+    },
+    {
+      "function": "GgufDetokenizer.finalize",
+      "line": 55,
+      "measured_self_share_range": [
+        1.4967261687702598e-06,
+        3.957019322693178e-06
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 5.153974740708032e-07,
+      "score": 5.60294049992814e-08,
+      "sensitivity_saved_s": [
+        0.0,
+        1.0307949481416064e-06
+      ]
+    },
+    {
+      "function": "GgmlEngine._slots",
+      "line": 1722,
+      "measured_self_share_range": [
+        1.334862590262174e-06,
+        3.5993079207422613e-06
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 4.6448232502778104e-07,
+      "score": 5.049436524870171e-08,
+      "sensitivity_saved_s": [
+        0.0,
+        9.289646500555621e-07
+      ]
+    },
+    {
+      "function": "GgufDetokenizer.reset",
+      "line": 44,
+      "measured_self_share_range": [
+        8.428807141763863e-07,
+        2.321777199446587e-06
+      ],
+      "path": "ironmule/gguf_tokenizer.py",
+      "predicted_saved_s": 2.952405017741184e-07,
+      "score": 3.209590748560915e-08,
+      "sensitivity_saved_s": [
+        0.0,
+        5.904810035482368e-07
+      ]
+    },
+    {
+      "function": "trace_note",
+      "line": 298,
+      "measured_self_share_range": [
+        3.508988380905986e-07,
+        8.24286450712616e-07
+      ],
+      "path": "ironmule/ggml_engine.py",
+      "predicted_saved_s": 1.0861931237003605e-07,
+      "score": 1.1808120430734112e-08,
+      "sensitivity_saved_s": [
+        0.0,
+        2.172386247400721e-07
+      ]
+    }
+  ],
+  "evaluator": "ironmule.serving_trial.v1",
+  "historical_experience": [
+    {
+      "authorship": "IronMule selected the target and evaluated the outcome. Codex authored the code.",
+      "contains_negative_result": true,
+      "excerpt": "Rejected. 4/6 pairs faster. The measured function wraps an opaque native tokenizer. A ctypes integer-array slice already allocates and fills a new Python list, so list(slice) copies all token references a second time. Return the slice directly. Keep one private native buffer per call, the UTF-8 byte length, BOS/special flags and negative-size retry. This removes linear host work without retaining request text or token IDs between calls. The native tokenization itself may dominate end-to-end time.",
+      "id": "e1e1da12d3aaa6faaf2803d19dc2acaa7ae4d4c4efbaa8b5288967d572b72b19",
+      "locator": "decision",
+      "provenance": "reported",
+      "reason": "Rejected: paired hardware gate",
+      "source": "lab/autonomous/results/cpu-tokenizer-01/result.json",
+      "source_sha256": "1c87cc1d0ee77fd4298cdaa44154fb41d4e73c80ae89466b1b714cf381c76497",
+      "title": "GgufTokenizer.encode",
+      "uncertainty": "The decision covers only the measured fixture and runtime. Activation is recorded separately."
+    },
+    {
+      "authorship": "IronMule selected the target and evaluated the outcome. Codex authored the code.",
+      "contains_negative_result": false,
+      "excerpt": "",
+      "id": "235239a02505ed5d8e8ad20ae5e2108df2623d128a790cc8c04931ba73fa4a47",
+      "locator": "pair",
+      "provenance": "measured",
+      "reason": null,
+      "source": "lab/autonomous/results/cpu-tokenizer-01/pair-3.json",
+      "source_sha256": "6796bc19446fa314dd754d80f5ee5233ea467f12b5f5cde6ae59877a69881048",
+      "title": "GgufTokenizer.encode",
+      "uncertainty": "One paired observation; admission uses the complete campaign."
+    },
+    {
+      "authorship": "IronMule selected the target and evaluated the outcome. Codex authored the code.",
+      "contains_negative_result": false,
+      "excerpt": "",
+      "id": "60244779d0392311d66bcac324a7b4be966f322aaeb6e439f721846c25bb93ff",
+      "locator": "pair",
+      "provenance": "measured",
+      "reason": null,
+      "source": "lab/autonomous/results/cpu-tokenizer-01/pair-4.json",
+      "source_sha256": "b9ed439d1c2b97b349ddf3ae49f8f600bf0fa4cad9bcaaf654a92da6bd921f34",
+      "title": "GgufTokenizer.encode",
+      "uncertainty": "One paired observation; admission uses the complete campaign."
+    }
+  ],
+  "hypothesis": "Reduce equivalent per-request work in GgufTokenizer.encode at ironmule/gguf_tokenizer.py line 115. Determine which cost is recoverable in the measured workload.",
+  "next_workloads": [
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "short",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document",
+    "document"
+  ],
+  "order_id": "608f3b886f8d240f9f76ec51e3069e84f8e4ecc6c74cf9d2f0565a00b20d63f3",
+  "profile_sha256": [
+    "e6ca339527c7f9f22ae9f42064ac6589bfb2218a55948a0a23e7357e6f0e42c7",
+    "e900236958ef6cd8930b891bc1727e46724863431c97d4ebd8b47da33d04d289",
+    "12cd03fa0f5926cc187eac8f0efd0872958fc47988b8e1b618189660dfe61e6e",
+    "eb77ff29d39aa8e782608a73e1073aee2e7f97a6e4f833a838e4d5f6ef5ff0cc"
+  ],
+  "schema": "ironmule.code-experiment.v1",
+  "simulation": {
+    "assumptions": "Synchronous burst arrival. Host cost scales across steps. Predicted test time excludes build, pod startup and billing. Profiling overhead and native calls can inflate attributed time.",
+    "kind": "simulated",
+    "newest_wave_relative_prediction_error": 0.4057111053313963,
+    "paired_profiled_wave_cost_s": 9.198696186001143,
+    "removable_self_time_fractions": [
+      0,
+      0.25,
+      0.5
+    ],
+    "repetitions_estimate": 6,
+    "serving_demand": {
+      "document": 16,
+      "id": "3a541c44d9f740a09e3d992fc94494ea",
+      "short": 16
+    },
+    "step_model": {
+      "n": 4,
+      "p": [
+        [
+          0.8988473702569062,
+          -0.32374707145177545,
+          -0.011118462703897164,
+          -0.02283609667706133
+        ],
+        [
+          -0.32374707145177545,
+          0.15692699817992095,
+          -0.029649233877059117,
+          -0.06089625780549694
+        ],
+        [
+          -0.011118462703897164,
+          -0.029649233877059117,
+          1.0,
+          -0.01720958863164111
+        ],
+        [
+          -0.02283609667706133,
+          -0.06089625780549694,
+          -0.01720958863164111,
+          0.9817287342314422
+        ]
+      ],
+      "spread": 1.0,
+      "theta": [
+        0.2521434798812549,
+        -0.001875918094482532,
+        0.018044140855442765,
+        0.0362249668607018
+      ]
+    }
+  },
+  "target": {
+    "function": "GgufTokenizer.encode",
+    "line": 115,
+    "path": "ironmule/gguf_tokenizer.py"
+  },
+  "workload": [
+    "short",
+    "document",
+    "short",
+    "document"
+  ]
+}

@@ -217,6 +217,22 @@ def run(args):
                                                 demand=demand)
                 if order["base_commit"] != base or order["binding"]["model_sha256"] != context["gguf_sha256"]:
                     raise ValueError("proposal source or model differs from frozen discovery inputs")
+                if order.get("schema") == experiment_planner.DEFERRED:
+                    saved_plan = run_dir / "deferred-plan.json"
+                    save(saved_plan, order)
+                    reason = order["reason"]
+                    row = experience_archive.record(
+                        "deferred_code_experiment", f"{run_dir.name}/{saved_plan.name}", sha(saved_plan),
+                        "simulation", run_dir.name, title="host code experiment deferred", reason=reason,
+                        model=context["gguf_sha256"], base_commit=base, hardware=order["binding"],
+                        metrics=[order["simulation"]], decision=False, authorship="IronMule measured and deferred.")
+                    save(run_dir / "experience.json", row)
+                    result = {"historical_qualification": {"passed": False, "stage": "plan", "reason": reason},
+                              "order_id": None, "base": base, "run_id": args.run_id, "publish_requested": args.publish,
+                              "recorded_optimization_s": time.monotonic() - started, "new_resource_bookings_usd": 0}
+                    save(done, result)
+                    log["status"] = "finished"
+                    return {**result, "deployment": current_deployment(run_dir / "trial")}
                 save(order_file, order)
             order = read(order_file)
             if provenance() != context["implementation_sha256"]:
