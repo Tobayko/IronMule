@@ -49,7 +49,7 @@ def plan(prior_path, waves_dir, attribution_path, host_decision_path, archive, r
     commit = a["base_commit"]
     if not re.fullmatch(r"[a-f0-9]{40}", commit):
         raise ValueError("expected the measured full base commit")
-    revision = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=root, capture_output=True)
+    revision = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=root, capture_output=True, check=False)
     if revision.returncode == 0:
         code = revision.stdout
     else:
