@@ -4,7 +4,7 @@ import re
 
 
 def content_hash(root):
-    entries = sorted(root.rglob("*"))
+    entries = sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix())
     if any(p.is_symlink() and (not p.resolve(strict=True).is_relative_to(root) or p.is_dir()) for p in entries):
         raise ValueError("unexpected external or indirect Python overlay directory")
     names = [p for p in entries if p.is_file()]
