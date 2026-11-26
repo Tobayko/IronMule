@@ -40,6 +40,7 @@ class Trace:
     def observe(self):
         compare = startup.compare
         batch, stream, readline = compare.batch, compare.stream, http.client.HTTPResponse.readline
+        getresponse = http.client.HTTPConnection.getresponse
 
         def group(engine, server, prompts, width, limit, deadline, *args, **kw):
             with self.lock:
@@ -99,6 +100,14 @@ class Trace:
                                 row["text_prefix"] = (row["text_prefix"] + piece)[:1024]
             return raw
 
+        def response(connection, *args, **kw):
+            result = getresponse(connection, *args, **kw)
+            row = getattr(self.thread, "row", None)
+            if row is not None:
+                with self.lock:
+                    row["status"] = result.status
+            return result
+
         from contextlib import ExitStack
         from ironmule_product.http_server import _ProductRequestHandler
 
@@ -122,6 +131,7 @@ class Trace:
         stack.enter_context(patch.object(compare, "batch", group))
         stack.enter_context(patch.object(compare, "stream", request))
         stack.enter_context(patch.object(http.client.HTTPResponse, "readline", line))
+        stack.enter_context(patch.object(http.client.HTTPConnection, "getresponse", response))
         stack.enter_context(patch.object(_ProductRequestHandler, "_finish_sse_error", server_error))
         return stack
 
