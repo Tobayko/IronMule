@@ -9,10 +9,11 @@ from pathlib import Path
 import re
 from tempfile import TemporaryDirectory
 import textwrap
+import time
 from types import SimpleNamespace
 
 from lab.pk1 import restart_order, restart_trial
-from training.code_author import read_request, read_response
+from training.code_author import read_request, read_response, write_once
 from training.code_trial import PAIRS, read, save
 from training.native_evidence import COST_JOURNAL, ROOT, bounded, patch, persist_assets, sha, source_at, verify_manifest
 
@@ -21,9 +22,11 @@ TRIAL = ("context.json", "aa-0.json", "aa-1.json", "stale.json", "missing.json",
          *(f"{tag}-{i}.json" for i in range(PAIRS) for tag in ("ref", "cand")),
          *(f"facts-{tag}-{i}.json" for i in range(2) for tag in ("ref", "cand")), "result.json")
 RELEASE = ("release-activate.json", "release-run.json", "release-exercise.json", "target-check.json", "rollback-exercise.json")
+COST_PHASES = ("during-qualification", "after-verdict", "after-release")
+COST_FILES = tuple(f"cost-{p}.json" for p in COST_PHASES)
 OBS = [f"observation-{i}{suffix}.json" for i in range(2) for suffix in ("", ".profile")]
 REQUIRED = {"order.json", "reference-source.txt", *OBS}
-NAMES = {*REQUIRED, "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
+NAMES = {*REQUIRED, *COST_FILES, "request.json", "response.json", "authorship.json", "candidate.diff", "campaign.json",
          "qualified.json", "control.json", *TRIAL, *RELEASE}
 
 
@@ -39,6 +42,48 @@ def candidate_bytes(source, request, order, proposal):
         raise ValueError("worker request differs from the bound startup function")
     edited = textwrap.indent(textwrap.dedent(proposal["definition"]).strip(), " " * node.col_offset)
     return ("".join(lines[:node.lineno - 1]) + edited + "\n" + "".join(lines[node.end_lineno:])).encode()
+
+
+def observe_cost(state, phase):
+    from lab.rp import rp
+
+    path = state / f"cost-{phase}.json"
+    if path.is_file():
+        return
+    campaign = read(state / "campaign.json")
+    if campaign["config_sha256"] != sha(bounded(state / "target.json")):
+        raise ValueError("cost snapshot requires the exact target configuration")
+    target = read(state / "target.json")
+    if (phase == "after-verdict" and not (state / "trial/result.json").is_file()
+            or phase == "after-release" and not (state / "release/release-run.json").is_file()):
+        raise ValueError("requested campaign cost phase has not occurred")
+    with rp.locked(rp.STATE):
+        ledger = rp.load()
+        pod = ledger.get("pod")
+        if not pod or pod["id"] != target["pod_id"]:
+            raise ValueError("startup campaign no longer owns the observed lease")
+        user = rp.account()
+        matches = [item for item in user["pods"] if (item["id"], item["name"]) == (pod["id"], pod["name"])]
+        if len(matches) != 1:
+            raise ValueError("provider does not confirm the registered lease")
+        now = time.time()
+        elapsed = max(0, now - pod["started"])
+        hourly = rp.money(matches[0]["costPerHr"]) + rp.money(pod["disk_rate"])
+        arms = {}
+        for label in TRIAL:
+            p = state / "trial" / label
+            if p.is_file():
+                row = read(p)
+                if "broker_elapsed_s" in row:
+                    arms[label] = {"sha256": sha(bounded(p)), "broker_elapsed_s": row["broker_elapsed_s"]}
+        write_once(path, {"order_id": campaign["order"], "phase": phase, "observed_unix_s": now,
+                   "lease_elapsed_s": elapsed, "quoted_compute_usd_per_h": matches[0]["costPerHr"],
+                   "disk_rate_estimate_usd_per_h": pod["disk_rate"], "estimated_lease_usd_before_tail": elapsed * hourly / 3600,
+                   "campaign_reserved_usd": rp.held(ledger), "retained_tail_seconds": rp.CLEANUP_SECONDS,
+                   "provider_account_delta_since_lease_start_usd": pod["balance_before"] - user["clientBalance"],
+                   "completed_worker_arms": arms, "cost_journal": COST_JOURNAL,
+                   "basis": "A100 lease-to-date covers all work, waiting and concurrent CPU experiments. "
+                            "Provider account delta can include other use and lag charges. Per-arm times are measured durations."})
 
 
 def export(args):
@@ -91,10 +136,14 @@ def export(args):
                     or worker["rationale"] != reply["rationale"]):
                 raise ValueError("actual startup candidate differs from the returned function")
             assets["candidate.diff"] = patch(original, candidatesrc, restart_order.PATH)
-    paths = {**{n: state / "trial" / n for n in TRIAL}, **{n: state / "release" / n for n in RELEASE},
+    if getattr(args, "cost_phase", None):
+        observe_cost(state, args.cost_phase)
+    paths = {**{n: state / n for n in COST_FILES}, **{n: state / "trial" / n for n in TRIAL}, **{n: state / "release" / n for n in RELEASE},
              "control.json": state / "release/deployment/control.json", "qualified.json": state / "qualified.json",
              "campaign.json": state / "campaign.json"}
     assets.update({n: bounded(p) for n, p in paths.items() if p.is_file()})
+    if any(json.loads(assets[n])["order_id"] != key for n in COST_FILES if n in assets):
+        raise ValueError("cost observation is bound to a different startup order")
     context = json.loads(assets["context.json"]) if "context.json" in assets else None
     if context and (candidatesrc is None or context["order"] != key or context["candidate"] != sha(candidatesrc)
                     or context["source"] != sha(original) or context["model"] != order["binding"]["gguf"]):
@@ -162,6 +211,12 @@ def experiences(root, source):
                reason="reuse_recent_device_bound_mask_on_repeat_start", observations=order["evidence"],
                qualification_contract=order["contract"], authorship="IronMule selected the observed startup phase",
                uncertainty="Historical phases and local mask observations guide selection. Their timings do not establish a gain.")
+    for name in COST_FILES:
+        if name in files:
+            cost = read(folder / name)
+            yield emit("restart_cost_observation", name, provenance="reported", reason=cost["phase"],
+                       metrics=[{k: v for k, v in cost.items() if k not in ("order_id", "basis", "cost_journal")}],
+                       authorship="Registered RunPod campaign operator", uncertainty=cost["basis"])
     samples = [n for n in TRIAL if n.startswith(("ref-", "cand-", "aa-", "facts-")) or n in ("missing.json", "stale.json")]
     for name in samples:
         if name not in files:
@@ -219,6 +274,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--state", required=True, type=Path)
     p.add_argument("--destination", required=True, type=Path)
+    p.add_argument("--cost-phase", choices=COST_PHASES, help="take a redacted, read-only observation of the live registered lease")
     p.add_argument("--reference", type=Path, help="exact original ggml_engine.py for a shallow checkout")
     p.add_argument("--observations", nargs=2, type=Path, metavar=("PREVIOUS", "CANONICAL"))
     print(export(p.parse_args()))

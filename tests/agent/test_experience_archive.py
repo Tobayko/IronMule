@@ -207,5 +207,8 @@ def test_qwen_startup_order_binds_both_observations_and_worker_replacement():
     rows = list(startup.experiences(root, str((folder / "manifest.json").relative_to(root))))
     assert all(not r["label_eligible"] for r in rows)
     assert next(r for r in rows if r["kind"] == "restart_experiment_plan")["provenance"] == "simulated"
+    observed = next(r for r in rows if r["kind"] == "restart_cost_observation")
+    assert observed["cost_usd"] is None and observed["metrics"][0]["retained_tail_seconds"] == 600
+    assert observed["metrics"][0]["campaign_reserved_usd"] <= 15
     if "result.json" not in manifest["files"]:
         assert next(r for r in rows if r["kind"] == "restart_code_decision")["decision"] is None

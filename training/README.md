@@ -411,3 +411,9 @@ python -m training.restart_evidence --state "$RESTART_STATE" \
 
 Repeat the command as the target delivers evidence. Once the two original observations are archived,
 `--observations` can be omitted. A shallow checkout can supply the original `ggml_engine.py` with `--reference`.
+
+On the campaign control host, append `--cost-phase during-qualification`, `after-verdict` or
+`after-release` to record one read-only observation of the registered live lease. The observation keeps
+provider account and hourly-rate data, the held cleanup reserve and completed worker-arm durations.
+Each figure for elapsed lease cost is cumulative across workloads. The final campaign journal
+also checks provider-confirmed pod removal and available posted charges.

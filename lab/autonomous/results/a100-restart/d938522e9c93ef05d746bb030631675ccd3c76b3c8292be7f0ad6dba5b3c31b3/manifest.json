@@ -3,13 +3,37 @@
   "candidate_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
   "cost_journal": "lab/rp/results/campaign-costs.json",
   "files": {
+    "aa-0.json": {
+      "original_sha256": "257ab20d38e0fe29b6900edfaaeb6cbbbb696501d58c22553962a88995de3517",
+      "sha256": "257ab20d38e0fe29b6900edfaaeb6cbbbb696501d58c22553962a88995de3517"
+    },
+    "aa-1.json": {
+      "original_sha256": "2789e82c8ca05fb8b7d7823b8a98a640f09e33d3276af931ea5709e8ddbf1d93",
+      "sha256": "2789e82c8ca05fb8b7d7823b8a98a640f09e33d3276af931ea5709e8ddbf1d93"
+    },
     "authorship.json": {
       "original_sha256": "169818b090914fc3a57658e00672840dc92f2f1323a5532004f5e236bd812c03",
       "sha256": "169818b090914fc3a57658e00672840dc92f2f1323a5532004f5e236bd812c03"
     },
+    "campaign.json": {
+      "original_sha256": "1e56a14229fdcbde24735b185101cd301c0489812b321d9b5712b17d4c919320",
+      "sha256": "1e56a14229fdcbde24735b185101cd301c0489812b321d9b5712b17d4c919320"
+    },
     "candidate.diff": {
       "original_sha256": "8abc322bf1806f2481a1fcb70ecfe426ea01bac0dca0f3c1cf5fff5322ea6c01",
       "sha256": "8abc322bf1806f2481a1fcb70ecfe426ea01bac0dca0f3c1cf5fff5322ea6c01"
+    },
+    "context.json": {
+      "original_sha256": "fa5e0b3d2ffa1464389490256511dbad43fec4c18205e3d24ba2f867dde38858",
+      "sha256": "fa5e0b3d2ffa1464389490256511dbad43fec4c18205e3d24ba2f867dde38858"
+    },
+    "cost-during-qualification.json": {
+      "original_sha256": "09a956b742ffd003c1d855f96cb260831750d050e3aa0f66085d7ab64519089e",
+      "sha256": "09a956b742ffd003c1d855f96cb260831750d050e3aa0f66085d7ab64519089e"
+    },
+    "missing.json": {
+      "original_sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4",
+      "sha256": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4"
     },
     "observation-0.json": {
       "original_sha256": "05afc28e5470348805f80b156444dfe8d6aa0baa0f99d5caccf28e31cb78544e",
@@ -31,6 +55,14 @@
       "original_sha256": "abca0323d88c38767275c2df6957c1e7504cd8da07f87d4a66b933b4fe9d04de",
       "sha256": "abca0323d88c38767275c2df6957c1e7504cd8da07f87d4a66b933b4fe9d04de"
     },
+    "receipt.json": {
+      "original_sha256": "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89",
+      "sha256": "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89"
+    },
+    "ref-0.json": {
+      "original_sha256": "a707fe4958eda43fa182bdac530d5bfceb15d4fc2d479e0ec270eda5dd21b0b7",
+      "sha256": "a707fe4958eda43fa182bdac530d5bfceb15d4fc2d479e0ec270eda5dd21b0b7"
+    },
     "reference-source.txt": {
       "original_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
       "sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5"
@@ -42,6 +74,14 @@
     "response.json": {
       "original_sha256": "04a4dd497b813677822b5d5633ee74b831acc4ff971ae29f1e4d536b36317a15",
       "sha256": "de648c4ddd2c75abd614b10ecc1f8248522d1697c8c273a8f78685b89645ea5a"
+    },
+    "stale-receipt.json": {
+      "original_sha256": "b9b63e7544ddab4d1acd9707d61697a5c348a268cd070a6ae29c5821b203ad98",
+      "sha256": "b9b63e7544ddab4d1acd9707d61697a5c348a268cd070a6ae29c5821b203ad98"
+    },
+    "stale.json": {
+      "original_sha256": "79f60000cdd992b0892683e8398d74832f8efa2678507c60d26f7f553fcd9d0e",
+      "sha256": "79f60000cdd992b0892683e8398d74832f8efa2678507c60d26f7f553fcd9d0e"
     }
   },
   "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
