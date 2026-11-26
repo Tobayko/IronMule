@@ -143,11 +143,40 @@ def fresh(directory):
             "per_engine": rates, "throughput_ratio": ratios["ratio_tok_s"] if comparable else None, **result}
 
 
+def verify_assets(directory):
+    """Check staged checkpoint and wheel bytes against the independently pinned registration."""
+    from lab.portable_gpu.fetch_awq import verify
+
+    registration = directory / "preregistration.json"
+    if checksum(registration) not in FRESH_REGISTRATIONS:
+        raise ValueError("unknown asset registration")
+    doc = json.loads(registration.read_bytes())
+    model = verify(directory / "assets/qwen3-32b-awq")
+    declared = doc["models"]["vllm_reference"]
+    if (model["revision"] != declared["commit"] or model["manifest_sha256"] != declared["manifest_sha256"]
+            or model["total_bytes"] != declared["total_bytes"] or model["tokenizer_commit"] != declared["tokenizer_commit"]):
+        raise ValueError("model or tokenizer differs from registration")
+    wheels = {}
+    for wheel in doc["dependency_manifest"]["wheel_catalog"]:
+        artifact = directory / "assets/wheels" / wheel["filename"]
+        if artifact.stat().st_size != wheel["bytes"] or checksum(artifact) != wheel["sha256"]:
+            raise ValueError(f"registered wheel differs: {wheel['filename']}")
+        wheels[wheel["name"]] = {k: wheel[k] for k in ("version", "filename", "bytes", "sha256")}
+    return {"scope": "staged bytes on the replay host", "model_sha256_manifest": model["manifest_sha256"],
+            "model_bytes": model["total_bytes"], "model_revision": model["revision"],
+            "tokenizer_revision": model["tokenizer_commit"], "wheels": wheels}
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--fresh", type=Path, help="directory with registered fresh measurements; defaults to historical replay")
+    p.add_argument("--verify-assets", action="store_true", help="hash the registered checkpoint and wheels under --fresh")
     args = p.parse_args()
+    if args.verify_assets and not args.fresh:
+        p.error("--verify-assets requires --fresh")
     result = fresh(args.fresh) if args.fresh else historical()
+    if args.verify_assets:
+        result["assets"] = verify_assets(args.fresh)
     print(json.dumps(result, indent=2, allow_nan=False))
 
 

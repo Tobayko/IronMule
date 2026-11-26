@@ -38,3 +38,7 @@ defines a separate current product comparison with a fixed cuBLAS threshold of 1
 Its selection rule binds one independently qualified product engine before K1 for both
 IronMule starts. PR57 used dynamic PK2. A difference from those historical throughput
 rates cannot establish the effect of PR60.
+
+Once the registered assets are staged, append `--verify-assets` to the fresh replay to
+hash every local AWQ shard, tokenizer file and pinned wheel. The target's separate model,
+process and installation receipts establish which staged files its servers actually used.
