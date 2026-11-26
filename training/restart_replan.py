@@ -135,12 +135,8 @@ def rank(data, historic, history, cost):
     }
 
 
-def replan(state, *, checkout, archive=None):
-    from lab.pk1 import restart_http
-
-    state = Path(state)
-    archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
-    trial, product, deployed = state / "trial", state / "product", state / "release"
+def verified_release(state, checkout):
+    deployed, trial = state / "release", state / "trial"
     published = read(deployed / "published.json")
     control = scoped_release.pinned(deployed, published["receipt_sha256"])
     order = read(state / "order.json")
@@ -153,6 +149,65 @@ def replan(state, *, checkout, archive=None):
         )
     ):
         raise ValueError("source release differs from qualified trial")
+    return published, control, order
+
+
+def declined(state, *, checkout, archive=None):
+    from lab.pk1 import restart_http
+
+    state = Path(state)
+    product = state / "product"
+    archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
+    published, control, order = verified_release(state, checkout)
+    observed = read(product / "product-qualify.json")
+    if observed.get("passed") is not False or observed != read(product / "decision.json"):
+        raise ValueError("need a saved rejected product qualification")
+    history = past_attempts(archive, order)
+    names = [f"{name}-{seed}.json" for seed in restart_http.SEEDS for name in ("reference", "candidate")]
+    present = {name: checksum(product / name) for name in names if (product / name).is_file()}
+    complete = len(present) == len(names)
+    rows = []
+    if complete and "pairs" in observed:
+        graded = restart_http.assess(product, control)
+        if graded != observed:
+            raise ValueError("product rejection differs from independently graded pairs")
+        rows = observed["pairs"]
+    next_test = {
+        "decision": "retain reference product route and diagnose rejected gate",
+        "book_additional_resources": False,
+        "maximum_new_paid_leases": 0,
+        "maximum_extra_author_calls": 0,
+        "evidence_needed": "Inspect the failed check against its fixed workload and runtime. Capture one instrumented session only on the next already planned maintenance window; no candidate activation or repeat of prior code variants.",
+    }
+    metrics = {k: median(x[k] for x in rows) for k in rows[0]} if rows else {}
+    result = {
+        "schema": "ironmule.restart-replan-declined.v1",
+        "provenance": "planning from a rejected product gate",
+        "order": order["order_id"],
+        "source_receipt": published["receipt_sha256"],
+        "native_result_sha256": checksum(state / "trial/result.json"),
+        "cost_observation_sha256": checksum(state / "cost-after-verdict.json"),
+        "product_verdict_sha256": checksum(product / "product-qualify.json"),
+        "pair_count": len(rows),
+        "completed_raw_files": present,
+        "raw_medians": metrics,
+        "reason": observed.get("reason", "completed HTTP pairs outside predeclared bounds"),
+        "retained_measured_history": history,
+        "next": next_test,
+        "new_serving_improvement": None,
+    }
+    result["plan_id"] = digest(result)
+    write_once(state / "replan-after-product-declined.json", result)
+    return result
+
+
+def replan(state, *, checkout, archive=None):
+    from lab.pk1 import restart_http
+
+    state = Path(state)
+    archive = Path(archive) if archive else Path(__file__).resolve().parents[1] / "lab/autonomous/results"
+    trial, product = state / "trial", state / "product"
+    published, control, order = verified_release(state, checkout)
     verdict = restart_http.assess(product, control)
     served, rollback = read(product / "product-serve.json"), read(product / "product-exercise.json")
     if (
@@ -221,4 +276,6 @@ if __name__ == "__main__":
     p.add_argument("--state", required=True, type=Path)
     p.add_argument("--checkout", required=True, type=Path)
     args = p.parse_args()
-    print(replan(args.state, checkout=args.checkout)["next"])
+    verdict = read(args.state / "product/product-qualify.json")
+    planner = replan if verdict["passed"] else declined
+    print(planner(args.state, checkout=args.checkout)["next"])
