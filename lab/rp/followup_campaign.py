@@ -26,7 +26,13 @@ from lab.rp.native_campaign import (
     upload,
 )
 from training import calibration_sampling, experience_archive
-from training.code_author import PendingAuthor, consume_cli, digest, hosted_proposal, write_once
+from training.code_author import (
+    PendingAuthor,
+    consume_cli,
+    digest,
+    hosted_proposal,
+    write_once,
+)
 from training.code_trial import read
 from training.trial_release import require
 
@@ -57,6 +63,9 @@ def author(order, checkout, state, mode, archive):
             raise
         reply = consume_cli(directory)
     replacement = textwrap.indent(textwrap.dedent(reply["definition"]).strip(), " " * method.col_offset) + "\n"
+    if ast.dump(ast.parse(textwrap.dedent(replacement))) == ast.dump(ast.parse(fragment(method))):
+        write_once(directory / "unchanged.json", {"order": order["order_id"], "reason": reply["rationale"]})
+        return None
     program = "".join(lines[:method.lineno - 1]) + replacement + "".join(lines[method.end_lineno:])
     dest = directory / "candidate.py"
     with NamedTemporaryFile("w", dir=directory) as stream:
@@ -220,6 +229,11 @@ def main():
         candidate = author(decision, args.checkout, state, args.author, args.archive)
     except PendingAuthor:
         print(json.dumps({"stage": "awaiting author", "request": str(state / "authoring/author/request.json")}))
+        return
+    if candidate is None:
+        outcome = {"stage": "unchanged", "order": decision["order_id"], "reason": read(state / "authoring/unchanged.json")["reason"]}
+        write_once(state / "outcome.json", outcome)
+        print(json.dumps(outcome))
         return
     until = time.monotonic() + args.wait_seconds
     while True:
