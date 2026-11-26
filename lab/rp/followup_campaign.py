@@ -26,7 +26,7 @@ from lab.rp.native_campaign import (
     upload,
 )
 from training import calibration_sampling, experience_archive
-from training.code_author import PendingAuthor, consume_cli, hosted_proposal, write_once
+from training.code_author import PendingAuthor, consume_cli, digest, hosted_proposal, write_once
 from training.code_trial import read
 from training.trial_release import require
 
@@ -107,8 +107,10 @@ def qualify_source(args, decision, source, cfg, pod, remote, original):
     root = Path(__file__).resolve().parents[2]
     identity = {"order": decision["order_id"], "source": checksum(source), "config": checksum(args.config),
                 "remote_checkout": str(args.remote_checkout), "framework": {n: checksum(root / n) for n in FRAMEWORK}}
-    write_once(state / "campaign.json", identity)
     if not (state / "staged.json").exists():
+        attempts = state / "preflight"
+        attempts.mkdir(mode=0o700, exist_ok=True)
+        write_once(attempts / (digest(identity) + ".json"), identity)
         paths = [PurePosixPath(cfg["framework"]) / n for n in FRAMEWORK]
         hashes = shell(pod, shlex.join(["sha256sum", "--", *map(str, paths)])).splitlines()
         require(len(hashes) == len(paths) and all(row.split(maxsplit=1) == [identity["framework"][name], str(path)]
@@ -120,7 +122,10 @@ def qualify_source(args, decision, source, cfg, pod, remote, original):
         shell(pod, shlex.join(["mkdir", "-p", str(remote)]))
         upload(pod, remote / "order.json", (state / "order.json").read_bytes())
         upload(pod, remote / "candidate.py", source.read_bytes())
+        write_once(state / "campaign.json", identity)
         write_once(state / "staged.json", identity)
+    else:
+        require(read(state / "staged.json") == read(state / "campaign.json") == identity, "changed staged experiment")
     destination = state / "trial"
     files = [*trial.file_names({"sampling_plan": decision["selected_plan"]}), "result.json"]
     snapshot(pod, remote / "trial", files, destination)
