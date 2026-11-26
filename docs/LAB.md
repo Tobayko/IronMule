@@ -4715,3 +4715,15 @@ responses exactly. Its mandatory A/A check closed that source experiment.
 The independent PR 57 comparison above measures warm HTTP throughput for the
 existing stack. The ordered source release measures a gain on fresh native
 workers. Source and training receipts bind one device, runtime and GGUF.
+
+The additional caller-supplied JSON interface admitted the same source only
+after independent mixed and factual pairs. Time to complete the submitted batch
+was 56.761 to 52.889 s for 32 mixed prompts and 53.951 to 49.157 s for 18
+factual prompts, with identical delivered text, tokens and stops. A new
+18-question request selected the trained candidate, and a single unsupported
+question used the reference and answered 7. A separate process timed the full
+CLI, from launch until every reply was received. It measured 50.107 s with
+the candidate and 54.334 s after a persisted withdrawal for the exact same
+18 questions. A later request verified the durable latency monitor. Both
+owned RunPod leases were removed. The total conservative booking for this
+first development stage, including both cleanup tails, was $16.77. [Caller evidence](../lab/autonomous/results/a100-dynamic-calibration/client/) · [Campaign cost journal](../lab/rp/results/campaign-costs.json)

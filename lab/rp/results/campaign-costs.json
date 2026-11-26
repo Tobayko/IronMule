@@ -1,6 +1,6 @@
 {
- "campaign_budget_usd": 15.0,
- "booked_with_tail_usd": 12.479237985487842,
+ "campaign_budget_usd": 20.0,
+ "booked_with_tail_usd": 16.769796526818844,
  "journal": [
   {
    "kind": "reserve",
@@ -80,11 +80,32 @@
    "kind": "removed",
    "time": 1795672269.5831742,
    "booked": 12.479237985487842
+  },
+  {
+   "kind": "extend",
+   "time": 1795683618.844338
+  },
+  {
+   "kind": "reserve",
+   "time": 1795683619.858701,
+   "usd": 5.0,
+   "hourly_quote": 2.2123214285714283,
+   "deadline": 1795690219.0
+  },
+  {
+   "kind": "created",
+   "time": 1795683620.8685656,
+   "hourly": 2.2123214285714283
+  },
+  {
+   "kind": "removed",
+   "time": 1795690001.6700077,
+   "booked": 4.290558541331002
   }
  ],
  "confirmed_owned_pods_remaining": 0,
- "observed_unix_s": 1795683423.7259665,
- "provider_account_delta_since_first_reservation_usd": 12.105505211299999,
+ "observed_unix_s": 1795690003.4954917,
+ "provider_account_delta_since_first_reservation_usd": 15.9452392832,
  "external_settlements_usd": 0,
  "approved_extensions_minutes": [
   90.0,
@@ -104,6 +125,17 @@
    "disk_hourly_upper_usd": 0.011904761904761906,
    "posted_records": 1,
    "posted_usd": 12.105505211977288
+  },
+  {
+   "gpu": "NVIDIA A100-SXM4-80GB",
+   "verified_absent": true,
+   "hours": 1.772725361055798,
+   "account_delta_at_cleanup_usd": 3.8397340719000006,
+   "booked_with_tail_usd": 4.290558541331002,
+   "hourly_with_disk_usd": 2.2123214285714283,
+   "disk_hourly_upper_usd": 0.022321428571428572,
+   "posted_records": 1,
+   "posted_usd": 1.8107917011948302
   }
  ],
  "basis": "Posted pod charges can lag. The account delta can include unrelated use. Booked cost conservatively includes a cleanup tail. Fees are USD."

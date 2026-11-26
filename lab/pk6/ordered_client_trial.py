@@ -17,7 +17,9 @@ def trial(args):
     out.mkdir(exist_ok=True)
     gate = args.state/"deployment"/"ordered-client.json"
     if gate.exists():
-        return read(gate)
+        kept=read(gate)
+        require(kept["pin"]==args.pin,"client admission belongs to a different release")
+        return kept
     pairs = []
     for seed, width, arms in ((99601,32,("reference","candidate")),(99602,18,("candidate","reference"))):
         request = {"workload_seed":seed, "max_tokens":32 if width==32 else MAX_TOKENS,

@@ -1,0 +1,30 @@
+{
+  "families": [
+    "mixed-first-32",
+    "factual-first-18"
+  ],
+  "pairs": [
+    {
+      "candidate_s": 52.888531695934944,
+      "exact_answers": true,
+      "family": "mixed-first-32",
+      "output_sha256": "ad93fbced6560b6547922da959b77c526647874eba59b09dda539c94ee8224d6",
+      "passed": true,
+      "rate": 1.0732139668458425,
+      "reference_s": 56.76071090204641,
+      "seed": 99601
+    },
+    {
+      "candidate_s": 49.15714205102995,
+      "exact_answers": true,
+      "family": "factual-first-18",
+      "output_sha256": "4275551f84ecfdc401c98f40ccce1f01768148c36ec634f025d4c65322116c90",
+      "passed": true,
+      "rate": 1.0975305661593016,
+      "reference_s": 53.951465946040116,
+      "seed": 99602
+    }
+  ],
+  "passed": true,
+  "pin": "c7840a9f67a42558f8027517b59fc79520f8dd73db3957aa29890824c49898e7"
+}
