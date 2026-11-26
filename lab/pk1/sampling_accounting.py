@@ -110,8 +110,19 @@ def grouped(group, seeds, rows, accepted):
     keys = [
         k for k, v in paired[0][0].items() if type(v) in (int, float) and k != "seed"
     ]
+    totals = {
+        key: {
+            "reference": sum(a[key] for a, _ in paired),
+            "candidate": sum(b[key] for _, b in paired),
+        }
+        for key in ("first_complete_wave_s", "worker_end_to_end_s")
+    }
     return {
         **result,
+        "total_elapsed_for_same_work_s": totals,
+        "aggregate_equal_work_rate_ratio": {
+            k: v["reference"] / v["candidate"] for k, v in totals.items()
+        },
         "seeds": [a["seed"] for a, _ in paired],
         "medians": {
             k: {

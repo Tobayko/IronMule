@@ -48,3 +48,48 @@ OPENBLAS_NUM_THREADS=1 python -m training.calibration_sampling decide --forecast
   --out /tmp/ironmule-sampling-order.json
 cmp "$d/decision.json" /tmp/ironmule-sampling-order.json
 ```
+
+## Physical source verdict
+
+The exported 22-worker target trial regraded the authored source on the A100. Its
+instrumented screen observed 64 real calibration calls across 16 widths, with 32 fresh
+measurement calls. Missing, expired and foreign profiles, a wrong pin and injected
+jitter all restored full fresh measurement. The regular trial then ran six mixed
+and two factual-first pairs. Across those pairs each source returned 256 cold mixed
+and 256 warm mixed completions (8,192 output tokens in each cohort of waves) and
+answered 216/216 independently graded factual prompts correctly.
+
+| Physical quantity | PR 60 reference | Proposed source |
+| --- | ---: | ---: |
+| Six mixed cold waves, total s including startup and dispatch | 100.533 | 104.491 |
+| Six complete mixed workers, total s | 216.983 | 219.788 |
+| Median mixed cold wave including startup and dispatch, s | 16.775 | 16.200 |
+| Median full mixed worker, s | 36.188 | 35.675 |
+| Median warm mixed p95 time to first token, s | 2.311 | 2.310 |
+| Median first factual wave including startup and dispatch, s | 13.927 | 13.066 |
+
+Paired mixed median speedup was 1.03244. Seeds 96854 and 96855 regressed, so the
+unchanged all-pairs requirement rejected the source. At 96854 the adaptive measurement
+ran in 1.584 s and the first wave itself was within 3 ms of the baseline. The
+initialization interval was 4.990 s longer. These workers did not record the causal
+subphase. At 96855 ambiguity triggered the correct full fallback, with 160 reported
+calls and 3.823 s of calibration. Every measured mixed cold and warm wave reported zero
+padded tokens. The retained counters give no first-read timestamps for the scheduler's
+price tables, no per-factual-wave padding count, and do not quantify warm-up effects.
+
+The protected source trial took 815.02 s ($0.49850 of the existing lease). The two
+information cohorts and target trial together account for $0.58496. Earlier exploratory
+source attribution accounted for a separate $0.08839. The prior active release continues.
+The source has no realized payback. The terminal control-host replan updates the
+source-scoped uncertainty estimate from the measured adaptive/fallback modes,
+records both regressions and closes this order without booking more resources.
+
+From the framework checkout, reproduce the accounting with
+
+```sh
+d=lab/autonomous/results/a100-calibration-sampling
+order=4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7
+OPENBLAS_NUM_THREADS=1 python -m lab.pk1.sampling_accounting \
+  --data lab/autonomous/results --folder "$d/trial-$order" --out /tmp/ironmule-sampling-accounting.json
+cmp "$d/target-accounting.json" /tmp/ironmule-sampling-accounting.json
+```
