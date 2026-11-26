@@ -120,12 +120,16 @@ def tokenizer_retry(state, check, receipt, path):
     gate = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
                 and any(isinstance(t, ast.Name) and t.id == "GATE_IDS" for t in node.targets))
     record = read(path)
+    nested = record.get("nested_diagnostic") or {}
+    child = nested.get("tokenizer_child") or {}
     if (prior.get("passes") is not False or diagnosis.get("stage") != "tokenize" or diagnosis.get("code") != "missing_dependency"
             or prior.get("source_sha256") != checksum(source)
             or record.get("schema") != "ironmule.product-tokenizer-preflight.v1" or record.get("order_id") != receipt["order"]["order_id"]
             or record.get("source_sha256") != checksum(source) or record.get("gguf_sha256") != receipt["qualification"]["binding"]["runtime"]["model_sha256"]
             or record.get("gate_ids_sha256") != hashlib.sha256(gate.encode()).hexdigest() or record.get("returncode") != 0
-            or record.get("ids_count") != 8193
+            or record.get("ids_count") != 8193 or nested.get("stopped_before_timed_child") is not True
+            or child.get("returncode") != 0 or child.get("ids_count") != record.get("ids_count")
+            or child.get("facts_sha256") != record.get("facts_sha256") or child.get("bos") != record.get("bos")
             or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("facts_sha256"))) or not record.get("diagnosed_dependency")
             or not record.get("correction")):
         raise ValueError("need the recorded failed reference and an actual full corrected tokenizer preflight")

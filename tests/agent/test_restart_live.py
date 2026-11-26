@@ -84,10 +84,15 @@ def test_new_product_attempt_requires_old_failure_and_successful_original_tokeni
     preflight = tmp_path / "preflight.json"
     good = {"schema": "ironmule.product-tokenizer-preflight.v1", "order_id": "order", "source_sha256":digest,
             "gguf_sha256": "model", "returncode": 0, "gate_ids_sha256": hashlib.sha256(code.encode()).hexdigest(), "ids_count": 8193,
-            "facts_sha256":"a"*64, "diagnosed_dependency":"package", "correction":"bound installation"}
+            "facts_sha256":"a"*64, "diagnosed_dependency":"package", "correction":"bound installation",
+            "nested_diagnostic":{"stopped_before_timed_child":True, "tokenizer_child":{
+                "returncode":0,"ids_count":8193,"facts_sha256":"a"*64,"bos":None}}}
     release.save(preflight, good)
     args = SimpleNamespace(checkout=tmp_path)
     assert tokenizer_retry(tmp_path, args, verified, preflight) == good
+    release.save(preflight, {**good, "nested_diagnostic":{}})
+    with pytest.raises(ValueError):
+        tokenizer_retry(tmp_path, args, verified, preflight)
     release.save(preflight, {**good, "ids_count":0})
     with pytest.raises(ValueError):
         tokenizer_retry(tmp_path, args, verified, preflight)
