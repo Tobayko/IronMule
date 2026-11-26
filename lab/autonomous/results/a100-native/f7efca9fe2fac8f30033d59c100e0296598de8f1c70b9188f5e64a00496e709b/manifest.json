@@ -7,9 +7,17 @@
       "original_sha256": "fb6a341411db9eba44ca8985c6238020e28c73ef235ccc839f7173eda764bd39",
       "sha256": "fb6a341411db9eba44ca8985c6238020e28c73ef235ccc839f7173eda764bd39"
     },
+    "before-restart.json": {
+      "original_sha256": "8f64b46c55395662642d255f3c75d470d5d740ac400f2f929ccbe721db7fbd39",
+      "sha256": "8f64b46c55395662642d255f3c75d470d5d740ac400f2f929ccbe721db7fbd39"
+    },
     "candidate.diff": {
       "original_sha256": "b84731e7cca3cdeea63a3ff4b8c4b3d700acefb2cdb11c4e0762f8e050ab3681",
       "sha256": "b84731e7cca3cdeea63a3ff4b8c4b3d700acefb2cdb11c4e0762f8e050ab3681"
+    },
+    "context.json": {
+      "original_sha256": "8654cc9e422f3ca757cb3aaa18e2c0b3e65663f4a6b1b480bdaffc3516639d48",
+      "sha256": "8654cc9e422f3ca757cb3aaa18e2c0b3e65663f4a6b1b480bdaffc3516639d48"
     },
     "dispatch.table": {
       "original_sha256": "ecd29307bb073d364aadd8941596b249d0a87ecf26c1fc846a82832269fca79e",
@@ -38,14 +46,22 @@
     "response.json": {
       "original_sha256": "8adaa24662d21a0a493fcd9d7ded9b1097a34985d847796a316d5a572514304f",
       "sha256": "daaf5fda80919122a39726f1268d8bc402d58fbc7e299ee071bda99fe5113f10"
+    },
+    "restart-witness.json": {
+      "original_sha256": "93936e204b9f0dc5723a548a3a0ae253c6b70c225886bd36d19a2afd4f33a6a6",
+      "sha256": "93936e204b9f0dc5723a548a3a0ae253c6b70c225886bd36d19a2afd4f33a6a6"
+    },
+    "startup-retry.json": {
+      "original_sha256": "de93d31f769ed159016f507e0861d96d93f97fc80f3693db0a95ad5302f7377d",
+      "sha256": "1765756030387959399a3c619dce76c7b565b8608786cd3cc1a412619f5d22bc"
     }
   },
   "order_id": "f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b",
   "rebuild": {
     "base_kernel_sha256": "670c958add42cd138472c76a431a64d2ceb9b4c583320f48bdb292f42e6e8a8b",
     "compiler": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:23:50_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0",
-    "evaluator_commit": null,
-    "evaluator_sha256": null,
+    "evaluator_commit": "fc4151c4aafe3dd2664be9a5efa60287b9b8b10f",
+    "evaluator_sha256": "66328a22260bf0ee503ffb9eab544db3875aa65962e1ea8dd56cc6452942dfc6",
     "instructions": "Check out base_commit. Apply candidate.diff to a separate copy. Use native_trial --mode build on the original compute capability. Restore dispatch.table. Compare the build receipt and requalify.",
     "source": "native/kernels/w4mma.cu",
     "target_cc": "80",

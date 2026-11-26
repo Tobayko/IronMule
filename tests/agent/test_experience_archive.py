@@ -100,6 +100,10 @@ def test_native_trial_preserves_calibration_failure_and_dream_boundaries():
     assert calibrations and len({r["group"] for r in calibrations}) == len(calibrations)
     assert any(len(r["metrics"][0]["counts_by_outcome"]) > 1 for r in calibrations)
     assert any(r["kind"] == "native_failed_attribution" and not r["decision"] for r in rows)
+    restart = next(r for r in rows if r["kind"] == "native_coordinator_restart")
+    assert restart["metrics"][0]["interruption_s"] > 0 and restart["context_sha256"] and not restart["label_eligible"]
+    repair = next(r for r in rows if r["kind"] == "native_startup_repair")
+    assert "ModuleNotFoundError" in repair["reason"] and "/opt/" not in repair["reason"]
 
 
 def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path, monkeypatch):
@@ -108,7 +112,7 @@ def test_partial_native_trial_preserves_ttft_without_trusting_pass(tmp_path, mon
     from training import native_evidence
 
     scope = Path(__file__).resolve().parents[2] / "lab/autonomous/results/a100-native"
-    order = next(scope.glob("*/order.json"))
+    order = next(scope.glob("*/request.json")).with_name("order.json")
     state = tmp_path / "campaign"
     trial = state / "trial"
     trial.mkdir(parents=True)

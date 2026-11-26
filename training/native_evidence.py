@@ -20,7 +20,8 @@ SCHEMA = "ironmule.portable-native-trial.v1"
 COST_JOURNAL = "lab/rp/results/campaign-costs.json"
 TRIAL_FILES = ["context.json", "calibration.json", "build.json", "screen.json", "result.json",
                *(f"{label}-{i}.json" for i in range(PAIRS) for label in ("ref", "cand"))]
-NAMES = {"order.json", "order.profile.json", "request.json", "response.json", "authorship.json", "candidate.diff",
+RECOVERY_FILES = ("before-restart.json", "restart-witness.json", "startup-retry.json")
+NAMES = {*RECOVERY_FILES, "order.json", "order.profile.json", "request.json", "response.json", "authorship.json", "candidate.diff",
          "prior-failure.json", "control.json", "dispatch.table", "measurement.json", "tuner.diff", "tuner-source.txt", "outcome.json", "activate.json", "run.json", *TRIAL_FILES}
 PRIVATE = re.compile(rb'(?i)"(?:password|api_key|authorization|pod_id|secret|access_token|refresh_token)"\s*:'
                      rb'|\b(?:sk-proj-|ghp_|github_pat_|rpa_)[A-Za-z0-9_-]{12,}')
@@ -139,6 +140,25 @@ def export(args):
                     checksum.update(block)
                 if checksum.hexdigest() != binary_hash:
                     raise ValueError("candidate binary changed since build")
+    for name in RECOVERY_FILES:
+        path = state / name
+        if path.is_file():
+            data = bounded(path)
+            doc = json.loads(data)
+            if doc["order"] != key:
+                raise ValueError("restart or repair record belongs to another order")
+            if name != "startup-retry.json":
+                if ("context.json" not in assets or doc["context_sha256"] != sha(assets["context.json"])
+                        or doc["candidate"] != json.loads(assets["context.json"])["candidate_source"]):
+                    raise ValueError("restart record is not bound to this candidate and context")
+            assets[name] = data
+    if "restart-witness.json" in assets:
+        if "before-restart.json" not in assets:
+            raise ValueError("restart witness is missing the pre-interruption receipt")
+        before, after = (json.loads(assets[f]) for f in RECOVERY_FILES[:2])
+        if (before["remote_job_running"] is not True or after["same_remote_job_running"] is not True
+                or after["stopped_local_consumer"] is not True or not 0 <= after["interruption_s"] < 86400):
+            raise ValueError("restart witness does not establish continuation of the target job")
     for name in ("outcome.json", "activate.json", "run.json"):
         if (state / name).is_file():
             assets[name] = bounded(state / name)
@@ -200,6 +220,11 @@ def publish(directory, key, order, original, binding, base_tuner, binary_hash, a
         if PRIVATE.search(data) or any(secret in data for secret in secrets):
             raise ValueError(f"private fields in {name}; review locally")
         public = HOST_PATH.sub(b"<private-path>", data) if name in ("result.json", "outcome.json") else data
+        if name == "startup-retry.json":
+            repair = json.loads(data)
+            # Preserve the original checksum and final error text; discard the host traceback.
+            public = json.dumps({**{k: repair[k] for k in ("order", "repair", "requested_unix_s")},
+                                 "incident": repair["incident"].strip().splitlines()[-1][:600]}, indent=2).encode() + b"\n"
         if name == "response.json" and HOST_PATH.search(public):
             response = json.loads(public)
             receipt = response["worker_receipt"]

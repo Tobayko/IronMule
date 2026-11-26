@@ -314,6 +314,18 @@ def native_experiment(root, source, digest, calibration_seen):
                      model=failure["model_filename"], decision=False, reason=failure["final_error"],
                      note="Rejected diagnostic; the source site could not be attributed.", source_log_sha256=failure["source_log_sha256"],
                      uncertainty="Model and device names are from the earlier log. Its other bindings were not verified.")
+    repair = doc("startup-retry.json")
+    if repair:
+        yield emit("native_startup_repair", "startup-retry.json", group, reason=repair["incident"],
+                   note=repair["repair"], provenance="reported", authorship="Campaign coordinator",
+                   uncertainty="The failed launch reached the framework import before evaluating the candidate.")
+    restart = doc("restart-witness.json")
+    if restart:
+        yield emit("native_coordinator_restart", "restart-witness.json", group, reason="same_target_job_and_evaluator_context",
+                   metrics=[{"interruption_s": restart["interruption_s"]}], note=restart["method"],
+                   candidate=restart["candidate"], context_sha256=restart["context_sha256"],
+                   before_sha256=files["before-restart.json"]["sha256"], authorship="Campaign coordinator",
+                   uncertainty="One witnessed local coordinator restart while the isolated build continued on the target.")
     raw_pairs = []
     result = doc("result.json")
     build, setup, screen = (doc(k) for k in ("build.json", "context.json", "screen.json"))
