@@ -399,7 +399,7 @@ def export(args):
                         verify_withdrawal(assets, order, verified)
                     if (state / "native-pilot").is_dir():
                         pilot_serving_assets(state, verified, assets)
-                    for work in sorted(state.glob("product-v*")):
+                    for work in sorted(p for p in state.glob("product-v*") if p.is_dir()):
                         if not re.fullmatch(r"product-v(?:[2-9]|[1-9][0-9]+)", work.name) or work.is_symlink() or not work.is_dir():
                             raise ValueError("invalid isolated product attempt directory")
                         shared = dict(assets)
