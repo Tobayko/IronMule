@@ -1,0 +1,168 @@
+{
+  "schema": "ironmule.w4-profile-fit.v1",
+  "order": "f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b",
+  "seed": 5723,
+  "profile_sha256": "38591469248af58f969a069d0a9bf3a389919cd22bb404b19ec7252c72580fb8",
+  "tuner_receipt_sha256": "a644004af5371c1cc5e06e9168a3682543374a1e72c0a48cc4bede4f1b43a548",
+  "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "native_base": "33dc7bf544954f6c79a8a15536c0d6f5724b26a2",
+  "step_ms_by_rows": {
+    "1": {
+      "stock": 28.76,
+      "q4": 26.53,
+      "q4_q6": 25.15
+    },
+    "2": {
+      "stock": 33.49,
+      "q4": 25.5,
+      "q4_q6": 24.35
+    },
+    "3": {
+      "stock": 39.77,
+      "q4": 26.05,
+      "q4_q6": 24.02
+    },
+    "4": {
+      "stock": 47.37,
+      "q4": 27.01,
+      "q4_q6": 24.04
+    },
+    "5": {
+      "stock": 54.05,
+      "q4": 29.01,
+      "q4_q6": 24.76
+    },
+    "6": {
+      "stock": 60.16,
+      "q4": 29.48,
+      "q4_q6": 24.8
+    },
+    "7": {
+      "stock": 65.93,
+      "q4": 30.77,
+      "q4_q6": 24.96
+    },
+    "8": {
+      "stock": 79.69,
+      "q4": 31.4,
+      "q4_q6": 25.33
+    },
+    "16": {
+      "stock": 50.16,
+      "q4": 31.87,
+      "q4_q6": 27.03
+    },
+    "24": {
+      "stock": 56.8,
+      "q4": 35.75,
+      "q4_q6": 31.88
+    },
+    "32": {
+      "stock": 61.68,
+      "q4": 38.81,
+      "q4_q6": 33.64
+    }
+  },
+  "weights_sha256": "c7e585c15290ba600d3cdcaf95b9a20266f89eb6b028f437eadcf4950868531a",
+  "cpu_train_s": 0.12096396500055562,
+  "train_widths": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "new_widths": [
+    16
+  ],
+  "margin_calibration_widths": [
+    24
+  ],
+  "holdout_widths": [
+    32
+  ],
+  "parameters_per_head": 371,
+  "scores_before_new_experience": [
+    [
+      0.06176166981458664,
+      1.1371047496795654,
+      1.296710729598999
+    ],
+    [
+      -0.3397211730480194,
+      1.4556838274002075,
+      1.1671746969223022
+    ],
+    [
+      -0.11290381103754044,
+      1.246666431427002,
+      0.9286062717437744
+    ]
+  ],
+  "scores_after_new_experience": [
+    [
+      0.0738416388630867,
+      0.7989693284034729,
+      0.871260404586792
+    ],
+    [
+      -0.22144007682800293,
+      0.792279839515686,
+      0.7707047462463379
+    ],
+    [
+      -0.08353912085294724,
+      0.858137845993042,
+      0.5385276079177856
+    ]
+  ],
+  "holdout": {
+    "profile": "q4_q6",
+    "proposal": "q4_q6",
+    "scores": [
+      [
+        0.0738416388630867,
+        0.7989693284034729,
+        0.871260404586792
+      ],
+      [
+        -0.22144007682800293,
+        0.792279839515686,
+        0.7707047462463379
+      ],
+      [
+        -0.08353912085294724,
+        0.858137845993042,
+        0.5385276079177856
+      ]
+    ],
+    "margin": 0.021575093269348145,
+    "margin_error": 0.21600272539485182,
+    "reason": "unresolved model margin",
+    "cpu_us": 35.908
+  },
+  "measured_holdout_ms": {
+    "stock": 61.68,
+    "q4": 38.81,
+    "q4_q6": 33.64
+  },
+  "shipped_pilot_with_local_mask_ms": 33.64,
+  "fixed_stock_ms": 61.68,
+  "complete_step_rows": 11,
+  "training_target": "log speedup of one whole native call",
+  "geometry": {
+    "sequences": 1,
+    "prefix_tokens": 64,
+    "rows": "successive positions"
+  },
+  "winner_labels": [
+    "q4_q6"
+  ],
+  "kernel_attempts_diagnostic_only": 6324,
+  "kernel_rejections": 196,
+  "uncertainty": "Four tile groups on one GPU, model and calibration. One calibration group. Held-out step medians do not certify a serving variant."
+}

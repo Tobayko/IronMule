@@ -101,6 +101,10 @@ def fit(args):
                  serving_features=features(32))
     raw = kernel["measured"]
     save(args.report, {"schema": "ironmule.w4-profile-fit.v1", "order": order["order_id"], "seed": args.seed,
+                       "profile_sha256": order["profile_sha256"], "tuner_receipt_sha256": order["binding"]["tuning_receipt_sha256"],
+                       "gguf_sha256": order["binding"]["gguf"], "gpu": order["binding"]["fp"]["gpu"],
+                       "native_base": order["base_commit"], "step_ms_by_rows": {
+                           str(w): dict(zip(NAMES, times[w], strict=True)) for w in WIDTHS},
                        "weights_sha256": trial.checksum(args.weights), "cpu_train_s": time.perf_counter() - started,
                        "train_widths": first, "new_widths": new, "margin_calibration_widths": [calibration],
                        "holdout_widths": [test], "parameters_per_head": sum(p.size for p in heads[0]),
@@ -317,8 +321,9 @@ def main():
         cmd.add_argument("--worker-uid", type=int, default=60000)
         cmd.add_argument("--timeout", type=int, default=900)
     run.add_argument("--reference-arm", type=Path)
-    for cmd, seed in ((train, 5723), (run, 92741), (gather, 7151)):
-        cmd.add_argument("--seed", type=int, default=seed)
+    train.add_argument("--seed", type=int, default=5723)
+    run.add_argument("--seed", type=int, default=92741)
+    for cmd in (train, run, gather):
         for name in ("order", "receipt"):
             cmd.add_argument("--" + name, type=Path, required=True)
     for cmd in (train, run):
