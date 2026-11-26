@@ -144,6 +144,15 @@ work, and record results where they belong (see Performance and evidence below).
 
 ## Performance and evidence
 
+**Reuse stable vLLM measurements (owner decision, 2026-11-26).** Look up the existing vLLM
+results before reserving a server or scheduling a comparator. Use the archived per-load numbers
+and their spread as development targets while iterating on IronMule. Record hardware, driver,
+vLLM build, model artifact, quantization, server settings, workload and metric definitions.
+A new IronMule commit alone calls for measuring IronMule. Spend GPU time on a vLLM recheck
+when changed conditions, observed drift or a result close to the recorded noise could change a
+decision. Record the reason and reuse the new result. Identify historical targets from other
+machines when reporting progress. [Measured L40S reference](https://github.com/Tobayko/IronMule/tree/bdf54aa070d53268fea47a572dc2100c91705c1d/lab/autonomous/results/l40s-native-dispatch/http/primary)
+
 **Fast mode (owner decision, 2026-11-11): the QA process is removed, development goes for speed.** The owner's words:
 "remove all QAs that are here, we now develop faster", and "test wildly". Until the owner says otherwise, experimental
 work needs no protocol before data, no fixed release rule, no confidence interval, no A/A control, no Tier 0
