@@ -17,6 +17,7 @@ import argparse
 import ctypes
 import hashlib
 import json
+import math
 import os
 import fcntl
 import tempfile
@@ -168,14 +169,28 @@ def tune(gguf: str, lib_path: Path, *, tokens=TOKENS, reps: int = 20, log=print,
                         us = ctypes.c_double()
                         rc = lib.im_w4_bench(v["id"], raw.ctypes.data, wbytes, N, K, x.ctypes.data, B, ks, copies,
                                              reps, ctypes.byref(us), y.ctypes.data)
-                        err = float("inf")
-                        if rc == 0:
+                        err = None
+                        timing = None
+                        rejection = None
+                        if rc:
+                            rejection = "native_error"
+                        else:
                             got = y[:, :ref_rows].astype(np.float64)
-                            err = float(np.linalg.norm(got - ref) / max(1e-30, np.linalg.norm(ref)))
+                            relative_error = float(np.linalg.norm(got - ref) / max(1e-30, np.linalg.norm(ref)))
+                            if math.isfinite(relative_error):
+                                err = relative_error
+                            if math.isfinite(us.value) and us.value > 0:
+                                timing = us.value
+                            if err is None:
+                                rejection = "nonfinite_output_error"
+                            elif err > ERROR_BOUND:
+                                rejection = "output_error_bound"
+                            elif timing is None:
+                                rejection = "invalid_timing"
                         row = {"type": code, "K": K, "N": N, "B": B, "variant": v["id"], "ksplit": ks, "rc": rc,
-                               "us": round(us.value, 2) if rc == 0 else None, "rel_err": err}
+                               "us": timing, "rel_err": err, "rejection": rejection}
                         measured.append(row)
-                        if rc == 0 and err <= ERROR_BOUND and (best is None or us.value < best["us"]):
+                        if rejection is None and (best is None or timing < best["us"]):
                             best = row
                 if best is not None:
                     gbs = wbytes / best["us"] / 1e3
@@ -201,6 +216,14 @@ def table_lines(result: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _sync_directory(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def ensure(gguf: str, cache: Path, log=print) -> tuple[Path, Path] | None:
     """The library and table for this GPU, compiler and GGUF, tuned once and reused."""
     from .ggml_engine import file_sha256
@@ -217,21 +240,25 @@ def ensure(gguf: str, cache: Path, log=print) -> tuple[Path, Path] | None:
                "tuner": file_sha256(__file__)}
     key = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()[:24]
     directory = cache / key
-    directory.mkdir(parents=True, exist_ok=True)
+    cache.mkdir(parents=True, exist_ok=True)
     lib, table, record = (directory / name for name in ("kernel.so", "dispatch.table", "measurement.json"))
-    with (directory / ".lock").open("a+b") as lock:
+    # Keep the lock outside the directory. Readers and writers always lock the same inode.
+    with (cache / f".{key}.lock").open("a+b") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
             saved = json.loads(record.read_text())
             if saved["binding"] == binding:
                 if saved.get("outcome") == "rejected":
                     return None
-                if saved["binary"] == file_sha256(str(lib)) and saved["table"] == file_sha256(str(table)):
+                if (saved["outcome"] == "built" and saved["measurement"]["entries"]
+                        and saved["binary"] == file_sha256(str(lib)) and saved["table"] == file_sha256(str(table))):
                     return lib, table
         except (OSError, KeyError, TypeError, ValueError):
             pass
-        with tempfile.TemporaryDirectory(dir=directory) as tmp:
+        with tempfile.TemporaryDirectory(dir=cache, prefix=f".{key}-") as tmp:
             work = Path(tmp)
+            bundle = work / "bundle"
+            bundle.mkdir()
             candidate = build(work, arch)
             result = tune(gguf, candidate, log=log)
             if fingerprint() != fp or file_sha256(gguf) != binding["gguf"]:
@@ -239,14 +266,27 @@ def ensure(gguf: str, cache: Path, log=print) -> tuple[Path, Path] | None:
             passed = bool(result["entries"])
             summary = {"binding": binding, "outcome": "built" if passed else "rejected", "measurement": result}
             if passed:
-                dispatch = work / "dispatch.table"
+                dispatch = bundle / table.name
                 dispatch.write_text(table_lines(result))
                 summary.update(binary=file_sha256(str(candidate)), table=file_sha256(str(dispatch)))
-                os.replace(candidate, lib)
-                os.replace(dispatch, table)
-            log_file = work / "measurement.json"
-            log_file.write_text(json.dumps(summary, allow_nan=False))
-            os.replace(log_file, record)
+                os.replace(candidate, bundle / lib.name)
+            (bundle / record.name).write_text(json.dumps(summary, allow_nan=False))
+            for artifact in bundle.iterdir():
+                with artifact.open("rb") as fp_artifact:
+                    os.fsync(fp_artifact.fileno())
+            _sync_directory(bundle)
+            # A complete generation becomes visible at once. Invalidate an old corrupt bundle only
+            # after the new receipt has serialized and all its files have been flushed.
+            previous = work / "previous"
+            if directory.exists():
+                os.replace(directory, previous)
+            try:
+                os.replace(bundle, directory)
+            except OSError:
+                if previous.exists():
+                    os.replace(previous, directory)
+                raise
+            _sync_directory(cache)
         return (lib, table) if passed else None
 
 
@@ -262,7 +302,7 @@ def main(argv=None) -> int:
         res = tune(a.gguf, lib, tokens=(1, 8, 32), shapes=shapes)
         best = {}
         for r in res["measured"]:
-            if r["rc"] == 0 and r["rel_err"] <= ERROR_BOUND:
+            if r["rejection"] is None:
                 k = (r["type"], r["K"], r["N"], r["B"])
                 best.setdefault(k, []).append(r)
         for k, rows in sorted(best.items()):
