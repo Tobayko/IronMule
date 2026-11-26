@@ -42,3 +42,30 @@ def test_completed_work_queues_one_aggregate_and_offline_consumer_defers(tmp_pat
     assert consume(SimpleNamespace(queue=queue, state=tmp_path / "evaluation", wait=0)).startswith("deferred")
     bridge.close()
     assert (queue / "pending.json").is_file()
+
+
+def test_consumer_can_complete_a_subscription_order_and_request_gated_publication(tmp_path, monkeypatch):
+    import json
+    from training import demand_worker
+
+    q = tmp_path / "queue"
+    q.mkdir()
+    model = tmp_path / "model"
+    model.write_bytes(b"test")
+    ticket = {"version": 1, "id": "9" * 32, "producer": "0" * 64, "model_sha256": "f" * 64,
+              "short": 32, "document": 0}
+    (q / "pending.json").write_text(json.dumps(ticket))
+    state = tmp_path / "eval"
+    run = state / "runs" / ("demand-" + ticket["id"])
+    (run / "trial/author").mkdir(parents=True)
+    (run / "trial/author/request.json").write_text("{}")
+    def start(argv, **kwargs):
+        assert "--publish" in argv and "--demand-summary" in argv
+        assert kwargs["env"]["IRONMULE_CODE_AUTHOR"] == "cli"
+        (run / "complete.json").write_text("{}")
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+    monkeypatch.setattr(demand_worker.subprocess, "Popen", start)
+    args = SimpleNamespace(queue=q, state=state, gguf=model, wait=0, seconds=60, cores=1, provider="cpu",
+                           thread_candidate=None, publish=True, author="cli")
+    assert demand_worker.consume(args) == "complete"
+    assert not (q / "pending.json").exists()

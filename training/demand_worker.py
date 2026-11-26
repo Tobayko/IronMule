@@ -41,18 +41,21 @@ def consume(args):
             return "deferred: serving process owns this host"
         run_id = "demand-" + ticket["id"]
         run_dir = state / "runs" / run_id
-        if (run_dir / "trial/author/request.json").exists() and not (run_dir / "trial/author/response.json").exists():
+        author = getattr(args, "author", "hosted")
+        if author == "hosted" and (run_dir / "trial/author/request.json").exists() and not (run_dir / "trial/author/response.json").exists():
             return "awaiting_author"
         command = [sys.executable, "-m", "training.optimization_run", "--gguf", str(args.gguf.resolve(strict=True)),
                    "--provider", args.provider, "--state", str(state), "--run-id", run_id,
                    "--demand-summary", str(pending)]
+        if getattr(args, "publish", False):
+            command.append("--publish")
         if args.thread_candidate:
             command.extend(["--thread-candidate", str(args.thread_candidate.resolve(strict=True))])
         # The timeout guard lives in a separate process so a lost queue consumer still has
         # a wall-clock limit. Normal serving never runs in this process group.
         command = ["timeout", "--kill-after=5", str(args.seconds), *command]
         cpus = sorted(os.sched_getaffinity(0))[:args.cores]
-        env = {**os.environ, "IRONMULE_CODE_AUTHOR": "hosted", "OMP_NUM_THREADS": str(len(cpus)),
+        env = {**os.environ, "IRONMULE_CODE_AUTHOR": author, "OMP_NUM_THREADS": str(len(cpus)),
                "OPENBLAS_NUM_THREADS": "1"}
         env.pop("IRONMULE_EXPERIMENT_QUEUE", None)
         log = state / (run_id + ".log")
@@ -72,7 +75,7 @@ def consume(args):
                     except subprocess.TimeoutExpired:
                         os.killpg(child.pid, signal.SIGKILL)
                         child.wait()
-        if (run_dir / "trial/author/request.json").exists() and not (run_dir / "trial/author/response.json").exists():
+        if author == "hosted" and (run_dir / "trial/author/request.json").exists() and not (run_dir / "trial/author/response.json").exists():
             return "awaiting_author"
         if child.returncode or not (run_dir / "complete.json").exists():
             raise RuntimeError(f"evaluation incomplete; ticket retained, see {log.name}")
@@ -87,6 +90,10 @@ def main():
     p.add_argument("--state", required=True, type=Path)
     p.add_argument("--gguf", required=True, type=Path)
     p.add_argument("--thread-candidate", type=Path)
+    p.add_argument("--author", choices=("hosted", "cli"), default="hosted",
+                   help="host file transport or the locally signed-in Codex subscription")
+    p.add_argument("--publish", action="store_true",
+                   help="submit qualifying changes to a PR and activate only after merge and fresh verification")
     p.add_argument("--provider", choices=("cpu", "cuda"), default="cpu")
     p.add_argument("--cores", type=int, choices=range(1, 33), default=2, metavar="1..32")
     p.add_argument("--seconds", type=int, choices=range(1, 1801), default=300, metavar="1..1800")

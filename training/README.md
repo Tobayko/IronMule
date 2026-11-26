@@ -341,3 +341,10 @@ CUDA compiler and compute capability recorded in `manifest.json`. Supply the GGU
 and reference W4 library matching the order's hashes. Restore the exported dispatch table. The reference
 and candidate binaries stay outside Git. Recheck each binary digest before replaying qualification
 on its target. [Build and qualification commands](../lab/pk1/native-trial.md)
+
+An unattended installation with a working subscription login can complete one demand ticket, submit a qualifying variant to GitHub and activate its verified release in the same bounded command. Specify the publication option on the initial run when deployment is desired. The unchanged gates require matching PR bytes, successful CI and fresh target verification.
+
+```sh
+python -m training.demand_worker --queue "$IRONMULE_EXPERIMENT_QUEUE" --state "$EVAL_STATE" \
+    --gguf "$GGUF" --provider cpu --cores 2 --wait 60 --seconds 1800 --author cli --publish
+```
