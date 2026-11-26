@@ -171,6 +171,9 @@ def test_cpu_heldout_comparators_and_no_change_stay_out_of_training():
     assert epyc["parameters"] == 20232 and not epyc["label_eligible"] and epyc["changed_training_decisions"] == []
     failures = [r for r in rows if r["kind"] == "cpu_campaign_attempt" and r["note"]]
     assert any("no CUDA-capable device" in row["note"] for row in failures)
+    conflict = next(x for x in rows if x["kind"] == "cpu_confounded_code_pair")
+    assert conflict["profiles"]["reference"] != conflict["profiles"]["candidate"] and not conflict["label_eligible"]
+    assert conflict["quality"]["outputs_match"] and conflict["decision"] is False
     noop = next(x for x in rows if x["kind"] == "cpu_serving_author_no_change")
     assert noop["decision"] is False and "list-copy" in noop["note"] and noop["quality"]["producer_correct"] == 32
     defer = [x for x in rows if x["kind"] == "cpu_deferred_experiment"]

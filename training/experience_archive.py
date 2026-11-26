@@ -300,6 +300,31 @@ def cpu_experiment(root, source, digest):
                      software=provenance["runtime"], metrics=doc["steps"], elapsed_s=doc["elapsed_s"],
                      new_resource_bookings_usd=doc["new_resource_bookings_usd"], note=doc["cost_source"],
                      uncertainty="The campaign occupied an existing paid lease.")
+    elif doc.get("schema") == "ironmule.confounded-cpu-pair.v1":
+        folder = path.parent
+        receipts = json.loads((folder / "sha256.json").read_bytes())
+        if any(Path(n).name != n or canonical_sha256((folder / n).read_bytes()) != h for n, h in receipts.items()):
+            raise ValueError("EPYC paired observation changed")
+        rows = {tag: json.loads((folder / f"{tag}-{int(doc['seed'])}.json").read_bytes()) for tag in ("reference", "candidate")}
+        ref, cand = rows.values()
+        observed = {k: r["binding"]["scratch_thread_head"]["qualified_offsets"] for k, r in rows.items()}
+        if (doc["passed"] is not False or doc["training_label"] is not False or doc["observed_profiles"] != observed
+                or observed["reference"] == observed["candidate"] or "comparison-rejected.json" not in receipts
+                or doc["order"] != json.loads((folder / "context.json").read_bytes())["order_id"]):
+            raise ValueError("unbound EPYC mismatch report")
+        response = json.loads((folder.parent / "response.json").read_bytes())
+        request = json.loads((folder.parent / "request-binding.json").read_bytes())
+        if response["request_id"] != request["request_id"] or response["proposal_sha256"] != proposal_digest(response["proposal"]):
+            raise ValueError("EPYC source reply mismatch")
+        yield record("cpu_confounded_code_pair", source, digest, "rejected_profile_mismatch", doc["order"],
+                     base_commit=ref["commit"], model=ref["binding"]["model_name"], hardware=ref["binding"]["machine"],
+                     quantization="Q4_K_M", title="GgmlEngine._prefill", software=ref["binding"]["native"],
+                     workload=ref["workload"], profiles=observed, decision=False, reason=doc["reason"],
+                     metrics=[{"arm": k, **{v: r[v] for v in ("wall_s", "ttft_s", "peak_rss_kib", "tokens", "completed",
+                              "correct", "output_sha256", "scratch_measured_decisions")}} for k, r in rows.items()],
+                     quality={"outputs_match": ref["output_sha256"] == cand["output_sha256"]}, note=response["proposal"]["rationale"],
+                     authorship={"selector": "IronMule", "code_author": response["model"]},
+                     cost_reference="lab/rp/results/campaign-costs.json", uncertainty=doc["quality_scope"])
     elif doc.get("schema") == "ironmule.deferred-code-experiment.v1":
         bind = doc["binding"]
         waves = []
@@ -576,6 +601,7 @@ def build(root=ROOT) -> Iterator[dict]:
         elif (source.startswith("evidence/runtime/cpu-pilot-") and source.endswith("-replay.json")
               or source in {"lab/autonomous/results/runpod-epyc-pilot/campaign.json",
                             "lab/autonomous/results/runpod-epyc-pilot/planner-decision.json",
+                            "lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/comparison-rejected.json",
                             "lab/autonomous/results/cpu-serving-demand/followup-plan.json",
                             "lab/autonomous/results/cpu-serving-demand/summary.json"}):
             yield from cpu_experiment(root, source, digest)
