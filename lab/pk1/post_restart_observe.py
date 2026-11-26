@@ -18,9 +18,9 @@ WORKER = Path(__file__).with_name("post_restart_profile.py")
 CONTRACT = Path(__file__).resolve().parents[2] / "training/post_restart_contract.json"
 
 
-def observe(args):
+def observe(args, *, contract_path=CONTRACT, worker=WORKER, extra_mounts=(), extra_env=None):
     t0 = time.monotonic()
-    contract = read(CONTRACT)
+    contract = read(contract_path)
     if args.seed not in contract["seeds"]:
         raise ValueError("unregistered discovery seed")
     pin = contract["control_receipt_sha256"]
@@ -40,9 +40,10 @@ def observe(args):
     env = {"IRONMULE_" + k: v for k, v in native.FLAGS.items()}
     env.update(IRONMULE_KG_LIB="/kernel/active.so", IRONMULE_W4_TABLE="/kernel/dispatch.table",
                IRONMULE_KG_RESTART_RECEIPT="/kernel/restart-receipt.json", IRONMULE_KG_RESTART_SHA256=native.checksum(cache))
+    env.update(extra_env or {})
     mounts = [(args.reference_lib, env["IRONMULE_KG_LIB"]), (args.table, env["IRONMULE_W4_TABLE"]),
               (cache, env["IRONMULE_KG_RESTART_RECEIPT"]), (restart_trial.HARNESS, "/kernel/restart_arm.py"),
-              (WORKER, "/kernel/post_restart_profile.py")]
+              (worker, "/kernel/post_restart_profile.py"), *extra_mounts]
     run = SimpleNamespace(**{**vars(args), "checkout": tree})
     measured = time.monotonic()
     with TemporaryDirectory(dir=args.out.parent) as temp:
@@ -56,22 +57,27 @@ def observe(args):
     after = release.selected(args.state, pin)
     if (before != "candidate" or after != before or not arm["reused"] or arm["binding"] != q["binding"]["runtime"]
             or arm["mask_bits"] != q["binding"]["mask_bits"] or arm["cuda_vendor"] != q["binding"]["vendor"]
-            or arm["pilot_sha256"] != q["binding"]["pilot_sha256"] or observation["profiler_sha256"] != native.checksum(WORKER)):
+            or arm["pilot_sha256"] != q["binding"]["pilot_sha256"] or observation["profiler_sha256"] != native.checksum(worker)):
         raise ValueError("measured worker differs from the live qualified incumbent")
-    return {**observation, "schema": "ironmule.post-restart-observation.v1", "seed": args.seed,
+    return {**observation, "schema": contract.get("observation_schema", "ironmule.post-restart-observation.v1"), "seed": args.seed,
             "base_commit": contract["base_commit"], "parent_order": contract["parent_order"], "control_receipt_sha256": pin,
-            "contract_sha256": native.checksum(CONTRACT), "weights_sha256": native.checksum(args.weights),
+            "contract_sha256": native.checksum(contract_path), "weights_sha256": native.checksum(args.weights),
             "selection": choice, "selection_before": before, "selection_after": after,
             "broker_elapsed_s": time.monotonic() - t0}
 
 
-def main():
+def argument_parser():
     p = argparse.ArgumentParser(description=__doc__)
     for key in ("state", "trial", "checkout", "candidate-source", "gguf", "reference-lib", "table", "worker-root", "weights", "out"):
         p.add_argument("--" + key, type=Path, required=True)
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--timeout", type=int, choices=range(1, 301), default=150)
     p.add_argument("--worker-uid", type=int, default=60000)
+    return p
+
+
+def main():
+    p = argument_parser()
     args = p.parse_args()
     if args.out.exists():
         p.error("this seed already has an observation")
