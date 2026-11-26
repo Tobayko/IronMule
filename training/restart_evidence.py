@@ -51,10 +51,10 @@ def candidate_bytes(source, request, order, proposal):
     return ("".join(lines[:node.lineno - 1]) + edited + "\n" + "".join(lines[node.end_lineno:])).encode()
 
 
-def observe_cost(state, phase):
+def observe_cost(state, phase, *, product=None):
     from lab.rp import rp
 
-    path = state / f"cost-{phase}.json"
+    path = (product or state) / f"cost-{phase}.json"
     if path.is_file():
         return
     campaign = read(state / "campaign.json")
@@ -63,7 +63,7 @@ def observe_cost(state, phase):
     target = read(state / "target.json")
     if (phase == "after-verdict" and not (state / "trial/result.json").is_file()
             or phase == "after-release" and not (state / "release/release-run.json").is_file()
-            or phase == "after-product" and not (state / "product/product-qualify.json").is_file()):
+            or phase == "after-product" and not ((product or state / "product") / "product-qualify.json").is_file()):
         raise ValueError("requested campaign cost phase has not occurred")
     with rp.locked(rp.STATE):
         ledger = rp.load()
@@ -89,7 +89,7 @@ def observe_cost(state, phase):
                    "disk_rate_estimate_usd_per_h": pod["disk_rate"], "estimated_lease_usd_before_tail": elapsed * hourly / 3600,
                    "campaign_reserved_usd": rp.held(ledger), "retained_tail_seconds": rp.CLEANUP_SECONDS,
                    "provider_account_delta_since_lease_start_usd": pod["balance_before"] - user["clientBalance"],
-                   "completed_worker_arms": arms, "cost_journal": COST_JOURNAL,
+                   "completed_worker_arms": arms, "cost_journal": COST_JOURNAL, **({"product_attempt": product.name} if product else {}),
                    "basis": "A100 lease-to-date covers all work, waiting and concurrent CPU experiments. "
                             "Provider account delta can include other use and lag charges. Per-arm times are measured durations."})
 
@@ -147,11 +147,11 @@ def pilot_serving_assets(state, verified, assets):
         assets["pilot-comparison.json"] = comparison
 
 
-def product_assets(state, order, verified, assets):
+def product_assets(state, order, verified, assets, *, attempt=None):
     """Bind held-out product measurements to the independently approved source and deployed scratch head."""
     from training import scoped_release
 
-    work = state / "product"
+    work = attempt or state / "product"
     raw = {n: bounded(work / n) for n in HTTP_FILES if (work / n).is_file()}
     if not raw:
         return
@@ -203,8 +203,8 @@ def product_assets(state, order, verified, assets):
             raise ValueError("actual product withdrawal or work differs")
     assets.update({"http-" + name: data for name, data in raw.items()})
     for name in PLANS:
-        if (state / name).is_file():
-            assets[name] = bound_plan(state / name, order, assets)
+        if ((attempt or state) / name).is_file():
+            assets[name] = bound_plan((attempt or state) / name, order, assets)
 
 
 def bound_plan(path, order, assets):
@@ -282,8 +282,14 @@ def export(args):
                     or worker["rationale"] != reply["rationale"]):
                 raise ValueError("actual startup candidate differs from the returned function")
             assets["candidate.diff"] = patch(original, candidatesrc, restart_order.PATH)
-    if getattr(args, "cost_phase", None):
-        observe_cost(state, args.cost_phase)
+    cost_phase = getattr(args, "cost_phase", None)
+    selected_attempt = getattr(args, "product_attempt", None)
+    if selected_attempt and not re.fullmatch(r"product-v[2-9][0-9]*|product-v1[0-9]+", selected_attempt):
+        raise ValueError("invalid product attempt")
+    if cost_phase:
+        if selected_attempt and cost_phase != "after-product":
+            raise ValueError("product attempt cost needs its product verdict")
+        observe_cost(state, cost_phase, product=state / selected_attempt if selected_attempt else None)
     paths = {**{n: state / n for n in (*COST_FILES, *RECOVERY)}, **{n: state / "trial" / n for n in TRIAL}, **{n: state / "release" / n for n in RELEASE},
              "control.json": state / "release/deployment/control.json", "qualified.json": state / "qualified.json",
              "campaign.json": state / "campaign.json"}
@@ -305,6 +311,7 @@ def export(args):
         raise ValueError("startup qualification context differs from the measured source or model")
     if "result.json" in assets and (context is None or json.loads(assets["result.json"])["context"] != context):
         raise ValueError("result belongs to another startup attempt")
+    extra_attempts = {}
     qualified = None
     if "result.json" in assets:
         verdict = json.loads(assets["result.json"])
@@ -327,6 +334,17 @@ def export(args):
                         verify_withdrawal(assets, order, verified)
                     if (state / "native-pilot").is_dir():
                         pilot_serving_assets(state, verified, assets)
+                    for work in sorted(state.glob("product-v*")):
+                        if not re.fullmatch(r"product-v(?:[2-9]|[1-9][0-9]+)", work.name) or work.is_symlink() or not work.is_dir():
+                            raise ValueError("invalid isolated product attempt directory")
+                        shared = dict(assets)
+                        product_assets(state, order, verified, shared, attempt=work)
+                        additions = {n: b for n, b in shared.items() if n.startswith("http-") or n in PLANS}
+                        for n in ("cost-after-product.json", "protocol.json", "preflight.json"):
+                            if (work / n).is_file():
+                                additions[n] = bounded(work / n)
+                        if additions:
+                            extra_attempts[work.name] = additions
                     if (state / "product").is_dir():
                         product_assets(state, order, verified, assets)
                 else:
@@ -342,6 +360,16 @@ def export(args):
         files = persist_assets(folder, previous.get("files", {}), assets)
         if qualified is None:
             qualified = previous.get("qualified")
+        for attempt, entries in extra_attempts.items():
+            out = folder / attempt
+            out.mkdir(exist_ok=True)
+            if out.is_symlink():
+                raise ValueError("symlinked product attempt export")
+            old = read(out / "manifest.json") if (out / "manifest.json").is_file() else {}
+            attempt_files = persist_assets(out, old.get("files", {}), entries)
+            save(out / "manifest.json", {"schema": "ironmule.portable-product-attempt.v1", "order_id": key,
+                 "attempt": attempt, "control_sha256": sha(assets["control.json"]), "head_sha256": sha(assets["startup-head.npz"]),
+                 "files": attempt_files})
         candidate_sha = sha(candidatesrc) if candidatesrc else previous.get("candidate_sha256")
         save(folder / "manifest.json", {"schema": SCHEMA, "order_id": key, "files": files, "base_commit": order["base_commit"],
              "cost_journal": COST_JOURNAL, "qualified": qualified, "candidate_sha256": candidate_sha,
@@ -352,6 +380,91 @@ def export(args):
         os.close(fd)
     return folder / "manifest.json"
 
+
+
+def product_attempts(folder):
+    """Enumerate distinct first and corrective product runs under one qualified native order."""
+    base = manifest(folder)["files"]
+    if "http-product-qualify.json" in base:
+        yield folder
+    for path in sorted(folder.glob("product-v*/manifest.json"), key=lambda p: int(p.parent.name[9:])):
+        out = path.parent
+        index = read(path)
+        if (index["schema"] != "ironmule.portable-product-attempt.v1" or index["attempt"] != out.name or index["order_id"] != folder.name
+                or index["control_sha256"] != base["control.json"]["sha256"] or index["head_sha256"] != base["startup-head.npz"]["sha256"]
+                or not set(index["files"]) <= {*("http-" + n for n in HTTP_FILES), *PLANS, "cost-after-product.json", "preflight.json", "protocol.json"}
+                or any(sha(bounded(out / n)) != row["sha256"] for n, row in index["files"].items())):
+            raise ValueError("product attempt scope or captured bytes differ")
+        yield out
+
+
+def selected_product(folder):
+    """Return the newest independently accepted attempt that actually served and exercised withdrawal."""
+    selected = None
+    for attempt in product_attempts(folder):
+        try:
+            grade, exercise, work = (read(attempt / ("http-product-" + stage + ".json")) for stage in ("qualify", "exercise", "serve"))
+        except FileNotFoundError:
+            continue
+        if grade["passed"] is not True or exercise["passed"] is not True or work["arm"] != "candidate" or work["completions"][-1]["graded_correct"] != 18:
+            continue
+        from lab.pk1 import restart_http, restart_live
+
+        control = read(folder / "control.json")
+        if (control["order"]["order_id"] != folder.name or control["qualification"]["passed"] is not True
+                or exercise["before"]["arm"] != "candidate" or exercise["after"]["arm"] != "reference"
+                or exercise["before"]["work_sha256"] != exercise["after"]["work_sha256"]):
+            raise ValueError("product activation differs from the qualified native release")
+        with TemporaryDirectory() as tmp:
+            staging = Path(tmp)
+            for n in HTTP_FILES:
+                if (attempt / ("http-" + n)).is_file():
+                    (staging / n).write_bytes(bounded(attempt / ("http-" + n)))
+            if (restart_http.assess(staging, control) != grade
+                    or restart_live.verify(read(staging / "product-listener.json"), read(staging / "product-client.json")) != work):
+                raise ValueError("product replay differs from actual serving and qualification")
+        selected = attempt
+    return selected
+
+
+def product_rows(root, folder, files, key, context):
+    from training.experience_archive import record
+
+    def emit(kind, name, **values):
+        return record(kind, str((folder / name).relative_to(root)), files[name]["sha256"], kind, key, **context,
+                      attempt=folder.name if folder.name.startswith("product-v") else "product-v1", **values)
+
+    for name in PLANS:
+        if name in files:
+            plan = read(folder / name)
+            yield emit("restart_post_product_plan", name, provenance="simulated", reason=plan["provenance"],
+                       metrics=[plan.get("observed", plan.get("raw_medians", {}))], plan=plan, authorship="IronMule experiment planner",
+                       uncertainty="The next experiment is prioritized from real serving history. Gains and costs are forecasts.")
+    for name in HTTP_ARMS:
+        public = "http-" + name
+        if public not in files:
+            continue
+        row = read(folder / public)
+        yield emit("restart_product_arm", public, reason="matched_first_http_requests", arm=name.split("-")[0],
+                   seed=row["seed"], source_sha256=row["source_sha256"], startup_decision=row["startup_decision"],
+                   cold_admission=row["cold_admission"],
+                   metrics=[{"cold_completed_s": row["cold_completed_s"], "worker_ready_s": row["startup_s"],
+                             **{phase: {k: row[phase][k] for k in ("correct", "wall_s", "ttft_p95_s")}
+                                for phase in ("cold", "warm")},
+                             **{k: row[k] for k in ("perf_wall_s", "perf_ttft_s", "perf_tokens", "peak_rss", "device_bytes")}}],
+                   authorship="Ordinary target ProductService and independent bounded workload",
+                   uncertainty="Paired HTTP qualification combines all six independent seeds.")
+    for name, kind in (("product-qualify.json", "restart_product_qualification"),
+                       ("product-exercise.json", "restart_product_rollback"), ("product-serve.json", "restart_product_serving")):
+        public = "http-" + name
+        if public in files:
+            stage = read(folder / public)
+            yield emit(kind, public, reason=stage.get("reason", name), observed=stage,
+                       authorship="ProductService on the source-bound target", uncertainty="Only the admitted target workload was observed.")
+    if folder.name.startswith("product-v") and "cost-after-product.json" in files:
+        cost = read(folder / "cost-after-product.json")
+        yield emit("restart_cost_observation", "cost-after-product.json", provenance="reported", reason=cost["phase"],
+                   metrics=[cost], authorship="Registered RunPod operator", uncertainty=cost["basis"])
 
 
 def experiences(root, source):
@@ -400,33 +513,8 @@ def experiences(root, source):
                    decision=comparison["same_work_policy_changed_source"], actual_work=[r["work"] for r in arms],
                    metrics=[comparison], actions=[r["selection"] for r in arms], authorship="IronMule CPU pilot on the scoped A100 release",
                    uncertainty="These two process runs distinguish the policy action. Relative timing is judged in the separate counterbalanced gate.")
-    for name in PLANS:
-        if name in files:
-            plan = read(folder / name)
-            yield emit("restart_post_product_plan", name, provenance="simulated", reason=plan["provenance"],
-                       metrics=[plan.get("observed", plan.get("raw_medians", {}))], plan=plan, authorship="IronMule experiment planner",
-                       uncertainty="The next experiment is prioritized from real serving history. Gains and costs are forecasts.")
-    for name in HTTP_ARMS:
-        public = "http-" + name
-        if public not in files:
-            continue
-        row = read(folder / public)
-        yield emit("restart_product_arm", public, reason="matched_first_http_requests", arm=name.split("-")[0],
-                   seed=row["seed"], source_sha256=row["source_sha256"], startup_decision=row["startup_decision"],
-                   cold_admission=row["cold_admission"],
-                   metrics=[{"cold_completed_s": row["cold_completed_s"], "worker_ready_s": row["startup_s"],
-                             **{phase: {k: row[phase][k] for k in ("correct", "wall_s", "ttft_p95_s")}
-                                for phase in ("cold", "warm")},
-                             **{k: row[k] for k in ("perf_wall_s", "perf_ttft_s", "perf_tokens", "peak_rss", "device_bytes")}}],
-                   authorship="Ordinary target ProductService and independent bounded workload",
-                   uncertainty="Paired HTTP qualification combines all six independent seeds.")
-    for name, kind in (("product-qualify.json", "restart_product_qualification"),
-                       ("product-exercise.json", "restart_product_rollback"), ("product-serve.json", "restart_product_serving")):
-        public = "http-" + name
-        if public in files:
-            stage = read(folder / public)
-            yield emit(kind, public, reason=stage.get("reason", name), observed=stage,
-                       authorship="ProductService on the source-bound target", uncertainty="Only the admitted target workload was observed.")
+    for attempt in product_attempts(folder):
+        yield from product_rows(root, attempt, files if attempt == folder else read(attempt / "manifest.json")["files"], key, context)
     for name in COST_FILES:
         if name in files:
             cost = read(folder / name)
@@ -497,6 +585,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--state", required=True, type=Path)
     p.add_argument("--destination", required=True, type=Path)
+    p.add_argument("--product-attempt", help="place the after-product cost observation alongside the independently retried protocol")
     p.add_argument("--cost-phase", choices=COST_PHASES, help="take a redacted, read-only observation of the live registered lease")
     p.add_argument("--reference", type=Path, help="exact original ggml_engine.py for a shallow checkout")
     p.add_argument("--observations", nargs=2, type=Path, metavar=("PREVIOUS", "CANONICAL"))
