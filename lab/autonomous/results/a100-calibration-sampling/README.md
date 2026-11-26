@@ -25,7 +25,7 @@ Its identity is 4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7
 The two original holds took 69.71 s including controller and broker, about $0.04264 of
 the existing lease. The separate qualification estimate is at least 792.67 s. Under
 the smaller modeled saving, recouping that qualification alone requires 1,164 similar
-future starts (about 1,372 including the preceding two 71.65 s and 69.71 s research
+future starts (about 1,371 including the preceding two 71.65 s and 69.71 s research
 pairs). Startup frequency is unknown. Actual source and full request performance require
 the separate isolated source trial. The empirical bounds do not give a coverage guarantee
 on different workloads, devices, driver states or future load.
