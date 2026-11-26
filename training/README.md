@@ -224,3 +224,37 @@ new head and dispatch its resulting development order, pass the four-slot checkp
 `python -m training.optimization_run --gguf "$MODEL" --state pilot-run/optimization --run-id scratch --thread-candidate pilot-run/threads4.npz`.
 The evaluator records the measured scratch choices, the cost of fresh target qualification and the output
 check alongside the code trial. [Evaluation and activation](../docs/OPTIMIZATION_METHODS.md)
+
+### Start an offline experiment from GGUF serving demand
+
+Set `IRONMULE_EXPERIMENT_QUEUE` to a private directory before starting a GGUF server.
+Each cohort of 32 fresh completed requests can produce one ticket during an idle spell.
+The ticket contains the counts of prompts below and above the 96-token boundary
+(96 enters the document bin), the model digest, an opaque ticket ID and the producer's
+boot-ID digest. The publisher uses the width agent's existing memory when available.
+In single-profile mode it keeps 32 length classes in memory. Profiling occurs only on
+synthetic requests in the evaluator. The server keeps delivering answers with no evaluator attached.
+
+Mount the same private queue on a dedicated Linux evaluation host with the same GGUF.
+Use a filesystem supporting advisory locks and atomic replacement. Start one bounded consumer.
+It can also run on the producer after the GGUF service has shut down.
+
+```sh
+python -m training.demand_worker --queue "$IRONMULE_EXPERIMENT_QUEUE" --state "$EVAL_STATE" \
+  --gguf "$GGUF" --provider cpu --cores 2 --wait 60 --seconds 300
+```
+
+The consumer waits up to 60 seconds for one ticket, then gives its low-priority experiment
+two eligible CPUs and a 300-second wall limit. It selects the hosted Codex mailbox to avoid
+metered API calls. On the originating Linux machine the active publisher defers evaluation.
+An evaluator seeing a new queue-enabled service on its own machine preempts the experiment.
+Dedicate the evaluator to the trial because services using another queue are outside this guard.
+`awaiting_author` leaves the same ticket in place. After the host returns a bound reply,
+repeat the consumer command to resume paired qualification. This consumer runs on existing
+hardware and uses the nonpublishing evaluation mode. [Publishing a qualified result](../docs/OPTIMIZATION_METHODS.md)
+
+On the Xeon Platinum 8573C, a live product bridge using SmolLM2-135M-Instruct Q4_K_M answered
+32 of 32 synthetic copy requests correctly. The idle publisher counted 16 short and 16 document
+prompts. The consumer deferred while that bridge was open. On shutdown the offline evaluation
+completed 16 of 16 discovery tasks, planned with the observed phase counts and produced a
+development order in 9.62 seconds through the author handoff. [Measured ticket and order](../lab/autonomous/results/cpu-serving-demand/summary.json)
