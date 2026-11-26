@@ -2754,7 +2754,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     # Under generated matmuls even the default attention setting can change answers. AG10 may then
     # vary width only within the settings actually chosen by the gate.
     kernel = _kernel_digest()
-    default_alternative = kernel == ""
+    default_alternative = kernel == "" and not (on_gpu and ggml_profiles.cublas_override())
     model_digest = file_sha256(gguf)
     machine = machine_key()
     experience = None
@@ -3052,6 +3052,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     stored = cache / f"{key}.json"
     # A fresh worker in the opposite benchmark order may reuse its own content-matched gate.
     experimental = os.environ.get("IRONMULE_KG5") == "1"
+    cublas_override = ggml_profiles.cublas_override() if gpu_layers() > 0 else None
     batch_mode = os.environ.get("IRONMULE_GGML_PREFILL_BATCH")
     prefill_batch = (batch_mode == "1" or (batch_mode == "long-444" and cuda_kernel_device())) and gpu_layers() > 0
     shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
@@ -3164,7 +3165,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         # reference can serve. A generated or explicit experimental kernel still needs its own gate.
         skipped = diag.sanitize({**diag.make("acceptance", "skipped_uninformative_reference"),
                                  "reference_factual": tallies})
-        if experimental or prefill_batch or os.environ.get("IRONMULE_KG_LIB"):
+        if experimental or prefill_batch or cublas_override or os.environ.get("IRONMULE_KG_LIB"):
             return failure(skipped, ran=True, tried=[])
         tune = {"order": [DEFAULT_SETTINGS], "measured": []}
     else:
@@ -3205,7 +3206,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
 
     tried = []
     for settings in tune["order"]:  # the fastest option passing likelihood and factual correctness serves
-        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch:
+        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch and not cublas_override:
             tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference["nll"]),
                           "passes": True, "basis": "identical_reference"})
             break

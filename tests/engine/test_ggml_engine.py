@@ -239,7 +239,8 @@ def _fake_gate_children(monkeypatch, option_nll, *, factual_regression=False):
                 assert kwargs["env"]["IRONMULE_PILOT"] == "0"
             if _json.loads(input)["reference"]:
                 assert kwargs["env"]["IRONMULE_KG_LIB"] == "" and kwargs["env"]["IRONMULE_KG5"] == "0"
-            if factual_regression and (settings != ggml_engine.DEFAULT_SETTINGS or kwargs["env"].get("IRONMULE_KG_LIB")):
+            if factual_regression and (settings != ggml_engine.DEFAULT_SETTINGS or kwargs["env"].get("IRONMULE_KG_LIB")
+                                       or kwargs["env"].get("IRONMULE_CUBLAS_MIN_ROWS", "0") != "0"):
                 facts[protocol[0].key] = False
             out = {"nll": [2.0] * 16 if settings == ggml_engine.DEFAULT_SETTINGS else option_nll,
                    "facts": facts, "repeat": facts if _json.loads(input)["reference"] else None}
@@ -292,6 +293,22 @@ def test_qg1_kg5_requires_actual_candidate_dispatch(monkeypatch, tmp_path):
     assert not result["streams"]["passes"]
     assert result["tried"][0]["factual"]["total"] == 32
     assert result["tried"][0]["factual"]["shape"] == "1024,32,8"
+
+
+def test_cublas_threshold_requalifies_default_settings_and_separates_cached_results(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.] * 16, factual_regression=True)
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda: 999)
+    args = str(tmp_path), str(tmp_path / "m.gguf")
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("IRONMULE_CUBLAS_MIN_ROWS", "0")
+    stock = ggml_engine.gate(*args, cache=cache)
+    assert stock["passes"] and stock["tried"][-1]["basis"] == "identical_reference"
+    monkeypatch.setenv("IRONMULE_CUBLAS_MIN_ROWS", "128")
+    assert ggml_engine.gate_key(*args) != stock["key"]
+    altered = ggml_engine.gate(*args, cache=cache)
+    assert not altered["passes"] and not altered["tried"][-1]["factual"]["passes"]
 
 
 def test_qg1_cannot_choose_uncertified_generated_weights_at_default_settings(monkeypatch, tmp_path):

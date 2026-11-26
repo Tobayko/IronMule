@@ -9,7 +9,7 @@ from ironmule_product.cli import _qualify_ggml_kernels
 from ironmule_product.errors import InvalidRequest
 
 
-@pytest.mark.parametrize("mode", ["stock", "generated", "kg5"])
+@pytest.mark.parametrize("mode", ["stock", "generated", "kg5", "cublas"])
 def test_uninformative_reference_skips_all_competing_shapes_but_requires_stock_identity(monkeypatch, tmp_path, mode):
     # The two measured Qwen3-0.6B CPU reference passes both answered these two cases correctly.
     # Replay their 16 NLL chunks and complete factual score vectors. No candidate returns a score.
@@ -21,6 +21,7 @@ def test_uninformative_reference_skips_all_competing_shapes_but_requires_stock_i
     monkeypatch.delenv("IRONMULE_KG_LIB", raising=False)
     monkeypatch.delenv("IRONMULE_KG5_SHAPE", raising=False)
     monkeypatch.setenv("IRONMULE_KG5", "1" if mode == "kg5" else "0")
+    monkeypatch.setenv("IRONMULE_CUBLAS_MIN_ROWS", "128" if mode == "cublas" else "0")
     if mode == "generated":
         library = tmp_path / "kg.so"
         library.write_bytes(b"fixture")
@@ -45,7 +46,7 @@ def test_uninformative_reference_skips_all_competing_shapes_but_requires_stock_i
     monkeypatch.setattr(ggml_engine, "machine_key", lambda: "fixture")
     model = tmp_path / "fixture.gguf"
     model.write_bytes(b"model")
-    if mode == "kg5":
+    if mode in ("kg5", "cublas"):
         with pytest.raises(InvalidRequest, match="skipped_uninformative_reference"):
             _qualify_ggml_kernels(str(model), str(model), tmp_path / "cache")
         assert len(references) == 1
