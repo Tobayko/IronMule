@@ -182,3 +182,48 @@ sha256sum "$replay/startup-head.npz" "$replay/candidate.py"
 The verified Linux CPU replay produced model SHA-256
 `a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254` and source SHA-256
 `80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd`.
+
+### Test a source change to fresh startup calibration over merged PR 60
+
+The complete local PR 60 worker is the reference for the next experiment. Both arms
+use its admitted W4 cache and real CPU Pilot. The subsequent sampler still measures
+the GPU at every width on every start. Its order and two blind pre-authoring
+observations are in [the sampling archive](../autonomous/results/a100-calibration-sampling/README.md).
+
+For the source qualification prepare the immutable merged checkout on both computers
+and provide the existing campaign target configuration. The target must already have
+the very same active, fresh PR 60 release, kernel, original cache receipt, model and
+restricted worker. The campaign consumes the reserved target and snapshots successful
+and rejected arms to its control-side state. An unanswered author request remains in
+the same state for the hosted Codex worker.
+
+```sh
+d=lab/autonomous/results/a100-calibration-sampling
+prior=lab/autonomous/results/a100-calibration-stability
+r=lab/autonomous/results/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3
+python -m training.experience_archive build --output /tmp/ironmule-experience.jsonl
+python -m lab.rp.followup_campaign --config "$TARGET" --checkout "$MERGED_PR60" \
+  --remote-checkout "$REMOTE_MERGED_PR60" --state "$SAMPLING_STATE" \
+  --prior-dir "$prior" --forecast "$d/prediction.json" \
+  --observations "$d/97351.json" "$d/97352.json" --control "$r/control.json" \
+  --weights "$r/startup-head.npz" --archive /tmp/ironmule-experience.jsonl \
+  --author hosted --publish --wait-seconds 3600
+```
+
+Qualification begins with two original reference processes. Every per-width price in
+these A/A processes must agree within 2%. Two separate diagnostic workers count actual
+native calls and time them. They verify the complete table delivered by the real engine,
+the measured widths and the interval test that admits a shorter measurement. The
+candidate must restore the original number of fresh measurements for absent, expired,
+wrong-digest and foreign profiles. An independent diagnostic injects a variable delay
+into real calls at width eight and verifies withdrawal to the full measurement.
+
+Six counterbalanced mixed pairs and two factual-first pairs then use uninstrumented
+GGUF calls. The broker charges its outer verification and CPU profile decision to the
+cold clock. Paired dispatch tables, generated output and completed work must match.
+Each of the 16 measured prices has a 2% tolerance against the independently measured
+original. The original cold, warm, p95, factual and memory requirements remain in effect.
+An eligible source can proceed to its own research PR, fresh target admission and actual
+rollback exercise. The forecast's 256-start scenario had a negative return after trial
+cost. Refining the estimate requires actual serving measurements and a known restart
+frequency.
