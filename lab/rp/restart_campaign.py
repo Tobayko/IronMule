@@ -6,6 +6,7 @@ import json
 import shlex
 import time
 from pathlib import Path, PurePosixPath
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from lab.pk1 import restart_order, restart_release, restart_trial
@@ -22,7 +23,7 @@ from lab.rp.native_campaign import (
     upload,
 )
 from training import scoped_release
-from training.code_author import PendingAuthor, write_once
+from training.code_author import PendingAuthor, consume_cli, write_once
 from training.code_trial import PAIRS, read, save
 
 FILES = ["context.json", "aa-0.json", "aa-1.json", "receipt.json", "stale-receipt.json", "stale.json", "missing.json",
@@ -241,14 +242,17 @@ def cycle(args):
     order = read(args.order)
     restart_trial.verify_order(order, args)
     key = order["order_id"]
-    pod = lease(cfg["pod_id"])
     state = args.state
     state.mkdir(exist_ok=True, parents=True)
     source = state / "authoring/candidate.py"
     try:
         restart_order.author(args.order, args.checkout, source)
     except PendingAuthor:
-        return {"stage": "awaiting author", "request": str(source.parent / "author/request.json")}
+        if getattr(args, "author", "hosted") == "hosted":
+            return {"stage": "awaiting author", "request": str(source.parent / "author/request.json")}
+        consume_cli(source.parent)
+        restart_order.author(args.order, args.checkout, source)
+    pod = lease(cfg["pod_id"])
     root = Path(__file__).resolve().parents[2]
     framework = {p: checksum(root / p) for p in FRAMEWORK}
     write_once(state / "campaign.json", {"order": key, "candidate": checksum(source), "framework": framework,
@@ -304,8 +308,14 @@ def cycle(args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for name in ("config", "order", "checkout", "state"):
+    for name in ("config", "checkout", "state"):
         p.add_argument("--" + name, required=True, type=Path)
+    inputs = p.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--order", type=Path, help="resume a source-bound development order")
+    inputs.add_argument("--observations", type=Path, nargs=2, metavar=("EARLIER", "CURRENT"),
+                        help="derive the order from two independently measured mask and device profiles")
+    p.add_argument("--author", choices=("hosted", "cli"), default="hosted",
+                   help="persist an order for the hosting Codex worker, or dispatch the signed-in subscription CLI once")
     p.add_argument("--stage-only", action="store_true")
     p.add_argument("--exercise-pilot", action="store_true", help="serve the same held-out native work under random and trained CPU weights")
     p.add_argument("--publish", action="store_true", help="publish a qualifying source and verify activation and rollback on its target")
@@ -328,6 +338,14 @@ def main():
         p.error("the startup policy operates on a merged and activated release; pass --publish")
     if not 0 <= a.wait_seconds <= 7200:
         p.error("invalid polling window")
+    if a.observations:
+        a.state.mkdir(mode=0o700, parents=True, exist_ok=True)
+        a.order = a.state / "order.json"
+        with TemporaryDirectory(dir=a.state) as temporary:
+            measured_order = Path(temporary) / "order.json"
+            restart_order.build(SimpleNamespace(previous=a.observations[0], canonical=a.observations[1],
+                                               checkout=a.checkout, output=measured_order))
+            write_once(a.order, read(measured_order))
     until = time.monotonic() + a.wait_seconds
     while True:
         outcome = cycle(a)

@@ -27,6 +27,24 @@ method, measured phase observations and required receipt contract. A missing hos
 leaves an immutable request under `$STATE/authoring/author`. An authorized Codex worker
 records its response for that request; rerunning `author` produces the candidate Python source.
 
+A single control command also accepts the two observations directly. It derives the order,
+submits it to the configured Codex author, builds the response in the isolated checkout,
+collects the actual target pairs, trains the CPU head, publishes a passing source and checks
+activation and withdrawal on the reserved target. It then serves matched work with the initial
+and learned weights. Use a persistent state directory and the already reserved target config.
+
+```sh
+OPENBLAS_NUM_THREADS=1 python -m lab.rp.restart_campaign --config "$TARGET" \
+    --observations "$PREVIOUS/order.json" "$CANONICAL/order.json" --checkout "$BASE" \
+    --state "$STATE" --author cli --publish --exercise-pilot --wait-seconds 7200
+```
+
+The subscription CLI requires working authorization to execute a Codex request. This campaign
+used the hosted Codex author. In that environment, select `--author hosted`, let the hosting
+worker fulfill the persisted request, and resume the same command. A repeated invocation
+validates the original evidence and reuses its recorded author output and completed target
+jobs. The RunPod lease and both watchdogs continue to enforce the campaign deadline.
+
 On the owned Linux RunPod, stage the trusted framework, immutable reference checkout, model,
 bindings, exact local W4 kernel and table, dedicated worker UID and restricted worker directory.
 The JSON configuration uses the existing reserved lease and the paths documented for the native
