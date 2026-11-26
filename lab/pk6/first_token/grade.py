@@ -15,7 +15,7 @@ from lab.pk6.warm_result import read
 def paired(ref, cand):
     quality_ok = all(r["quality"] == "18/18" for r in ref["quality"] + cand["quality"])
     throughput, p50, p95 = [], [], []
-    checks = {"quality": quality_ok}
+    checks = {"quality": quality_ok, "same_native_profile": ref["profile"] == cand["profile"]}
     records = []
     for a, b, ar, br in zip(ref["waves"], cand["waves"], ref["phases"], cand["phases"], strict=True):
         throughput.append(b["tok_s"] / a["tok_s"])
@@ -27,8 +27,8 @@ def paired(ref, cand):
                         "second_content_p50_ms": [x.get("second_content_p50_ms") for x in (ar, br)],
                         "longest_content_gap_p95_ms": [x.get("longest_content_gap_p95_ms") for x in (ar, br)],
                         "text_digest_match": a["texts"] == b["texts"]})
-    forms = [[(c["width"], c["short"]) for c in wave["prefill_calls"]] for wave in ref["phases"] + cand["phases"]]
-    checks["prefill_groups"] = forms == [[(32, 16)]] * 3 + [[(17, 16), (15, 0)]] * 3
+    forms = [[[c["width"], c["short"]] for c in wave["prefill_calls"]] for wave in ref["phases"] + cand["phases"]]
+    checks["prefill_groups"] = forms == [[[32, 16]]] * 3 + [[[17, 16], [15, 0]]] * 3
     checks["paired_work"] = all((a["tokens"], a["prompt_tokens"]) == (b["tokens"], b["prompt_tokens"])
                                 and a["tokens"] == width * 32
                                 for width, field in ((32, "waves"), (8, "quality"))
@@ -54,23 +54,28 @@ def grade(folder):
     for arm in trial.ARMS:
         start, ready, end = (read(folder / f"{p}-{arm}.json") for p in ("start", "ready", "end"))
         cfg = ready["ggml"]
+        profile = cfg["kernel_profile"]
+        expected_flags = {"IRONMULE_GGML_DH2": "0", "IRONMULE_PK6": "1", "IRONMULE_PS1": "1",
+                          "IRONMULE_PS1_CONCAT": "0", "IRONMULE_PS1_WARM": "0", "IRONMULE_SV5": "0"}
         if (start["hardware"] != hw or end["hardware"] != hw or start["source_commit"] != trial.BASE
                 or not previous <= start["time"] < ready["time"] < end["time"]
                 or ready["model"] != "gguf/Qwen3-32B-Q4_K_M" or ready["device"] != "gpu"
                 or not cfg["gate"]["passes"] or not cfg["stream_qualification"]["passes"]
-                or cfg["sequences"]["sequences"] != 32):
+                or cfg["sequences"]["sequences"] != 32 or profile["flags"] != expected_flags
+                or profile["fallback"] or profile["gguf_sha256"] != GGUF):
             raise ValueError("invalid arm order, identity or server qualification")
         previous = end["time"]
         records = phases.clients(folder, arm)
         native = read(folder / f"native-{arm}.json")
         stats = phases.summarize(records, native)
-        measured[arm] = {"waves": waves(folder, arm, "ironmule", 32),
+        measured[arm] = {"profile": native["serving_profile"], "waves": waves(folder, arm, "ironmule", 32),
                          "quality": waves(folder, arm + "q", "ironmule", 8), "phases": stats}
         startup[arm] = ready["startup_s"]
     comparisons = {f"R{i}/C{i}": paired(measured[f"R{i}"], measured[f"C{i}"]) for i in (1, 2)}
     passed = all(all(p["checks"].values()) for p in comparisons.values())
     return {"decision": "nominate_holdout" if passed else "retain_reference", "hardware": hw,
-            "startup_s": startup, "pairs": comparisons, "protocol_sha256": target["protocol_sha256"]}
+            "startup_s": startup, "native_profiles": {k: arm["profile"] for k, arm in measured.items()},
+            "pairs": comparisons, "protocol_sha256": target["protocol_sha256"]}
 
 
 if __name__ == "__main__":

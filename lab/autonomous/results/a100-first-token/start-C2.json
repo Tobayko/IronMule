@@ -1,0 +1,10 @@
+{
+  "hardware": {
+    "device_sha256": "22efc4061e10b55dc1db8978f249390466d7091aba861eff7d7dbe23b5548f93",
+    "driver": "595.112.07",
+    "memory": "81920 MiB",
+    "name": "NVIDIA A100-SXM4-80GB"
+  },
+  "source_commit": "f3a69741f7a466ffc144a87b0395f4bfdb6e9b50",
+  "time": 1795713347.3209724
+}

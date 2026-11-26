@@ -12,6 +12,12 @@ checkpoint between them. Scoring includes the first measured wave after the
 standard warmup. The previous fixed-128 experiment on a different lease closed
 before a complete HTTP wave was recovered. [Independent protocol and measurements](../lab/autonomous/results/a100-pr57-warm-repeat/)
 
+A later Codex experiment traced those six native waves to one packed prefill per
+wave. A fresh A100 test emitted 17 first tokens ahead of the remaining 15.
+Median first content fell from 2,336 to 401 ms. The p95 longest streaming gap
+grew from 59 to 2,034 ms and both paired throughput and tail gates failed.
+IronMule kept its existing path. [Timing breakdown and paired decision](../lab/pk6/first_token/replay.md)
+
 To reproduce on a fresh target, use the budgeted RunPod operator and start
 the setup job below from an approved lease. The source commit includes the
 PR 61 merge into PR 57. The collector runs on the control machine and uploads

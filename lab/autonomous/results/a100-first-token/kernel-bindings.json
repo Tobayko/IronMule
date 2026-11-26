@@ -1,0 +1,26 @@
+{
+  "R1": [
+    {
+      "kernel_sha256": "69b37101d442d670c25f81c99cd9fcff45b06c3fda2b600606217b77338ddd5b",
+      "table_sha256": "8858eb0e59363e98a29d3547d030e499377b33c55cddc8303387403dac9526dd"
+    }
+  ],
+  "C1": [
+    {
+      "kernel_sha256": "69b37101d442d670c25f81c99cd9fcff45b06c3fda2b600606217b77338ddd5b",
+      "table_sha256": "8858eb0e59363e98a29d3547d030e499377b33c55cddc8303387403dac9526dd"
+    }
+  ],
+  "C2": [
+    {
+      "kernel_sha256": "69b37101d442d670c25f81c99cd9fcff45b06c3fda2b600606217b77338ddd5b",
+      "table_sha256": "8858eb0e59363e98a29d3547d030e499377b33c55cddc8303387403dac9526dd"
+    }
+  ],
+  "R2": [
+    {
+      "kernel_sha256": "69b37101d442d670c25f81c99cd9fcff45b06c3fda2b600606217b77338ddd5b",
+      "table_sha256": "8858eb0e59363e98a29d3547d030e499377b33c55cddc8303387403dac9526dd"
+    }
+  ]
+}

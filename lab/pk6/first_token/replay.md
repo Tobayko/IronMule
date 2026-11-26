@@ -4,6 +4,7 @@ The GPU protocol and candidate are frozen at commit `b9051fcaf96fcdd53e95ebf0fa1
 
 ```sh
 python -m lab.pk6.first_token.phases --projections lab/autonomous/results/a100-warm-ttft
+python -m lab.pk6.first_token.grade lab/autonomous/results/a100-first-token
 ```
 
 To extract the same projection from original traces, add `--traces "$RAW_TRACES"` and point `--projections` to a new output directory. Each series must contain the original streaming timelines and HTTP wave summaries. The extractor keeps only synthetic benchmark request IDs, timestamps, KV sequence IDs, row counts and stop reasons. It rejects conflicting clocks, partial work, missing or duplicate IDs and call shapes that disagree with the jobs.

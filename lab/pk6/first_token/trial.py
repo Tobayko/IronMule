@@ -7,7 +7,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # driver tree; children use checkout via PYTHONPATH
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # driver tree; children use checkout via PYTHONPATH
 from lab.pk6 import warm_repeat as warm  # noqa: E402
 
 HERE = Path(__file__).resolve().parent

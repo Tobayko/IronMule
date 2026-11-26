@@ -35,8 +35,16 @@ def project(trace, records):
     windows = [(r[0]["wave_start"], max(v["t_done"] for v in r))
                for r in (records[i:i + 32] for i in range(0, len(records), 32))]
     jobs, calls = {}, []
+    startup = None
     for line in trace.read_text().splitlines():
-        if line.startswith("# job "):
+        if line.startswith("# init result "):
+            if calls:
+                raise ValueError("engine reinitialised after measured service began")
+            info = json.loads(line.removeprefix("# init result "))
+            startup = {"pilot": info.get("pilot"), "argmax_only": info.get("argmax_only"),
+                       "kg_tokens": info.get("kg_tokens"), "pad_to": info.get("pad_to"),
+                       "pk2_min_rows": info.get("pk2", {}).get("min_rows")}
+        elif line.startswith("# job "):
             fields = dict(token.split("=", 1) for token in line.split()[2:])
             tag = fields["tag"]
             if tag in ids:
@@ -54,7 +62,9 @@ def project(trace, records):
                               "seqs": [int(n) for n in seqs.removeprefix("seqs=").split(",")]})
     if jobs.keys() != ids:
         raise ValueError("native trace does not cover the HTTP request IDs")
-    return {"trace_sha256": checksum(trace), "jobs": jobs, "calls": calls}
+    if not startup or not startup["pilot"] or not startup["pk2_min_rows"]:
+        raise ValueError("missing active Pilot or PK2 selection")
+    return {"trace_sha256": checksum(trace), "serving_profile": startup, "jobs": jobs, "calls": calls}
 
 
 def summarize(records, native=None):

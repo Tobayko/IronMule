@@ -1,0 +1,420 @@
+{
+  "decision": "retain_reference",
+  "hardware": {
+    "device_sha256": "22efc4061e10b55dc1db8978f249390466d7091aba861eff7d7dbe23b5548f93",
+    "driver": "595.112.07",
+    "memory": "81920 MiB",
+    "name": "NVIDIA A100-SXM4-80GB"
+  },
+  "startup_s": {
+    "R1": 1238.526326417923,
+    "C1": 96.0406506061554,
+    "C2": 96.04260802268982,
+    "R2": 98.04173564910889
+  },
+  "native_profiles": {
+    "R1": {
+      "argmax_only": true,
+      "kg_tokens": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "pad_to": {},
+      "pilot": true,
+      "pk2_min_rows": 128
+    },
+    "C1": {
+      "argmax_only": true,
+      "kg_tokens": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "pad_to": {},
+      "pilot": true,
+      "pk2_min_rows": 128
+    },
+    "C2": {
+      "argmax_only": true,
+      "kg_tokens": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "pad_to": {},
+      "pilot": true,
+      "pk2_min_rows": 128
+    },
+    "R2": {
+      "argmax_only": true,
+      "kg_tokens": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "pad_to": {},
+      "pilot": true,
+      "pk2_min_rows": 128
+    }
+  },
+  "pairs": {
+    "R1/C1": {
+      "waves": [
+        {
+          "repeat": 0,
+          "tok_s": [
+            298.65,
+            295.41
+          ],
+          "p50_ms": [
+            2405.2,
+            423.7
+          ],
+          "p95_ms": [
+            2415.2,
+            2454.2
+          ],
+          "max_ms": [
+            2416.5,
+            2454.5
+          ],
+          "second_content_p50_ms": [
+            2434.3,
+            2485.7
+          ],
+          "longest_content_gap_p95_ms": [
+            54.9,
+            2078.4
+          ],
+          "text_digest_match": false
+        },
+        {
+          "repeat": 1,
+          "tok_s": [
+            303.16,
+            302.6
+          ],
+          "p50_ms": [
+            2328.4,
+            392.1
+          ],
+          "p95_ms": [
+            2337.3,
+            2382.2
+          ],
+          "max_ms": [
+            2337.8,
+            2383.2
+          ],
+          "second_content_p50_ms": [
+            2360.4,
+            2415.5
+          ],
+          "longest_content_gap_p95_ms": [
+            55.3,
+            2030.4
+          ],
+          "text_digest_match": true
+        },
+        {
+          "repeat": 2,
+          "tok_s": [
+            302.21,
+            302.04
+          ],
+          "p50_ms": [
+            2343.8,
+            402.8
+          ],
+          "p95_ms": [
+            2353.7,
+            2389.9
+          ],
+          "max_ms": [
+            2354.5,
+            2392.0
+          ],
+          "second_content_p50_ms": [
+            2370.7,
+            2422.2
+          ],
+          "longest_content_gap_p95_ms": [
+            58.1,
+            2026.5
+          ],
+          "text_digest_match": true
+        }
+      ],
+      "checks": {
+        "quality": true,
+        "same_native_profile": true,
+        "prefill_groups": true,
+        "paired_work": true,
+        "throughput": false,
+        "p50": true,
+        "p95": false
+      },
+      "median_ratios": {
+        "throughput": 0.9981527906056208,
+        "p50": 0.17185766703643654,
+        "p95": 1.016147731036767
+      },
+      "reference_candidate_groups": [
+        [
+          [
+            32,
+            16
+          ]
+        ],
+        [
+          [
+            32,
+            16
+          ]
+        ],
+        [
+          [
+            32,
+            16
+          ]
+        ],
+        [
+          [
+            17,
+            16
+          ],
+          [
+            15,
+            0
+          ]
+        ],
+        [
+          [
+            17,
+            16
+          ],
+          [
+            15,
+            0
+          ]
+        ],
+        [
+          [
+            17,
+            16
+          ],
+          [
+            15,
+            0
+          ]
+        ]
+      ],
+      "factual": [
+        [
+          "18/18",
+          "18/18"
+        ],
+        [
+          "18/18",
+          "18/18"
+        ]
+      ]
+    },
+    "R2/C2": {
+      "waves": [
+        {
+          "repeat": 0,
+          "tok_s": [
+            301.46,
+            295.52
+          ],
+          "p50_ms": [
+            2393.2,
+            424.5
+          ],
+          "p95_ms": [
+            2403.9,
+            2457.1
+          ],
+          "max_ms": [
+            2404.7,
+            2458.4
+          ],
+          "second_content_p50_ms": [
+            2422.3,
+            2489.5
+          ],
+          "longest_content_gap_p95_ms": [
+            60.5,
+            2079.0
+          ],
+          "text_digest_match": true
+        },
+        {
+          "repeat": 1,
+          "tok_s": [
+            308.46,
+            303.35
+          ],
+          "p50_ms": [
+            2317.4,
+            396.6
+          ],
+          "p95_ms": [
+            2325.9,
+            2391.2
+          ],
+          "max_ms": [
+            2326.8,
+            2392.0
+          ],
+          "second_content_p50_ms": [
+            2347.3,
+            2421.7
+          ],
+          "longest_content_gap_p95_ms": [
+            63.7,
+            2034.1
+          ],
+          "text_digest_match": true
+        },
+        {
+          "repeat": 2,
+          "tok_s": [
+            308.06,
+            301.53
+          ],
+          "p50_ms": [
+            2320.8,
+            399.5
+          ],
+          "p95_ms": [
+            2329.5,
+            2392.3
+          ],
+          "max_ms": [
+            2330.7,
+            2393.1
+          ],
+          "second_content_p50_ms": [
+            2352.0,
+            2424.9
+          ],
+          "longest_content_gap_p95_ms": [
+            65.3,
+            2034.0
+          ],
+          "text_digest_match": false
+        }
+      ],
+      "checks": {
+        "quality": true,
+        "same_native_profile": true,
+        "prefill_groups": true,
+        "paired_work": true,
+        "throughput": false,
+        "p50": true,
+        "p95": false
+      },
+      "median_ratios": {
+        "throughput": 0.98029589331918,
+        "p50": 0.17213891761461564,
+        "p95": 1.0269585748014596
+      },
+      "reference_candidate_groups": [
+        [
+          [
+            32,
+            16
+          ]
+        ],
+        [
+          [
+            32,
+            16
+          ]
+        ],
+        [
+          [
+            32,
+            16
+          ]
+        ],
+        [
+          [
+            17,
+            16
+          ],
+          [
+            15,
+            0
+          ]
+        ],
+        [
+          [
+            17,
+            16
+          ],
+          [
+            15,
+            0
+          ]
+        ],
+        [
+          [
+            17,
+            16
+          ],
+          [
+            15,
+            0
+          ]
+        ]
+      ],
+      "factual": [
+        [
+          "18/18",
+          "18/18"
+        ],
+        [
+          "18/18",
+          "18/18"
+        ]
+      ]
+    }
+  },
+  "protocol_sha256": "5ccdfd3682a31d8c736439d6f178a6ecc21688e422ca625fe005310bc434e51c"
+}
