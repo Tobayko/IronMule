@@ -3,6 +3,18 @@
 State of 2026-11-25, branch `claude/blissful-pasteur-2uj5by`. This file is meant to let a developer or agent continue
 without the chat that produced the work. Measurement details live in [LAB.md](LAB.md); this file routes to them.
 
+## Subsequent CPU Pilot work on 2026-11-26
+
+The original record below describes the warm HTTP comparison. A subsequent same-model
+campaign measured repeated worker startup on a new A100 SXM4 80 GB. Its CPU Pilot selected
+a complete, locally qualified W4 configuration. The source change reduced median first mixed
+batch delivery from 33.292 to 15.360 seconds on six matched pairs. PR 60 qualified the source,
+and PR 61 merged the same tree into this A100 branch. The release archive includes raw answers,
+fresh target activation, withdrawal, a failed fallback calibration and successful reference
+service after restart. [Hardware scope](../training/optimization-hardware.md#a100-restart-support) ·
+[Training, source experiment and activation](../lab/pk1/restart-trial.md) ·
+[Original HTTP result replay](../lab/pk6/replay-http.md)
+
 ## Result and validity domain
 
 - **+10.02 % output throughput over vLLM at 32 concurrent clients** by the rule fixed before the run: median tok/s
