@@ -1,7 +1,6 @@
 """Exercise the gate transport using real local subprocesses and a deterministic device fixture."""
 from contextlib import contextmanager
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
