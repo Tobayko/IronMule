@@ -1,0 +1,107 @@
+"""Instrument an isolated PR 57 checkout. Only explicit lab switches change serving behavior."""
+
+import argparse
+from pathlib import Path
+
+from lab.pk6.replay_http import checksum
+
+BASE_ENGINE = "c8d388abff8fb24515c08622b40c6f41fd76f8f627d793d2f98c3bf1ffc66382"
+
+
+def substitute(source, old, new):
+    if source.count(old) != 1:
+        raise ValueError("unrecognized native evaluator source")
+    return source.replace(old, new)
+
+
+def prepare(root, candidates=True):
+    engine = root / "ironmule/ggml_engine.py"
+    flags = root / "ironmule/ggml_profiles.py"
+    if checksum(engine) != BASE_ENGINE:
+        raise ValueError("unexpected native evaluator revision")
+    code = engine.read_text()
+    cache = flags.read_text()
+    if candidates:
+        code = substitute(
+            code,
+            "        params.n_ctx, params.n_batch, params.n_ubatch =",
+            """        lab_shared_profile = os.environ.get("IRONMULE_LAB_SHARED_PROFILE", "")
+        if lab_shared_profile and shared and self.gpu_layers:
+            if lab_shared_profile != "wide":
+                raise ValueError("unknown experimental shared-pool profile")
+            physical = min(logical, 2048)
+        params.n_ctx, params.n_batch, params.n_ubatch =""",
+        )
+        code = substitute(
+            code,
+            '                mark("pilot_admit")',
+            """                if (self.pool is not None and not PROMPT_BUDGET and len(pending) >= 4
+                        and os.environ.get("IRONMULE_LAB_SHARED_PROFILE") == "wide"
+                        and not any(job.hardware_probe for job in pending)):
+                    limit = min(self.seq_ctx, self.batch_cap, 2048) - len(active)
+                    if budget < limit:
+                        trace_note(f"shared_budget from={budget} to={limit} queued={len(pending)}")
+                        budget = limit
+                mark("pilot_admit")""",
+        )
+        code = substitute(
+            code,
+            '        streams = probe({**chosen["settings"], "flash_attn": True, "kv_unified": False}, "streams")',
+            '        streams = probe({**chosen["settings"], "flash_attn": True, "kv_unified": False}, "streams")\n'
+            '        if os.getenv("IRONMULE_LAB_STREAM_ALTERNATIVE") == "plain" and not streams.get("passes"):\n'
+            "            flash_result = streams\n"
+            '            streams = probe({**chosen["settings"], "flash_attn": False, "kv_unified": False}, "plain_streams")\n'
+            '            streams = {**streams, "previous_flash_result": flash_result}',
+        )
+        # Ignore low-row W4 calibration only for a plugin that declares a prompt-only ABI.
+        code = substitute(
+            code,
+            "            lib.ironmule_kg_set_mask.argtypes = [ctypes.c_uint32]\n            lib.ironmule_kg_table.restype = ctypes.c_char_p",
+            """            if hasattr(lib, "im_prompt_threshold"):
+                lib.im_prompt_threshold.restype = ctypes.c_int
+                return {"family":"prompt_only", "minimum_rows":lib.im_prompt_threshold(), "tokens_served":[]}
+            lib.ironmule_kg_set_mask.argtypes = [ctypes.c_uint32]
+            lib.ironmule_kg_table.restype = ctypes.c_char_p""",
+        )
+        code += """
+if os.environ.get("IRONMULE_LAB_KERNEL_TRACE") and TRACE:
+    from lab.pk6.native_dispatch.capture import count_dispatches
+    count_dispatches(GgmlEngine, TRACE)
+"""
+    code += """
+if os.environ.get("IRONMULE_LAB_ACTIVITY"):
+    from lab.pk6.native_dispatch.capture import install
+    install(GgmlEngine)
+"""
+    cache = substitute(
+        cache,
+        "    return key",
+        """    if os.getenv("IRONMULE_CUBLAS_MIN_ROWS") or os.getenv("IRONMULE_LAB_FP8"):
+        key.extend([os.getenv("IRONMULE_CUBLAS_MIN_ROWS"), os.getenv("IRONMULE_LAB_FP8")])
+    return key""",
+    )
+    if candidates:
+        cache = substitute(
+            cache,
+            "    return key",
+            """    if os.getenv("IRONMULE_LAB_SHARED_PROFILE"):
+        key.extend(["shared-physical-budget", os.environ["IRONMULE_LAB_SHARED_PROFILE"]])
+    return key""",
+        )
+    if candidates:
+        cache = substitute(
+            cache,
+            "    return key",
+            '    if os.getenv("IRONMULE_LAB_STREAM_ALTERNATIVE"):\n'
+            '        key.extend(["stream-alternative", os.environ["IRONMULE_LAB_STREAM_ALTERNATIVE"]])\n    return key',
+        )
+    engine.write_text(code)
+    flags.write_text(cache)
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("root", type=Path)
+    p.add_argument("--baseline", action="store_true")
+    args = p.parse_args()
+    prepare(args.root, not args.baseline)
