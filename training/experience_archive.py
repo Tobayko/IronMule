@@ -774,6 +774,55 @@ def native_experiment(root, source, digest, calibration_seen):
                      uncertainty="Archive of a source experiment. Serving requires its separate target-bound release.")
 
 
+def portfolio_observations(root, source, checksum):
+    from lab.pk1 import followup_contract
+    from training import portfolio_shadow
+    from training.code_trial import read
+    from training.trial_release import require
+
+    folder = (root / source).parent
+    data = folder.parent
+    release = data / "a100-restart" / followup_contract.PARENT
+    control = read(release / "control.json")
+    raw = [folder / f"{s}.json" for s in (97451, 97452)]
+    forecast = folder / "prediction.json"
+    grade = portfolio_shadow.grade(data, release / "control.json", release / "startup-head.npz", forecast, raw)
+    require(grade == read(folder / "result.json") and grade["source_order"] is None and grade["activation"] is None,
+            "portfolio report differs from raw original workers and prospective forecast")
+    ids = [canonical_sha256(file.read_bytes()) for file in raw]
+    verify = read(folder / "independent-replay.json")
+    require(verify["forecast_sha256"] == canonical_sha256(forecast.read_bytes()) and verify["observation_sha256"] == ids
+            and verify["recorded_grade_sha256"] == checksum, "independent shadow replay is for another prospective study")
+    group = "a100/portfolio-shadow-97451-97452"
+    shared = {"hardware":control["order"]["binding"]["fp"], "base_commit":followup_contract.BASE,
+              "software":{"engine_sha256":control["qualification"]["candidate_sha256"]}, "model":control["order"]["binding"]["gguf"],
+              "quantization":"Q4_K_M", "cost_reference":"lab/rp/results/campaign-costs.json"}
+    for path, sha, worker in zip(raw, ids, verify["workers"], strict=True):
+        actual = read(path)
+        arm = actual["arm"]
+        seed = actual["seed"]
+        matching = [v for v in grade["observations"] if v["seed"] == seed]
+        require(worker["seed"] == seed and worker["raw_sha256"] == sha, "different shadow worker evidence")
+        yield record("calibration_shadow_original_worker", str(path.relative_to(root)), sha, "original_worker", group, **shared,
+                     workload={"seed":seed, "cold":32, "warm":32,"graded_factual":18}, metrics=[worker],
+                     quality={"correct":sum(arm["facts"]), "cold":arm["cold"]["completed"], "warm":arm["warm"]["completed"]},
+                     comparisons=matching, reason="fresh_parameters_served_all_deliveries",
+                     uncertainty=verify["grouping"], authorship="IronMule prospective experiment")
+    yield record("calibration_portfolio_shadow_result", source, checksum, "shadow_verdict", group, **shared,
+                 reason=grade["verdict"], decision=None, plan=grade["source_order"], observations=grade["observations"],
+                 economics=verify["economic_comparison"], cost_usd=grade["attributable_usd"],
+                 independent_replay_sha256=canonical_sha256((folder / "independent-replay.json").read_bytes()),
+                 uncertainty=grade["limitation"], authorship="Independent numerical comparison over full original calibration")
+    policy = folder / "usage-replan.json"
+    if policy.is_file():
+        replan = read(policy)
+        require(replan["portfolio_observations_sha256"] == ids and replan["portfolio_result_sha256"] == checksum,
+                "calibration usage plan refers to another observation")
+        yield record("calibration_portfolio_replan", str(policy.relative_to(root)), canonical_sha256(policy.read_bytes()),
+                     "decision", group, **shared, provenance="simulated", reason=replan["question"], plan=replan,
+                     uncertainty="The source-generation and cost decision uses retained measurements and assumptions about future work.")
+
+
 def fresh_http_comparison(root, source, checksum):
     """Keep the current GGUF/AWQ series outside source-qualification and historical pod-37 groups."""
     from lab.pk6 import replay_http
@@ -929,6 +978,8 @@ def build(root=ROOT) -> Iterator[dict]:
                          uncertainty=fit["uncertainty"], references=[str(weights.relative_to(root))])
         elif source == "lab/autonomous/results/a100-prefill-lt/measurement.json":
             yield from prefill_experiment(root, source, digest)
+        elif source == "lab/autonomous/results/a100-portfolio-shadow/result.json":
+            yield from portfolio_observations(root, source, digest)
         elif source == "lab/autonomous/results/a100-vllm-awq-current-fixed128-r2/preregistration.json":
             yield from fresh_http_comparison(root, source, digest)
         elif source.startswith("lab/autonomous/results/a100-calibration-sampling/trial-") and path.name == "manifest.json":

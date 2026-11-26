@@ -280,3 +280,16 @@ def test_independent_product_retry_cannot_turn_partial_work_into_an_active_relea
     (retry / "http-product-qualify.json").write_text('{"passed":true}')
     with pytest.raises(ValueError, match="scope or captured bytes"):
         startup.selected_product(folder)
+
+
+def test_shadow_workers_keep_the_nested_observation_with_its_parent_process():
+    root = Path(__file__).resolve().parents[2]
+    source = "lab/autonomous/results/a100-portfolio-shadow/result.json"
+    rows = list(archive.portfolio_observations(root, source, archive.canonical_sha256((root / source).read_bytes())))
+    workers = [r for r in rows if r["kind"] == "calibration_shadow_original_worker"]
+    assert len(workers) == 2 and sum(len(r["comparisons"]) for r in workers) == 3
+    assert all(r["quality"] == {"correct":18, "cold":32, "warm":32} for r in workers)
+    result, = [r for r in rows if r["kind"] == "calibration_portfolio_shadow_result"]
+    assert 0 < result["cost_usd"] < .05
+    assert result["economics"]["actual_customer_serving_savings_s"] == 0 and result["decision"] is None
+    assert not any(r["label_eligible"] for r in rows)
