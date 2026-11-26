@@ -140,3 +140,20 @@ python -m lab.pk6.ordered_client "${opts[@]}" --requests /path/to/ordered-input.
 For example, `{"prompts":["How many days are in a week?"],"max_tokens":16}`
 sends one caller-provided question through the reference. Source generation,
 training, fresh trials and rollback exercises run separately from this invocation.
+
+The bounded broker first reads the HTTP observations and reconstructs the
+world-model ranking. With `--author hosted` it writes the complete request to
+`$CAMPAIGN/author/request.json` and waits within the supplied deadline for the
+separately hosted Codex reply. With `--author cli` the configured subscription
+CLI answers directly. `--author archived` reuses the actual published reply
+only if its request digest matches. A new proposal is recorded and requires
+its own prospective evaluator. The qualified adapter is bound to the exact
+source that actually ran. For the recorded observation files and source,
+the following command covers planning, author delivery, evaluation, publication,
+fresh on-device activation, trained dispatch and rollback.
+
+```sh
+OPENBLAS_NUM_THREADS=1 python -m lab.rp.ordered_campaign --pod-id "$POD_ID" \
+  --state "$CAMPAIGN" --series "$series" --observations "$trial" \
+  --author archived --publish --seconds 2500
+```

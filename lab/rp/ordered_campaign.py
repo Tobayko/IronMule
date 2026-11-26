@@ -8,9 +8,10 @@ from urllib.parse import urlencode
 
 from lab.pk6 import ordered_grade as grade
 from lab.pk6 import ordered_release as release
+from lab.pk6 import startup_search
 from lab.rp import calibration_campaign as http
 from lab.rp import native_campaign as target
-from training.code_author import write_once
+from training.code_author import consume_cli, read_request, read_response, write_once
 from training.code_trial import git, read
 from training.trial_release import require
 from training.scoped_release import checksum
@@ -25,9 +26,31 @@ def status(pod,name):
     return target.call(pod,"GET","/job?"+urlencode({"name":name,"tail":6}))
 
 
-def stage(pod):
+def commissioned(args, state, deadline):
+    result = startup_search.commission(args.series, args.observations, state)
+    if result["status"] == "deferred":
+        return result
+    if result["status"] == "requested":
+        if args.author == "cli":
+            consume_cli(state)
+        elif args.author == "hosted":
+            if not target.wait_for_author_response(result["request"], deadline):
+                return result
+        else:
+            original = release.FOLDER/"author"
+            request_id, _ = read_request(state/"author")
+            read_response(original, request_id)
+            write_once(state/"author/response.json",read(original/"response.json"))
+    # This prospective evaluator was registered for exactly one isolated source response.
+    if (read(state/"order.json") != read(release.FOLDER/"order.json")
+            or startup_search.materialize(state) != startup_search.materialize(release.FOLDER)):
+        return {"status":"new source requires its own registered target evaluator", "order":str(state/"order.json")}
+    return {"status":"ready"}
+
+
+def stage(pod, order):
     if target.shell(pod,"test -d /work/calibration/reference && echo yes || echo no")=="no":
-        http.prepare(pod,release.FOLDER)
+        http.prepare(pod,order)
     target.shell(pod,"install -d -m 0755 /work/calibration/trusted")
     scripts={
         "ordered_arm.py":"lab/pk6/ordered_arm.py","calibration_arm.py":"lab/pk6/calibration_arm.py",
@@ -115,11 +138,14 @@ def run(a):
     local.mkdir(parents=True,mode=0o700,exist_ok=True)
     raw=local/"ordered"
     deadline=time.monotonic()+a.seconds
+    source=commissioned(a,local,deadline)
+    if source["status"]!="ready":
+        return source
     while time.monotonic()<deadline:
         pod=target.lease(a.pod_id)
         job=status(pod,"ordered-qualification")
         if job["rc"] is None and not job["running"]:
-            stage(pod)
+            stage(pod,local)
         completed=collect(pod,raw)
         if job["rc"] is None or job["running"]:
             time.sleep(8)
@@ -143,9 +169,10 @@ def run(a):
             target.snapshot(pod,PurePosixPath(DEPLOY)/"proofs",[k+".json" for k in ("activation","random","trained","recovery")],local/"proofs")
             target.snapshot(pod,PurePosixPath(DEPLOY)/"ordered",[f"fresh-{arm}-{s}.json" for s in (99301,99401) for arm in ("reference","candidate")],local/"fresh")
             names=target.shell(pod,"if test -d /work/ordered-release/ordered; then find /work/ordered-release/ordered -type f -name '*.json' -printf '%f\\n'; fi").splitlines()
-            names=[n for n in names if re.fullmatch(r"(selected|ablation|fallback)-(candidate|reference)-\d+-[0-9a-f]{32}\.json",n)]
+            names=[n for n in names if re.fullmatch(r"(?:fresh-(?:candidate|reference)-\d+|(?:selected|ablation|fallback)-(?:candidate|reference)-\d+-[0-9a-f]{32})\.json",n)]
             if names:
-                target.snapshot(pod,PurePosixPath(DEPLOY)/"ordered",names,local/"fresh")
+                target.snapshot(pod,PurePosixPath(DEPLOY)/"ordered",names+[n[:-5]+".trace" for n in names],local/"fresh")
+            target.snapshot(pod,REMOTE/"numeric",["observed.json"],local/"numerical")
             if not active["running"] and active["rc"] is not None:
                 target.snapshot(pod,PurePosixPath(DEPLOY)/"state/deployment",
                                 ["control.json","selection.json","target-check.json","rollback-exercise.json",
@@ -165,4 +192,8 @@ if __name__=="__main__":
     p.add_argument("--pod-id",required=True)
     p.add_argument("--seconds",type=int,required=True,choices=range(1,7201),metavar="1..7200")
     p.add_argument("--publish",action="store_true")
+    p.add_argument("--series",type=Path,default=release.FOLDER.with_name("a100-pr57-warm-repeat"))
+    p.add_argument("--observations",type=Path,default=release.FOLDER)
+    p.add_argument("--author",choices=("hosted","cli","archived"),default="hosted",
+                   help="Use a separate hosted/CLI Codex author, or replay the registered reply by request digest.")
     print(json.dumps(run(p.parse_args())),flush=True)
