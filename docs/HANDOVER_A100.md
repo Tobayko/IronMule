@@ -280,3 +280,7 @@ selected the measured local-calibration profile. Use the linked instructions
 to fit from the saved native outcomes, replay the GitHub publication and
 target receipts, submit a bounded run and withdraw the scoped release.
 [Source PR 62](https://github.com/Tobayko/IronMule/pull/62) · [Instructions and measured scope](../lab/pk6/local-calibration.md)
+
+### L40S cross-check
+
+The same model family on an L40S selected a shared KV pool and stock kernels after locally generated W4 exhausted memory. On this configuration Qwen3-32B started streaming earlier at width 32 but vLLM 0.11.0 completed the workload faster. Use the per-board gate, fixed-work traces and fresh-start instructions when continuing this comparison. [Run and replay](../lab/pk6/mixed_progress/replay.md) · [Measured L40S profiles](../lab/autonomous/results/l40s-mixed-prefill-progress/result.json)
