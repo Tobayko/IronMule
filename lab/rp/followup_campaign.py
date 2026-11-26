@@ -5,16 +5,26 @@ import argparse
 import ast
 import json
 import os
-from tempfile import NamedTemporaryFile
-from pathlib import Path, PurePosixPath
 import shlex
 import textwrap
 import time
+from pathlib import Path, PurePosixPath
+from tempfile import NamedTemporaryFile
 from types import SimpleNamespace
 
-from lab.pk1 import followup_contract as rules, followup_release, followup_trial as trial
+from lab.pk1 import followup_contract as rules
+from lab.pk1 import followup_release
+from lab.pk1 import followup_trial as trial
 from lab.pk1.native_trial import checksum
-from lab.rp.native_campaign import CONFIG_KEYS, command, job, lease, shell, snapshot, upload
+from lab.rp.native_campaign import (
+    CONFIG_KEYS,
+    command,
+    job,
+    lease,
+    shell,
+    snapshot,
+    upload,
+)
 from training import calibration_sampling, experience_archive
 from training.code_author import PendingAuthor, consume_cli, hosted_proposal, write_once
 from training.code_trial import read
