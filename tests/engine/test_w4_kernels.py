@@ -73,13 +73,15 @@ def test_w4_native_errors_and_bad_measurements_survive_strict_json(tmp_path, mon
     monkeypatch.setattr(wk, "_lib", lambda _: Kernel())
     monkeypatch.setattr(wk, "variants", lambda _: [{"id": i, "type": 12, "nt": 1} for i in range(5)])
     monkeypatch.setattr(wk, "q4k_tensors", lambda gguf, kind: {(256, 16): {"data": np.zeros(16 * 144, np.uint8)}})
-    monkeypatch.setattr(wk, "fingerprint", lambda: {})
+    monkeypatch.setattr(wk, "fingerprint", dict)
     result = wk.tune("fixture", tmp_path / "kernel.so", tokens=[1], ksplits=[1], kinds=["Q4_K"], log=lambda *a, **k: None)
     parsed = json.loads(json.dumps(result, allow_nan=False))
     assert [(r["variant"], r["rejection"]) for r in parsed["measured"]] == [
         (0, "native_error"), (1, "nonfinite_output_error"), (2, "invalid_timing"), (3, "output_error_bound"), (4, None)]
     assert parsed["measured"][0]["rc"] == 10 and parsed["measured"][0]["rel_err"] is None
     assert [r["variant"] for r in parsed["entries"]] == [4]
+    from lab.w4bw.tables import best
+    assert [r["variant"] for r in best(parsed["measured"], lambda row: True)] == [4]
 
 
 def test_w4_receipt_serialization_failure_leaves_no_partial_generation(tmp_path, monkeypatch):

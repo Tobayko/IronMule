@@ -5,6 +5,7 @@ variant, PS included): "base" as the tuner before 2026-11-24 chose (no width 24,
   python lab/w4bw/tables.py RECORD.json LIB.so OUT_DIR
 """
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -14,7 +15,10 @@ from ironmule import w4_kernels as wk
 def best(measured, keep):
     out = {}
     for r in measured:
-        if r["rc"] != 0 or r["rel_err"] > wk.ERROR_BOUND or not keep(r):
+        error, timing = r.get("rel_err"), r.get("us")
+        if (r["rc"] != 0 or r.get("rejection") is not None or error is None or timing is None
+                or not math.isfinite(error) or not 0 <= error <= wk.ERROR_BOUND
+                or not math.isfinite(timing) or timing <= 0 or not keep(r)):
             continue
         k = (r["type"], r["N"], r["K"], r["B"])
         if k not in out or r["us"] < out[k]["us"]:
