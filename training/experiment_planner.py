@@ -157,7 +157,7 @@ def _historical_notes(target, archive):
     return [r[2] for r in selected]
 
 
-def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None) -> dict[str, Any]:
+def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None, demand=None) -> dict[str, Any]:
     if not 2 <= len(waves) <= MAX_WAVES or not 1 <= repetitions <= 32:
         raise ValueError("need two to 48 measured waves and a bounded repeat count")
     waves = sorted(waves, key=lambda w: w["captured_ns"])
@@ -173,6 +173,13 @@ def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None) -> 
     last = waves[-1]
     error = abs(_rollout(last, _fit(waves[:-1]))["seconds"] / last["wall_s"] - 1)
     forecast = _next_waves(waves)
+    if demand is not None:
+        # Use coarse serving phase frequencies as the forecasting prior. The timing
+        # observations and eventual qualification still come from this evaluator.
+        from ironmule_product.experiment_queue import validate
+        validate(demand)
+        latest = {w["workload"]: w for w in waves}
+        forecast = [latest[phase] for phase in ("short", "document") for _ in range(demand[phase])]
     measured_cost_s = 2 * repetitions * statistics.fmean(w["wall_s"] for w in waves)
     seen = set()
     for order in prior_orders:
@@ -225,6 +232,8 @@ def plan(waves: list[dict], prior_orders=(), *, repetitions=4, archive=None) -> 
              "constraints": ["Preserve full request outputs, stop reasons and quality on fresh inputs.",
                              "Measure throughput and TTFT on matching real hardware with the profiler disabled.",
                              "Keep the evaluator, workload, reference, model weights and budget fixed."]}
+    if demand is not None:
+        order["simulation"]["serving_demand"] = {key: demand[key] for key in ("id", "short", "document")}
     order["order_id"] = digest(order)
     return order
 

@@ -130,6 +130,14 @@ def run(args):
             raise ValueError("scratch thread qualification is CPU-only")
         context = {"schema": 1, "base": base, "provider": args.provider, "thread_candidate_sha256": expected,
                    "gguf_sha256": sha(model), "implementation_sha256": provenance()}
+        demand_path = getattr(args, "demand_summary", None)
+        demand = None
+        if demand_path:
+            from ironmule_product.experiment_queue import validate
+            demand = validate(read(demand_path))
+            if demand["model_sha256"] != context["gguf_sha256"]:
+                raise ValueError("queued demand belongs to another model")
+            context["demand"] = demand
         if prior and context != prior:
             raise ValueError("different model, provider, source revision or experiment implementation on resume")
         if expected and not checkpoint.exists():
@@ -174,7 +182,8 @@ def run(args):
             if not order_file.exists():
                 profiles = [read(p) for p in (run_dir / "discovery/waves").glob("wave-*.json")]
                 past_orders = [read(d / "order.json") for d in others if (d / "order.json").is_file()]
-                order = experiment_planner.plan(profiles, past_orders, repetitions=code_trial.PAIRS, archive=archive)
+                order = experiment_planner.plan(profiles, past_orders, repetitions=code_trial.PAIRS, archive=archive,
+                                                demand=demand)
                 if order["base_commit"] != base or order["binding"]["model_sha256"] != context["gguf_sha256"]:
                     raise ValueError("proposal source or model differs from frozen discovery inputs")
                 save(order_file, order)
@@ -228,6 +237,7 @@ def main():
     parser.add_argument("--gguf", required=True, type=Path)
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--run-id", default="first")
+    parser.add_argument("--demand-summary", type=Path, help="aggregate serving workload ticket")
     parser.add_argument("--base", help="baseline Git revision, pinned in state on first invocation")
     parser.add_argument("--thread-candidate", type=Path, help="snapshot a four-slot CPU thread checkpoint")
     parser.add_argument("--provider", choices=("cpu", "cuda"), default="cpu")
