@@ -127,3 +127,31 @@ python -m lab.rp.native_campaign --config "$TARGET_JSON" --state "$STATE" \
 ```
 
 With hosted Codex, the process writes the attributed development request to `$STATE/authoring/author/request.json`. A connected dispatcher supplies the reply. With a locally authenticated subscription Codex CLI, add `--author-cli` for automatic consumption. Run the same command after a restart. Each poll checks the existing lease and retains completed result files on the control host. After six qualifying pairs, the publication gate checks the GitHub merge, sends the content-bound activation receipt to the target and runs a new independent process with a fresh seed. A rejected order retains its candidate, intermediate artifacts, reason and cost window. The provider journal records the final removal and billing tail. The upper-bound amortization estimate charges the whole elapsed lease to this candidate, including setup and author wait, and uses its measured median saving per 32 completed requests.
+
+## Qualify an HTTP deployment
+
+The native target runner measures the 32-client engine directly. A published native winner can enter a separate product qualification through the campaign option below. The new path uses the ordinary ProductService, HTTP API, tokenizer, scheduler, bridge and existing CPU Pilot. Each GPU worker runs with the restricted worker UID, independent wall deadline and read-only inputs. Only the frontend opens the loopback HTTP listener or receives product requests. The control host's GitHub and pod credentials stay outside the worker.
+
+```sh
+python -m lab.rp.native_campaign --config "$CONFIG" --order "$ORDER" --checkout "$BASE" --state "$CAMPAIGN" \
+  --publish --serve-qualified --http-reference-url http://127.0.0.1:8231 \
+  --http-port 8230 --http-serve-seconds 120 --http-timeout 1800 --wait-seconds 1800
+```
+
+Choose an existing ordinary loopback product endpoint with locally readable health and model metadata that advertises the same loaded model revision and a passed GGUF quality gate. Requests outside this endpoint's single-user-message, greedy, 32-output-token and 1,536-byte prompt envelope receive HTTP 307 with the ordinary endpoint as the destination. Clients can follow the redirect with the original POST. For a dedicated traffic lane on a private pod, replace `--http-reference-url ...` with `--dedicated-http`. That lane accepts only its explicit profile. Other product servers keep their configured deployments.
+
+The adapter first verifies the merged native control receipt and the bound GGUF, table, binaries, source, hardware and frozen Pilot profile. Each arm must independently pass the product's GGUF numeric/factual gate with the measured settings. Four fresh worker starts in R-C-C-R order cover six paired seed holdouts. Every seed issues real streamed HTTP completions at 32, eight and one concurrent clients and checks 18 factual answers. Paired responses include text, exact prompt/output counts and stop reasons. The existing six-win throughput and TTFT rule applies at 32. Lower-width median wall and TTFT regressions over 5%, or GPU memory growth over 5%, decline promotion. Gate time, startup and HTTP experiment time consume the same reserved pod lease.
+
+On success the campaign makes a new ordinary factual POST through a candidate server, withdraws its selection in a copy of the protected deployment state, and repeats the same POST after the reference worker takes over. It then starts the actual selected endpoint for the requested bounded lifetime, makes a fresh external factual request and saves the serving receipt. A persistent withdrawal survives restart. The live worker returns to the verified reference after failure or three consecutive measured timing misses among matching prompt size, output length and queue-delay buckets. An unmatched request has no timing vote. The control host continuously captures the gate reports and paired HTTP halves into `http-evidence/`.
+
+The same target can later launch or withdraw the HTTP selection:
+
+```sh
+http_target=("${target[@]}" --worker-root "$WORKER_ROOT")
+python -m lab.pk1.native_http qualify "${http_target[@]}" --timeout 1800
+python -m lab.pk1.native_http exercise "${http_target[@]}" --port 8230 --timeout 600
+python -m lab.pk1.native_http serve "${http_target[@]}" --port 8230 --reference-url http://127.0.0.1:8231 --lifetime 600
+python -m lab.pk1.native_http rollback --state "$DEPLOY"
+```
+
+Here `target` contains the same state, GGUF, original checkout, reference library, candidate source, trial, dispatch table and dedicated worker root supplied to native activation. The measured CPU frontend smoke accepted two ordinary 32-token requests through its stock worker. CUDA product admission requires a positive native release and actual HTTP evidence on the target.

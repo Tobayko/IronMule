@@ -491,6 +491,14 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         end = "done"  # STAB1: how the response ended for the client
         try:
             request = self._request()
+            reference_for = getattr(self.server.service, "reference_for", None)
+            if reference_for and (location := reference_for(request)):
+                self.send_response(HTTPStatus.TEMPORARY_REDIRECT)
+                self.send_header("Location", location)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if not self._service_ready():
                 raise _HTTPProductError("product service is not ready", HTTPStatus.SERVICE_UNAVAILABLE, "backend_unavailable")
             stream = self.server.service.stream(request)

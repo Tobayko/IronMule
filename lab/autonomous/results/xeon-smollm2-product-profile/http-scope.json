@@ -1,0 +1,26 @@
+{
+  "scope": "Scoped product HTTP frontend with the actual Xeon CPU GGUF worker, no CUDA variant.",
+  "model": "gguf/SmolLM2-135M-Instruct-Q4_K_M",
+  "profile": "cpu",
+  "ready": true,
+  "completed": 2,
+  "counts": [
+    [
+      32,
+      37,
+      "length"
+    ],
+    [
+      32,
+      35,
+      "length"
+    ]
+  ],
+  "outside": "HTTP 400 in explicitly dedicated mode for a four-token output limit",
+  "health_completed": 2,
+  "source": "product HTTP client and ScopedService; SmolLM2-135M-Instruct-Q4_K_M",
+  "fixture_prompts": [
+    "What is 2+2?",
+    "Describe the weather station."
+  ]
+}

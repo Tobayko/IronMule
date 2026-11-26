@@ -497,6 +497,10 @@ class MLXWorkerClient:
         if event["mlx_peak_bytes"] < event["mlx_active_bytes"]:
             raise BackendUnavailable("backend startup telemetry is inconsistent")
 
+    def _launch_worker(self, arguments, environment):
+        return subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env=environment)
+
     def start(self, *, startup_guard: Any = None) -> dict[str, Any]:
         if startup_guard is not None and not callable(startup_guard):
             raise TypeError("startup_guard must be callable or None")
@@ -559,13 +563,7 @@ class MLXWorkerClient:
                 if self.execution_variant == "automatic":
                     arguments += ["--selection-evidence", json.dumps(
                         self.selection_evidence, ensure_ascii=False, separators=(",", ":"), allow_nan=False)]
-                self._process = subprocess.Popen(
-                    arguments,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    env=environment,
-                )
+                self._process = self._launch_worker(arguments, environment)
             except (OSError, ValueError) as exc:
                 self._mark_unusable()
                 raise BackendUnavailable("backend worker could not start") from exc

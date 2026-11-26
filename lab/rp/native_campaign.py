@@ -121,6 +121,110 @@ def cost_window(pod, trial, passed):
     return summary
 
 
+def collect_http(pod, remote, local, native):
+    records = local / "http-evidence"
+    target = remote / "active/deployment"
+    snapshot(pod, target, ["http-trial.json"], records)
+    marker = records / "http-trial.json"
+    if not marker.is_file():
+        return None
+    pin = read(marker)
+    binding = pin["binding"]
+    if (pin["control_receipt"] != native["receipt_sha256"] or not isinstance(binding, str)
+            or len(binding) != 64 or any(ch not in "0123456789abcdef" for ch in binding)):
+        raise ValueError("foreign HTTP snapshot manifest")
+    snapshots = ["decision.json", "gate-ref.json", "gate-cand.json",
+                 *(f"{arm}-{half}.json" for arm in ("ref", "cand") for half in (0, 1))]
+    snapshot(pod, target / ("http-" + binding), snapshots, records)
+    return binding
+
+
+def published_http(args, cfg, order, native):
+    """Only a positive, merged, target-activated native release may enter the separate product gate."""
+    if not getattr(args, "serve_qualified", False) or native["stage"] != "active":
+        return native
+    state = args.state
+    done = state / "http-outcome.json"
+    key = order["order_id"]
+    route = ["--reference-url", args.http_reference_url] if args.http_reference_url else ["--scoped-only"]
+    write_once(state / "http-request.json", {"native": key, "reference_url": args.http_reference_url,
+               "lifetime": args.http_serve_seconds, "port": args.http_port, "timeout": args.http_timeout})
+    if done.exists():
+        return read(done)
+    pod = lease(cfg["pod_id"])
+    remote = PurePosixPath(cfg["state_root"]) / key
+    deploy = ["--state", remote / "active", "--checkout", cfg["checkout"], "--candidate-source", remote / "candidate.cu",
+              "--reference-lib", cfg["reference_lib"], "--table", cfg["table"], "--gguf", cfg["gguf"],
+              "--worker-root", cfg["worker_root"], "--trial", remote / "trial"]
+    addon = state / "http-framework.json"
+    if not addon.exists():
+        files = ["lab/pk1/native_http.py", "lab/pk1/native_http_worker.py", "lab/rp/restricted_worker.py",
+                 "ironmule_product/backend.py", "ironmule_product/http_server.py"]
+        root = Path(__file__).resolve().parents[2]
+        expected = [native_trial.checksum(root / f) for f in files]
+        paths = [str(PurePosixPath(cfg["framework"]) / f) for f in files]
+        actual = [line.split()[0] for line in shell(pod, shlex.join(["sha256sum", "--", *paths])).splitlines()]
+        if actual != expected:
+            raise ValueError("target HTTP qualification framework differs from control")
+        write_once(addon, dict(zip(files, actual, strict=True)))
+    for op in ("qualify", "exercise", "serve"):
+        binding = collect_http(pod, remote, state, native)
+        file = "http-" + op + ".json"
+        dest = remote / file
+        snapshot(pod, remote, [file], state)
+        if not (state / file).exists():
+            left = int(pod["deadline"] - time.time()) - 15
+            timeout = min(left, args.http_timeout)
+            if timeout < 1 or op == "serve" and timeout < args.http_serve_seconds:
+                return {"stage": "http_lease_limit", "order": key, "pr": native["pr"], "pending": op}
+            extra = [] if op == "qualify" else ["--port", args.http_port]
+            if op == "serve":
+                extra += [*route, "--lifetime", args.http_serve_seconds, "--canary", "--report", dest]
+            cmd = command(cfg, "lab.pk1.native_http", [op, *deploy, "--timeout", timeout, *extra])
+            if op != "serve":
+                output = shlex.quote(str(dest))
+                cmd += " > " + output + ".tmp && mv " + output + ".tmp " + output
+            status = job(pod, "http-" + op + "-" + key[:16], cmd)
+            if status != "finished":
+                return {"stage": "http_" + op, "order": key, "pr": native["pr"], "port": args.http_port}
+            snapshot(pod, remote, [file], state)
+        row = read(state / file)
+        if row["control_receipt"] != native["receipt_sha256"]:
+            raise ValueError("foreign HTTP control receipt")
+        if op == "qualify":
+            binding = collect_http(pod, remote, state, native)
+            if binding is None or row["binding"] != binding:
+                raise ValueError("HTTP decision differs from immutable target manifest")
+            if row["decision"]["passed"] is not True:
+                final = {**native, "stage": "http_declined", "http": row,
+                         "cost_window": cost_window(pod, state / "trial", False)}
+                save(done, final)
+                return final
+        elif row["binding"] != binding:
+            raise ValueError("mixed HTTP campaign bindings")
+        elif op == "exercise":
+            if not row["withdrawn"] or [r["arm"] for r in row["responses"]] != ["cand", "ref"]:
+                raise ValueError("missing HTTP rollback witness")
+        elif (row["selection"].get("arm") != "cand" or row["completed"] < 1
+              or not any(r.get("arm") == "cand" and r.get("external_completion") for r in row["starts"])):
+            final = {**native, "stage": "http_withdrawn", "http": row,
+                     "cost_window": cost_window(pod, state / "trial", False)}
+            save(done, final)
+            return final
+    cost = cost_window(pod, state / "trial", False)
+    savings = []
+    for half in (0, 1):
+        ref, cand = (read(state / "http-evidence" / f"{arm}-{half}.json")["rows"] for arm in ("ref", "cand"))
+        savings.extend(r["wall_s"] - c["wall_s"] for r, c in zip(ref, cand, strict=True))
+    if len(savings) != PAIRS or min(savings) <= 0:
+        raise ValueError("missing positive paired HTTP throughput evidence")
+    cost["requests_to_amortize_lease_time"] = 32 * math.ceil(cost["lease_elapsed_s"] / median(savings))
+    cost["amortization_basis"] = "measured 32-request HTTP waves"
+    final = {**native, "stage": "http_verified", "http": row, "cost_window": cost}
+    save(done, final)
+    return final
+
+
 def cycle(args):
     cfg = read(args.config)
     if set(cfg) != CONFIG_KEYS or any(not PurePosixPath(cfg[k]).is_absolute() for k in CONFIG_KEYS - {"pod_id"}):
@@ -137,10 +241,10 @@ def cycle(args):
     write_once(state / "campaign.json", {"order": key, "config": digest(cfg),
                "evaluator": native_trial.checksum(native_trial.__file__), "base": order["base_commit"]})
     done = state / "outcome.json"
-    if done.is_file():
-        return read(done)
     with (state / ".campaign.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if done.is_file():
+            return published_http(args, cfg, order, read(done))
         candidate = state / "authoring/candidate.cu"
         author_args = SimpleNamespace(order=args.order, checkout=args.checkout, output=candidate)
         try:
@@ -174,8 +278,23 @@ def cycle(args):
                   "--worker-root", cfg["worker_root"]]
         snapshot(pod, remote_trial, TRIAL_FILES, trial)
         if not (trial / "result.json").exists():
-            status = job(pod, "qualify-" + key[:16], command(cfg, "lab.pk1.native_trial",
-                         [*common, "--order", native_order, "--output", remote_trial / "result.json"]))
+            try:
+                status = job(pod, "qualify-" + key[:16], command(cfg, "lab.pk1.native_trial",
+                             [*common, "--order", native_order, "--output", remote_trial / "result.json"]))
+            except RuntimeError:
+                # The evaluator can atomically publish a negative decision just before its nonzero exit.
+                snapshot(pod, remote_trial, TRIAL_FILES, trial)
+                result = trial / "result.json"
+                if not result.exists():
+                    raise
+                refused = read(result)
+                if (refused.get("passed") is not False or refused.get("schema") != native_trial.SCHEMA
+                        or not (trial / "context.json").is_file() or refused.get("context") != read(trial / "context.json")
+                        or refused["context"].get("order") != key or refused["context"].get("base_commit") != order["base_commit"]
+                        or refused["context"].get("candidate_source") != native_trial.checksum(candidate)
+                        or not isinstance(refused.get("reason"), str)):
+                    raise
+                status = "finished"
             if status == "finished":
                 snapshot(pod, remote_trial, TRIAL_FILES, trial)
                 if not (trial / "result.json").exists():
@@ -216,7 +335,7 @@ def cycle(args):
                  "completed": row["completed"], "wall_s": row["wall_s"], "ttft_s": row["ttft_s"],
                  "cost_window": cost_window(pod, trial, active)}
         save(done, final)
-        return final
+        return published_http(args, cfg, order, final)
 
 
 def main():
@@ -227,14 +346,25 @@ def main():
     p.add_argument("--publish", action="store_true", help="submit a qualifying tree and activate after passing CI")
     p.add_argument("--author-cli", action="store_true", help="consume pending orders via subscription Codex")
     p.add_argument("--wait-seconds", type=int, default=0, help="bounded polling window; rerun to resume")
+    p.add_argument("--serve-qualified", action="store_true", help="qualify published native winners over real product HTTP")
+    routes = p.add_mutually_exclusive_group()
+    routes.add_argument("--http-reference-url", help="ordinary checked model server for requests outside the validated profile")
+    routes.add_argument("--dedicated-http", action="store_true", help="provide an explicitly scoped in-pod endpoint")
+    p.add_argument("--http-port", type=int, default=8230)
+    p.add_argument("--http-serve-seconds", type=int, default=120)
+    p.add_argument("--http-timeout", type=int, default=1800)
     args = p.parse_args()
+    if args.serve_qualified and (not args.publish or not (args.http_reference_url or args.dedicated_http)):
+        p.error("--serve-qualified requires --publish and --http-reference-url or --dedicated-http")
+    if not 1 <= args.http_port <= 65535 or not 1 <= args.http_serve_seconds <= args.http_timeout <= 3600:
+        p.error("invalid HTTP port or lifetime")
     if not 0 <= args.wait_seconds <= 7200:
         p.error("wait-seconds must be in 0..7200")
     until = time.monotonic() + args.wait_seconds
     while True:
         outcome = cycle(args)
         print(json.dumps(outcome), flush=True)
-        if outcome["stage"] in {"active", "withdrawn", "qualified", "rejected", "staged"} or time.monotonic() >= until:
+        if outcome["stage"] in {"active", "withdrawn", "qualified", "rejected", "staged", "http_verified", "http_declined", "http_withdrawn", "http_lease_limit"} or time.monotonic() >= until:
             return
         time.sleep(max(0, min(10, until - time.monotonic())))
 
