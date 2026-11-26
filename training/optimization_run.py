@@ -7,6 +7,7 @@ import hashlib
 import itertools
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,7 @@ def sha(path):
 def provenance():
     return {name: sha(ROOT / "training" / name) for name in (
         "serving_trial.py", "optimization_run.py", "experiment_planner.py", "experience_archive.py",
-        "code_trial.py", "code_author.py", "trial_release.py")}
+        "code_trial.py", "code_author.py", "trial_release.py", "pilot_threads.py")}
 
 
 def discover(tree, run_dir, model, provider):
@@ -45,8 +46,15 @@ def discover(tree, run_dir, model, provider):
         argv = [sys.executable, str(ROOT / "training" / "serving_trial.py"), "--gguf", str(model),
                 "--out", str(out / "trial.json"), "--profile-dir", str(out / "waves"),
                 "--require-provider", provider, "--waves", "4", "--threads", "2", "--clients", "4", "--seed", "1241"]
+        checkpoint = run_dir / "trial/controller.npz"
+        if checkpoint.exists():
+            argv.extend(["--thread-candidate", str(checkpoint)])
         with (run_dir / "discovery.log").open("ab") as log:
-            subprocess.run(argv, cwd=tree, env=env, stdout=log, stderr=log, timeout=900, check=True)
+            try:
+                subprocess.run(argv, cwd=tree, env=env, stdout=log, stderr=log, timeout=900, check=True)
+            except subprocess.SubprocessError:
+                os.replace(out, run_dir / f"rejected-discovery-{time.time_ns()}")
+                raise
         trial = read(out / "trial.json")
         if (len(list((out / "waves").glob("wave-*.json"))) != 4 or trial["completed"] != 16
                 or trial["correct"] != 16 or trial["pilot_decisions"] <= 0):
@@ -102,6 +110,7 @@ def current_deployment(trial_dir):
 
 
 def run(args):
+    started = time.monotonic()
     state = args.state.resolve()
     model = args.gguf.resolve(strict=True)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.run_id):
@@ -114,16 +123,35 @@ def run(args):
         path = run_dir / "context.json"
         prior = read(path) if path.exists() else {}
         base = git("rev-parse", "--verify", (args.base or prior.get("base") or "HEAD") + "^{commit}")
-        context = {"schema": 1, "base": base, "provider": args.provider,
+        source = getattr(args, "thread_candidate", None)
+        checkpoint = run_dir / "trial/controller.npz"
+        expected = sha(source) if source else prior.get("thread_candidate_sha256")
+        if expected and args.provider != "cpu":
+            raise ValueError("scratch thread qualification is CPU-only")
+        context = {"schema": 1, "base": base, "provider": args.provider, "thread_candidate_sha256": expected,
                    "gguf_sha256": sha(model), "implementation_sha256": provenance()}
         if prior and context != prior:
             raise ValueError("different model, provider, source revision or experiment implementation on resume")
+        if expected and not checkpoint.exists():
+            if source is None:
+                raise ValueError("missing snapshotted thread candidate; supply the original checkpoint")
+            checkpoint.parent.mkdir(mode=0o700, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=checkpoint.parent) as tmp:
+                copy = Path(tmp) / checkpoint.name
+                shutil.copyfile(source, copy)
+                if sha(copy) != expected:
+                    raise ValueError("source checkpoint changed during snapshot")
+                copy.chmod(0o400)
+                os.replace(copy, checkpoint)
+        if (sha(checkpoint) if checkpoint.exists() else None) != expected:
+            raise ValueError("stored thread checkpoint differs from the expected model")
         save(path, context)
         done = run_dir / "complete.json"
-        if done.exists() and (not args.publish or read(done)["publish_requested"]):
-            return {**read(done), "deployment": current_deployment(run_dir / "trial")}
+        if done.exists():
+            saved = read(done)
+            if not args.publish or saved["publish_requested"] or not saved["historical_qualification"]["passed"]:
+                return {**saved, "deployment": current_deployment(run_dir / "trial")}
         attempt = run_dir / f"attempt-{time.time_ns()}.json"
-        started = time.monotonic()
         log = {"started_unix_s": time.time(), "status": "running", "publish_requested": args.publish,
                "new_resource_bookings_usd": 0, "api_charges_usd": 0,
                "hardware_billing": "existing allocation; provider ledger tracks the lease"}
@@ -151,6 +179,8 @@ def run(args):
                     raise ValueError("proposal source or model differs from frozen discovery inputs")
                 save(order_file, order)
             order = read(order_file)
+            if provenance() != context["implementation_sha256"]:
+                raise ValueError("experiment implementation changed after discovery")
             result_dir = run_dir / "trial"
             stage = "development and qualification"
             code_trial.cycle(SimpleNamespace(order=order_file, state=result_dir, gguf=model, provider=args.provider,
@@ -199,9 +229,14 @@ def main():
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--run-id", default="first")
     parser.add_argument("--base", help="baseline Git revision, pinned in state on first invocation")
+    parser.add_argument("--thread-candidate", type=Path, help="snapshot a four-slot CPU thread checkpoint")
     parser.add_argument("--provider", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--publish", action="store_true", help="publish a qualifying change through the PR gate")
-    print(json.dumps(run(parser.parse_args()), sort_keys=True, indent=2))
+    args = parser.parse_args()
+    # The experiment and its child workers yield CPU time to higher-priority serving processes.
+    if os.getpriority(os.PRIO_PROCESS, 0) < 10:
+        os.setpriority(os.PRIO_PROCESS, 0, 10)
+    print(json.dumps(run(args), sort_keys=True, indent=2))
 
 
 if __name__ == "__main__":

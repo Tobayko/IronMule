@@ -16,6 +16,7 @@ import random
 import re
 import resource
 import subprocess
+import tempfile
 import time
 from contextlib import closing, nullcontext
 from pathlib import Path
@@ -101,6 +102,8 @@ def measure(args):
     if provider != "cpu" and len(devices) != 1:
         raise ValueError("select exactly one visible GPU to measure this workload")
     verified = verify_ggml(provider)
+    if args.thread_candidate and provider != "cpu":
+        raise ValueError("the scratch thread head requires its local GGML CPU backend")
     placement = []
 
     @ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
@@ -112,10 +115,11 @@ def measure(args):
 
     L.llama_log_set(logger, None)
     try:
-        engine = ge.GgmlEngine(str(args.gguf), threads=args.threads, seqs=args.clients, seq_ctx=512)
+        engine = ge.GgmlEngine(str(args.gguf), threads=args.threads, seqs=args.clients, seq_ctx=512,
+                               speculate=args.thread_candidate is None)
     finally:
         L.llama_log_set(None, None)
-    with closing(engine), closing(GgufTokenizer(str(args.gguf), L)) as tokenizer:
+    with closing(engine), closing(GgufTokenizer(str(args.gguf), L)) as tokenizer, tempfile.TemporaryDirectory() as scratch:
         if provider != "cpu" and not any(n == total and n > 0 for n, total in placement):
             raise RuntimeError("GGUF loader did not confirm full GPU offload")
         if provider == "cpu" and engine.gpu_layers:
@@ -135,11 +139,25 @@ def measure(args):
                    "prefix_reuse": engine.prefix_reuse, "speculate": engine.speculate,
                    "env_sha256": digest({k: v for k, v in os.environ.items() if k.startswith(
                        ("IRONMULE_", "GGML_", "OPENBLAS_", "OMP_", "CUDA_"))})}
+        qualification = None
+        if args.thread_candidate:
+            try:
+                from .pilot_threads import qualify_candidate
+            except ImportError:
+                from pilot_threads import qualify_candidate
+            qualification = qualify_candidate(engine, args.gguf, args.thread_candidate, Path(scratch),
+                                                profile_clients=args.clients)
+            binding["scratch_thread_head"] = {
+                **qualification["binding"], "weights_sha256": file_digest(args.thread_candidate),
+                "helper_sha256": file_digest(Path(__file__).with_name("pilot_threads.py")),
+                "learner_sha256": file_digest(REPO / "ironmule/pilot_learning.py")}
         workload = {"seed": args.seed, "clients": args.clients, "waves": args.waves, "max_tokens": args.tokens,
                     "warmup_waves": 1, "context": 512, "phases": ["short", "document"]}
         initialization = time.monotonic() - started
         warmup = run_wave(engine, tokenizer, fixture(args.seed ^ 0xbeef, args.clients, "short"), args.tokens, {})
         prior_decisions = engine.pilot.decisions
+        learning = engine.pilot.learning
+        scratch_before = dict(learning.candidate_status) if args.thread_candidate else {}
         waves = []
         free_bytes = []
         for num in range(args.waves):
@@ -173,6 +191,9 @@ def measure(args):
                 "output_sha256": digest([w["output_sha256"] for w in waves]), "waves": waves,
                 "completed": sum(w["completed"] for w in waves), "correct": sum(w["correct"] for w in waves),
                 "tokens": sum(w["tokens"] for w in waves), "pilot_decisions": decisions, "pilot": engine.pilot.status(),
+                "scratch_qualification": qualification, "scratch_measured_decisions": (
+                    learning.candidate_status["qualified_decisions"] - scratch_before["qualified_decisions"]
+                    if args.thread_candidate else None),
                 "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                 "device_free_bytes_after_waves": free_bytes, "total_elapsed_s": time.monotonic() - started}
 
@@ -183,6 +204,7 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--require-provider", choices=("cpu", "cuda"))
     parser.add_argument("--profile-dir", type=Path)
+    parser.add_argument("--thread-candidate", type=Path, help="optional hardware-bound CPU thread head")
     parser.add_argument("--waves", type=int, default=4, choices=range(1, 65), metavar="1..64")
     parser.add_argument("--threads", type=int, default=2, choices=range(1, 257), metavar="1..256")
     parser.add_argument("--clients", type=int, default=4, choices=range(1, 33), metavar="1..32")
@@ -194,6 +216,8 @@ def main():
         parser.error("--revision requires a full Git SHA")
     report = measure(args)
     save(args.out, report)
+    if args.thread_candidate and not report["scratch_measured_decisions"]:
+        raise SystemExit("no qualified scratch thread choice was used in the measured waves")
     if report["correct"] != report["completed"]:
         raise SystemExit(f"copy quality failed: {report['correct']}/{report['completed']} correct")
 

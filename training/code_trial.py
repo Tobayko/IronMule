@@ -159,7 +159,7 @@ def runtime_env(provider):
     return environment
 
 
-def sandbox(tree, gguf, dest, provider):
+def sandbox(tree, gguf, dest, provider, thread_candidate=None):
     """Read-only fixture, evaluator and candidate. No account credentials or campaign state in the worker."""
     python = Path(sys.executable)
     cmd = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--proc", "/proc",
@@ -178,6 +178,11 @@ def sandbox(tree, gguf, dest, provider):
     cmd += ["--ro-bind", str(tree), "/trial", "--ro-bind", str(ROOT / "training/serving_trial.py"),
             "/trusted/serving_trial.py", "--ro-bind", str(gguf), "/models/" + gguf.name,
             "--bind", str(dest), "/output", "--chdir", "/trial"]
+    if thread_candidate is not None:
+        if provider != "cpu":
+            raise ValueError("CPU-only scratch thread candidate")
+        cmd += ["--ro-bind", str(thread_candidate.resolve(strict=True)), "/models/controller.npz",
+                "--ro-bind", str(ROOT / "training/pilot_threads.py"), "/trusted/pilot_threads.py"]
     environment = runtime_env(provider)
     for k, v in environment.items():
         cmd += ["--setenv", k, v]
@@ -187,11 +192,45 @@ def sandbox(tree, gguf, dest, provider):
 def measure(tree, args, seed, parent):
     with tempfile.TemporaryDirectory(dir=parent) as tmp:
         tmp = Path(tmp)
-        cmd = sandbox(tree, args.gguf.resolve(), tmp, args.provider)
+        weights = parent / "controller.npz"
+        extra = ["--thread-candidate", "/models/controller.npz"] if weights.is_file() else []
+        cmd = sandbox(tree, args.gguf.resolve(), tmp, args.provider, weights if extra else None)
         run([*cmd, "/trusted/serving_trial.py", "--gguf", "/models/" + args.gguf.name,
              "--require-provider", args.provider, "--out", "/output/trial.json", "--waves", "4",
-             "--threads", "2", "--clients", "4", "--seed", str(seed)], timeout=300)
+             "--threads", "2", "--clients", "4", "--seed", str(seed), *extra], timeout=420)
         return read(tmp / "trial.json")
+
+
+def verify_deliveries(row, seed):
+    """Score the returned texts and reconstruct work totals outside the candidate process."""
+    from training.serving_trial import COLORS, digest
+    checksums = []
+    ttft = []
+    tokens = 0
+    seconds = 0.0
+    for i, wave in enumerate(row["waves"]):
+        answers = wave["answers"]
+        if len(answers) != 4 or wave["workload"] != ("short", "document")[i % 2]:
+            raise ValueError("incomplete or different request wave")
+        for lane, answer in enumerate(answers):
+            expected = COLORS[(seed + i + lane) % len(COLORS)]
+            first = re.search(r"\w+", answer["answer"].casefold())
+            ids = answer["output_ids"]
+            if (not first or first.group() != expected or answer["target"] != expected
+                    or not isinstance(ids, list) or not all(type(t) is int and t >= 0 for t in ids)
+                    or not 1 <= len(ids) <= 3 or answer["stop"] not in ("length", "eos")
+                    or (answer["stop"] == "length" and len(ids) != 3)):
+                raise ValueError("delivered answer failed external fixed-work check")
+            tokens += len(ids)
+        times = wave["ttfts_s"]
+        if len(times) != 4 or not all(0 < t <= wave["wall_s"] for t in times):
+            raise ValueError("invalid delivery timestamps")
+        ttft.extend(times)
+        seconds += wave["wall_s"]
+        checksums.append(digest(answers))
+    if (row["tokens"] != tokens or row["wall_s"] != seconds or row["output_sha256"] != digest(checksums)
+            or row["ttft_s"] != sorted(ttft)[math.ceil(.95 * len(ttft)) - 1]):
+        raise ValueError("whole-run metrics differ from individual deliveries")
 
 
 def validate_arm(row, tree, order, seed, signature):
@@ -204,6 +243,7 @@ def validate_arm(row, tree, order, seed, signature):
             or row["pilot_decisions"] <= 0 or row["profiled"] or row["schema"] != order["evaluator"]
             or len(row["waves"]) != 4 or any(w["completed"] != 4 or w["correct"] != 4 for w in row["waves"])):
         raise ValueError("unverified source, evaluator or incomplete work")
+    verify_deliveries(row, seed)
     # Location-specific environment hashes can differ between discovery and isolation.
     # Actual settings, hardware, model and libraries must agree. Both timed arms must
     # additionally match *all* binding fields, including the environment hash.

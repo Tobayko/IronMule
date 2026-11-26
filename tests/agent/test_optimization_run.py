@@ -10,7 +10,11 @@ def test_resume_preserves_order_and_freezes_inputs(tmp_path, monkeypatch):
     model = tmp_path / "fixture.gguf"
     model.write_bytes(b"immutable model")
     args = SimpleNamespace(state=tmp_path / "state", run_id="first", gguf=model, provider="cpu", base=None, publish=False)
+    checkpoint = tmp_path / "thread-head.npz"
+    checkpoint.write_bytes(b"measured head")
+    args.thread_candidate = checkpoint
     events = []
+    monkeypatch.setattr(op, "provenance", lambda: {"gate": "fixed"})
     monkeypatch.setattr(op, "git", lambda *a, **kw: "" if a[0] == "status" else "a" * 40)
     monkeypatch.setattr(op.code_trial, "prepare", lambda run, base, name: tmp_path)
     monkeypatch.setattr(op.experience_archive, "build", lambda tree: [])
@@ -40,6 +44,9 @@ def test_resume_preserves_order_and_freezes_inputs(tmp_path, monkeypatch):
     monkeypatch.setattr(op.code_trial, "cycle", cycle)
     with pytest.raises(InterruptedError):
         op.run(args)
+    stored = args.state / "runs/first/trial/controller.npz"
+    assert stored.read_bytes() == checkpoint.read_bytes()
+    args.thread_candidate = None
     result = op.run(args)
     assert op.run(args) == result
     assert not result["historical_qualification"]["passed"] and events == ["measure", "plan", "interrupt", "judge"]
@@ -49,6 +56,11 @@ def test_resume_preserves_order_and_freezes_inputs(tmp_path, monkeypatch):
     assert failure["reason"].endswith("InterruptedError")
     assert failure["source_sha256"] == op.sha(run.parent / failure["source"])
     assert result["deployment"] == {"active": None, "withdrawn": False}
+    stored.chmod(0o600)
+    stored.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="stored thread checkpoint"):
+        op.run(args)
+    stored.write_bytes(checkpoint.read_bytes())
     model.write_bytes(b"changed")
     with pytest.raises(ValueError, match="different model"):
         op.run(args)
