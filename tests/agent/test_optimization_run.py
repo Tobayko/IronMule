@@ -85,3 +85,29 @@ def test_cached_result_with_changed_active_link_withdraws(tmp_path, monkeypatch)
     assert state["active"] == "a" * 40
     assert (d / "active").readlink().name == "a" * 40
     assert op.current_deployment(tmp_path) == state
+
+
+def test_measured_scratch_refusal_is_terminal(tmp_path, monkeypatch):
+    model = tmp_path / "model"
+    model.write_bytes(b"model")
+    args = SimpleNamespace(state=tmp_path / "st", run_id="no-action", gguf=model, provider="cpu", base=None, publish=False)
+    monkeypatch.setattr(op, "git", lambda *a, **kw: "" if a[0] == "status" else "a" * 40)
+    monkeypatch.setattr(op.code_trial, "prepare", lambda *a: tmp_path)
+    monkeypatch.setattr(op, "provenance", lambda: {"gate": "fixed"})
+
+    args.thread_candidate = tmp_path / "weights"
+    args.thread_candidate.write_bytes(b"fixture head")
+    monkeypatch.setattr(op, "provenance", lambda: {"serving_trial.py": "fixed"})
+
+    def discovery(tree, run_dir, model, provider):
+        d = run_dir / "discovery-rejected"
+        d.mkdir()
+        op.save(d / "trial.json", {"workload": {}, "commit": "a" * 40, "evaluator_sha256": "fixed",
+                                  "binding": {"model_sha256": op.sha(model), "scratch_thread_head": {
+                                      "weights_sha256": op.sha(args.thread_candidate)}}, "wall_s": 1.0, "ttft_s": 0.2, "correct": 16,
+                                  "completed": 16, "scratch_measured_decisions": 0, "total_elapsed_s": 10.0})
+
+    monkeypatch.setattr(op, "discover", discovery)
+    result = op.run(args)
+    assert result["order_id"] is None and not result["historical_qualification"]["passed"]
+    assert op.run(args) == result

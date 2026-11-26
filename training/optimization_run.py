@@ -37,7 +37,7 @@ def provenance():
 def discover(tree, run_dir, model, provider):
     """Promote the four observations and matching trial together after a complete discovery."""
     target = run_dir / "discovery"
-    if target.is_dir():
+    if target.is_dir() or (run_dir / "discovery-rejected/trial.json").is_file():
         return
     env = {**code_trial.runtime_env(provider), "PYTHONPATH": str(tree)}
     with tempfile.TemporaryDirectory(dir=run_dir) as temp:
@@ -53,6 +53,13 @@ def discover(tree, run_dir, model, provider):
             try:
                 subprocess.run(argv, cwd=tree, env=env, stdout=log, stderr=log, timeout=900, check=True)
             except subprocess.SubprocessError:
+                if (out / "trial.json").is_file():
+                    measured = read(out / "trial.json")
+                    if (checkpoint.is_file() and measured.get("scratch_measured_decisions") == 0
+                            and measured.get("correct") == measured.get("completed") == 16
+                            and measured["binding"]["scratch_thread_head"]["weights_sha256"] == sha(checkpoint)):
+                        os.replace(out, run_dir / "discovery-rejected")
+                        return
                 os.replace(out, run_dir / f"rejected-discovery-{time.time_ns()}")
                 raise
         trial = read(out / "trial.json")
@@ -170,6 +177,30 @@ def run(args):
             if git("status", "--porcelain", cwd=tree):
                 raise ValueError("frozen discovery checkout has changes")
             discover(tree, run_dir, model, args.provider)
+            rejected = run_dir / "discovery-rejected/trial.json"
+            if rejected.exists():
+                measured = read(rejected)
+                if (not expected or measured["binding"]["model_sha256"] != context["gguf_sha256"]
+                        or measured["binding"]["scratch_thread_head"]["weights_sha256"] != expected
+                        or measured["evaluator_sha256"] != context["implementation_sha256"]["serving_trial.py"]
+                        or measured["commit"] != base or measured["scratch_measured_decisions"] != 0
+                        or measured["completed"] != 16 or measured["correct"] != 16):
+                    raise ValueError("rejected discovery differs from the pinned run")
+                reason = "no qualified scratch thread action used in the measured waves"
+                result = {"historical_qualification": {"passed": False, "stage": "controller discovery", "reason": reason},
+                          "order_id": None, "base": base, "run_id": args.run_id, "publish_requested": args.publish,
+                          "recorded_optimization_s": time.monotonic() - started, "new_resource_bookings_usd": 0}
+                row = experience_archive.record(
+                    "controller_discovery", f"{args.run_id}/discovery-rejected/trial.json", sha(rejected), "waves",
+                    args.run_id, title="CPU thread qualification", reason=reason, decision=False,
+                    hardware=measured["binding"], workload=measured["workload"], model=context["gguf_sha256"],
+                    base_commit=base, metrics=[{k: measured[k] for k in (
+                        "wall_s", "ttft_s", "correct", "completed", "scratch_measured_decisions", "total_elapsed_s")}],
+                    authorship="IronMule measured and declined the scratch thread head.")
+                save(run_dir / "experience.json", row)
+                save(done, result)
+                log["status"] = "finished"
+                return {**result, "deployment": current_deployment(run_dir / "trial")}
             stage = "archive"
             archive = run_dir / "experience.jsonl"
             others = sorted(d for d in run_dir.parent.iterdir() if d != run_dir and d.is_dir())
