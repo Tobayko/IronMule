@@ -147,3 +147,13 @@ def test_live_observations_withdraw_without_extra_measurement(campaign, monkeypa
     assert (state / "deployment/active").readlink() == Path(base)
     rel.run_active(state, model, 46)
     assert calls == [candidate] * 6 + [base]
+
+
+def test_status_keeps_historical_verdict_separate_from_current_target(tmp_path):
+    assert rel.status(tmp_path)["historical_gate"] is None
+    rel.save(tmp_path / "result.json", {"passed": True, "reason": "paired hardware gate"})
+    row = rel.status(tmp_path)
+    assert row["historical_gate"] is True
+    assert row["checkout"]["active"] is None
+    assert row["recorded_target"] is None
+    assert row["hardware_tested_by_status"] is False

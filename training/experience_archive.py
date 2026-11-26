@@ -18,7 +18,7 @@ from friday_evidence.canonical import canonical_json, canonical_sha256
 from ironmule_product.placement_training import check_trace
 
 ROOT = Path(__file__).resolve().parents[1]
-PILOT_TRIALS = "evidence/runtime/cpu-pilot-thread-trials.json"
+PILOT_TRIALS = "evidence/runtime/cpu-pilot-*-trials.json"
 # The trace schema records an opaque configuration hash and affinity. These five
 # file hashes are the specific runs attributed to the EPYC host in docs/LAB.md.
 EPYC_PLACEMENT_REPORTS = {
@@ -167,12 +167,19 @@ def pilot_trials(source, digest, doc):
         arms = Counter((r["threads"], r["repetition"]) for r in obs)
         valid = (len(choices) > 1 and arms == Counter((n, rep) for n in choices for rep in (0, 1))
                  and all(re.fullmatch(r"[0-9a-f]{64}", r["tokens_digest"] or "") for r in obs))
+        resolved = []
+        if valid:
+            by_thread = {n: [r["seconds"] for r in obs if r["threads"] == n] for n in choices}
+            reference = by_thread[sample["base"]]
+            resolved = sorted(n for n, times in by_thread.items()
+                              if n != sample["base"] and (max(times) < min(reference) or min(times) > max(reference)))
+        reason = None if resolved else ("overlapping_repeats" if valid else "unverified_comparison")
         yield record("pilot_thread_trial", source, digest, f"groups/{i}", str(sample["group"]),
                      hardware=profile["machine"], software={"platform": profile["platform"], "numpy": profile["numpy"]},
                      model=profile["gguf"], base_commit=profile["commit"], new_resource_bookings_usd=profile["cost_usd_incremental"],
                      profiles=[profile], binding=doc["binding"], metrics=obs,
                      workload={k: v for k, v in sample.items() if k not in ("group", "observations")},
-                     label_eligible=valid, reason=None if valid else "unverified_comparison",
+                     label_eligible=bool(resolved), labeled_alternative_threads=resolved, reason=reason,
                      uncertainty="Per-step measurement on the recorded binding.")
 
 
@@ -233,11 +240,11 @@ def build(root=ROOT) -> Iterator[dict]:
     files = subprocess.check_output(
         ["git", "ls-files", "-z", "--", ":(glob)lab/**/results/**", "evidence/runtime", "docs/LAB.md"], cwd=root,
     ).decode().split("\0")
-    if PILOT_TRIALS not in files and (root / PILOT_TRIALS).is_file():
-        files.append(PILOT_TRIALS)
+    checkpoints = {str(path.relative_to(root)) for path in root.glob(PILOT_TRIALS) if path.is_file()}
+    files.extend(sorted(checkpoints - set(files)))
     for source in sorted(filter(None, files)):
         path = root / source
-        if source == PILOT_TRIALS:
+        if source in checkpoints:
             blob = path.read_bytes()
             yield from pilot_trials(source, canonical_sha256(blob), json.loads(blob))
             continue

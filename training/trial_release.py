@@ -292,6 +292,23 @@ def run_active(state: Path, gguf: Path, seed: int):
     return result
 
 
+def status(state: Path):
+    """Read the recorded trial verdict and verify the selected checkout without running a model."""
+    from training.optimization_run import current_deployment
+
+    selected = current_deployment(state)
+    manifest = state / "deployment/release.json"
+    release = read(manifest) if manifest.is_file() else {}
+    result = state / "result.json"
+    history = read(result) if result.is_file() else {}
+    pair = state / "pair-0.json"
+    observation = read(pair)["reference"] if history and not release and pair.is_file() else {}
+    target = release or observation
+    return {"historical_gate": history.get("passed"), "gate_reason": history.get("reason"), "checkout": selected,
+            "recorded_target": target.get("binding"), "recorded_workload": target.get("workload"),
+            "hardware_tested_by_status": False}
+
+
 def rollback(state: Path):
     with deployment(state) as d:
         return restore(d, read(d / "release.json"), "explicit withdrawal")
@@ -300,10 +317,10 @@ def rollback(state: Path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("activate", "check", "run", "rollback"):
+    for name in ("activate", "check", "run", "rollback", "status"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--state", type=Path, required=True)
-        if name != "rollback":
+        if name not in ("rollback", "status"):
             cmd.add_argument("--gguf", type=Path, required=True)
         if name == "run":
             cmd.add_argument("--seed", type=int, default=9351)
@@ -312,6 +329,9 @@ def main():
             cmd.add_argument("--order", type=Path, required=True)
             cmd.add_argument("--pr", type=int, required=True)
     args = parser.parse_args()
+    if args.command == "status":
+        print(json.dumps(status(args.state), sort_keys=True))
+        return
     if args.command == "activate":
         result = activate(args.state, read(args.order), args.pr, args.gguf)
     elif args.command == "check":
