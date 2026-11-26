@@ -269,7 +269,7 @@ def product_assets(state, order, verified, assets, *, attempt=None, checkout=Non
 
 def bound_plan(path, order, assets):
     from training.code_author import digest
-    from training.restart_replan import past_attempts
+    from training.restart_replan import past_attempts, completed_phase_probe
 
     data = bounded(path)
     plan = json.loads(data)
@@ -280,6 +280,10 @@ def bound_plan(path, order, assets):
                          "served_sha256": "http-product-serve.json", "rollback_sha256": "http-product-exercise.json",
                          "counterbalanced_native_sha256": "result.json"})
         match = plan["schema"] == "ironmule.restart-replan.v1" and plan["negative_history"] == known
+        if "completed_phase_probe" in plan:
+            probe = completed_phase_probe(ROOT / "lab/autonomous/results", order, json.loads(assets["control.json"]),
+                                          sha(assets["startup-head.npz"]), sha(assets["control.json"]))
+            match = match and probe is not None and plan["completed_phase_probe"] == probe
     else:
         receipts.update({"native_result_sha256": "result.json", "product_verdict_sha256": "http-product-qualify.json"})
         observed = {n: sha(assets["http-" + n]) for n in HTTP_ARMS if "http-" + n in assets}
