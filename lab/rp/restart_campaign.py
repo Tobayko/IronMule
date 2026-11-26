@@ -317,6 +317,10 @@ def product(args, cfg, remote, check, active):
                 return {**active,"stage":"product gate checkpointed","gate":value}
         elif op == "qualify":
             if value.get("passed") is not True:
+                # The arm may finish between the evidence and result snapshots in this poll.
+                snapshot(pod, evidence, ["decision.json", "withdrawn.json"], local)
+                if not (local/"decision.json").is_file():
+                    raise ValueError("target returned an HTTP verdict without a durable decision")
                 from training.restart_replan import declined
                 note = declined(state, checkout=args.checkout, product_dir=local)
                 return {**active, "stage": "product declined", "product_result": value, "next_experiment": note["next"]}
