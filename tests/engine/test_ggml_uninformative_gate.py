@@ -46,16 +46,16 @@ def test_uninformative_reference_skips_all_competing_shapes_but_requires_stock_i
     monkeypatch.setattr(ggml_engine, "machine_key", lambda: "fixture")
     model = tmp_path / "fixture.gguf"
     model.write_bytes(b"model")
-    if mode in ("kg5", "cublas"):
+    if mode == "kg5":
         with pytest.raises(InvalidRequest, match="skipped_uninformative_reference"):
             _qualify_ggml_kernels(str(model), str(model), tmp_path / "cache")
         assert len(references) == 1
         return
     result = _qualify_ggml_kernels(str(model), str(model), tmp_path / "cache")
-    assert len(references) == (2 if mode == "generated" else 1)
-    if mode == "generated":
+    assert len(references) == (2 if mode in ("generated", "cublas") else 1)
+    if mode in ("generated", "cublas"):
         generated, stock = result["kernel_fallback"]["attempts"]
-        assert not generated["passes"] and generated["kernel_mode"] == "generated"
+        assert not generated["passes"] and generated["kernel_mode"] == mode
         assert generated["diagnostic"]["candidates"] == []
         assert stock["passes"] and stock["kernel_mode"] == "stock"
     assert result["ran"] and result["passes"] and result["settings"] == ggml_engine.DEFAULT_SETTINGS
@@ -68,3 +68,29 @@ def test_uninformative_reference_skips_all_competing_shapes_but_requires_stock_i
     for role in ("shared", "streams"):
         assert result[role]["status"] == "skipped_uninformative_reference"
         assert result[role]["passes"] is False and "interval" not in result[role]
+
+
+def test_stock_retry_propagates_threshold_only_to_qualified_worker(monkeypatch, tmp_path):
+    from ironmule_product import cli
+
+    def measure(*args, **kwargs):
+        result = cli._qualify_ggml_kernels("fixture.gguf", "fixture.gguf", tmp_path)
+        return {"ggml_gate": result}
+
+    attempts = []
+
+    def gate(*args, **kwargs):
+        import os
+        threshold = os.environ["IRONMULE_CUBLAS_MIN_ROWS"]
+        attempts.append(threshold)
+        return {"passes": threshold == "0"}
+
+    monkeypatch.setenv("IRONMULE_KG_LIB", "")
+    monkeypatch.setenv("IRONMULE_CUBLAS_MIN_ROWS", "128")
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda: 999)
+    monkeypatch.setattr(ggml_engine, "gate", gate)
+    monkeypatch.setattr(cli, "_measure_ggml_options", measure)
+    result = cli._local_ggml_options(None, None, None)
+    assert attempts == ["128", "0"] and result["ggml_gate"]["kernel_fallback"]["serving"] == "stock"
+    assert result["ggml_worker_env"] == {"IRONMULE_CUBLAS_MIN_ROWS": "0"}
+    assert ggml_engine.ggml_profiles.cublas_override() == "128"

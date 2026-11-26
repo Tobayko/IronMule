@@ -261,7 +261,8 @@ def _ggml_agent_plan(width: dict[str, Any], root: Any, flash_only: bool = False)
 def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
     # Qualification sets these inputs for its subprocesses. Keep the results on
     # their worker; a later server in this process must see the caller's settings.
-    tuned_env = ("IRONMULE_W4_TABLE", "IRONMULE_GGML_PACK", "IRONMULE_GGML_UBATCH", "IRONMULE_CUDA_GRAPHS_ROWS")
+    tuned_env = ("IRONMULE_W4_TABLE", "IRONMULE_GGML_PACK", "IRONMULE_GGML_UBATCH", "IRONMULE_CUDA_GRAPHS_ROWS",
+                 "IRONMULE_CUBLAS_MIN_ROWS")
     previous = {key: os.environ.get(key) for key in ("IRONMULE_KG_LIB", "IRONMULE_GGML_SEQS", *tuned_env)}
     try:
         result = _measure_ggml_options(args, spec, store, pinned=pinned)
@@ -279,14 +280,20 @@ def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
 
 def _qualify_ggml_kernels(snapshot, gguf, cache):
     """Keep only a qualified kernel selection, including after the generated kernel fails."""
-    from ironmule.ggml_engine import gate
+    from ironmule.ggml_engine import gate, gpu_layers
+    from ironmule.ggml_profiles import cublas_override
     from ironmule.ggml_gate_diagnostics import sanitize
+
+    threshold = cublas_override()
+    explicit_cublas = threshold is not None and gpu_layers() > 0
 
     def qualify(mode):
         if mode == "stock":
             # The raw packed engine auto-attaches W4 when the variable is absent.
             # An explicit empty choice disables that path in every qualification child.
             os.environ["IRONMULE_KG_LIB"] = ""
+            if explicit_cublas:
+                os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = "0"
         result = gate(snapshot, gguf, cache=cache)
         summary = {"kernel_mode": mode, "passes": result.get("passes") is True,
                    "diagnostic": sanitize(result.get("diagnostic"))}
@@ -295,12 +302,14 @@ def _qualify_ggml_kernels(snapshot, gguf, cache):
         return result, summary
 
     probe = os.environ.get("IRONMULE_KG5") == "1"
-    mode = "generated" if probe or os.environ.get("IRONMULE_KG_LIB") else "stock"
+    mode = "cublas" if explicit_cublas else "stock"
+    if probe or os.environ.get("IRONMULE_KG_LIB"):
+        mode = "generated"
     result, first = qualify(mode)
     diagnostic = first["diagnostic"] or {}
     # Tokenization, model mutation and the unmodified reference precede any candidate kernel. A
     # separate explicitly requested KG5 experiment must continue to require its dispatch witness.
-    if (not first["passes"] and mode == "generated" and not probe
+    if (not first["passes"] and mode != "stock" and not probe
             and diagnostic.get("stage") not in {"tokenize", "reference", "model_changed"}):
         result, stock = qualify("stock")
         result = {**result, "kernel_fallback": {"attempts": [first, stock], "serving": "stock" if stock["passes"] else None}}
