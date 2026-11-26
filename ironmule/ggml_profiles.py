@@ -32,4 +32,7 @@ def select(layers, devices, model_sha256, native, overrides):
 
 def cache_key():
     """Include the stock-reference rule as well as each candidate's effective flags."""
-    return ["ps1-pk6-v1", *(os.environ.get(key) for key in (*FLAGS, "IRONMULE_GPU_PROFILE_GATE"))]
+    key = ["ps1-pk6-v1", *(os.environ.get(key) for key in (*FLAGS, "IRONMULE_GPU_PROFILE_GATE"))]
+    if os.environ.get("IRONMULE_KG_LIB") == "" and os.environ.get("IRONMULE_GGML_PACK") == "1":
+        key.append("explicit-packed-stock-v1")
+    return key
