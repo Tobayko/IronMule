@@ -1,6 +1,6 @@
 {
   "base_commit": "33dc7bf544954f6c79a8a15536c0d6f5724b26a2",
-  "candidate_binary_sha256": null,
+  "candidate_binary_sha256": "86dcf22776438a92364c90f15a6817502d42cbc6ff54b1815a4a27ca84a3a947",
   "cost_journal": "lab/rp/results/campaign-costs.json",
   "files": {
     "authorship.json": {
@@ -10,6 +10,10 @@
     "before-restart.json": {
       "original_sha256": "8f64b46c55395662642d255f3c75d470d5d740ac400f2f929ccbe721db7fbd39",
       "sha256": "8f64b46c55395662642d255f3c75d470d5d740ac400f2f929ccbe721db7fbd39"
+    },
+    "build.json": {
+      "original_sha256": "571bfa6980895fab62fe775521b1e667c67acd7dda99fbdf26d7e62cae335a58",
+      "sha256": "571bfa6980895fab62fe775521b1e667c67acd7dda99fbdf26d7e62cae335a58"
     },
     "candidate.diff": {
       "original_sha256": "b84731e7cca3cdeea63a3ff4b8c4b3d700acefb2cdb11c4e0762f8e050ab3681",
@@ -35,6 +39,10 @@
       "original_sha256": "38591469248af58f969a069d0a9bf3a389919cd22bb404b19ec7252c72580fb8",
       "sha256": "38591469248af58f969a069d0a9bf3a389919cd22bb404b19ec7252c72580fb8"
     },
+    "outcome.json": {
+      "original_sha256": "e0eb6db43b379d814eabc167fe18ab9f0287f48f579a02348b9dc5f211bf8ed6",
+      "sha256": "e0eb6db43b379d814eabc167fe18ab9f0287f48f579a02348b9dc5f211bf8ed6"
+    },
     "prior-failure.json": {
       "original_sha256": "50c532e4719a4f1600cb3cfa70daa299e1a0d1edd91e2c5991ea98a081d45b57",
       "sha256": "50c532e4719a4f1600cb3cfa70daa299e1a0d1edd91e2c5991ea98a081d45b57"
@@ -50,6 +58,14 @@
     "restart-witness.json": {
       "original_sha256": "93936e204b9f0dc5723a548a3a0ae253c6b70c225886bd36d19a2afd4f33a6a6",
       "sha256": "93936e204b9f0dc5723a548a3a0ae253c6b70c225886bd36d19a2afd4f33a6a6"
+    },
+    "result.json": {
+      "original_sha256": "397e610b15a474bfc4daf05e039941f688937aa7ccb2cb5ccc71dbbeae6dbabc",
+      "sha256": "397e610b15a474bfc4daf05e039941f688937aa7ccb2cb5ccc71dbbeae6dbabc"
+    },
+    "screen.json": {
+      "original_sha256": "9191def50f94f525ee54559276a378bd7221bbfb8f0aeb31198174d5beac54fd",
+      "sha256": "9191def50f94f525ee54559276a378bd7221bbfb8f0aeb31198174d5beac54fd"
     },
     "startup-retry.json": {
       "original_sha256": "de93d31f769ed159016f507e0861d96d93f97fc80f3693db0a95ad5302f7377d",
