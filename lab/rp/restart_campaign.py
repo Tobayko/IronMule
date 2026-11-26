@@ -163,9 +163,16 @@ def product(args, cfg, remote, check, active):
     pod = lease(cfg["pod_id"])
     pin = active["receipt_sha256"]
     receipt = scoped_release.pinned(control, pin)
-    fit = pilot_restart_profiles.fit(SimpleNamespace(**vars(check), weights=state / "startup-head.npz",
-                                                      report=state / "startup-fit.json", seed=18471))
-    head_sha = fit["weights_sha256"]
+    weights, report = state / "startup-head.npz", state / "startup-fit.json"
+    checkpoint = local / "trained-head.json"
+    if not checkpoint.exists():
+        fit = pilot_restart_profiles.fit(SimpleNamespace(**vars(check), weights=weights, report=report, seed=18471))
+        write_once(checkpoint, {"control_sha256": pin, "head_sha256": fit["weights_sha256"],
+                                "training_report_sha256": checksum(report)})
+    saved = read(checkpoint)
+    head_sha = checksum(weights)
+    if saved != {"control_sha256": pin, "head_sha256": head_sha, "training_report_sha256": checksum(report)}:
+        raise ValueError("a previously qualified startup checkpoint or its training report changed")
     require_hash = ["lab/pk1/restart_http.py", "lab/pk1/restart_http_worker.py", "lab/pk1/native_http.py",
                     "lab/pk1/native_http_worker.py", "training/pilot_restart_profiles.py", "ironmule/pilot.py",
                     "ironmule/ggml_profiles.py", "ironmule_product/backend.py", "ironmule_product/http_server.py"]
