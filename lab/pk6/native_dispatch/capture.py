@@ -77,10 +77,38 @@ def count_dispatches(engine_class, trace):
     import ctypes
 
     library = os.environ.get("IRONMULE_KG_LIB")
+    tile = os.getenv("IRONMULE_LAB_MMQ_TILE")
+    if tile:
+        library = str(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
     if not library:
         return
     lib = ctypes.CDLL(library)
-    counter = lib.im_prompt_dispatches
+    if hasattr(lib, "im_prompt_begin"):
+        begin, end = lib.im_prompt_begin, lib.im_prompt_end
+        begin.restype = end.restype = None
+        original_init, original_close = engine_class.__init__, engine_class.close
+
+        def open_model(engine, *args, **kwargs):
+            begin()
+            engine._lab_prompt_session = True
+            try:
+                original_init(engine, *args, **kwargs)
+            except BaseException:
+                if engine._lab_prompt_session:
+                    engine._lab_prompt_session = False
+                    end()
+                raise
+
+        def close_model(engine):
+            if getattr(engine, "_lab_prompt_session", False):
+                engine._lab_prompt_session = False
+                end()
+            return original_close(engine)
+
+        engine_class.__init__ = open_model
+        engine_class.close = close_model
+
+    counter = lib.im_mmq_tile_calls if tile else lib.im_prompt_dispatches
     counter.restype = ctypes.c_uint64
     original = engine_class._decode
 

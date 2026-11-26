@@ -2,6 +2,7 @@
 
 import argparse
 import fcntl
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -27,6 +28,7 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--arms", nargs="+", required=True)
     parser.add_argument("--lib", type=Path)
+    parser.add_argument("--routing-receipt", type=Path)
     parser.add_argument("--threshold", type=int, default=128)
     parser.add_argument("--seeds", type=int, nargs=2, default=SEEDS)
     args = parser.parse_args()
@@ -35,6 +37,19 @@ def main():
     gguf = args.models / trial.GGUF_NAME
     if checksum(gguf) != GGUF:
         raise ValueError("unexpected GGUF")
+    if any(a.startswith("Z") for a in args.arms):
+        if not args.routing_receipt or not args.lib:
+            raise ValueError("routed arm requires its target-specific build receipt")
+        receipt = json.loads(args.routing_receipt.read_bytes())
+        cuda = Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so"
+        if (
+            receipt["kind"] != "routed"
+            or receipt["hardware"] != hw
+            or receipt["gguf"] != GGUF
+            or receipt["ggml_cuda"] != checksum(cuda)
+            or receipt["library_sha256"] != checksum(args.lib)
+        ):
+            raise ValueError("foreign routed kernel")
     awq = verify(args.models / "qwen3-32b-awq")
     trial.SEEDS = tuple(args.seeds)
     version = subprocess.check_output(
@@ -69,6 +84,7 @@ def main():
         for flag in (
             *FLAGS,
             "IRONMULE_LAB_ACTIVITY",
+            "IRONMULE_LAB_MMQ_TILE",
             "IRONMULE_CUBLAS_MIN_ROWS",
             "IRONMULE_LAB_FP8",
             "IRONMULE_LAB_SHARED_PROFILE",
@@ -87,13 +103,15 @@ def main():
             os.environ["IRONMULE_LAB_STREAM_ALTERNATIVE"] = "plain"
             if arm.startswith("G"):
                 os.environ.update(IRONMULE_PS1="1", IRONMULE_PK6="1")
+        if arm.startswith("T"):
+            os.environ.update(IRONMULE_LAB_MMQ_TILE="96", IRONMULE_LAB_KERNEL_TRACE="1")
         if arm.startswith(("U", "V")):
             os.environ["IRONMULE_LAB_SHARED_PROFILE"] = "wide"
         if arm.startswith("D"):
             os.environ["IRONMULE_LAB_ACTIVITY"] = str(args.out)
         elif arm.startswith("P"):
             os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = str(args.threshold)
-        elif arm.startswith(("F", "V")):
+        elif arm.startswith(("F", "V", "I", "M", "Z")):
             if not args.lib:
                 raise ValueError("missing measured kernel library")
             os.environ.update(
@@ -101,7 +119,7 @@ def main():
                 IRONMULE_KG_LIB=str(args.lib.resolve()),
                 IRONMULE_LAB_FP8=str(args.threshold),
             )
-        elif arm != "vllm" and not arm.startswith(("R", "U", "N", "G")):
+        elif arm != "vllm" and not arm.startswith(("R", "U", "N", "G", "T", "A")):
             raise ValueError("unregistered arm")
         trial.measure(args, arm, hw, 0, deadline)
     save(args.out / "completed.json", {"hardware": trial.board(), "order": args.arms})

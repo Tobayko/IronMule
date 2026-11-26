@@ -52,6 +52,11 @@ def main():
         for (k, n), weight in shapes.items():
             if n > 65536:
                 continue
+            has_session = hasattr(lib, "im_prompt_begin")
+            if has_session:
+                if kind != "Q4_K":
+                    continue
+                lib.im_prompt_begin()
             raw = weight["data"].reshape(n, -1)
             # 64 output channels spread across the actual tensor, including its last row.
             indices = np.linspace(0, n - 1, 64, dtype=int)
@@ -129,6 +134,8 @@ def main():
                         "native_launches": lib.im_prompt_dispatches() - before,
                     }
                 )
+            if has_session:
+                lib.im_prompt_end()
             save(args.out / f"shape-{number}-{n}-{k}.json", result[-3:])
     save(
         args.out / "result.json",

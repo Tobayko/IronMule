@@ -73,6 +73,28 @@ if os.environ.get("IRONMULE_LAB_ACTIVITY"):
     from lab.pk6.native_dispatch.capture import install
     install(GgmlEngine)
 """
+    if candidates:
+        # Tile selection is part of the measured native path, including default attention.
+        code = substitute(
+            code,
+            '"IRONMULE_CUBLAS_MIN_ROWS": "0"} if stock else env)',
+            '"IRONMULE_CUBLAS_MIN_ROWS": "0", "IRONMULE_LAB_MMQ_TILE": ""} if stock else env)',
+        )
+        code = substitute(
+            code,
+            'if experimental or prefill_batch or os.environ.get("IRONMULE_KG_LIB"):',
+            'if experimental or prefill_batch or os.getenv("IRONMULE_LAB_MMQ_TILE") or os.environ.get("IRONMULE_KG_LIB"):',
+        )
+        code = substitute(
+            code,
+            "and not prefill_batch:\n            tried.append(",
+            'and not prefill_batch and not os.getenv("IRONMULE_LAB_MMQ_TILE"):\n            tried.append(',
+        )
+        code = substitute(
+            code,
+            '    default_alternative = kernel == ""',
+            '    default_alternative = kernel == "" and not os.getenv("IRONMULE_LAB_MMQ_TILE")',
+        )
     cache = substitute(
         cache,
         "    return key",
@@ -94,6 +116,13 @@ if os.environ.get("IRONMULE_LAB_ACTIVITY"):
             "    return key",
             '    if os.getenv("IRONMULE_LAB_STREAM_ALTERNATIVE"):\n'
             '        key.extend(["stream-alternative", os.environ["IRONMULE_LAB_STREAM_ALTERNATIVE"]])\n    return key',
+        )
+    if candidates:
+        cache = substitute(
+            cache,
+            "    return key",
+            '    if os.getenv("IRONMULE_LAB_MMQ_TILE"):\n'
+            '        key.extend(["qualified-native-tile", os.environ["IRONMULE_LAB_MMQ_TILE"]])\n    return key',
         )
     engine.write_text(code)
     flags.write_text(cache)
