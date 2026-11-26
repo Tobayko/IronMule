@@ -256,6 +256,49 @@ def scratch_qualification(source, digest, run):
                   uncertainty="One run. No independent serving comparator for a throughput or latency reward.")
 
 
+def post_restart_observations(root, source, digest):
+    """Read attributed serving time and estimated editable headroom without promoting either to a policy label."""
+    from lab.pk1 import post_restart_verify as check, restart_trial
+    from training import restart_evidence
+
+    folder = (root / source).parent
+    def read(path):
+        return json.loads(path.read_bytes())
+    plan = read(root / source)
+    proof = read(folder / "replayed-observations.json")
+    original = folder.parent / "a100-restart" / plan["parent_order"]
+    bound = restart_evidence.manifest(original)
+    receipt = read(original / "control.json")
+    contract = root / "training/post_restart_contract.json"
+    limits = read(contract)
+    if (plan["schema"] != "ironmule.post-restart-deferred.v1" or plan["selected"] is not None or any(c["eligible"] for c in plan["candidates"])
+            or plan["verification"] != proof or plan["observations"] != proof["observation_sha256"]
+            or plan["base_commit"] != receipt["publication"]["candidate"] or plan["source_sha256"] != bound["candidate_sha256"]
+            or proof["seeds"] != limits["seeds"] or proof["contract_sha256"] != check.sha(contract)
+            or any(plan[k] != proof[k] for k in ("source_sha256", "base_commit", "parent_order", "control_receipt_sha256", "weights_sha256"))
+            or plan["weights_sha256"] != bound["files"]["startup-head.npz"]["sha256"] or plan["control_receipt_sha256"] != bound["files"]["control.json"]["sha256"]):
+        raise ValueError("follow-up price or measured A100 discovery belongs to an unrelated plan")
+    common = dict(hardware=receipt["order"]["binding"]["fp"], base_commit=plan["base_commit"], model=receipt["order"]["binding"]["gguf"],
+                  quantization="Q4_K_M", software={"source_sha256": plan["source_sha256"], "weights_sha256": plan["weights_sha256"]},
+                  cost_reference="lab/rp/results/campaign-costs.json")
+    for seed, expected in zip(proof["seeds"], proof["observation_sha256"], strict=True):
+        path = folder / f"{seed}.json"
+        row = read(path)
+        if check.sha(path) != expected or row["selection_before"] != "candidate" or row["selection_after"] != "candidate":
+            raise ValueError("profiled work changed since independent verification")
+        check.check_selection(row["selection"], original / "startup-head.npz", receipt, limits)
+        restart_trial.validate(row["arm"], seed, expected_source=plan["source_sha256"])
+        restart_trial.verify_binding(row["arm"], receipt["order"])
+        yield record("post_release_profiled_target", str(path.relative_to(root)), expected, str(seed), plan["parent_order"], **common,
+                     reason="instrumented_measured_exclusive_times", workload={"seed": seed, "phases": limits["phases"]},
+                     metrics=row["phases"], broker_elapsed_s=row["broker_elapsed_s"], selection=row["selection"],
+                     authorship="IronMule measured the merged source on the original A100", uncertainty="Profiling costs prevent reuse as serving speed labels.")
+    yield record("post_release_source_plan", source, digest, "defer", plan["parent_order"], **common, provenance="simulated",
+                 reason=plan["reason"], decision=False, metrics=plan["candidates"], next_experiment=plan["next_experiment"],
+                 required_cold_saving_s=plan["required_cold_saving_s"], measured_discovery_s=plan["measured_discovery_s"],
+                 estimated_qualification_usd=plan["estimated_qualification_usd"], authorship="IronMule experiment planner", uncertainty=plan["scope"])
+
+
 def stopped_epyc(root, source, digest):
     from lab.rp import cpu_code_trial, cpu_matched_profile
     from training.code_author import digest as proposal_digest
@@ -686,6 +729,8 @@ def build(root=ROOT) -> Iterator[dict]:
                          reason="head_missing_then_requalified_after_process_restart", weights_sha256=report["head_sha256"],
                          note=report["scope"], uncertainty=report["timing_scope"], authorship="Bound CPU target evaluator",
                          cost_reference="lab/rp/results/campaign-costs.json", new_resource_bookings_usd=report["new_resource_bookings_usd"])
+        elif source == "lab/autonomous/results/a100-post-restart-60/decision.json":
+            yield from post_restart_observations(root, source, digest)
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
             doc = json.loads(path.read_bytes())
             if "trials" in doc:
