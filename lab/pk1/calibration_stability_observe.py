@@ -9,23 +9,23 @@ CONTRACT = broker.CONTRACT.with_name("calibration_stability_contract.json")
 WORKER = Path(__file__).with_name("calibration_stability_probe.py")
 
 
-def main():
+def capture(contract, forecast_schema):
     p = broker.argument_parser()
     p.add_argument("--prediction", type=Path, required=True)
     args = p.parse_args()
     forecast = read(args.prediction)
-    if (args.out.exists() or forecast.get("schema") != "ironmule.calibration-stability-forecast.v1"
-            or forecast["control_receipt_sha256"] != read(CONTRACT)["control_receipt_sha256"]
-            or forecast["contract_sha256"] != broker.native.checksum(CONTRACT)
-            or not forecast["select_information_probe"] or forecast["holdout_seeds"] != read(CONTRACT)["seeds"]):
+    if (args.out.exists() or forecast.get("schema") != forecast_schema
+            or forecast["control_receipt_sha256"] != read(contract)["control_receipt_sha256"]
+            or forecast["contract_sha256"] != broker.native.checksum(contract)
+            or not forecast["select_information_probe"] or forecast["holdout_seeds"] != read(contract)["seeds"]):
         raise ValueError("missing bound prospective prediction or occupied seed")
     # Store the digest before running, with the independently verified publication and full worker binding.
     forecast_hash = broker.native.checksum(args.prediction)
-    observation = broker.observe(args, contract_path=CONTRACT, worker=WORKER)
+    observation = broker.observe(args, contract_path=contract, worker=WORKER)
     if broker.native.checksum(args.prediction) != forecast_hash:
         raise ValueError("prediction changed while running the holdout")
     write_once(args.out, {**observation, "forecast_sha256": forecast_hash})
 
 
 if __name__ == "__main__":
-    main()
+    capture(CONTRACT, "ironmule.calibration-stability-forecast.v1")

@@ -142,10 +142,10 @@ def forecast(history, control, checkout, phase_priors, hourly):
             "price_scope": "Older stage intervals are priors from a different regime. The value of learning a rejection assumes a larger future trial would otherwise be considered. Actual future start count and attainable saving are unknown."}
 
 
-def heldout(forecast_path, samples, control, weights, checkout):
+def heldout(forecast_path, samples, control, weights, checkout, *, contract=CONTRACT):
     f = read(forecast_path)
-    roots, ctrl = read(CONTRACT), read(control)
-    require(f["contract_sha256"] == sha(CONTRACT) and f["source_sha256"] == sha(checkout / SOURCE)
+    roots, ctrl = read(contract), read(control)
+    require(f["contract_sha256"] == sha(contract) and f["source_sha256"] == sha(checkout / SOURCE)
             and f["control_receipt_sha256"] == sha(control) and sha(weights) == roots["weights_sha256"]
             and f["select_information_probe"], "unbound prospective prediction")
     ordered = sorted(((p, read(p)) for p in samples), key=lambda t: t[1]["seed"])
@@ -155,7 +155,7 @@ def heldout(forecast_path, samples, control, weights, checkout):
     by_seed = []
     for r in observations:
         require(r["schema"] == roots["observation_schema"] and r["inventory"] == methods and r["forecast_sha256"] == sha(forecast_path)
-                and r["contract_sha256"] == sha(CONTRACT) and r["weights_sha256"] == sha(weights)
+                and r["contract_sha256"] == sha(contract) and r["weights_sha256"] == sha(weights)
                 and r["source_sha256"] == roots["source_sha256"] and r["parent_order"] == roots["parent_order"]
                 and r["selection_before"] == r["selection_after"] == "candidate" and r["control_receipt_sha256"] == sha(control)
                 and r["profiler_sha256"] == sha(Path(probe.__file__)), "foreign holdout capture")
