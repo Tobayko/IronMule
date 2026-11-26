@@ -28,6 +28,12 @@ def test_report_provenance_and_exclusions():
     forecast = [r for r in rows if r["kind"] == "traffic_forecast"]
     assert forecast and all(r["provenance"] == "simulated" and not r["label_eligible"] for r in forecast)
     assert any(r["reason"] == "cross_pod_reference_changed" for r in rows)
+    scratch = next(r for r in rows if r["source"] == "evidence/runtime/cpu-pilot-four-slot-discovery.json")
+    assert scratch["decision"] is False and scratch["label_eligible"] is False
+    assert scratch["quality"]["correct"] == scratch["quality"]["completed"] == 16
+    [metric] = scratch["metrics"]
+    assert metric["head_proposals"] == 5 and metric["scratch_measured_decisions"] == 0
+    assert metric["search_and_warmup_s"] == pytest.approx(83.03, abs=.001)
 
 
 def test_failed_rebuild_keeps_previous_index(tmp_path):

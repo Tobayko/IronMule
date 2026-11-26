@@ -234,6 +234,28 @@ def code_experiment(root, source, result_hash):
                  uncertainty="The decision covers only the measured fixture and runtime. Activation is recorded separately.")
 
 
+def scratch_qualification(source, digest, run):
+    qualification, binding = run["scratch_qualification"], run["binding"]
+    state = qualification["status"]["scratch_candidate"]
+    head = qualification["binding"]
+    used = run["scratch_measured_decisions"]
+    qualified = bool(head["qualified_offsets"])
+    return record("pilot_head_qualification", source, digest, "scratch_qualification", head["learner_binding"],
+                  model=binding["model_name"], base_commit=run["commit"],
+                  hardware=binding["machine"], binding=binding, workload=run["workload"],
+                  software={"evaluator_sha256": run["evaluator_sha256"], "runtime": run["runtime_source_sha256"]},
+                  authorship="The from-scratch CPU Pilot proposed the thread choices. Its local gate decided admission.",
+                  decision=qualified, reason="locally_qualified" if qualified else "no_locally_qualified_thread_choice",
+                  profiles=[head], quality={"completed": run["completed"], "correct": run["correct"],
+                                            "output_sha256": run["output_sha256"]},
+                  metrics=[{"head_proposals": state["trials"], "search_and_warmup_s": qualification["search_and_warmup_s"],
+                            "scratch_measured_decisions": used, "wall_s": run["wall_s"], "ttft_p95_s": run["ttft_s"],
+                            "output_tokens": run["tokens"]}],
+                  note="The reference thread policy served all measured decisions." if used == 0 else
+                       "Local admission and measured uses are separate counts.",
+                  uncertainty="One run. No independent serving comparator for a throughput or latency reward.")
+
+
 def build(root=ROOT) -> Iterator[dict]:
     root = Path(root)
     # Limit imports to repository evidence. Keep credentials, private trials and generated indexes out.
@@ -268,6 +290,13 @@ def build(root=ROOT) -> Iterator[dict]:
                              references=[ARCHIVES[pod]])
         elif source == "evidence/runtime/smollm2-135m-cpu-dream-replay.json":
             yield from traffic_replay(source, digest, json.loads(path.read_bytes()))
+        elif source.startswith("evidence/runtime/cpu-pilot-") and source.endswith("-discovery.json"):
+            run = json.loads(path.read_bytes())
+            if run.get("schema") == "ironmule.serving_trial.v1" and run.get("scratch_qualification"):
+                yield scratch_qualification(source, digest, run)
+            else:
+                yield record("source", source, digest, "file", source, provenance="unclassified",
+                             reason="no_scratch_qualification_reported")
         elif source.startswith("lab/placement/results/") and path.suffix == ".json":
             doc = json.loads(path.read_bytes())
             if "trials" in doc:
