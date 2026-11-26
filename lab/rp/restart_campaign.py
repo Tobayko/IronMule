@@ -169,7 +169,7 @@ def product(args, cfg, remote, check, active):
                     "lab/pk1/native_http_worker.py", "training/pilot_restart_profiles.py", "ironmule/pilot.py",
                     "ironmule/ggml_profiles.py", "ironmule_product/backend.py", "ironmule_product/http_server.py"]
     if recovery:
-        require_hash.append("lab/pk1/restart_mlx_runtime.py")
+        require_hash.extend(["lab/pk1/restart_mlx_runtime.py","lab/pk1/restart_gate_broker.py"])
     root = Path(__file__).resolve().parents[2]
     paths = [PurePosixPath(cfg["framework"]) / k for k in require_hash]
     hashes = shell(pod, shlex.join(["sha256sum", "--", *map(str, paths)])).splitlines()
@@ -192,6 +192,8 @@ def product(args, cfg, remote, check, active):
     files = ["gate-candidate.json", "gate-reference.json", "decision.json",
              *(f"{arm}-{seed}.json" for seed in restart_http.SEEDS for arm in ("reference", "candidate"))]
     snapshot(pod, evidence, files, local)
+    if recovery and (local / "decision.json").exists():
+        snapshot(pod, evidence, ["gate-devices-reference.json","gate-devices-candidate.json"], local)
     for op in ("qualify", "exercise", "serve"):
         name = ("product-listener" if op == "serve" else "product-" + op) + ".json"
         snapshot(pod, output, [name], local)

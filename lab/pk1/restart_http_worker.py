@@ -30,6 +30,10 @@ def main(argv):
     if mode == "gate":
         # The existing numeric/factual gate also independently probes the streams profile.
         # Use its full evidence for the exact requested settings, even if autotuning prefers another.
+        if overlay:
+            from restart_gate_broker import install_driver
+            channel = os.fdopen(os.dup(1), "w", buffering=1)
+            install_driver(ge, channel)
         with open(os.devnull, "w") as sink:
             os.dup2(sink.fileno(), 1)
         from ironmule import ggml_gate_diagnostics as diagnostics

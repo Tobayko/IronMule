@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 from contextlib import ExitStack, contextmanager
 import fcntl
 import json
@@ -21,7 +22,7 @@ from ironmule.ggml_profiles import FLAGS
 from ironmule_product import compare
 from lab.pk1 import native_http as http
 from lab.pk1 import native_trial
-from lab.pk1 import restart_release, restart_trial, restart_mlx_runtime
+from lab.pk1 import restart_release, restart_trial, restart_mlx_runtime, restart_gate_broker
 from training import scoped_release as release
 from training.code_author import write_once
 from training.code_trial import read, save
@@ -57,7 +58,7 @@ def inputs(args, receipt, candidate, *, gate_cache=None):
         writable.mkdir(mode=0o700, exist_ok=bool(gate_cache))
         os.chown(writable, args.worker_uid, args.worker_uid)
         writable.chmod(0o700)
-        for path in [WORKER, http.WORKER, Path(native_trial.__file__), restart_trial.HARNESS]:
+        for path in [WORKER, http.WORKER, Path(native_trial.__file__), restart_trial.HARNESS, Path(restart_gate_broker.__file__)]:
             shutil.copyfile(path, public / path.name)
             (public / path.name).chmod(0o444)
         lib = public / "active.so"
@@ -95,7 +96,7 @@ def inputs(args, receipt, candidate, *, gate_cache=None):
 def key_for(args, receipt):
     from training import pilot_restart_profiles
     from ironmule import pilot
-    files = [Path(__file__), WORKER, http.WORKER, Path(http.__file__), Path(release.__file__), Path(restart_mlx_runtime.__file__),
+    files = [Path(__file__), WORKER, http.WORKER, Path(http.__file__), Path(release.__file__), Path(restart_mlx_runtime.__file__), Path(restart_gate_broker.__file__),
              Path(pilot_restart_profiles.__file__), Path(pilot.__file__),
              *sorted((Path(__file__).resolve().parents[2] / "ironmule_product").glob("*.py"))]
     return http.digest({"control": args.receipt_sha256, "order": receipt["order"]["order_id"], "seeds": SEEDS, "head": args.head_sha256, "geometry": args.geometry_sha256,
@@ -334,7 +335,13 @@ def assess(evidence, receipt):
                     and all(lo <= n <= hi for lo, n, hi in zip(geometry["minimum"], expected, geometry["maximum"], strict=True)),
                     "product evidence does not match calibrated arrival geometry")
     decision = score(pairs, receipt["qualification"])
-    names = ["geometry.json", *(f"gate-{arm}.json" for arm in ("reference", "candidate"))]
+    if "python_overlay" in geometry:
+        for arm in ("reference", "candidate"):
+            observed = read(evidence / f"gate-devices-{arm}.json")
+            require({r["stage"] for r in observed} == set(restart_gate_broker.STAGES)
+                    and all(r["provider"] == "cuda" and r["gpu_layers"] == 999 for r in observed),
+                    "product gate is missing a real CUDA subprocess receipt")
+    names = ["geometry.json", *(f"gate-devices-{arm}.json" for arm in ("reference", "candidate") if "python_overlay" in geometry), *(f"gate-{arm}.json" for arm in ("reference", "candidate"))]
     names.extend(f"{arm}-{s}.json" for s in SEEDS for arm in ("reference", "candidate"))
     decision["integrity"] = {name: release.checksum(evidence / name) for name in names}
     decision["reference_bounds"] = http.live_bounds(s for ref, _ in pairs for s in ref["samples"])
@@ -356,7 +363,15 @@ def qualify(args, receipt, evidence):
                 with inputs(args, receipt, arm == "candidate", gate_cache=cache) as layout:
                     output = layout.out / "quality.json"
                     output.unlink(missing_ok=True)
+                    if args.geometry_record.get("python_overlay"):
+                        source = ast.parse((args.checkout / "ironmule/ggml_engine.py").read_text())
+                        layout.gate_scripts = {n.targets[0].id: restart_gate_broker.fingerprint(ast.literal_eval(n.value))
+                                               for n in source.body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
+                                               and n.targets[0].id in restart_gate_broker.STAGES}
+                        args.gate_driver_record = evidence / f"gate-devices-{arm}.json"
                     with http.launch(layout, "gate", [str(output)], args.timeout) as proc:
+                        if hasattr(layout, "gate_scripts"):
+                            restart_gate_broker.exchange(proc, layout)
                         proc.stdin.close()
                         proc.stdout.close()
                         proc.wait(timeout=max(1., args.deadline - time.monotonic()))
