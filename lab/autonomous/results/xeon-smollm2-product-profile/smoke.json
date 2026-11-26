@@ -1,0 +1,118 @@
+{
+  "schema": "ironmule.product_gguf_profile_smoke.v1",
+  "scenario": "Cold CPU product startup in an empty state directory followed by a restart with the same state. Each start served an HTTP chat request.",
+  "model": "gguf/SmolLM2-135M-Instruct-Q4_K_M",
+  "source_sha256": {
+    "ironmule/ggml_engine.py": "aae9299715c89437116ac8aa6f9d65c18149ca148a0ba18878b29eaa3ba718b5",
+    "ironmule/ggml_profiles.py": "8147b196f02116803c96df886fa6f967d5d2c2b015ead53b2d5604a0d54202ef",
+    "ironmule_product/pinned_ggml.py": "85abfa93f0dc0dc9a3e23473cb4e5ddf376ab0a340ef3d24fff40af3c664bb34",
+    "ironmule_product/ggml_bridge.py": "88f41d8945d33541f1ddc995fb6e272f7af482ca2bd191ebe74e0ec4d389d3e6",
+    "ironmule_product/cli.py": "ffd73149d926c6e6d416d17a6d511c8784ae2bec5655b84ff2a5292b6b6aa81f",
+    "ironmule_product/service.py": "bf260d9985935825fbfa2a2398d2b081b22a95b45184e65b2613b26ab5697155"
+  },
+  "configuration": {
+    "args": [
+      "serve",
+      "--gguf",
+      "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+      "--engine",
+      "ggml",
+      "--agent",
+      "on",
+      "--speculate",
+      "off",
+      "--no-thinking"
+    ],
+    "environment": {
+      "IRONMULE_GGML_GPU_LAYERS": "0",
+      "IRONMULE_GGML_SEQS": "2",
+      "IRONMULE_GGML_THREADS": "2",
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1"
+    }
+  },
+  "cold_gate": {
+    "passes": true,
+    "reference": "llama.cpp's default setting on the same GGUF",
+    "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+    "tried": [
+      {
+        "settings": {
+          "flash_attn": false,
+          "kv_unified": false,
+          "kv_f32": false
+        },
+        "ratio": 1.0,
+        "interval": [
+          1.0,
+          1.0
+        ],
+        "chunks": 16,
+        "passes": true,
+        "basis": "identical_reference"
+      }
+    ],
+    "settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "ratio": 1.0,
+    "interval": [
+      1.0,
+      1.0
+    ],
+    "key": "f7e23d9a8e884fec003b6e81",
+    "seconds": 152.8,
+    "chunks": 16,
+    "gate_version": 2,
+    "factual_version": "qg1-v3",
+    "checkpoint_stages": {
+      "measured": 3,
+      "reused": 0
+    }
+  },
+  "restarted_health": {
+    "ready": true,
+    "worker_ready": true,
+    "gate": {
+      "ratio": 1.0,
+      "interval": [
+        1.0,
+        1.0
+      ],
+      "passes": true
+    },
+    "kernel_profile": {
+      "profile": "cpu",
+      "flags": {
+        "IRONMULE_PS1": "1",
+        "IRONMULE_PK6": "1",
+        "IRONMULE_PS1_WARM": "0",
+        "IRONMULE_PS1_CONCAT": "0",
+        "IRONMULE_GGML_DH2": "0",
+        "IRONMULE_SV5": "0"
+      },
+      "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+      "fallback": false
+    }
+  },
+  "request": {
+    "prompt": "Two plus two equals",
+    "temperature": 0,
+    "max_tokens": 2
+  },
+  "completion": {
+    "usage": {
+      "prompt_tokens": 34,
+      "completion_tokens": 2,
+      "total_tokens": 36
+    },
+    "message": {
+      "role": "assistant",
+      "content": "Two plus"
+    },
+    "finish_reason": "length"
+  },
+  "scope": "Startup, quality gate, bound profile and public generation only. The shared CPU was running other jobs."
+}

@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from ironmule_devices import bindings, ggml_devices
+from . import ggml_profiles
 
 SEQS, SEQ_CTX, MAX_ROWS = 8, 2048, 16
 
@@ -260,6 +261,9 @@ BF1_ROWS = 64
 # compute buffer regrown at a new maximum, the start's warm-up did not cover every shape), so the rule kept it out
 # (-82.5 ms median, 5 of 8 rounds). On by default since pod 36 (with ps1a below): paired 32-client waves -80.8 ms (8 of
 # 8 rounds), 8 clients -53 ms, facts 18/18, fresh starts 300.0 against 290.3 tok/s; "0" turns it off.
+# Embedded standalone users keep the legacy native defaults. A new product qualification
+# child receives the original caller's overrides separately from these import-installed values.
+_IMPLICIT_KERNEL_FLAGS = {key: "1" for key in ("IRONMULE_PS1", "IRONMULE_PK6") if key not in os.environ}
 PS1 = os.environ.get("IRONMULE_PS1", "1") == "1"
 # Pod 36 attributed the 0.45 s: ggml-alloc placed every layer's merged attention output with the graph's leafs, so all
 # 64 were live at once (2.1 MB a row), and each new largest call reallocated the compute buffer (14.0 -> 18.7 GB, 0.38 s
@@ -2621,6 +2625,8 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         experience = suggest(experience_root, model_digest, ggml_devices(), machine, seq_ctx)
     key_parts = [model_digest, settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS, default_alternative,
                  int(extra_bytes) >> 28, WIDTH_GAIN, machine, device, round(total / 2**30)]
+    if on_gpu:
+        key_parts.append(ggml_profiles.cache_key())
     if not default_alternative:
         key_parts.append(kernel)
     if experience:
@@ -2871,6 +2877,7 @@ def gate_key(snapshot: str, gguf: str) -> str:
     shape_key = [file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, FACT_VERSION,
                                      ENGINE_VERSION, OPTION_BOUND, machine_key(), SEQS, SEQ_CTX, kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
                                      _kernel_digest()]
+    shape_key.append(ggml_profiles.cache_key())
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1":
         shape_key.append("grouped-split-kv-prefill-v1")
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444":
@@ -2937,6 +2944,8 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         child_env = ({**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0", "IRONMULE_GGML_PREFILL_BATCH": "0",
                       "IRONMULE_W4": "0", "IRONMULE_GGML_PACK": "0", "IRONMULE_GGML_UBATCH": "0",
                       "IRONMULE_CUBLAS_MIN_ROWS": "0"} if stock else env)
+        if stock and os.environ.get("IRONMULE_GPU_PROFILE_GATE") == "1":
+            child_env = {**child_env, **ggml_profiles.profile("conservative")}
         # GR3 (2026-11-22): the gate's children run with llama.cpp's one-row CUDA graphs. Multi-row graphs
         # (IRONMULE_CUDA_GRAPHS_ROWS) leave the tokens unchanged (A100, Qwen3-32B: the same greedy tokens with and
         # without) but ran the tuning child, which opens several contexts in one process, out of an A100's 80 GB.

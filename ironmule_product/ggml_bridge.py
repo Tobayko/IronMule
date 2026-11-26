@@ -24,8 +24,13 @@ class GgmlBridge:
     configuration = "ggml"
 
     def __init__(self, gguf: str, tokenizer: Any, *, speculate: bool, gate: dict[str, Any] | None = None):
-        from ironmule.ggml_engine import CHECK_TEXT, GgmlEngine, file_sha256
+        from ironmule.ggml_engine import CHECK_TEXT, GgmlEngine, file_sha256, gpu_layers
 
+        if gate is not None and "kernel_profile" in gate:
+            from .pinned_ggml import verify
+            verify(gate["kernel_profile"], gguf)
+        elif gpu_layers():
+            raise ValueError("GPU worker requires a locally qualified PS1/PK6 profile")
         settings = {k: bool(v) for k, v in ((gate or {}).get("settings") or {}).items()
                     if k in ("flash_attn", "kv_unified", "kv_f32", "kv_q8")}  # GG1: what the first start measured, and the gate passed
         if bus := (gate or {}).get("placement_rocm_bus"):

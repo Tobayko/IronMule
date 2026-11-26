@@ -103,6 +103,8 @@ def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
     class Backend:
         device, ready, engine_configuration, execution_variant = "cpu", True, "ggml", "current_engine"
         ggml_gate = {"ratio": 1.003, "interval": [1.001, 1.0048], "passes": True, "seconds": 70,
+                     "kernel_profile": {"profile": "conservative", "flags": {}, "gguf_sha256": "bound",
+                                        "fallback_reason": "candidate failed"},
                      "streams": {"passes": False, "prefill_batch": {"matches": False, "calls": 2, "private": "text"},
                                  "diagnostic": {**diag.make("acceptance", "quality_rejected"), "log": "private"}},
                      "diagnostic": {**diag.make("acceptance", "quality_rejected"), "private_log": "private"},
@@ -125,6 +127,8 @@ def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
         "passes": False, "grouped_greedy_match": False, "grouped_calls": 2,
         "diagnostic": diag.make("acceptance", "quality_rejected")}
     assert health["ggml"]["kernel_generation"] == Backend.ggml_gate["kernel_generation"]
+    assert health["ggml"]["kernel_profile"] == {"profile": "conservative", "flags": {},
+                                                "gguf_sha256": "bound", "fallback": True}
     assert health["ggml"]["gate"]["diagnostic"] == diag.make("acceptance", "quality_rejected")
     assert health["speculation"]["serving"] == "context" and health["speculation"]["learned"]["policy_version"] == 3
 
@@ -1141,7 +1145,8 @@ def test_serve_wires_cpu_pilot_learning_with_default_speculation(tmp_path, monke
     import types
 
     from ironmule import ggml_engine as ge
-    from ironmule_product import backend, cli
+    from ironmule.ggml_profiles import FLAGS
+    from ironmule_product import backend, cli, pinned_ggml
     from ironmule_product.ggml_bridge import GgmlBridge
     from ironmule_product.state import ProductStore
 
@@ -1157,6 +1162,14 @@ def test_serve_wires_cpu_pilot_learning_with_default_speculation(tmp_path, monke
     monkeypatch.setattr(ge, "available", lambda: None)
     monkeypatch.setattr(ge, "gpu_layers", lambda: 0)
     monkeypatch.setattr(ge, "gate", lambda *args, **kwargs: {"passes": True})
+    def qualify_in_test(device, args, spec, store):
+        # Execute the worker qualification under this test's GGUF and gate doubles.
+        assert device == "local"
+        with monkeypatch.context() as child:
+            for key in (*FLAGS, "IRONMULE_KG_LIB"):
+                child.delenv(key, raising=False)
+            return pinned_ggml.qualify(args, spec, store, False, {})
+    monkeypatch.setattr(cli, "_pinned_ggml_options", qualify_in_test)
     class Captured(Exception):
         pass
 
