@@ -19,7 +19,7 @@ from lab.pk1 import native_release, native_trial
 from training.code_author import PendingAuthor, digest, write_once
 from training.code_trial import PAIRS, read, save
 
-TRIAL_FILES = ["context.json", "build.json", "candidate.so", "screen.json",
+TRIAL_FILES = ["context.json", "build.json", "candidate.so", "calibration.json", "screen.json",
                *(f"{arm}-{i}.json" for i in range(PAIRS) for arm in ("ref", "cand")), "result.json"]
 CONFIG_KEYS = {"pod_id", "framework", "checkout", "python", "env", "gguf",
                "reference_lib", "table", "worker_root", "state_root"}
