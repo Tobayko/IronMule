@@ -19,12 +19,20 @@ export IRONMULE_GGML_GPU_LAYERS=0 IRONMULE_GGML_PACK=1 IRONMULE_LAB_CPU_PACK=1
 python -m lab.pk6.mixed_progress.cpu "$GGUF" --seed 84351 --pairs 4 > /tmp/cpu-holdout.json
 ```
 
-For a new hardware run, the collector requires an existing budgeted L40S lease with both RunPod watchdogs, sufficient remaining time, and an empty private results directory. It checks out the frozen revision, builds for SM89, verifies model contents, and runs five separate server starts. The result protocol fixes the order, prompts, grading, and promotion criteria.
+The original hardware series started at `7fa0e4d8974c190192f056f6bc5b30dc72b82571`. Its first native start exposed the stock-retry bug. The on-device [recovery](recover.py) pinned the correction from PR 68 and the unchanged external wave digest. The signed-off code and warm experiment state are both described by the archived target. For an offline replay of those original observations, use the compressed native traces included in the series.
 
 ```sh
-python -m lab.rp.mixed_progress --pod-id "$POD_ID" --state "$PRIVATE_RESULTS" \
-  --commit 7fa0e4d8974c190192f056f6bc5b30dc72b82571
-python -m lab.pk6.mixed_progress.grade "$PRIVATE_RESULTS" --project
+data=lab/autonomous/results/l40s-mixed-prefill-progress
+python -m lab.pk6.mixed_progress.grade "$data" --project
+python -m lab.pk6.mixed_progress.learning "$data"
+```
+
+For a fresh collection use a revision containing both PR 67 and PR 68. Start from the root of that checkout. Supply an existing budgeted L40S lease with both RunPod watchdogs, sufficient remaining time and an empty private results directory. The collector builds for SM89, verifies the models and starts the five servers. A fresh series restores the initial kernel environment between starts.
+
+```sh
+revision=$(git rev-parse HEAD)
+python -m lab.rp.mixed_progress --pod-id "$POD_ID" --state "$PRIVATE_RESULTS" --commit "$revision"
+python -m lab.pk6.mixed_progress.grade "$PRIVATE_RESULTS" --project --expected-source "$revision"
 ```
 
 On the same device, after a completed primary run, a separate virtual environment containing `vllm==0.34.0` can run the registered current-release supplement. Pass that environment as `--vllm`, the primary output directory as `--primary`, and the same verified model directory as `--models`. Collect sampled device telemetry into `current-device-load.csv` using the four columns recorded by the primary trial. Run `python -m lab.pk6.mixed_progress.release_score PRIMARY SUPPLEMENT` to replay it. This experiment uses the existing lease deadline.

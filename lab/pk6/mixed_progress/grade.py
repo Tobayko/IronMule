@@ -261,12 +261,12 @@ def sampled_resources(telemetry, rows):
     }
 
 
-def grade(folder):
+def grade(folder, *, expected_source="7fa0e4d8974c190192f056f6bc5b30dc72b82571"):
     read = lambda name: json.loads((folder / name).read_bytes())
     target = read("target.json")
     if (
         target["hardware"]["name"] != "NVIDIA L40S"
-        or target["source"] != "7fa0e4d8974c190192f056f6bc5b30dc72b82571"
+        or target["source"] != expected_source
         or target["engine_sha256"]
         != "a1985d5af074571d1cafd59e918f95f22f1bd16754d2229488da49d2d69288fd"
         or target["rows"] != 2048
@@ -460,6 +460,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("folder", type=Path)
     p.add_argument(
+        "--expected-source",
+        default="7fa0e4d8974c190192f056f6bc5b30dc72b82571",
+        help="exact revision passed to the target collector",
+    )
+    p.add_argument(
         "--project",
         action="store_true",
         help="create native projections from original traces",
@@ -471,4 +476,10 @@ if __name__ == "__main__":
             (args.folder / f"native-{arm}.json").write_text(
                 json.dumps(bindings(args.folder, arm, wave)) + "\n"
             )
-    print(json.dumps(grade(args.folder), indent=2, allow_nan=False))
+    print(
+        json.dumps(
+            grade(args.folder, expected_source=args.expected_source),
+            indent=2,
+            allow_nan=False,
+        )
+    )

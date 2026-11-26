@@ -1,0 +1,106 @@
+{
+  "status": "measured_held_out_restart",
+  "train_calls": 83,
+  "holdout_calls": 84,
+  "prior": {
+    "theta": [
+      0.09378885830041359,
+      0.0002906348973562995,
+      0.2906348973562995,
+      0.0
+    ],
+    "p": [
+      [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "n": 0,
+    "spread": 1.0
+  },
+  "updated": {
+    "theta": [
+      0.039210652270398556,
+      0.0027644530318795815,
+      0.4108268813391804,
+      0.0
+    ],
+    "p": [
+      [
+        0.08271113198342187,
+        -0.0023954908952700583,
+        -0.08159129584914966,
+        0.0
+      ],
+      [
+        -0.0023954908952700583,
+        0.0002708775519492717,
+        -0.006946360982652684,
+        0.0
+      ],
+      [
+        -0.08159129584914966,
+        -0.006946360982652684,
+        0.6135597263443247,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "n": 83,
+    "spread": 1.0
+  },
+  "train_median_s": 0.257841,
+  "holdout_mean_absolute_error_s": {
+    "unadapted_a100": 0.042201806171578087,
+    "l40s_constant": 0.0654282380952381,
+    "l40s_updated": 0.021797860151285493
+  },
+  "uncertainty": "One board and two starts. Only executed mixed-call durations have labels. Attended KV was unobserved. No serving-speed or policy-promotion inference.",
+  "hardware": {
+    "device_sha256": "7a2f320d896258b67549ecebcae06a0c38e93f46c405d111e32888eeff161b02",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "train": "C1",
+  "holdout": "C2",
+  "sources": {
+    "C1": {
+      "native_sha256": "3168b3d436f6bfbdc8b5e41ea42c2cd676b13d1fa5a12a0fe88043ef327efd76",
+      "trace_sha256": "a85b05419154c2eb94802fc110761f503b58e30f23c34798cb9914f2c463cba4",
+      "waves_sha256": "e14a8c172906be33bf4eeecb528d22231716f4c1ea76c272820a04347b890987"
+    },
+    "C2": {
+      "native_sha256": "b01b3bc2f0d89c94f184c482cb18bf80fda989c2fcac2e28163a02048dbc9b16",
+      "trace_sha256": "92190653c5e08b938727d94f52f8ac2111d76566540b7fd1a56c8ab4b1d2fe40",
+      "waves_sha256": "928772a919addb0cf40ed9266ce0c20d3ad7bc860a6dc9563a1d938a22d50b7d"
+    }
+  },
+  "production_decision": "retain_reference",
+  "source_path": "ordinary shared KV"
+}

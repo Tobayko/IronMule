@@ -13,6 +13,7 @@ import sys
 import time
 
 from ironmule.factual_gate import cases, correct
+from ironmule.ggml_profiles import FLAGS
 from ironmule.gguf_tokenizer import GgufTokenizer
 from ironmule_product import compare
 from ironmule_product.compare_tokenizer import rendered_prompt_ids
@@ -274,6 +275,7 @@ def main():
     if version != "0.11.0":
         raise ValueError("vLLM version differs")
     selected = plan.plan()["selected_rows"]
+    original_flags = {key: os.environ.get(key) for key in FLAGS}
     save(
         args.out / "target.json",
         {
@@ -283,6 +285,7 @@ def main():
             "awq_manifest_sha256": awq["manifest_sha256"],
             "vllm_version": version,
             "rows": selected,
+            "launcher_overrides": original_flags,
             "source": output("git", "rev-parse", "HEAD"),
             "engine_sha256": phases.checksum(Path("ironmule/ggml_engine.py")),
         },
@@ -301,6 +304,12 @@ def main():
         )
         try:
             for arm in ARMS:
+                # Native tokenization can initialize raw kernel defaults in this client process.
+                for key, value in original_flags.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
                 measure(args, arm, hw, selected, deadline)
         finally:
             sampler.terminate()
