@@ -1,0 +1,22 @@
+{
+  "observed_unix_s": 1795659317.5291836,
+  "target": "live campaign journal, two independent control CLI processes",
+  "budget_usd": 15.0,
+  "absolute_authorization_usd": 20.0,
+  "prior_booked_usd": 0.0,
+  "prior_held_usd": 9.166666666666668,
+  "tests": [
+    {
+      "requested_reservation_usd": 6,
+      "exit_code": 1,
+      "reason": "ValueError: campaign limit or available provider credit is insufficient"
+    },
+    {
+      "requested_reservation_usd": 20.01,
+      "exit_code": 1,
+      "reason": "ValueError: campaign limit or available provider credit is insufficient"
+    }
+  ],
+  "private_journal_unchanged": true,
+  "external_resource_created": false
+}

@@ -1,0 +1,63 @@
+{
+  "all_verified": true,
+  "lock_sha256": "3c6d2e74ee1f5ce115781a9c702be495e45a07ebb1ad272f682c826d853ebabb",
+  "schema": "ironmule.vllm-awq-r2-primary-wheelhouse.v1",
+  "wheels": [
+    {
+      "bytes": 438217982,
+      "expected_sha256": "3861c75ff2b12e24f6d179ff5c084d791b42ded8675d76c8706697c79f68cd62",
+      "filename": "vllm-0.11.0-cp38-abi3-manylinux1_x86_64.whl",
+      "path": "assets/wheels/vllm-0.11.0-cp38-abi3-manylinux1_x86_64.whl",
+      "sha256": "3861c75ff2b12e24f6d179ff5c084d791b42ded8675d76c8706697c79f68cd62",
+      "verified": true
+    },
+    {
+      "bytes": 888063640,
+      "expected_sha256": "c12fa219f51a933d5f80eeb3a7a5d0cbe9168c0a14bbb4055f1979431660879b",
+      "filename": "torch-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "path": "assets/wheels/torch-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "sha256": "c12fa219f51a933d5f80eeb3a7a5d0cbe9168c0a14bbb4055f1979431660879b",
+      "verified": true
+    },
+    {
+      "bytes": 11990925,
+      "expected_sha256": "b10d05da8fa67dc41644dbbf9bc45a44cb86ae33da6f9295f5fbf5b7890bd267",
+      "filename": "transformers-4.57.1-py3-none-any.whl",
+      "path": "assets/wheels/transformers-4.57.1-py3-none-any.whl",
+      "sha256": "b10d05da8fa67dc41644dbbf9bc45a44cb86ae33da6f9295f5fbf5b7890bd267",
+      "verified": true
+    },
+    {
+      "bytes": 4011716,
+      "expected_sha256": "776c0b4ba84b9e3ddf6304b9c47cd63549d7896a6f3d5184ece074cc3d76ed6b",
+      "filename": "torchaudio-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "path": "assets/wheels/torchaudio-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "sha256": "776c0b4ba84b9e3ddf6304b9c47cd63549d7896a6f3d5184ece074cc3d76ed6b",
+      "verified": true
+    },
+    {
+      "bytes": 8628388,
+      "expected_sha256": "35c27941831b653f5101edfe62c03d196c13f32139310519e8228f35eae0e96a",
+      "filename": "torchvision-0.23.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "path": "assets/wheels/torchvision-0.23.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "sha256": "35c27941831b653f5101edfe62c03d196c13f32139310519e8228f35eae0e96a",
+      "verified": true
+    },
+    {
+      "bytes": 117199943,
+      "expected_sha256": "5f245b5555188da112070d8fefb6b7ae1ae47422856521d66c837e9d2352fbe4",
+      "filename": "xformers-0.0.32.post1-cp39-abi3-manylinux_2_28_x86_64.whl",
+      "path": "assets/wheels/xformers-0.0.32.post1-cp39-abi3-manylinux_2_28_x86_64.whl",
+      "sha256": "5f245b5555188da112070d8fefb6b7ae1ae47422856521d66c837e9d2352fbe4",
+      "verified": true
+    },
+    {
+      "bytes": 3250221,
+      "expected_sha256": "e2ef6063d7a84994129732b47e7915e8710f27f99f3a3260b8a38fc7ccd083f4",
+      "filename": "tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "path": "assets/wheels/tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "e2ef6063d7a84994129732b47e7915e8710f27f99f3a3260b8a38fc7ccd083f4",
+      "verified": true
+    }
+  ]
+}

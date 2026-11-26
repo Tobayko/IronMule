@@ -222,6 +222,10 @@ class ProductService:
             if getattr(self.backend, "ggml_gate", None) is not None:  # GG1: the gate the engine passed at its start
                 result["ggml"] = {"gate": {k: self.backend.ggml_gate.get(k) for k in ("ratio", "interval", "passes")},
                                   "answers": "may differ from the MLX plans, within the gate"}
+                profile = self.backend.ggml_gate.get("kernel_profile")
+                if profile:
+                    result["ggml"]["kernel_profile"] = {key: profile[key] for key in ("profile", "flags", "gguf_sha256")}
+                    result["ggml"]["kernel_profile"]["fallback"] = bool(profile.get("fallback_reason"))
                 if self.backend.ggml_gate.get("diagnostic"):
                     from ironmule.ggml_gate_diagnostics import sanitize
 

@@ -1,0 +1,51 @@
+{
+  "bos": null,
+  "correction": "No dependency was installed or source/gate changed; exact nested GATE_IDS was rerun under the sourced frozen env-pipcuda128 runtime and PR61 source projection.",
+  "diagnosed_dependency": "OS call failed or operation not supported on this OS",
+  "facts_sha256": null,
+  "gate_diagnostic": {
+    "candidates": [],
+    "code": "missing_dependency",
+    "exception_class": "ImportError",
+    "exit_code": 1,
+    "schema": "ironmule.gguf-gate-diagnostic.v1",
+    "stage": "tokenize"
+  },
+  "gate_ids_sha256": "2438e20aeb008ad68aa8d9c731d1d696ef81a272339d956641798421b3ecda13",
+  "gate_ids_source": "ironmule/ggml_engine.py:GATE_IDS",
+  "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "ids_count": 0,
+  "nested_diagnostic": {
+    "gate_record_exists": true,
+    "schema": "ironmule.product-tokenizer-nested-diagnostic.v1",
+    "stop_reason": null,
+    "stopped_before_timed_child": true,
+    "tokenizer_child": {
+      "bos": null,
+      "facts_sha256": null,
+      "ids_count": 0,
+      "returncode": 1,
+      "stage": "tokenize",
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n  File \"<reviewed-source>/ironmule/__init__.py\", line 36, in <module>\n    from .fingerprint import build as build_fingerprint, usable\n  File \"<reviewed-source>/ironmule/fingerprint.py\", line 18, in <module>\n    from .plans import RUNTIME_VERSION\n  File \"<reviewed-source>/ironmule/plans.py\", line 19, in <module>\n    from .runtime import PrefixCache\n  File \"<reviewed-source>/ironmule/runtime.py\", line 18, in <module>\n    import mlx.core as mx\nImportError: cudaMallocManaged(&data, size) failed: OS call failed or operation not supported on this OS\n",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "torch_imported": false,
+    "worker_exit_code": 0
+  },
+  "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "packages": {
+    "gguf": null,
+    "jinja2": "3.1.4",
+    "llama-cpp-python": null,
+    "numpy": "2.1.2",
+    "torch": "2.8.0.dev20250319+cu128",
+    "transformers": "5.24.1"
+  },
+  "python": "3.11.11 (main, Dec  4 2024, 08:55:07) [GCC 11.4.0]",
+  "python_executable": "/usr/bin/python3.11",
+  "returncode": 0,
+  "schema": "ironmule.product-tokenizer-preflight.v1",
+  "source_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+  "torch_imported": false,
+  "traceback": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n  File \"<reviewed-source>/ironmule/__init__.py\", line 36, in <module>\n    from .fingerprint import build as build_fingerprint, usable\n  File \"<reviewed-source>/ironmule/fingerprint.py\", line 18, in <module>\n    from .plans import RUNTIME_VERSION\n  File \"<reviewed-source>/ironmule/plans.py\", line 19, in <module>\n    from .runtime import PrefixCache\n  File \"<reviewed-source>/ironmule/runtime.py\", line 18, in <module>\n    import mlx.core as mx\nImportError: cudaMallocManaged(&data, size) failed: OS call failed or operation not supported on this OS\n"
+}

@@ -1,0 +1,99 @@
+{
+  "pypi_metadata": {
+    "tokenizers": {
+      "filename": "tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "4dbb75eab3ce204f611e9f2c24c6ca91392af2a2a99c8d5360f83fb83ed53ceb",
+      "url": "https://pypi.org/pypi/tokenizers/0.22.1/json",
+      "version": "0.22.1"
+    },
+    "torchaudio": {
+      "filename": "torchaudio-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "sha256": "8b93b17a5e4a21c10358c69d501e99b036c14361d46aed8788b510b983e4eb63",
+      "url": "https://pypi.org/pypi/torchaudio/2.8.0/json",
+      "version": "2.8.0"
+    },
+    "torchvision": {
+      "filename": "torchvision-0.23.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "sha256": "f33ad147614023218a232ba880758923dfb6f30d73e28b50113be4b4bcf4e9c7",
+      "url": "https://pypi.org/pypi/torchvision/0.23.0/json",
+      "version": "0.23.0"
+    },
+    "xformers": {
+      "filename": "xformers-0.0.32.post1-cp39-abi3-manylinux_2_28_x86_64.whl",
+      "sha256": "b2f5aaa26693aaade24eb7833dcb7c2ab3b8869bff9ea6da3422d52429f9e5ea",
+      "url": "https://pypi.org/pypi/xformers/0.0.32.post1/json",
+      "version": "0.0.32.post1"
+    }
+  },
+  "schema": "ironmule.vllm-awq-r2-wheel-artifact-lock.v1",
+  "source": "r2 preregistration wheel_catalog plus immutable PyPI JSON for entries without direct URLs",
+  "wheels": [
+    {
+      "bytes": 438217982,
+      "filename": "vllm-0.11.0-cp38-abi3-manylinux1_x86_64.whl",
+      "name": "vllm",
+      "sha256": "3861c75ff2b12e24f6d179ff5c084d791b42ded8675d76c8706697c79f68cd62",
+      "target_head_status": 200,
+      "url": "https://files.pythonhosted.org/packages/47/33/d19e0763c34392ec956534536fa837c060495bfff31ed83452135ea7608d/vllm-0.11.0-cp38-abi3-manylinux1_x86_64.whl",
+      "version": "0.11.0"
+    },
+    {
+      "bytes": 888063640,
+      "filename": "torch-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "name": "torch",
+      "sha256": "c12fa219f51a933d5f80eeb3a7a5d0cbe9168c0a14bbb4055f1979431660879b",
+      "target_head_status": 200,
+      "url": "https://files.pythonhosted.org/packages/5a/63/4fdc45a0304536e75a5e1b1bbfb1b56dd0e2743c48ee83ca729f7ce44162/torch-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "version": "2.8.0"
+    },
+    {
+      "bytes": 11990925,
+      "filename": "transformers-4.57.1-py3-none-any.whl",
+      "name": "transformers",
+      "sha256": "b10d05da8fa67dc41644dbbf9bc45a44cb86ae33da6f9295f5fbf5b7890bd267",
+      "target_head_status": 200,
+      "url": "https://files.pythonhosted.org/packages/71/d3/c16c3b3cf7655a67db1144da94b021c200ac1303f82428f2beef6c2e72bb/transformers-4.57.1-py3-none-any.whl",
+      "version": "4.57.1"
+    },
+    {
+      "bytes": 4011716,
+      "filename": "torchaudio-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "name": "torchaudio",
+      "sha256": "776c0b4ba84b9e3ddf6304b9c47cd63549d7896a6f3d5184ece074cc3d76ed6b",
+      "target_head_checked": false,
+      "target_head_status": null,
+      "url": "https://files.pythonhosted.org/packages/b6/ef/62ac736d8f906cc414181050e08a495a637dab985186c34bd76ea37efbc0/torchaudio-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "version": "2.8.0"
+    },
+    {
+      "bytes": 8628388,
+      "filename": "torchvision-0.23.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "name": "torchvision",
+      "sha256": "35c27941831b653f5101edfe62c03d196c13f32139310519e8228f35eae0e96a",
+      "target_head_checked": false,
+      "target_head_status": null,
+      "url": "https://files.pythonhosted.org/packages/79/9c/fcb09aff941c8147d9e6aa6c8f67412a05622b0c750bcf796be4c85a58d4/torchvision-0.23.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+      "version": "0.23.0"
+    },
+    {
+      "bytes": 117199943,
+      "filename": "xformers-0.0.32.post1-cp39-abi3-manylinux_2_28_x86_64.whl",
+      "name": "xformers",
+      "sha256": "5f245b5555188da112070d8fefb6b7ae1ae47422856521d66c837e9d2352fbe4",
+      "target_head_checked": false,
+      "target_head_status": null,
+      "url": "https://files.pythonhosted.org/packages/6b/df/6817346f1a77278315d5fe1fc9f239ba3282ba36e8ab3256babd448dde62/xformers-0.0.32.post1-cp39-abi3-manylinux_2_28_x86_64.whl",
+      "version": "0.0.32.post1"
+    },
+    {
+      "bytes": 3250221,
+      "filename": "tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "name": "tokenizers",
+      "sha256": "e2ef6063d7a84994129732b47e7915e8710f27f99f3a3260b8a38fc7ccd083f4",
+      "target_head_checked": false,
+      "target_head_status": null,
+      "url": "https://files.pythonhosted.org/packages/d0/c6/dc3a0db5a6766416c32c034286d7c2d406da1f498e4de04ab1b8959edd00/tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "version": "0.22.1"
+    }
+  ]
+}

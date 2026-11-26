@@ -1,0 +1,7 @@
+{
+  "arm": "candidate",
+  "pr": 62,
+  "receipt_sha256": "c7840a9f67a42558f8027517b59fc79520f8dd73db3957aa29890824c49898e7",
+  "target_check_sha256": "802d1b64386cc94fe7876bce9e9e0f1228982f3722cf5ce16763e41cc6ea546c",
+  "withdrawn": false
+}

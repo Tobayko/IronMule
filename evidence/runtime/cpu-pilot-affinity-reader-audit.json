@@ -1,0 +1,218 @@
+{
+  "schema": "ironmule.cpu-load-scope-audit.v1",
+  "affinity": [
+    0,
+    1
+  ],
+  "host_cpus": 5,
+  "cost_profile_sha256": "41a2f2d1c4c818e688fa7b5d1c1a342eed83eb86b040d5895d7364cf019485fd",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "profile_source": "cpu-pilot-thread-trials.json",
+  "samples": [
+    {
+      "host": {
+        "foreign_cores": 0.29986240213861365,
+        "shipped_decision": {
+          "threads": 1,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 292.659,
+        "cached_decision_mean_us": 21.57615625
+      },
+      "affinity": {
+        "foreign_cores": 0.1585374828408035,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 94.562,
+        "cached_decision_mean_us": 18.1693125
+      }
+    },
+    {
+      "affinity": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 143.479,
+        "cached_decision_mean_us": 15.68421875
+      },
+      "host": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 39.233,
+        "cached_decision_mean_us": 15.6695
+      }
+    },
+    {
+      "host": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 110.615,
+        "cached_decision_mean_us": 26.85321875
+      },
+      "affinity": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 85.43,
+        "cached_decision_mean_us": 76.36578125
+      }
+    },
+    {
+      "affinity": {
+        "foreign_cores": 0.15960661438469873,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 140.919,
+        "cached_decision_mean_us": 22.95303125
+      },
+      "host": {
+        "foreign_cores": 0.15510912151570755,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 49.637,
+        "cached_decision_mean_us": 14.9840625
+      }
+    },
+    {
+      "host": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 161.517,
+        "cached_decision_mean_us": 17.0218125
+      },
+      "affinity": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 73.711,
+        "cached_decision_mean_us": 15.83628125
+      }
+    },
+    {
+      "affinity": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 216.359,
+        "cached_decision_mean_us": 30.4545625
+      },
+      "host": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 123.049,
+        "cached_decision_mean_us": 18.08478125
+      }
+    },
+    {
+      "host": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 102.722,
+        "cached_decision_mean_us": 14.191875
+      },
+      "affinity": {
+        "foreign_cores": 0.159961210044618,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 64.354,
+        "cached_decision_mean_us": 16.25675
+      }
+    },
+    {
+      "affinity": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 131.493,
+        "cached_decision_mean_us": 15.2874375
+      },
+      "host": {
+        "foreign_cores": 0.0,
+        "shipped_decision": {
+          "threads": 2,
+          "cap": 2,
+          "budget": 1073741824,
+          "draft": true
+        },
+        "decision_with_refresh_us": 37.272,
+        "cached_decision_mean_us": 19.8419375
+      }
+    }
+  ],
+  "medians": {
+    "host": {
+      "foreign_cores": 0.0,
+      "decision_with_refresh_us": 106.6685,
+      "cached_decision_mean_us": 17.553296875
+    },
+    "affinity": {
+      "foreign_cores": 0.0,
+      "decision_with_refresh_us": 113.0275,
+      "cached_decision_mean_us": 17.21303125
+    }
+  },
+  "scope": "Actual passive observations and shipped Pilot decisions on a fixed request state. The affinity option adds a scoped reader for a future separately qualified head. Neither arm serves a language model in this observation."
+}

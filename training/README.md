@@ -176,3 +176,292 @@ measured on the hardware it claims, and its protocol was fixed before its data.
 | `t4-g12-v` | 2 x T4, Gemma 3 12B `native`, Dolly, limit 256 | AG2 V-G12 (replaced before its data by KB2) |
 
 A new protocol gets a new profile on fresh seeds. A test checks that no two profiles share a seed.
+
+## Fitting the Pilot thread head from paired CPU decode
+
+The GGUF per-step Pilot can test a freshly trained thread head in its existing idle qualification loop.
+This experiment covers plain decode on the local GGML CPU backend. Each action changes the thread count
+of an otherwise fixed decode call. Context, row count, the shipped Pilot's base decision and foreign CPU
+load identify the regime. Other decisions continue through their existing qualified paths.
+
+From an activated IronMule environment, source the CPU backend's env file and set `MODEL` to the pinned
+SmolLM2-135M-Instruct-Q4_K_M GGUF described in [hardware-placement.md](hardware-placement.md).
+Use a directory on local storage for the following files.
+
+```bash
+export OPENBLAS_NUM_THREADS=1
+export IRONMULE_GGML_GPU_LAYERS=0
+mkdir -p pilot-run
+python -m training.pilot_threads collect --gguf "$MODEL" --state pilot-run/state --trials pilot-run/trials.json
+python -m training.pilot_threads fit --trials pilot-run/trials.json --weights pilot-run/threads.npz --report pilot-run/replay.json
+python -m training.pilot_threads exercise --gguf "$MODEL" --state pilot-run/state --weights pilot-run/threads.npz --report pilot-run/serving.json
+```
+
+Collection includes both orders of the available thread profiles on the same inputs, with eight greedy tokens per
+sequence and a digest of the generated IDs. Interrupted or unmatched series stay in the file and are excluded
+from fitting. A second collection with `--extend` adds a pass, preserving the first, on the same bound engine.
+The fit uses one CPU process, seed 20261126, two 128-unit tanh layers and eight scores for log speedup relative to
+the shipped Pilot's measured action. For four cores, some of the eight thread fractions denote the same action.
+Context bins 1–3 provide the first training sample, bins 4–5 add experience and bins 6–7 are held out. All widths,
+prompt repeats and arms for a bin stay together. The report compares the resulting frozen controller to the
+previous fit, the shipped Pilot, one thread and all threads. These are decode times for fixed work. Replay does
+not measure first-token latency or qualify deployment.
+
+`exercise` runs the native engine and its local idle gate on a bounded stream of requests, then times four
+counterbalanced complete generations. Its JSON includes first-token time, elapsed time, output equality,
+the number of qualified thread decisions and search plus warm-up cost. For a server configured with the
+same model, native binary, CPU and engine geometry, set `IRONMULE_PILOT_THREAD_CANDIDATE` to the checkpoint
+path and `IRONMULE_PILOT_LEARN=1`. During plain decode the candidate chooses between its locally qualified action
+and the shipped Pilot's thread count. A foreign checkpoint cannot propose actions. A fresh process rechecks
+the saved suggestions. Removing `IRONMULE_PILOT_THREAD_CANDIDATE` at restart restores the standard local
+thread learner. The GGUF weights and GPU kernels are separate from the controller checkpoint.
+
+Use `collect --slots 4` to measure the four-slot geometry used by the code evaluator. It samples one
+and four simultaneous decode rows. During a follow-up on the same machine, `--extend --missing-only`
+prioritizes incomplete context/width pairs. `exercise --foreign-workers 1` or `2` tests externally
+contended CPU operation. Every worker terminates after the bounded audit. To profile real waves under a
+new head and dispatch its resulting development order, pass the four-slot checkpoint to
+`python -m training.optimization_run --gguf "$MODEL" --state pilot-run/optimization --run-id scratch --thread-candidate pilot-run/threads4.npz`.
+The evaluator records the measured scratch choices, the cost of fresh target qualification and the output
+check alongside the code trial. [Evaluation and activation](../docs/OPTIMIZATION_METHODS.md)
+
+### Start an offline experiment from GGUF serving demand
+
+Set `IRONMULE_EXPERIMENT_QUEUE` to a private directory before starting a GGUF server.
+Each cohort of 32 fresh completed requests can produce one ticket during an idle spell.
+The ticket contains the counts of prompts below and above the 96-token boundary
+(96 enters the document bin), the model digest, an opaque ticket ID and the producer's
+boot-ID digest. The publisher uses the width agent's existing memory when available.
+In single-profile mode it keeps 32 length classes in memory. Profiling occurs only on
+synthetic requests in the evaluator. The server keeps delivering answers with no evaluator attached.
+
+Mount the same private queue on a dedicated Linux evaluation host with the same GGUF.
+Use a filesystem supporting advisory locks and atomic replacement. Start one bounded consumer.
+It can also run on the producer after the GGUF service has shut down.
+
+```sh
+python -m training.demand_worker --queue "$IRONMULE_EXPERIMENT_QUEUE" --state "$EVAL_STATE" \
+  --gguf "$GGUF" --provider cpu --cores 2 --wait 60 --seconds 300
+```
+
+The consumer waits up to 60 seconds for one ticket, then gives its low-priority experiment
+two eligible CPUs and a 300-second wall limit. It selects the hosted Codex mailbox to avoid
+metered API calls. On the originating Linux machine the active publisher defers evaluation.
+An evaluator seeing a new queue-enabled service on its own machine preempts the experiment.
+Dedicate the evaluator to the trial because services using another queue are outside this guard.
+`awaiting_author` leaves the same ticket in place. After the host returns a bound reply,
+repeat the consumer command to resume paired qualification. This consumer runs on existing
+hardware and uses the nonpublishing evaluation mode. [Publishing a qualified result](../docs/OPTIMIZATION_METHODS.md)
+
+On the Xeon Platinum 8573C, a live product bridge using SmolLM2-135M-Instruct Q4_K_M answered
+32 of 32 synthetic copy requests correctly. The idle publisher counted 16 short and 16 document
+prompts. The consumer deferred while that bridge was open. On shutdown the offline evaluation
+completed 16 of 16 discovery tasks, planned with the observed phase counts and produced a
+development order in 9.62 seconds through the author handoff. The hosted Codex worker read the archived
+list-copy rejection and returned the original tokenizer. The evaluator resumed from its pinned checkout,
+recorded the no-change decision and consumed the ticket. [Hosted reply](../lab/autonomous/results/cpu-serving-demand/author-response.json) · [Measured ticket and order](../lab/autonomous/results/cpu-serving-demand/summary.json)
+
+### Uncertainty in the scratch CPU thread decision
+
+The opt-in scratch head acts on plain decode with equal-band contexts. Its status includes the selected thread count, host/runtime and model binding, context and slot capacities, actual sequence rows, absence of prompt, draft or padding rows, eligible thread counts and fallback reason. A new process requalifies each regime. The existing four paired windows must pass the output and timing gates. The head also compares its current selection cost with the smallest absolute time saved in any window, after deducting that window's entire difference between repeated reference timings. Both values are converted to microseconds per decode step. Where the reference is the only eligible profile, uncertainty is recorded as unknown. Check the serving trial's wall and first-visible-token times for the cost of the entire path.
+
+Audit held-out choices against the original paired timings without refitting the weights.
+
+```sh
+python -m training.pilot_threads audit \
+  --trials evidence/runtime/cpu-pilot-four-slot-trials.json \
+  --weights evidence/runtime/cpu-pilot-four-slot-candidate.npz \
+  --report four-slot-uncertainty.json
+```
+
+Of six observed held-out cells in two context families, two had complete matched measurements. In one, another thread count beat the selected profile in both repeats with disjoint times. In the other, the timings overlapped. This sample cannot estimate a calibrated probability of picking the fastest profile. The archive keeps the coverage denominator, unresolved outcomes and engineering bounds separately. [Held-out uncertainty audit](../evidence/runtime/cpu-pilot-four-slot-uncertainty.json)
+
+### Updating a running CPU worker from archived measurements
+
+An offline update imports the repository's measured thread profiles and an incoming trial file of
+the same engine binding. Set `STATE` to the store root used by the GGUF worker. This command performs
+a single bounded fit on one CPU process. Its published checkpoint becomes a proposal for that worker.
+
+```bash
+python -m training.pilot_archive --incoming pilot-run/trials.json --state "$STATE"
+```
+
+To replay an exported JSONL archive instead, pass `--archive experience.jsonl --binding BINDING`.
+The worker reports its binding under `pilot.thread_learning.binding`. The local SQLite journal
+retains observed and unresolved cells with their source digests. Selection keeps up to 16 recent
+cells per context band, reserves bands 6–7 for replay and recomputes output/timing eligibility from the
+raw arms. Repeated deliveries share one stored sample. Each distinct fit keeps its checkpoint, input
+sample IDs and grouped report under `pilot/BINDING.training/`.
+
+The trainer atomically replaces `pilot/BINDING.candidate.npz` when the fitted weights change.
+A learner-enabled CPU worker checks that path in idle time. A changed head discards its predecessor's
+serving qualifications and must earn local timing receipts before it can change a thread count.
+`IRONMULE_PILOT_THREAD_CANDIDATE` selects an explicit checkpoint in place of the store path.
+A real two-slot SmolLM2 worker reloaded a changed head after a second archive delivery and preserved
+both answers through the reload. [Live reload observation](../evidence/runtime/cpu-pilot-archive-live-reload.json)
+
+To replay the decision following the Xeon serving-demand experiment, run the command below. The first order had targeted tokenizer input conversion. Across the four observed waves, the largest remaining single Python function occupied 0.0214% of wall time. Under the planner's same-work assumption even removing all that self time fell below the existing 2% throughput gate. The worker saved its decision to defer further host-only proposals for those observations. A new binding, new source or additional serving evidence can change that decision.
+
+```sh
+evidence=lab/autonomous/results/cpu-serving-demand
+python -m training.experiment_planner --observations "$evidence/waves" --prior-orders "$evidence/prior" --output /tmp/ironmule-followup.json
+```
+
+### Exporting and replaying a native GPU experiment
+
+The control machine can take successive snapshots of a native campaign while the target is running.
+Use the original order with its adjacent `.profile.json` and the coordinator state directory for that order.
+The optional calibration inputs are the measured tuner receipt, its dispatch table, and the actual tuner source.
+
+```sh
+python -m training.native_evidence --order "$ORDER" --state "$CAMPAIGN_STATE" \
+  --destination lab/autonomous/results/a100-native --tuning "$TUNING_RECEIPT" \
+  --table "$DISPATCH_TABLE" --tuner "$TUNER_SOURCE"
+git add lab/autonomous/results/a100-native
+python -m training.experience_archive build --output /tmp/ironmule-experience.jsonl
+python -m training.experience_archive search --archive /tmp/ironmule-experience.jsonl --query native_code_pair
+```
+
+A snapshot includes each available worker request and response, the source patch, numerical screen,
+frozen execution profile, individual serving arms, result and deployment receipts. Missing stages stay open.
+Repeated exports verify previously stored bytes and append new receipts under the same order ID.
+An earlier failed attribution can be added with `--prior-failure-log PATH`. The archive retains its
+error, device/model name and source log digest. The cost locator refers to the redacted campaign
+journal generated after resource cleanup. This is shared expenditure across orders.
+
+Each imported seed has one paired observation including wall time, p95 TTFT, exact token and answer digests,
+factual grades, sampled GPU memory and host peak RSS. Code decisions can be retrieved using
+`--query native_code_decision`; their paired observations never serve as profile selection labels.
+The measured device trace and hypothetical improvements are separate records. Calibration duplicates
+are linked by digest. The comparison covers the reported target runtime and workload.
+
+To rebuild the compiled candidate, check out `base_commit` from the manifest, apply `candidate.diff`,
+and point `--candidate-source` to the resulting `native/kernels/w4mma.cu`. Use the evaluator revision,
+CUDA compiler and compute capability recorded in `manifest.json`. Supply the GGUF, engine libraries
+and reference W4 library matching the order's hashes. A shallow clone can recover the original kernel
+from the worker request after checking its digest. When the base Git object is unavailable during export,
+a supplied tuner is retained in full as `tuner-source.txt`. Restore the exported dispatch table. The reference
+and candidate binaries stay outside Git. Recheck each binary digest before replaying qualification
+on its target. [Build and qualification commands](../lab/pk1/native-trial.md)
+
+An unattended installation with a working subscription login can complete one demand ticket, submit a qualifying variant to GitHub and activate its verified release in the same bounded command. Specify the publication option on the initial run when deployment is desired. The unchanged gates require matching PR bytes, successful CI and fresh target verification.
+
+```sh
+python -m training.demand_worker --queue "$IRONMULE_EXPERIMENT_QUEUE" --state "$EVAL_STATE" \
+    --gguf "$GGUF" --provider cpu --cores 2 --wait 60 --seconds 1800 --author cli --publish
+```
+
+On Linux, `IRONMULE_PILOT_CPU_LOAD=affinity` opts the local thread learner into per-CPU busy
+ticks for the exact allowed CPU set. The scheduler's shipped head continues to use its original
+host-wide feature. The experiment records its CPU list in the profile and keeps a separate model
+database and checkpoint binding. A changed mask or an incomplete sample leaves the worker on the
+shipped path. This reader assumes the worker's compute threads inherit its affinity. New hardware
+still needs collection, training and a fresh per-process gate.
+
+```sh
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 taskset -c 0,1 python -m training.pilot_load_audit \
+  --profile evidence/runtime/cpu-pilot-thread-trials.json --out /tmp/load-audit.json
+```
+
+After the four-core EPYC serving campaign stopped, the host accumulated 459 busy CPU ticks in
+0.502 s. The worker's former CPUs 0–3 accumulated 17, or 0.34 core equivalents compared with
+9.14 across the host. Both counters include the observer and other processes. A separate two-core
+affinity reader audit on the Xeon measured median complete Pilot decisions of 106.7 µs with a host
+refresh and 113.0 µs when also refreshing the scoped counter. This was a passive read and
+decision replay on the local CPU. Serving gains require qualified end-to-end measurements.
+[EPYC observation](../lab/autonomous/results/runpod-epyc-pilot/post-campaign-load.json) ·
+[Xeon reader audit](../evidence/runtime/cpu-pilot-affinity-reader-audit.json)
+
+On the Xeon with four engine slots and a 512-token slot context, the original host-scope checkpoint
+loaded as a proposal under its recorded binding. With the same affinity and GGUF, the scoped worker
+set this checkpoint aside. Both workers returned four correct copy responses and identical tokens
+and stop reasons through `GgmlBridge.generate_many`. [Serving check](../evidence/runtime/cpu-pilot-affinity-serving.json)
+
+The EPYC development planner can also consume a direct measurement of native prefill. Run the
+trusted attribution script on the original CPU checkout and head. Its output includes every
+single-sequence prefill's elapsed time and thread count within the four complete serving waves.
+The planner requires the earlier host-site decision, the same source and a locally qualified head
+that made measured choices. Archive retrieval uses the source site selected by the planner.
+
+```sh
+epyc=lab/autonomous/results/runpod-epyc-pilot
+python -m training.experience_archive build --output /tmp/epyc-experience.jsonl
+python -m training.cpu_prefill_order --prior evidence/runtime/cpu-pilot-epyc-discovery.json \
+  --waves "$epyc/waves" --attribution "$epyc/prefill-attribution.json" \
+  --host-decision "$epyc/planner-decision.json" --archive /tmp/epyc-experience.jsonl --output /tmp/epyc-order.json
+```
+
+The original run timed 12 prefill calls at one thread. They took 4.523 of 6.264 s in the four
+waves. This includes time in native GGML. The corresponding development order tests whether
+a different CPU thread policy for those calls benefits completed requests. The comparator adds
+a separate four-thread rule to the existing six-pair quality, throughput, TTFT and memory check.
+[Attribution](../lab/autonomous/results/runpod-epyc-pilot/prefill-attribution.json) ·
+[Bound order](../lab/autonomous/results/runpod-epyc-pilot/prefill-order.json)
+
+The repeat-start source trial archives both local mask observations, the original Python source,
+the hosted function replacement and its exact patch. On subsequent exports the private campaign
+can deliver A/A controls, missing/stale-receipt checks, six cold/warm pairs, two separate factual-first
+pairs, scoped deployment and rollback observations. Every arm includes its startup duration, returned
+work and pinned runtime. The portable exporter independently replays a reported passing gate.
+
+```sh
+python -m training.restart_evidence --state "$RESTART_STATE" \
+  --observations "$PREVIOUS_ORDER" "$CANONICAL_ORDER" --destination lab/autonomous/results/a100-restart
+```
+
+Repeat the command as the target delivers evidence. Once the two original observations are archived,
+`--observations` can be omitted. A shallow checkout can supply the original `ggml_engine.py` with `--reference`.
+
+On the campaign control host, append `--cost-phase during-qualification`, `after-verdict` or
+`after-release` to record one read-only observation of the registered live lease. The observation keeps
+provider account and hourly-rate data, the held cleanup reserve and completed worker-arm durations.
+Each figure for elapsed lease cost is cumulative across workloads. The final campaign journal
+also checks provider-confirmed pod removal and available posted charges.
+### Replay the qualified PR 60 program and CPU decision
+
+The following command runs on an ordinary CPU with NumPy. It regenerates the development
+order from both measured GPU mask observations and the earlier startup phase traces. It
+reconstructs the submitted Python method from the Codex response and regrades the entire
+hardware qualification, then trains the startup head again from its original random seed.
+It checks the resulting weight bytes, held-out decisions, publication, fresh target receipt,
+two real serving processes with equal profile eligibility and the same-work rollback.
+
+```sh
+order=d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3
+OPENBLAS_NUM_THREADS=1 python -m training.replay_qualified_restart "lab/autonomous/results/a100-restart/$order"
+```
+
+The measured phase selector for this first successful program used an engineer-defined
+cache-replay protocol. Codex supplied the changed method. The learned head selected the
+qualified complete program when serving new work, after the original paired experiment.
+The ablation measures that final selection with identical admission and uncertainty gates.
+
+The bitwise weight replay was exercised with Python 3.12.14, NumPy 2.5.5, the Linux x86-64
+wheel's OpenBLAS 0.3.34.237.2, and one BLAS thread. The command also rechecks the automatic
+withdrawal, including the original failed reference calibration, and independently grades the
+first successful reference process after restart. The original raw responses and failed
+broker log remain in the order directory.
+
+### Archive a calibration-sampling trial over PR 60
+
+The control host can capture each stage of an attributed follow-up trial in a portable bundle.
+The command rebuilds the PR 60 method from its original source and Codex response, reproduces
+the planner's order from the two prospective measurements, and checks the bytes returned by
+the second author. Run it again as the registered evaluator writes further receipts. Earlier
+receipts and failed stages retain their original digests.
+
+```sh
+python -m training.sampling_evidence export "$SAMPLING_STATE"
+order=4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7
+python -m training.sampling_evidence replay "lab/autonomous/results/a100-calibration-sampling/trial-$order"
+python -m training.experience_archive build --output /tmp/ironmule-experience.jsonl
+```
+
+An unfinished trial replays with `qualified: null`. A terminal result checks its raw arm
+digests and all available paired work. The central archive keeps per-width source sampling
+telemetry distinct from counts collected by the independent instrumented screen. A published
+variant further requires the qualification, fresh remeasurement, active receipt and actual
+same-work rollback for the corresponding stages. While the lease is active, use
+`--cost-phase author-request`, `after-verdict` or `after-release` with
+`--target "$TARGET_CONFIG"` to retain the cumulative provider observation. The shared final
+journal is in `lab/rp/results/campaign-costs.json` after teardown.

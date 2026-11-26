@@ -370,6 +370,11 @@ requalification and a failed comparison withdraws the offset. After a restart, s
 Inspect `thread_learning` under the Pilot status for model updates, installed offsets and the last timing ratios.
 These results concern decode time. End-to-end throughput and first-token latency need a separate serving comparison.
 
+An optional scratch-trained Pilot thread head can propose an action for the idle comparison and choose a
+locally qualified action on real decode steps. The checkpoint is bound to the CPU, model, Pilot and engine
+geometry. The live status reports how often its choice was qualified and how often the reference served.
+[Collecting paired profiles, fitting and exercising the candidate](../training/README.md#fitting-the-pilot-thread-head-from-paired-cpu-decode)
+
 *Scope (owner goal 2026-11-16, BACKLOG PI3).* The Pilot runs on the CPU; the model it steers is to run perfectly on
 the GPU. Since PI3 (2026-11-16) an engine on a GPU takes the GPU weights: trained from scratch in dream world v7, built
 from a T4's measured costs (LAB.md, PI3 probe), they keep the running cap at its maximum and a prompt budget of 128
@@ -429,6 +434,12 @@ second for 1 / 8 requests against 5.26 / 38.4 with the defaults (the weights bef
 process, attached and detached in turn, 10.04 / 65.6 against 10.05 / 65.0 tokens per second. In the dreamed world (world v4,
 240 s, 1,024 random machines) they make 12.5 % more tokens than the defaults with 45 % less waiting, and 1.8 % less
 waiting than the hand rule (reward -1408 against -1454; defaults -2547; the weights before -1434).
+
+### From Pilot experience to a measured code change on Linux
+
+A CPU learner can train an additional thread-choice head from grouped, matched measurements, publish its checkpoint atomically and let the running Pilot load it while idle. The incumbent remains selectable at every step. On four pinned EPYC 7742 cores a newly trained head used four locally qualified alternatives in 16 correct SmolLM2 requests. The all-four-thread rule tied it on the held-out decode cases. [Training and replay](../training/README.md) · [EPYC measurements](../lab/autonomous/results/runpod-epyc-pilot/)
+
+A GGUF service can publish a coarse ticket after completed requests. On a separate evaluator, the measured world model ranks editable source locations, includes relevant prior failures and commissions a source-bound Codex order. Fresh paired hardware results determine whether a change enters its qualification PR. The CUDA path binds the model, GPU, native binaries, complete dispatch and measured source. Its coordinator checkpoints build, screen and serving results to the control host. Released variants can be withdrawn and the selected profile survives a restart. [Demand worker and CLI](../training/README.md) · [Native campaign and rollback](../lab/pk1/native-trial.md) · [Hardware coverage](../training/optimization-hardware.md)
 
 ## What it knows about the hardware (AG3)
 

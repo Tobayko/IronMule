@@ -1,0 +1,442 @@
+{
+  "activation": null,
+  "economic_comparison": {
+    "actual_customer_serving_savings_s": 0,
+    "actual_selected_parameters": "fresh original in both complete workers",
+    "broker_elapsed_s": 75.60719416593201,
+    "cold_sentinel_alone_actually_measured": false,
+    "expected_future_requests_or_restarts": null,
+    "marginal_lease_estimate_usd": 0.046244400241173225,
+    "net_measured_serving_advantage": null,
+    "rate_usd_per_hour": 2.201904761904762
+  },
+  "forecast_sha256": "2828259c1b2fc2de8cc591066dbc6e41903c64b5e9c3288f95dba2aa424e6022",
+  "fresh_reference": "2/2 cold workers and their real deliveries used the unmodified PR60 trained-startup choice; correct mixed cold and warm 32 and 18 factual responses independently checked. No serving counterfactual used these predicted prices.",
+  "grouping": "Two original processes in one target study on a single A100. The third row is nested in the second process after real delivery. Widths and nested rows are correlated.",
+  "limits": [
+    "Both the adaptive and the fixed latest donor meet the descriptive 2% numeric guard in all three rows. The unmodified empty padding decision matches all three measured outcomes.",
+    "The prospective drift threshold admits one original cold observation. The second cold observation abstains; the independently sampled post-delivery state abstains and is out of context. Standalone post-delivery pass width-one latency differs from the immediately subsequent full-method value. Cold sentinels were read from full original measurements.",
+    "Aggregate probe costs include worker setup and the optional shadow. Each admission retains its actual binding, and the parent receipt age only bounds donor age. Neither a cost-adjusted source improvement nor a paid deployment is qualified.",
+    "The observed no-read period for pass costs covers three measured serving waves in each worker. Other workload paths and status consumers may use the field. Native warm state and the result of code modifications remain untested."
+  ],
+  "method": "Recover the full 16 padding and six pass prices from each original worker. At startup, rederive every price as the median after discarding the first measured call and verify authoritative recorded state. For each width compute abs(donor_price/fresh_price - 1). Choose one complete donor minimizing the maximum width-one sentinel error across both families, preferring the newer seed on ties. Retain every group, abstention, price and fixed newest-donor comparison. Descriptive post-delivery prices use the separately measured standalone sentinel and subsequent full pass and padding calibrations.",
+  "observation_sha256": [
+    "624e5b1c52bae766aa00a609eeee9b6aeddad4dc73ea3f1ce788a96597a97f10",
+    "42937beeded2560cee7bc7112e608aadf8c2e889111eb38ea567a5987a319a5e"
+  ],
+  "observations": [
+    {
+      "actual": {
+        "padding": {
+          "1": 0.019076556083746254,
+          "10": 0.021862407913431525,
+          "11": 0.02210674900561571,
+          "12": 0.021989227971062064,
+          "13": 0.022041367017664015,
+          "14": 0.022102972958236933,
+          "15": 0.022175761056132615,
+          "16": 0.0222579559776932,
+          "2": 0.0202198950573802,
+          "3": 0.020383615978062153,
+          "4": 0.02050049602985382,
+          "5": 0.02117983903735876,
+          "6": 0.02131400292273611,
+          "7": 0.021466440986841917,
+          "8": 0.021610643016174436,
+          "9": 0.021386419073678553
+        },
+        "passes": {
+          "1": 0.01924968301318586,
+          "1024": 0.3983770729973912,
+          "16": 0.02223304903600365,
+          "256": 0.1477975120069459,
+          "32": 0.027066337992437184,
+          "8": 0.021580216009169817
+        }
+      },
+      "cold_admissible": true,
+      "complete_error": 0.019286923089405272,
+      "component_error": {
+        "padding": {
+          "max": 0.010106278016194237,
+          "worst_width": "11"
+        },
+        "passes": {
+          "max": 0.019286923089405272,
+          "worst_width": "16"
+        }
+      },
+      "context": "startup",
+      "dispatch_match": true,
+      "donor": 97251,
+      "donor_distances": {
+        "97251": 0.0008748710142351124,
+        "97252": 0.0037189021989008086
+      },
+      "drift": 0.0008748710142351124,
+      "fixed_donor_error": 0.019608694266418536,
+      "fixed_empty_action_passes": true,
+      "predicted": {
+        "padding": {
+          "1": 0.019086915999650955,
+          "10": 0.021832376020029187,
+          "11": 0.021883332054130733,
+          "12": 0.02193611196707934,
+          "13": 0.021980715915560722,
+          "14": 0.022043323959223926,
+          "15": 0.022105120006017387,
+          "16": 0.02217897993978113,
+          "2": 0.02019347797613591,
+          "3": 0.02040175104048103,
+          "4": 0.020475970930419862,
+          "5": 0.021157069015316665,
+          "6": 0.02130988799035549,
+          "7": 0.021422881982289255,
+          "8": 0.021574437036179006,
+          "9": 0.021306029986590147
+        },
+        "passes": {
+          "1": 0.01923284202348441,
+          "1024": 0.39864362601656467,
+          "16": 0.021804241929203272,
+          "256": 0.14768392802216113,
+          "32": 0.02701601292937994,
+          "8": 0.021567243966273963
+        }
+      },
+      "seed": 97451,
+      "within": true,
+      "within_guard": true
+    },
+    {
+      "actual": {
+        "padding": {
+          "1": 0.019116792012937367,
+          "10": 0.021847330033779144,
+          "11": 0.02193034696392715,
+          "12": 0.021967237000353634,
+          "13": 0.022027089027687907,
+          "14": 0.02208981802687049,
+          "15": 0.022155631915666163,
+          "16": 0.022238288074731827,
+          "2": 0.020349320024251938,
+          "3": 0.020436855033040047,
+          "4": 0.020552503992803395,
+          "5": 0.021190388943068683,
+          "6": 0.021293603931553662,
+          "7": 0.021434320020489395,
+          "8": 0.021579944994300604,
+          "9": 0.021342606050893664
+        },
+        "passes": {
+          "1": 0.019295099074952304,
+          "1024": 0.3995868769707158,
+          "16": 0.021833262988366187,
+          "256": 0.14766091492492706,
+          "32": 0.02705192205030471,
+          "8": 0.021580255939625204
+        }
+      },
+      "cold_admissible": false,
+      "complete_error": 0.0064038518500483255,
+      "component_error": {
+        "padding": {
+          "max": 0.0064038518500483255,
+          "worst_width": "2"
+        },
+        "passes": {
+          "max": 0.0016568761865369819,
+          "worst_width": "16"
+        }
+      },
+      "context": "startup",
+      "dispatch_match": true,
+      "donor": 97252,
+      "donor_distances": {
+        "97251": 0.003226573298538482,
+        "97252": 0.0016063321270329833
+      },
+      "drift": 0.0016063321270329833,
+      "fixed_donor_error": 0.0064038518500483255,
+      "fixed_empty_action_passes": true,
+      "predicted": {
+        "padding": {
+          "1": 0.019147499930113554,
+          "10": 0.021837234031409025,
+          "11": 0.021901695989072323,
+          "12": 0.02196171006653458,
+          "13": 0.02201888896524906,
+          "14": 0.022067739977501333,
+          "15": 0.022114758961834013,
+          "16": 0.022270302986726165,
+          "2": 0.020219005993567407,
+          "3": 0.020342368981800973,
+          "4": 0.020492541952989995,
+          "5": 0.0211400359403342,
+          "6": 0.021286053000949323,
+          "7": 0.0214032840449363,
+          "8": 0.02153733791783452,
+          "9": 0.021323894965462387
+        },
+        "passes": {
+          "1": 0.019275121041573584,
+          "1024": 0.39973673201166093,
+          "16": 0.021797087974846363,
+          "256": 0.14758449897635728,
+          "32": 0.027041019988246262,
+          "8": 0.021554859937168658
+        }
+      },
+      "seed": 97452,
+      "within": false,
+      "within_guard": true
+    },
+    {
+      "actual": {
+        "padding": {
+          "1": 0.01911109103821218,
+          "10": 0.021805430995300412,
+          "11": 0.021869571995921433,
+          "12": 0.02189006097614765,
+          "13": 0.021939974976703525,
+          "14": 0.02199293510057032,
+          "15": 0.022033061017282307,
+          "16": 0.02211408398579806,
+          "2": 0.02017699391581118,
+          "3": 0.0203157770447433,
+          "4": 0.0204555110540241,
+          "5": 0.021112602087669075,
+          "6": 0.02123550500255078,
+          "7": 0.02136638096999377,
+          "8": 0.021494224085472524,
+          "9": 0.02127569995354861
+        },
+        "passes": {
+          "1": 0.01913828297983855,
+          "1024": 0.399441845016554,
+          "16": 0.021833413979038596,
+          "256": 0.14806635002605617,
+          "32": 0.02703309606295079,
+          "8": 0.0216027379501611
+        }
+      },
+      "cold_admissible": false,
+      "complete_error": 0.007149965432070804,
+      "component_error": {
+        "padding": {
+          "max": 0.0070642311491821985,
+          "worst_width": "16"
+        },
+        "passes": {
+          "max": 0.007149965432070804,
+          "worst_width": "1"
+        }
+      },
+      "context": "post-delivery",
+      "dispatch_match": true,
+      "donor": 97252,
+      "donor_distances": {
+        "97251": 0.12911768266714518,
+        "97252": 0.1272032464541768
+      },
+      "drift": 0.1272032464541768,
+      "fixed_donor_error": 0.007149965432070804,
+      "fixed_empty_action_passes": true,
+      "predicted": {
+        "padding": {
+          "1": 0.019147499930113554,
+          "10": 0.021837234031409025,
+          "11": 0.021901695989072323,
+          "12": 0.02196171006653458,
+          "13": 0.02201888896524906,
+          "14": 0.022067739977501333,
+          "15": 0.022114758961834013,
+          "16": 0.022270302986726165,
+          "2": 0.020219005993567407,
+          "3": 0.020342368981800973,
+          "4": 0.020492541952989995,
+          "5": 0.0211400359403342,
+          "6": 0.021286053000949323,
+          "7": 0.0214032840449363,
+          "8": 0.02153733791783452,
+          "9": 0.021323894965462387
+        },
+        "passes": {
+          "1": 0.019275121041573584,
+          "1024": 0.39973673201166093,
+          "16": 0.021797087974846363,
+          "256": 0.14758449897635728,
+          "32": 0.027041019988246262,
+          "8": 0.021554859937168658
+        }
+      },
+      "seed": 97452,
+      "within": false,
+      "within_guard": true
+    }
+  ],
+  "recorded_grade_sha256": "6a137b07cc591d7193dd43e3583df487c97a3719c2670151fa0368be1bcdddea",
+  "schema": "ironmule.portfolio-shadow-independent-replay.v1",
+  "source_order": null,
+  "workers": [
+    {
+      "age_upper_s": 6772.891334533691,
+      "broker_s": 35.276558895013295,
+      "cold_s": 15.955152246984653,
+      "first_serving_reads": {
+        "cold": {
+          "costs": {
+            "count": 66,
+            "first_caller": "Pilot._features",
+            "line": 183
+          },
+          "pad_to": {
+            "count": 63,
+            "first_caller": "GgmlEngine.run",
+            "line": 2128
+          }
+        },
+        "factual": {
+          "costs": {
+            "count": 14,
+            "first_caller": "Pilot._features",
+            "line": 183
+          },
+          "pad_to": {
+            "count": 7,
+            "first_caller": "GgmlEngine.run",
+            "line": 2128
+          }
+        },
+        "warm": {
+          "costs": {
+            "count": 66,
+            "first_caller": "Pilot._features",
+            "line": 183
+          },
+          "pad_to": {
+            "count": 63,
+            "first_caller": "GgmlEngine.run",
+            "line": 2128
+          }
+        }
+      },
+      "fresh_calibrations_s": 4.9443693369999995,
+      "independent_cold_sentinel": false,
+      "initial_binding_matches_parent_release": true,
+      "initialized_s": 12.28035886597354,
+      "load_1min_before_after": [
+        6.8291015625,
+        7.83837890625
+      ],
+      "major_faults_before_after": [
+        0,
+        0
+      ],
+      "measured_method_seconds": {
+        "measure_costs": 1.200166169,
+        "measure_padding": 2.259966574,
+        "measure_pass_costs": 2.684402763
+      },
+      "nvidia_snapshot_before_after": [
+        [
+          "GPU-8bada50e-b8f2-d961-5369-a30d9e1eade6, P0, 1155, 0, 847"
+        ],
+        [
+          "GPU-8bada50e-b8f2-d961-5369-a30d9e1eade6, P0, 1155, 0, 62085"
+        ]
+      ],
+      "post_delivery_threads": 14,
+      "raw_sha256": "624e5b1c52bae766aa00a609eeee9b6aeddad4dc73ea3f1ce788a96597a97f10",
+      "seed": 97451,
+      "startup_threads": 14,
+      "warm_in_startup_scope": false
+    },
+    {
+      "age_upper_s": 6809.35169005394,
+      "broker_s": 40.33063527091872,
+      "cold_s": 15.620837450958788,
+      "first_serving_reads": {
+        "cold": {
+          "costs": {
+            "count": 66,
+            "first_caller": "Pilot._features",
+            "line": 183
+          },
+          "pad_to": {
+            "count": 63,
+            "first_caller": "GgmlEngine.run",
+            "line": 2128
+          }
+        },
+        "factual": {
+          "costs": {
+            "count": 14,
+            "first_caller": "Pilot._features",
+            "line": 183
+          },
+          "pad_to": {
+            "count": 7,
+            "first_caller": "GgmlEngine.run",
+            "line": 2128
+          }
+        },
+        "warm": {
+          "costs": {
+            "count": 66,
+            "first_caller": "Pilot._features",
+            "line": 183
+          },
+          "pad_to": {
+            "count": 63,
+            "first_caller": "GgmlEngine.run",
+            "line": 2128
+          }
+        }
+      },
+      "fresh_calibrations_s": 4.950089182,
+      "full_methods_s": 4.936764661106281,
+      "independent_cold_sentinel": false,
+      "initial_binding_matches_parent_release": true,
+      "initialized_s": 11.939797951024957,
+      "load_1min_before_after": [
+        7.69091796875,
+        7.3974609375
+      ],
+      "major_faults_before_after": [
+        0,
+        0
+      ],
+      "measured_method_seconds": {
+        "measure_costs": 1.200051643,
+        "measure_padding": 2.261586865,
+        "measure_pass_costs": 2.688502317
+      },
+      "nvidia_snapshot_before_after": [
+        [
+          "GPU-8bada50e-b8f2-d961-5369-a30d9e1eade6, P0, 1410, 0, 847"
+        ],
+        [
+          "GPU-8bada50e-b8f2-d961-5369-a30d9e1eade6, P0, 1155, 0, 62085"
+        ]
+      ],
+      "post_delivery_threads": 14,
+      "raw_sha256": "42937beeded2560cee7bc7112e608aadf8c2e889111eb38ea567a5987a319a5e",
+      "registered_shadow_s": 5.377959316945635,
+      "seed": 97452,
+      "standalone_s": 0.4411256150342524,
+      "startup_threads": 14,
+      "warm_in_startup_scope": false,
+      "width1_fresh_vs_subsequent_original_seconds": {
+        "padding": [
+          0.019097606069408357,
+          0.01911109103821218
+        ],
+        "passes": [
+          0.022084317984990776,
+          0.01913828297983855
+        ]
+      }
+    }
+  ]
+}

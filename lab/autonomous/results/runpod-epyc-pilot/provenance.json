@@ -1,0 +1,39 @@
+{
+  "schema": "ironmule.runpod.cpu-provenance.v1",
+  "base_commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "physical_cpu": "AMD EPYC 7742",
+  "assigned_affinity": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "cgroup_quota_cores": 13.6,
+  "runtime": "mlx==0.32.5 + mlx-cpu==0.32.5",
+  "gpu_visibility": "masked",
+  "original_experiment_bundle_sha256": "84268c86a105c60fbab2e9cfa1d7750cdd512c14199571470fdc0dfae5eaa7b0",
+  "attempts": [
+    {
+      "stage": "collect",
+      "elapsed_s": 0.3152554789558053,
+      "result": "failed before first measurement",
+      "reason": "ImportError: cudaMallocManaged(&data, size) failed: no CUDA-capable device is detected",
+      "runtime": "system CUDA MLX with CUDA hidden"
+    },
+    {
+      "stage": "complete",
+      "elapsed_s": 231.97391584701836,
+      "result": "qualified choices served",
+      "runtime": "isolated CPU MLX environment, unchanged experiment source"
+    }
+  ],
+  "planner": {
+    "archive_sha256": "f3634233dc5427eea7f883d21af5a84374e1cf3748b6b6b1439c558c158e81e0",
+    "archive_source_commit": "43ddcc6",
+    "eligible_sites": "Only sites with observed exclusive time large enough to reach the existing 2% throughput gate at zero cost.",
+    "profiles_source": "All four wave files from the head-bound serving audit, in acquisition order.",
+    "served_choices": 4,
+    "new_hosted_orders": 0,
+    "prior_experiments_used": true
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "base_commit": "63db7745998383509602601d46ae4bbff0076648",
+  "parent_order": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "control_receipt_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
+  "weights_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+  "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+  "worker_family": "mixed-first-32",
+  "schema": "ironmule.calibration-stability-contract.v1",
+  "observation_schema": "ironmule.calibration-stability-observation.v1",
+  "seeds": [
+    97251,
+    97252
+  ],
+  "search_family_provenance": "Human/Codex-designed search family: compare complete recorded outputs of every performance calibration called by constructor. Executed code selects stable candidates and buys two holdouts when information value warrants it.",
+  "history": "All six mixed and both factual-first pre-existing PR60 qualified cache hits. Original references/negative routes form separate scope and must never form same-machine-equivalence labels.",
+  "prediction": "Require exact equality of complete recorded return payload in every observed historical start, including all keys and unrounded prices. Any difference on a new seed rejects the deterministic prediction. Direct mutable field values are audited separately. A constant choice with varying state is never evidence of full calibration replay.",
+  "uncertainty": "Uniform Beta(1,1) prior over exact prediction matches, two future independent trials. The predictive probability of at least one miss, multiplied by the estimated cost of a larger performance trial, is the conditional informational value ONLY if that trial was under consideration. Price all outcomes including rejection.",
+  "information_gate": "Require at least six independently observed matching values, a historical separate-regime phase prior above the frozen 2% cold gate and expected value of avoiding a larger non-useful target trial above the cost of two full workers. No issue, author request, release, or production prediction from this criterion alone.",
+  "validation": "Verify prior source, full live binding, measured masks, independent 18 factual answers plus complete 32+32 mixed deliveries. Bound head chooses original real route before each start, two independent processes, no concurrent GPU job. A live-classifier status flip or new vendor/GPU/flags requires independent qualification. Native graph/memory effects remain unobserved.",
+  "ttl": "Validity of the data ends with the independently bound 24h parent W4 receipt or any hardware, source, model, binary, flag, workload, load or clock regime change. There is no qualified new calibration-replay TTL.",
+  "hypothetical_restarts": [
+    1,
+    32,
+    256
+  ],
+  "qualification_workers": 22,
+  "positive_gain_ratio": 1.02,
+  "maximum_new_leases": 0,
+  "secondary_prospective": "For a stable discrete dispatch decision computed by the original source from width medians: record all original post-warm raw repeats for every width; prospectively model three fresh post-warm repeats in place of five. Treat [min(first three)*0.99,max(first three)*1.01] as an empirical uncertainty interval per width, NOT a probability guarantee. Admit only if every corner decision allowed by these intervals is identical, the median-3 decision exactly equals the observed full 5 and the actual measured saved last-two work exceeds the cold 2% floor in both independent new observations. Otherwise abstain and retain full measurement. Fresh prices for telemetry must be identified by actual source and measurement count. No source order without a further binding of assumptions, full-release work and cost. Further binary/native effects remain unknown."
+}

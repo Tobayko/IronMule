@@ -1,0 +1,1914 @@
+{
+  "schema": "ironmule.gpu-width-bench.v1",
+  "status": "complete",
+  "stage": "compare",
+  "provider": "cuda",
+  "runs": [
+    {
+      "role": "calibration",
+      "prompt_tokens": 32,
+      "concurrency": 1,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "white"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            203.9319923513267,
+            225.75770494115136
+          ],
+          "ttft_ms": [
+            10.132944,
+            10.024889
+          ],
+          "request_ttft_ms": [
+            [
+              10.132944
+            ],
+            [
+              10.024889
+            ]
+          ],
+          "elapsed_s": [
+            0.029421573,
+            0.026577166
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\n\nWhat is the"
+            ],
+            [
+              " white\n\nWhat is the"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            202.77675732252217,
+            205.48054982759498
+          ],
+          "ttft_ms": [
+            10.068642,
+            10.020852
+          ],
+          "request_ttft_ms": [
+            [
+              10.068642
+            ],
+            [
+              10.020852
+            ]
+          ],
+          "elapsed_s": [
+            0.02958919,
+            0.029199844
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\n\nWhat is the"
+            ],
+            [
+              " white\n\nWhat is the"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 1
+    },
+    {
+      "role": "calibration",
+      "prompt_tokens": 32,
+      "concurrency": 4,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "white",
+        "gold",
+        "green",
+        "black"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            248.37043382211704,
+            249.86886049305122
+          ],
+          "ttft_ms": [
+            44.8246215,
+            44.380523499999995
+          ],
+          "request_ttft_ms": [
+            [
+              8.394367,
+              32.664712,
+              56.984531,
+              80.965149
+            ],
+            [
+              8.344293,
+              32.383582,
+              56.377465,
+              80.378842
+            ]
+          ],
+          "elapsed_s": [
+            0.096629859,
+            0.096050384
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                4231,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2537,
+                198
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                4231,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2537,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\n\nWhat is the",
+              " gold\n\nWhat is the",
+              " green\nColor: red\n",
+              " black\nColor: white\n"
+            ],
+            [
+              " white\n\nWhat is the",
+              " gold\n\nWhat is the",
+              " green\nColor: red\n",
+              " black\nColor: white\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            449.21833763160413,
+            443.69629853573014
+          ],
+          "ttft_ms": [
+            20.9777075,
+            20.9584505
+          ],
+          "request_ttft_ms": [
+            [
+              33.479153,
+              8.466784,
+              16.810626,
+              25.144789
+            ],
+            [
+              33.459004,
+              8.452056,
+              16.790597,
+              25.126304
+            ]
+          ],
+          "elapsed_s": [
+            0.053426136,
+            0.054091053
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                4231,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2537,
+                198
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                4231,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2537,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\n\nWhat is the",
+              " gold\n\nWhat is the",
+              " green\nColor: red\n",
+              " black\nColor: white\n"
+            ],
+            [
+              " white\n\nWhat is the",
+              " gold\n\nWhat is the",
+              " green\nColor: red\n",
+              " black\nColor: white\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 4
+    },
+    {
+      "role": "calibration",
+      "prompt_tokens": 256,
+      "concurrency": 1,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "white"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            191.79389367879932,
+            194.80026155181784
+          ],
+          "ttft_ms": [
+            14.586761,
+            14.313285
+          ],
+          "request_ttft_ms": [
+            [
+              14.586761
+            ],
+            [
+              14.313285
+            ]
+          ],
+          "elapsed_s": [
+            0.031283582,
+            0.03080078
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\nColor: red\n"
+            ],
+            [
+              " white\nColor: red\n"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            190.6739526573736,
+            193.01450275587715
+          ],
+          "ttft_ms": [
+            14.170094,
+            14.11499
+          ],
+          "request_ttft_ms": [
+            [
+              14.170094
+            ],
+            [
+              14.11499
+            ]
+          ],
+          "elapsed_s": [
+            0.031467329,
+            0.031085747
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\nColor: red\n"
+            ],
+            [
+              " white\nColor: red\n"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 1
+    },
+    {
+      "role": "calibration",
+      "prompt_tokens": 256,
+      "concurrency": 4,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "white",
+        "gold",
+        "green",
+        "black"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            197.24286688430664,
+            196.9837729774492
+          ],
+          "ttft_ms": [
+            60.04902,
+            59.428231000000004
+          ],
+          "request_ttft_ms": [
+            [
+              14.065497,
+              44.905541,
+              75.192499,
+              105.432358
+            ],
+            [
+              13.985666,
+              44.229162,
+              74.6273,
+              105.210629
+            ]
+          ],
+          "elapsed_s": [
+            0.121677404,
+            0.121837447
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                4231,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                4231,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\nColor: red\n",
+              " gold\nColor: red\n",
+              " green\nColor: red\n",
+              " black\nColor: red\n"
+            ],
+            [
+              " white\nColor: red\n",
+              " gold\nColor: red\n",
+              " green\nColor: red\n",
+              " black\nColor: red\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            291.57861549312935,
+            291.4321462601769
+          ],
+          "ttft_ms": [
+            35.2381375,
+            35.2455205
+          ],
+          "request_ttft_ms": [
+            [
+              28.206817,
+              14.214328,
+              42.269458,
+              56.2955
+            ],
+            [
+              28.210513,
+              14.212324,
+              42.280528,
+              56.299507
+            ]
+          ],
+          "elapsed_s": [
+            0.082310563,
+            0.082351931
+          ],
+          "output_tokens": [
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                4231,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ],
+            [
+              [
+                2537,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                4231,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2654,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                2632,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " white\nColor: red\n",
+              " gold\nColor: red\n",
+              " green\nColor: red\n",
+              " black\nColor: red\n"
+            ],
+            [
+              " white\nColor: red\n",
+              " gold\nColor: red\n",
+              " green\nColor: red\n",
+              " black\nColor: red\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 4
+    },
+    {
+      "role": "holdout",
+      "prompt_tokens": 32,
+      "concurrency": 1,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "brown"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            241.01345192480574,
+            247.4376389104595
+          ],
+          "ttft_ms": [
+            8.510487,
+            8.383066
+          ],
+          "request_ttft_ms": [
+            [
+              8.510487
+            ],
+            [
+              8.383066
+            ]
+          ],
+          "elapsed_s": [
+            0.024894876,
+            0.024248534
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: green\n"
+            ],
+            [
+              " brown\nColor: green\n"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            238.47359727644076,
+            241.8870479403197
+          ],
+          "ttft_ms": [
+            8.405629,
+            8.382124
+          ],
+          "request_ttft_ms": [
+            [
+              8.405629
+            ],
+            [
+              8.382124
+            ]
+          ],
+          "elapsed_s": [
+            0.025160018,
+            0.024804966
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: green\n"
+            ],
+            [
+              " brown\nColor: green\n"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 1
+    },
+    {
+      "role": "holdout",
+      "prompt_tokens": 32,
+      "concurrency": 4,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "brown",
+        "orange",
+        "purple",
+        "yellow"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            246.2480417124483,
+            245.79169792659138
+          ],
+          "ttft_ms": [
+            45.019596,
+            44.826716
+          ],
+          "request_ttft_ms": [
+            [
+              8.399857,
+              32.848921,
+              57.190271,
+              81.370426
+            ],
+            [
+              8.466894,
+              32.638042,
+              57.01539,
+              81.490352
+            ]
+          ],
+          "elapsed_s": [
+            0.097462704,
+            0.097643656
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ],
+              [
+                10245,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                14230,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ],
+              [
+                10245,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                14230,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: green\n",
+              " orange\n\nWhat is the",
+              " purple\n\nWhat is the",
+              " yellow\nColor: orange\n"
+            ],
+            [
+              " brown\nColor: green\n",
+              " orange\n\nWhat is the",
+              " purple\n\nWhat is the",
+              " yellow\nColor: orange\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            443.1729975283503,
+            443.38143744816244
+          ],
+          "ttft_ms": [
+            21.6228965,
+            21.2130065
+          ],
+          "request_ttft_ms": [
+            [
+              34.235412,
+              8.647536,
+              17.345246,
+              25.900547
+            ],
+            [
+              33.808254,
+              8.599675,
+              16.956381,
+              25.469632
+            ]
+          ],
+          "elapsed_s": [
+            0.054154924,
+            0.054129465
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ],
+              [
+                10245,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                14230,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2654,
+                198
+              ],
+              [
+                10245,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                14230,
+                198,
+                198,
+                1780,
+                314,
+                260
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: green\n",
+              " orange\n\nWhat is the",
+              " purple\n\nWhat is the",
+              " yellow\nColor: orange\n"
+            ],
+            [
+              " brown\nColor: green\n",
+              " orange\n\nWhat is the",
+              " purple\n\nWhat is the",
+              " yellow\nColor: orange\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 4
+    },
+    {
+      "role": "holdout",
+      "prompt_tokens": 256,
+      "concurrency": 1,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "brown"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            191.30039151219293,
+            195.20066628494092
+          ],
+          "ttft_ms": [
+            14.272839,
+            14.154054
+          ],
+          "request_ttft_ms": [
+            [
+              14.272839
+            ],
+            [
+              14.154054
+            ]
+          ],
+          "elapsed_s": [
+            0.031364285,
+            0.0307376
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: red\n"
+            ],
+            [
+              " brown\nColor: red\n"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            187.4490782863268,
+            190.84925533006185
+          ],
+          "ttft_ms": [
+            14.328634,
+            14.22074
+          ],
+          "request_ttft_ms": [
+            [
+              14.328634
+            ],
+            [
+              14.22074
+            ]
+          ],
+          "elapsed_s": [
+            0.032008693,
+            0.031438425
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: red\n"
+            ],
+            [
+              " brown\nColor: red\n"
+            ]
+          ],
+          "correct": [
+            [
+              true
+            ],
+            [
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length"
+            ],
+            [
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 1
+    },
+    {
+      "role": "holdout",
+      "prompt_tokens": 256,
+      "concurrency": 4,
+      "quality_matched": true,
+      "exact_output_match": true,
+      "all_copy_tasks_correct": true,
+      "expected": [
+        "brown",
+        "orange",
+        "purple",
+        "yellow"
+      ],
+      "arms": [
+        {
+          "seqs": 1,
+          "tokens_per_second": [
+            197.2630556519108,
+            197.61972801514491
+          ],
+          "ttft_ms": [
+            60.0060085,
+            59.475299500000006
+          ],
+          "request_ttft_ms": [
+            [
+              14.052753,
+              44.849835,
+              75.162182,
+              105.392793
+            ],
+            [
+              14.026633,
+              44.307279,
+              74.64332,
+              104.930539
+            ]
+          ],
+          "elapsed_s": [
+            0.121664951,
+            0.121445365
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                10245,
+                198,
+                13646,
+                42,
+                5724,
+                198
+              ],
+              [
+                14230,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                10245,
+                198,
+                13646,
+                42,
+                5724,
+                198
+              ],
+              [
+                14230,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: red\n",
+              " orange\nColor: yellow\n",
+              " purple\nColor: orange\n",
+              " yellow\nColor: orange\n"
+            ],
+            [
+              " brown\nColor: red\n",
+              " orange\nColor: yellow\n",
+              " purple\nColor: orange\n",
+              " yellow\nColor: orange\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        },
+        {
+          "seqs": 4,
+          "tokens_per_second": [
+            292.2355818665532,
+            292.1799034937083
+          ],
+          "ttft_ms": [
+            35.2297405,
+            35.229931
+          ],
+          "request_ttft_ms": [
+            [
+              28.201175,
+              14.215079,
+              42.258306,
+              56.270222
+            ],
+            [
+              28.200444,
+              14.195071,
+              42.259418,
+              56.275482
+            ]
+          ],
+          "elapsed_s": [
+            0.082125523,
+            0.082141173
+          ],
+          "output_tokens": [
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                10245,
+                198,
+                13646,
+                42,
+                5724,
+                198
+              ],
+              [
+                14230,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ],
+            [
+              [
+                6354,
+                198,
+                13646,
+                42,
+                2382,
+                198
+              ],
+              [
+                10245,
+                198,
+                13646,
+                42,
+                5724,
+                198
+              ],
+              [
+                14230,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ],
+              [
+                5724,
+                198,
+                13646,
+                42,
+                10245,
+                198
+              ]
+            ]
+          ],
+          "answers": [
+            [
+              " brown\nColor: red\n",
+              " orange\nColor: yellow\n",
+              " purple\nColor: orange\n",
+              " yellow\nColor: orange\n"
+            ],
+            [
+              " brown\nColor: red\n",
+              " orange\nColor: yellow\n",
+              " purple\nColor: orange\n",
+              " yellow\nColor: orange\n"
+            ]
+          ],
+          "correct": [
+            [
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "stop_reasons": [
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ],
+            [
+              "length",
+              "length",
+              "length",
+              "length"
+            ]
+          ]
+        }
+      ],
+      "selected_seqs_from_calibration": 4
+    }
+  ],
+  "threads": 2,
+  "max_output_tokens": 6,
+  "source_sha256": {
+    "lab/portable_gpu/bench.py": "b3115e244433da4fb63ce84e449ffd41bc6b70d250fc652cb77d5853d4ffb9a4",
+    "ironmule_devices.py": "55eb47ea7c5160350a7fc37b0714d12320d1f9b37d84194acbdde79f4576cbfa",
+    "ironmule/ggml_engine.py": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+    "ironmule/ggml_binary.py": "e83d208dd44b241b89239285594bfe0204bcfdf0e09cf77b8a4acb86933609e7",
+    "ironmule/pilot.py": "0e9fd82788171d9080afe16f7aa3e406c4045ee6e9976d6e46aa5b76e26fbef3",
+    "ironmule/speculation.py": "8a66177a0c530c3cf0560de607fb70ec2d33ebb27b85fbff791d6c00d9cd9ee8"
+  },
+  "seq_ctx": 512,
+  "reference_width": 1,
+  "repeats": 2,
+  "devices": [
+    {
+      "provider": "cuda",
+      "name": "CUDA0",
+      "description": "NVIDIA A100-SXM4-80GB",
+      "type": "gpu",
+      "total_memory": 85094825984,
+      "free_memory": 84649377792,
+      "driver": 13020,
+      "runtime": 12080,
+      "pci": "0000:47:00.0"
+    }
+  ],
+  "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|4390e195ae5e7a819f85f3f8b80b7f923f6c902ba0977486d45fcc5e05744c16",
+  "native": {
+    "sha256": {
+      "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+      "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+      "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+      "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+      "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+    }
+  },
+  "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "model_bytes": 105454432,
+  "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+  "cold_model_context_warmup_s": 0.3413249609293416,
+  "offloaded_layers": [
+    [
+      31,
+      31
+    ]
+  ],
+  "first_request": {
+    "tokens_per_second": 197.16696700124916,
+    "ttft_ms": 10.542207,
+    "request_ttft_ms": [
+      10.542207
+    ],
+    "elapsed_s": 0.030431061,
+    "output_tokens": [
+      [
+        4461,
+        198,
+        32601,
+        42,
+        4461,
+        198
+      ]
+    ],
+    "answers": [
+      " blue\nCopy: blue\n"
+    ],
+    "correct": [
+      true
+    ],
+    "stop_reasons": [
+      "length"
+    ]
+  },
+  "warm_request": {
+    "tokens_per_second": 211.3106043655855,
+    "ttft_ms": 9.991957,
+    "request_ttft_ms": [
+      9.991957
+    ],
+    "elapsed_s": 0.028394221,
+    "output_tokens": [
+      [
+        4461,
+        198,
+        32601,
+        42,
+        4461,
+        198
+      ]
+    ],
+    "answers": [
+      " blue\nCopy: blue\n"
+    ],
+    "correct": [
+      true
+    ],
+    "stop_reasons": [
+      "length"
+    ]
+  },
+  "smoke_passed": true,
+  "wide_context_warmup_s": 0.07399959408212453
+}

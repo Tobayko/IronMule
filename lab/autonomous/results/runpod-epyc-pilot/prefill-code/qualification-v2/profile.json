@@ -1,0 +1,341 @@
+{
+  "schema": "ironmule.cpu-matched-profile.v1",
+  "source_order_id": "eb6b1472357c7d89c683f7b9093b91bfc4b79d396992dcc773bca30b23f31e81",
+  "runtime_source_sha256": {
+    "ggml_engine.py": "aae9299715c89437116ac8aa6f9d65c18149ca148a0ba18878b29eaa3ba718b5",
+    "gguf_tokenizer.py": "0952416ffdff0e965be1e60f88a74ec35bdd194bcb1646187dca98dccbfb3a11",
+    "pilot.py": "93b6752e80685b0a4cf53293699676b635e1cabb97e2ad25562cec8567f67853"
+  },
+  "evaluator_sha256": "c6e6c587dd12c128f83b700e4bb51fc06139e15ae10dcaf2a2b88b7a09f40ba7",
+  "calibrator_sha256": "49d0f004767abf76786206a87be6e353d832673b4fb28fc4f0ce4bd141ae4004",
+  "binding": {
+    "provider": "cpu",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_bytes": 105454432,
+    "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+    "devices": [
+      {
+        "provider": "cpu",
+        "name": "CPU",
+        "description": "AMD EPYC 7742 64-Core Processor",
+        "type": "cpu",
+        "total_memory": 2151618019328
+      }
+    ],
+    "native": {
+      "sha256": {
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+      }
+    },
+    "python": "3.11.11",
+    "gpu_layers": 0,
+    "offloaded_layers": [],
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "cores": 4,
+    "threads": 2,
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "prefix_reuse": true,
+    "speculate": false,
+    "env_sha256": "6643d43111951fb7d2ea1109be20ea25b339a5c4708f172180c032bf1be3576b",
+    "scratch_thread_head": {
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      },
+      "helper_sha256": "aa021ab39508acd20faca56ef7c21ebf9ee67ffaeebdd5e355a5ceb15497b5cb",
+      "learner_sha256": "22b9eb0c20b734a71dde28bf5e37e42ca9b27842c65539aa1d16a8a67f2fce8c"
+    }
+  },
+  "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "head_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+  "reference_scratch_uses": 3,
+  "reference_correct": 16,
+  "costs": {
+    "step_one": 0.007726475014351308,
+    "row": 0.003696714333879451,
+    "prefill_1k": 2.9747127655355143,
+    "kv_1k": 0.0035462344385450706
+  },
+  "weights": {
+    "1:1:4:4": 3
+  },
+  "margins": {
+    "1:1:4:4": {
+      "windows": 4,
+      "candidate_threads": 4,
+      "max_ratio": 0.32423911136348676,
+      "max_aa_fraction": 0.02051116344704774,
+      "min_gain_after_noise_us_per_step": 24036.771792452782
+    }
+  },
+  "visits": {
+    "1:1:4:4": 79
+  },
+  "probes": {
+    "1:1:4:4": [
+      {
+        "context": 68,
+        "base": 1,
+        "threads": 1,
+        "seed": 1,
+        "seconds": 0.29612625599838793,
+        "tokens_sha256": "c42f3b876b1ad4ab93f8aabd9ae65cd251a147e5500544188c94bcf8e532159e"
+      },
+      {
+        "context": 68,
+        "base": 1,
+        "threads": 4,
+        "seed": 1,
+        "seconds": 0.09481372905429453,
+        "tokens_sha256": "c42f3b876b1ad4ab93f8aabd9ae65cd251a147e5500544188c94bcf8e532159e"
+      },
+      {
+        "context": 68,
+        "base": 1,
+        "threads": 1,
+        "seed": 1,
+        "seconds": 0.2901140209287405,
+        "tokens_sha256": "c42f3b876b1ad4ab93f8aabd9ae65cd251a147e5500544188c94bcf8e532159e"
+      },
+      {
+        "context": 81,
+        "base": 1,
+        "threads": 4,
+        "seed": 2,
+        "seconds": 0.0933767530368641,
+        "tokens_sha256": "9bdfd8fce985db9a522dc50d32d108b74dca7db7441c1d77e58fb77e845be251"
+      },
+      {
+        "context": 81,
+        "base": 1,
+        "threads": 1,
+        "seed": 2,
+        "seconds": 0.2875909919384867,
+        "tokens_sha256": "9bdfd8fce985db9a522dc50d32d108b74dca7db7441c1d77e58fb77e845be251"
+      },
+      {
+        "context": 81,
+        "base": 1,
+        "threads": 1,
+        "seed": 2,
+        "seconds": 0.288383650011383,
+        "tokens_sha256": "9bdfd8fce985db9a522dc50d32d108b74dca7db7441c1d77e58fb77e845be251"
+      },
+      {
+        "context": 94,
+        "base": 1,
+        "threads": 1,
+        "seed": 3,
+        "seconds": 0.2957886670483276,
+        "tokens_sha256": "f4431070b5c0417f3451de6d419179b9926cb4dabb1c97de6a994491c36a9040"
+      },
+      {
+        "context": 94,
+        "base": 1,
+        "threads": 4,
+        "seed": 3,
+        "seconds": 0.09584625100251287,
+        "tokens_sha256": "f4431070b5c0417f3451de6d419179b9926cb4dabb1c97de6a994491c36a9040"
+      },
+      {
+        "context": 94,
+        "base": 1,
+        "threads": 1,
+        "seed": 3,
+        "seconds": 0.2979958290234208,
+        "tokens_sha256": "f4431070b5c0417f3451de6d419179b9926cb4dabb1c97de6a994491c36a9040"
+      },
+      {
+        "context": 107,
+        "base": 1,
+        "threads": 4,
+        "seed": 4,
+        "seconds": 0.09398559399414808,
+        "tokens_sha256": "e0dfbd9845bc56b4e51ce1df4d39956acb13ef097b67074e6b7b22e77b8d09a4"
+      },
+      {
+        "context": 107,
+        "base": 1,
+        "threads": 1,
+        "seed": 4,
+        "seconds": 0.29440187592990696,
+        "tokens_sha256": "e0dfbd9845bc56b4e51ce1df4d39956acb13ef097b67074e6b7b22e77b8d09a4"
+      },
+      {
+        "context": 107,
+        "base": 1,
+        "threads": 1,
+        "seed": 4,
+        "seconds": 0.29425830498803407,
+        "tokens_sha256": "e0dfbd9845bc56b4e51ce1df4d39956acb13ef097b67074e6b7b22e77b8d09a4"
+      }
+    ]
+  },
+  "receipt": {
+    "binding": {
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      }
+    },
+    "status": {
+      "version": 2,
+      "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "generation": 1,
+      "weights": {
+        "1:1:4:4": 3
+      },
+      "model": {
+        "schema": 1,
+        "observations": 3,
+        "negative_or_unresolved": 0,
+        "parameters": 12,
+        "last_update": {
+          "prediction": 0.6009854368760117,
+          "reward": 1.0,
+          "stage": "qualification",
+          "accepted": true
+        }
+      },
+      "last": {
+        "key": "1:1:4:4",
+        "candidate_threads": 4,
+        "ratios": [
+          0.32346371542834196,
+          0.32423911136348676,
+          0.32283177360336984,
+          0.3193203720611421
+        ],
+        "aa_spread": [
+          0.02051116344704774,
+          0.0027524061483432155,
+          0.0074342189454084,
+          0.0004877888687799948
+        ],
+        "result": "qualified"
+      },
+      "scratch_candidate": {
+        "state": "available for local trial",
+        "sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+        "trials": 1,
+        "qualified_decisions": 0,
+        "reference_decisions": 141,
+        "inference_us": 0.0,
+        "regime": "1:1:4:4",
+        "threads": 4
+      },
+      "thread_decision": {
+        "choice": "reference",
+        "reason": "no local qualification",
+        "profile": {
+          "backend": "ggml-cpu",
+          "hardware_runtime": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+          "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+          "sequences": 4,
+          "sequence_context": 512,
+          "capacity": 4,
+          "shared_cache": false,
+          "settings": {
+            "flash_attn": false,
+            "kv_unified": false,
+            "kv_f32": false
+          },
+          "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+          "operation": "plain_decode",
+          "threads": 1,
+          "sequence_rows": 4,
+          "prompt_rows": 0,
+          "draft_rows": 0,
+          "padding_rows": 0,
+          "pending_requests": 0
+        },
+        "regime": "2:1:4:4",
+        "reference_threads": 1,
+        "selection_us": null,
+        "eligible_threads": [
+          1
+        ],
+        "qualification": null,
+        "uncertainty": "unknown"
+      }
+    },
+    "search_and_warmup_s": 41.722044955939054,
+    "traces": [
+      {
+        "tokens": 192,
+        "reason": [
+          "length",
+          "length",
+          "length",
+          "length"
+        ],
+        "seconds": 3.740762137,
+        "ttft_s": 2.086275463,
+        "digest": "7a0c58bd69d884478ce6d29bd8e211bf09e3c48568a5c4027c2652f72f85759f"
+      },
+      {
+        "tokens": 192,
+        "reason": [
+          "length",
+          "length",
+          "length",
+          "length"
+        ],
+        "seconds": 2.921686248,
+        "ttft_s": 1.116750943,
+        "digest": "7a0c58bd69d884478ce6d29bd8e211bf09e3c48568a5c4027c2652f72f85759f"
+      },
+      {
+        "tokens": 192,
+        "reason": [
+          "length",
+          "length",
+          "length",
+          "length"
+        ],
+        "seconds": 3.84026504,
+        "ttft_s": 2.084064704,
+        "digest": "7a0c58bd69d884478ce6d29bd8e211bf09e3c48568a5c4027c2652f72f85759f"
+      }
+    ],
+    "idle_results": [
+      null,
+      null,
+      {
+        "key": "1:1:4:4",
+        "candidate_threads": 4,
+        "ratios": [
+          0.32346371542834196,
+          0.32423911136348676,
+          0.32283177360336984,
+          0.3193203720611421
+        ],
+        "aa_spread": [
+          0.02051116344704774,
+          0.0027524061483432155,
+          0.0074342189454084,
+          0.0004877888687799948
+        ],
+        "result": "qualified"
+      }
+    ]
+  },
+  "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50"
+}

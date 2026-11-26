@@ -1,0 +1,84 @@
+{
+  "comparison_rule": "Run no vLLM throughput unless independent original-path K1 quality/startup and warm 32-client path pass. If K1 fails, preserve raw error and stop R2 before vLLM measurement. K2 uses byte-identical source, receipt, binaries/table, settings and environment as K1.",
+  "environment": {
+    "cuda_runtime": "12.8.0",
+    "cuda_runtime_version_int": 12080,
+    "driver": "595.112.07",
+    "flags": {
+      "IRONMULE_CUBLAS_MIN_ROWS": "128",
+      "IRONMULE_CUDA_GRAPHS_ROWS": "32",
+      "IRONMULE_GGML_DH2": "0",
+      "IRONMULE_GGML_GPU_LAYERS": "999",
+      "IRONMULE_GGML_PACK": "1",
+      "IRONMULE_GGML_SEQS": "32",
+      "IRONMULE_GGML_SEQ_CTX": "2048",
+      "IRONMULE_GGML_UBATCH": "8192",
+      "IRONMULE_PK6": "1",
+      "IRONMULE_PS1": "1",
+      "IRONMULE_PS1_CONCAT": "0",
+      "IRONMULE_PS1_WARM": "0",
+      "IRONMULE_SV5": "0",
+      "IRONMULE_W4": "1"
+    },
+    "script": "<target-env>/env-pipcuda128.sh",
+    "sha256": "66aee9ea41ea9c385ddfdc2db5cb1042652fbf7b173af30d78844f23f4756340"
+  },
+  "gate_receipts": {
+    "devices": {
+      "path": "evidence/a100/restart/product-v3/gate-devices-reference.json",
+      "sha256": "5b6b0052010db8e054f756918996cd72f663b83cea27e5f56de206e05f6fe528"
+    },
+    "gate": {
+      "path": "evidence/a100/restart/product-v3/gate-reference.json",
+      "sha256": "508e42527831ebda8f0655eab9f57ea3b9eb1c7bb205dc2f7225d6863030f16f"
+    },
+    "product_gate": {
+      "path": "evidence/a100/restart/product-v3/product-gate-reference.json",
+      "sha256": "c4bcd741926a81918a12c7356e4adef93c71f6e40a6bb743056bf9944bde3983"
+    }
+  },
+  "pending_process_receipts": [
+    "start-K1.json",
+    "end-K1.json",
+    "start-vllm.json",
+    "end-vllm.json",
+    "start-K2.json",
+    "end-K2.json"
+  ],
+  "preregistration_sha256": "2e6eeb2d7030d1dab7898c799197aabe088bf7875690c95e0353442c42abe51e",
+  "product_selection": {
+    "arm": "V3 reference stock path",
+    "checkout": "<target-checkout>/pr57-33dc7bf",
+    "engine_source_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+    "independent_k1_throughput_required_before_vllm": true,
+    "ordinary_product_adoption": false,
+    "reason": "Latest root-directed pre-data selection: use original 33dc7bf V3 numerical reference. No ordinary PR60 adoption is qualified; the new PR60 source candidate was rejected and V3 first normal HTTP SSE wave returned stream_error. R2 remains a same-host fixed-128 systems comparison only if an independent original-path K1 run succeeds.",
+    "source_commit": "33dc7bf544954f6c79a8a15536c0d6f5724b26a2",
+    "target_path": "<target-checkout>/pr57-33dc7bf/ironmule/ggml_engine.py"
+  },
+  "registered_utc": "2026-11-26T03:48:54Z",
+  "schema": "ironmule.current-product-fixed128-binding.v1",
+  "status": "bound_before_k1_throughput_waiting_for_independent_k1_start",
+  "w4": {
+    "asset": "kernel.so",
+    "library_path": "<target-w4>/kernel.so",
+    "library_sha256": "9d88c60855453860a53b1daa74b4c21e8b67e93c76ad53d8c6d1fa1b3516f1e1",
+    "profile_reuse_and_masks": "record actual restart_profile_reused and effective masks per product start; no assumption from PR60 cache receipt",
+    "table_path": "<target-w4>/dispatch.table",
+    "table_sha256": "ecd29307bb073d364aadd8941596b249d0a87ecf26c1fc846a82832269fca79e"
+  },
+  "workload": {
+    "gguf_path": "<target-model>/Qwen3-32B-Q4_K_M.gguf",
+    "gpu_layers": 999,
+    "model_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+    "sequences": 32,
+    "settings": {
+      "flash_attn": true,
+      "kv_f32": false,
+      "kv_unified": false,
+      "speculate": true
+    },
+    "threads": 14,
+    "width": 32
+  }
+}

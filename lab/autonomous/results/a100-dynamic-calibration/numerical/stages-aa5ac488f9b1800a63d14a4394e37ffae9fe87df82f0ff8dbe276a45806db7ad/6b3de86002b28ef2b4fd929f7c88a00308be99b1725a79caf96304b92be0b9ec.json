@@ -1,0 +1,132 @@
+{
+  "digest": "864e76e153874ef4f4960f115c36b26ffba849852fb425323698260698ed4b7f",
+  "label": {
+    "role": "tuning"
+  },
+  "output": {
+    "measured": [
+      {
+        "flash_attn": true,
+        "kv_f32": false,
+        "kv_unified": false,
+        "score": 136.5689302247015,
+        "tokens_per_s": {
+          "1": 51.77645569962534,
+          "8": 360.22304830831337
+        }
+      },
+      {
+        "flash_attn": true,
+        "kv_f32": false,
+        "kv_unified": true,
+        "score": 133.09675385562443,
+        "tokens_per_s": {
+          "1": 51.75290417074775,
+          "8": 342.2947208616279
+        }
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": false,
+        "kv_unified": true,
+        "score": 132.28179044762905,
+        "tokens_per_s": {
+          "1": 51.4218239359563,
+          "8": 340.29271512858145
+        }
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": false,
+        "kv_unified": false,
+        "score": 124.19654491635931,
+        "tokens_per_s": {
+          "1": 51.51655596674626,
+          "8": 299.4140714514746
+        }
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": true,
+        "kv_unified": true,
+        "score": 133.13380530612866,
+        "tokens_per_s": {
+          "1": 51.36763469536935,
+          "8": 345.05404464122614
+        }
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": true,
+        "kv_unified": false,
+        "score": 123.7551682183678,
+        "tokens_per_s": {
+          "1": 51.487604646534265,
+          "8": 297.4568688113833
+        }
+      },
+      {
+        "flash_attn": true,
+        "kv_f32": true,
+        "kv_unified": true,
+        "score": 123.17420603096372,
+        "tokens_per_s": {
+          "1": 49.115293077903736,
+          "8": 308.90348159571323
+        }
+      },
+      {
+        "flash_attn": true,
+        "kv_f32": true,
+        "kv_unified": false,
+        "score": 118.78386858138512,
+        "tokens_per_s": {
+          "1": 49.05522799736774,
+          "8": 287.6269871973051
+        }
+      }
+    ],
+    "order": [
+      {
+        "flash_attn": true,
+        "kv_f32": false,
+        "kv_unified": false
+      },
+      {
+        "flash_attn": true,
+        "kv_f32": false,
+        "kv_unified": true
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": false,
+        "kv_unified": true
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": false,
+        "kv_unified": false
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": true,
+        "kv_unified": true
+      },
+      {
+        "flash_attn": false,
+        "kv_f32": true,
+        "kv_unified": false
+      },
+      {
+        "flash_attn": true,
+        "kv_f32": true,
+        "kv_unified": true
+      },
+      {
+        "flash_attn": true,
+        "kv_f32": true,
+        "kv_unified": false
+      }
+    ]
+  }
+}

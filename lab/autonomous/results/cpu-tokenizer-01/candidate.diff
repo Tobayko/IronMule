@@ -1,0 +1,41 @@
+diff --git a/ironmule/gguf_tokenizer.py b/ironmule/gguf_tokenizer.py
+index 8570b34..f3c2aec 100644
+--- a/ironmule/gguf_tokenizer.py
++++ b/ironmule/gguf_tokenizer.py
+@@ -113,20 +113,23 @@ class GgufTokenizer:
+         return "" if token is None else self.piece(token, special=True).decode("utf-8", "replace")
+ 
+     def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+-        """Token ids of `text`; special tokens written in the text (`<|im_start|>`) are parsed as such, and BOS is
+-        added only with `add_special_tokens` where the GGUF asks for one."""
++        """Tokenize UTF-8 with the GGUF vocabulary, preserving special-token and BOS handling."""
+         raw = text.encode("utf-8")
+-        size = len(raw) + 16
+-        buf = (self.L.llama_token * size)()
+-        n = self.L.llama_tokenize(self.vocab, raw, len(raw), buf, size, bool(add_special_tokens and self.add_bos), True)
+-        if n < 0:
+-            size = -n
+-            buf = (self.L.llama_token * size)()
+-            n = self.L.llama_tokenize(self.vocab, raw, len(raw), buf, size, bool(add_special_tokens and self.add_bos),
+-                                      True)
+-        if n < 0:
+-            raise ValueError("llama.cpp could not tokenize the text")
+-        return list(buf[:n])
++        length = len(raw)
++        add_bos = bool(add_special_tokens and self.add_bos)
++        token_type = self.L.llama_token
++        tokenize = self.L.llama_tokenize
++        capacity = length + 16
++        tokens = (token_type * capacity)()
++        count = tokenize(self.vocab, raw, length, tokens, capacity, add_bos, True)
++        if count < 0:
++            capacity = -count
++            tokens = (token_type * capacity)()
++            count = tokenize(self.vocab, raw, length, tokens, capacity, add_bos, True)
++            if count < 0:
++                raise ValueError("llama.cpp could not tokenize the text")
++        # Slicing an integer ctypes array already produces an independent Python list.
++        return tokens[:count]
+ 
+     def __call__(self, texts: str | Sequence[str], add_special_tokens: bool = False) -> dict[str, Any]:
+         """Hugging Face's batch interface: {"input_ids": ids of each text}, tokenized in parallel threads."""

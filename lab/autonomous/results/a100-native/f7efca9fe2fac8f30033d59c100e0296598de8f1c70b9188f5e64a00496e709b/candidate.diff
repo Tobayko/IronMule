@@ -1,0 +1,187 @@
+--- a/native/kernels/w4mma.cu
++++ b/native/kernels/w4mma.cu
+@@ -824,6 +824,9 @@
+ w4d(const uint8_t *__restrict__ wr, const half *__restrict__ xh, const float *__restrict__ xs,
+     float *__restrict__ out, int N, int K, int B, int sb_per_split) {
+     constexpr int TILES = WARPS / KS;
++    // This register layout is for the two-warp, two-tile decode profile.
++    constexpr bool quartet = WARPS == 2 && KS == 1 && NT == 4 && MT == 2 &&
++                             MINB == 1 && IRONMULE_W4_ABL == 0;
+     __shared__ float red[KS > 1 ? WARPS : 1][KS > 1 ? MT * NT * 4 * 32 : 1];
+     const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane / 4, c = lane % 4;
+     const int nb = K / 256;
+@@ -839,7 +842,10 @@
+         for (int nt = 0; nt < NT; nt++)
+ #pragma unroll
+             for (int i = 0; i < 4; i++) acc[m][nt][i] = 0.f;
+-    struct Buf { uint4 q[MT][4], h[MT][2]; };
++    struct Buf {
++        uint4 q[MT][4], h[quartet ? 1 : MT][quartet ? 1 : 2];
++        uint32_t word[quartet ? MT : 1][quartet ? 2 : 1];
++    };
+     auto fetch = [&](int sb, Buf &b) {
+ #pragma unroll
+         for (int m = 0; m < MT; m++) {
+@@ -847,8 +853,15 @@
+             const uint8_t *p = wr + ((size_t)t * nb + (IRONMULE_W4_ABL == 2 ? sb0 + part : sb)) * T4;
+ #pragma unroll
+             for (int i = 0; i < 4; i++) b.q[m][i] = ldg_stream(p + (i * 32 + lane) * 16);
+-            b.h[m][0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 16));
+-            b.h[m][1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16));
++            if constexpr (quartet) {
++                // Four lanes share a header. Each lane holds one aligned word through the prefetch.
++                const uint32_t *headers = reinterpret_cast<const uint32_t *>(p + 2048);
++                b.word[m][0] = __ldg(headers + lane);
++                b.word[m][1] = __ldg(headers + 32 + lane);
++            } else {
++                b.h[m][0] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + g * 16));
++                b.h[m][1] = __ldg(reinterpret_cast<const uint4 *>(p + 2048 + (g + 8) * 16));
++            }
+         }
+     };
+     // prep_x zero-fills token rows B..NT*8-1, so every row of the tile may be read
+@@ -880,17 +893,32 @@
+         uint32_t D[MT], NM[MT], sw[MT][2][2], mw[MT][2][2];
+ #pragma unroll
+         for (int m = 0; m < MT; m++) {
+-            D[m] = __byte_perm(b.h[m][0].x, b.h[m][1].x, 0x5410);
+-            NM[m] = h2_bits(__hneg2(bits_h2(__byte_perm(b.h[m][0].x, b.h[m][1].x, 0x7632))));
++            uint4 header[2];
+ #pragma unroll
+             for (int h = 0; h < 2; h++) {
+-                const uint4 hv = b.h[m][h];
++                if constexpr (quartet) {
++                    // live, part and the superblock bounds are constant across each warp.
++                    const uint32_t v = b.word[m][h];
++                    header[h] = make_uint4(__shfl_sync(0xffffffffu, v, 0, 4),
++                                           __shfl_sync(0xffffffffu, v, 1, 4),
++                                           __shfl_sync(0xffffffffu, v, 2, 4),
++                                           __shfl_sync(0xffffffffu, v, 3, 4));
++                } else {
++                    header[h] = b.h[m][h];
++                }
++            }
++            D[m] = __byte_perm(header[0].x, header[1].x, 0x5410);
++            NM[m] = h2_bits(__hneg2(bits_h2(__byte_perm(header[0].x, header[1].x, 0x7632))));
++#pragma unroll
++            for (int h = 0; h < 2; h++) {
++                const uint4 hv = header[h];
+                 sw[m][h][0] = hv.y & 0x3F3F3F3Fu;
+                 mw[m][h][0] = hv.z & 0x3F3F3F3Fu;
+                 sw[m][h][1] = (hv.w & 0x0F0F0F0Fu) | ((hv.y >> 2) & 0x30303030u);
+                 mw[m][h][1] = ((hv.w >> 4) & 0x0F0F0F0Fu) | ((hv.z >> 2) & 0x30303030u);
+             }
+         }
++        uint32_t owned_scale[MT], owned_min[MT];
+         uint4 xv[2][NT];
+         xload(sb, 0, xv[0]);
+ #pragma unroll
+@@ -899,25 +927,52 @@
+             uint32_t a[MT][2][4];
+ #pragma unroll
+             for (int m = 0; m < MT; m++) {
+-                const uint32_t pick = (uint32_t)(j & 3) | ((uint32_t)(4 + (j & 3)) << 4);
+-                const half2 sc = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(D[m]));
+-                const half2 mn = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(NM[m]));
++                half2 sc, mn;
++                if constexpr (quartet) {
++                    // At j=0 and j=4, lane c prepares one of the next four subblocks for both rows.
++                    if ((j & 3) == 0) {
++                        const uint32_t pick = c | ((4 + c) << 4);
++                        const uint32_t s = __byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick);
++                        const uint32_t z = __byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick);
++                        owned_scale[m] = h2_bits(__hmul2(__hsub2(bits_h2(__byte_perm(s, k64, 0x4140)), h1024), bits_h2(D[m])));
++                        owned_min[m] = h2_bits(__hmul2(__hsub2(bits_h2(__byte_perm(z, k64, 0x4140)), h1024), bits_h2(NM[m])));
++                    }
++                    sc = bits_h2(__shfl_sync(0xffffffffu, owned_scale[m], j & 3, 4));
++                    mn = bits_h2(__shfl_sync(0xffffffffu, owned_min[m], j & 3, 4));
++                } else {
++                    const uint32_t pick = (uint32_t)(j & 3) | ((uint32_t)(4 + (j & 3)) << 4);
++                    sc = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(sw[m][0][j >> 2], sw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(D[m]));
++                    mn = __hmul2(__hsub2(bits_h2(__byte_perm(__byte_perm(mw[m][0][j >> 2], mw[m][1][j >> 2], pick), k64, 0x4140)), h1024), bits_h2(NM[m]));
++                }
+ #pragma unroll
+                 for (int h = 0; h < 2; h++) {
+                     const half2 s2 = h ? __high2half2(sc) : __low2half2(sc);
+                     const half2 m2 = h ? __high2half2(mn) : __low2half2(mn);
+                     const uint32_t wd = wget(b.q[m], 2 * j + h);
+-#pragma unroll
+-                    for (int t = 0; t < 2; t++) {
+-                        if constexpr (IRONMULE_W4_ABL == 5) {  // raw nibble words into the mma: no dequantisation
+-                            a[m][t][h] = t ? wd >> 4 : wd;
+-                            a[m][t][2 + h] = t ? wd >> 12 : wd >> 8;
+-                            continue;
++                    if constexpr (quartet) {
++#pragma unroll
++                        for (int pair = 0; pair < 2; pair++) {
++                            const uint32_t split = __byte_perm(wd, k64, pair ? 0x4342 : 0x4140);
++                            const half2 qlo = __hsub2(bits_h2(split & 0xff0fff0fu), h1024);
++                            // (1024 + 16*q) / 16 - 64 equals the upper nibble q exactly in binary16.
++                            const half2 qhi = __hfma2(bits_h2(split & 0xfff0fff0u), bits_h2(0x2c002c00u),
++                                                      bits_h2(0xd400d400u));
++                            a[m][0][2 * pair + h] = h2_bits(__hfma2(qlo, s2, m2));
++                            a[m][1][2 * pair + h] = h2_bits(__hfma2(qhi, s2, m2));
+                         }
+-                        const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
+-                        const uint32_t p0 = __byte_perm(v, k64, 0x4140), p1 = __byte_perm(v, k64, 0x4342);
+-                        a[m][t][h] = h2_bits(__hfma2(__hsub2(bits_h2(p0), h1024), s2, m2));
+-                        a[m][t][2 + h] = h2_bits(__hfma2(__hsub2(bits_h2(p1), h1024), s2, m2));
++                    } else {
++#pragma unroll
++                        for (int t = 0; t < 2; t++) {
++                            if constexpr (IRONMULE_W4_ABL == 5) {  // raw nibble words into the mma: no dequantisation
++                                a[m][t][h] = t ? wd >> 4 : wd;
++                                a[m][t][2 + h] = t ? wd >> 12 : wd >> 8;
++                                continue;
++                            }
++                            const uint32_t v = (t ? wd >> 4 : wd) & 0x0F0F0F0Fu;
++                            const uint32_t p0 = __byte_perm(v, k64, 0x4140), p1 = __byte_perm(v, k64, 0x4342);
++                            a[m][t][h] = h2_bits(__hfma2(__hsub2(bits_h2(p0), h1024), s2, m2));
++                            a[m][t][2 + h] = h2_bits(__hfma2(__hsub2(bits_h2(p1), h1024), s2, m2));
++                        }
+                     }
+                 }
+             }
+@@ -940,15 +995,33 @@
+         }
+     };
+     if (live) {
+-        Buf ba, bb;
+-        int sb = sb0 + part;
+-        if (sb < sb1) fetch(sb, ba);
+-        for (; sb < sb1; sb += 2 * KS) {
+-            if (sb + KS < sb1) fetch(sb + KS, bb);
+-            compute(ba, sb);
+-            if (sb + KS >= sb1) break;
+-            if (sb + 2 * KS < sb1) fetch(sb + 2 * KS, ba);
+-            compute(bb, sb + KS);
++        if constexpr (quartet) {
++            // Keep only the current superblock in the register file. Prefetch the next one's
++            // contiguous quant payload into L2 without allocating a second register buffer.
++            for (int sb = sb0 + part; sb < sb1; sb += KS) {
++                Buf current;
++                if (sb + KS < sb1) {
++#pragma unroll
++                    for (int m = 0; m < MT; m++) {
++                        const int tile = min(tile0 + m, tiles - 1);
++                        const uint8_t *next = wr + ((size_t)tile * nb + sb + KS) * T4;
++                        asm volatile("prefetch.global.L2 [%0];" :: "l"(next + lane * 64));
++                    }
++                }
++                fetch(sb, current);
++                compute(current, sb);
++            }
++        } else {
++            Buf ba, bb;
++            int sb = sb0 + part;
++            if (sb < sb1) fetch(sb, ba);
++            for (; sb < sb1; sb += 2 * KS) {
++                if (sb + KS < sb1) fetch(sb + KS, bb);
++                compute(ba, sb);
++                if (sb + KS >= sb1) break;
++                if (sb + 2 * KS < sb1) fetch(sb + 2 * KS, ba);
++                compute(bb, sb + KS);
++            }
+         }
+     }
+     if constexpr (KS > 1) {

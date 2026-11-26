@@ -1,0 +1,23 @@
+{
+  "base_commit": "63db7745998383509602601d46ae4bbff0076648",
+  "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+  "parent_order": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "control_receipt_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
+  "weights_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+  "worker_family": "mixed-first-32",
+  "schema": "ironmule.portfolio-shadow-discovery.v1",
+  "observation_schema": "ironmule.portfolio-shadow-observation.v1",
+  "seeds": [
+    97451,
+    97452
+  ],
+  "contexts": {
+    "97451": "original-cold-start",
+    "97452": "post-delivery-shadow"
+  },
+  "conditions": "Both workers actually run the prior admitted full W4 startup and all ordinary calibrations before serving identical 32-cold, 32-warm and 18 correctly graded factual workloads. Capture complete initial original price vectors and the actual width-1 median in each full original method. 97452 additionally runs independent width-1 physical sentinels (normal cleared 64-token header, full warmups and sample counts) after all responses, immediately followed by full original pass and padding measurements. Capture effective threads/poll/cache state. This physically warmed condition always remains outside the prior startup qualification.",
+  "decision": "The CPU forecast fixes a single coherent donor archive, held-out-study sentinel-drift ceiling, full-vector 2% descriptive guard, exact discrete action equality, original known binding, current CPU affinity, parent TTL and a bound on donor age. Observations violating quality, source, masks, cost cap, FIFO/lease isolation, missing complete state or job completion are invalid. Both new initialized values are independently graded. Any accepted price transfer failing the guard refutes the forecast. No accepted comparisons means insufficient evidence. All three observations are retained. The separate warmed context cannot justify transfer even if its numeric shadow passes.",
+  "scope": "Zero prices or actions are injected into serving. Current Pilot prices stay freshly measured. First observed field read is diagnostic, not proof that removing/calculating a field earlier preserves work, telemetry or native state.",
+  "cost": "Two full workers on the existing exclusive lease, one extra post-delivery shadow. Global measured process-group timeout of 80 seconds plus 1s termination grace, $0.04955 upper estimate. No new allocation, no source author/activation from this observation.",
+  "source_order": null
+}

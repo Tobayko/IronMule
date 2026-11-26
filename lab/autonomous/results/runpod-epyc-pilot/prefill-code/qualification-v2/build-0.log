@@ -1,0 +1,2 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+PermissionError: [Errno 13] Permission denied: '/usr/lib/python3.11/sitecustomize.py'

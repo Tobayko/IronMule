@@ -1,0 +1,2 @@
+# An empty context line in a stored unified patch contains one literal space.
+**/*.diff whitespace=-blank-at-eol

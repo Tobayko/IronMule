@@ -3,6 +3,89 @@
 State of 2026-11-25, branch `claude/blissful-pasteur-2uj5by`. This file is meant to let a developer or agent continue
 without the chat that produced the work. Measurement details live in [LAB.md](LAB.md); this file routes to them.
 
+## Subsequent CPU Pilot work on 2026-11-26
+
+The new warm HTTP comparison uses three sequential process starts on one fresh
+A100 SXM4 80 GB. K1 and K2 start the ordinary PR 57 server, each with automatic
+PK2 and the locally calibrated W4 kernel. vLLM 0.11.0 uses the official AWQ
+checkpoint between them. Scoring includes the first measured wave after the
+standard warmup. The previous fixed-128 experiment on a different lease closed
+before a complete HTTP wave was recovered. [Independent protocol and measurements](../lab/autonomous/results/a100-pr57-warm-repeat/)
+
+To reproduce on a fresh target, use the budgeted RunPod operator and start
+the setup job below from an approved lease. The source commit includes the
+PR 61 merge into PR 57. The collector runs on the control machine and uploads
+the benchmark driver, checks the software and model hashes, starts the three
+servers in order and copies completed data off the pod every eight seconds.
+Supply a fresh private directory on persistent storage.
+
+```sh
+python -m lab.rp.rp job warm-setup 'set -eu
+mkdir -p /work
+git clone https://github.com/Tobayko/IronMule.git /work/IronMule
+cd /work/IronMule
+git checkout --detach 8cf0a3106f09a3338eb53c28047af7e36fc7b340
+env JOBS=16 PIP_NO_CACHE_DIR=1 VLLM=1 bash lab/rp/setup.sh 80'
+mkdir -p "$RESULTS"
+cp lab/autonomous/results/a100-pr57-warm-repeat/protocol.json "$RESULTS/"
+python -m lab.rp.warm_repeat --state "$RESULTS" --pod-id "$POD_ID" --seconds 6000
+python -m lab.pk6.warm_result "$RESULTS"
+python -m lab.rp.rp stop
+python -m lab.rp.rp account
+```
+
+The scorer can also read the tracked result directory on CPU. The two
+quantizations and the narrow workload limit interpretation to these complete
+systems. The corresponding source-release replay is a separate command in
+[the repeat-start experiment](../lab/pk1/restart-trial.md).
+
+The original record below describes the warm HTTP comparison. A subsequent same-model
+campaign measured repeated worker startup on a new A100 SXM4 80 GB. Its CPU Pilot selected
+a complete, locally qualified W4 configuration. The source change reduced median first mixed
+batch delivery from 33.292 to 15.360 seconds on six matched pairs. PR 60 qualified the source,
+and PR 61 merged the same tree into this A100 branch. The release archive includes raw answers,
+fresh target activation, withdrawal, a failed fallback calibration and successful reference
+service after restart. [Hardware scope](../training/optimization-hardware.md#a100-restart-support) ·
+[Training, source experiment and activation](../lab/pk1/restart-trial.md) ·
+[Original HTTP result replay](../lab/pk6/replay-http.md)
+
+The cache-replay search family for PR 60 came from the developers. IronMule issued the
+order from two matching device observations, Codex implemented it, and the CPU Pilot
+learned when to select the qualified source. In a subsequent search over observed startup
+methods and ten sampling plans, IronMule selected a different experiment from the data.
+Two blind full starts supported its forecast. Codex implemented the resulting order.
+On the A100, the new code reduced native calls from 96 to 64 in the instrumented screen,
+but won only four of six uninstrumented mixed pairs. The six batches together took
+104.491 seconds, compared with 100.533 seconds on the PR 60 reference. All paired outputs
+matched. The evaluator rejected the program and recorded the decision for the next run.
+The scoped PR 60 source stayed selected. [Independent target accounting](../lab/autonomous/results/a100-calibration-sampling/target-accounting.json) ·
+[Durable planning outcome](../lab/autonomous/results/a100-calibration-sampling/post-terminal-replan.json)
+
+To refit the released startup head on the CPU, reproduce its held-out decisions and verify the two
+source verdicts in a Linux source checkout with the repository dependencies installed, run
+
+```sh
+records=lab/autonomous/results
+parent="$records/a100-restart/d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3"
+child="$records/a100-calibration-sampling/trial-4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7"
+OPENBLAS_NUM_THREADS=1 python -m training.replay_qualified_restart "$parent"
+python -m training.sampling_evidence replay "$child"
+```
+
+The [bounded target commands](../lab/pk1/restart-trial.md) describe how to supply a new
+reserved device, a pinned checkout, the Codex author and a persistent campaign directory.
+
+The four-core EPYC serving experiment uses the Pilot's larger, 20,232-parameter thread
+head. These commands refit it from the recorded CPU trials and compare the result with the archived weights.
+
+```sh
+out=$(mktemp -d)
+OPENBLAS_NUM_THREADS=1 python -m training.pilot_threads fit \
+  --trials evidence/runtime/cpu-pilot-epyc-trials.json \
+  --weights "$out/thread-head.npz" --report "$out/heldout.json"
+cmp "$out/thread-head.npz" evidence/runtime/cpu-pilot-epyc-candidate.npz
+```
+
 ## Result and validity domain
 
 - **+10.02 % output throughput over vLLM at 32 concurrent clients** by the rule fixed before the run: median tok/s
@@ -162,3 +245,32 @@ Pod 37's logits files of the GPU check (2 x 19 MB) are not in the repository; th
 - Local watchdog scripts stopped and the scheduled reminders deleted after each pod.
 - Cost per pod from the session records: pod 36 about 1.45 h, about 3.2 USD; pod 37 about 0.62 h, 1.36 USD.
   Account balances are not given here: they were not re-checked for this handover.
+
+### Replay of the second A100
+
+The new reference series reached 1.09686× vLLM at 32 clients, with medians of 297.535
+and 271.26 tokens/s. Both IronMule starts individually exceeded vLLM. The pooled score
+fell below 1.10. The median TTFT at this width favored vLLM by 699.8 ms. The native
+startup trace shows 20 native packed bursts in the final threshold selection of each
+IronMule process. This stage took 18.807 and 18.752 seconds. The planner compared the
+recorded startup phases and used previous source outcomes to suppress duplicate
+experiments. It requested a guarded reduction of fresh threshold measurements.
+The replay, author reply and candidate source reconstruction use the original Git tree.
+
+```sh
+series=lab/autonomous/results/a100-pr57-warm-repeat
+trial=lab/autonomous/results/a100-dynamic-calibration
+python -m lab.pk6.warm_result "$series"
+python -m lab.pk6.startup_search commission "$series" "$trial" "$trial"
+python -m lab.pk6.startup_search materialize "$trial" /tmp/ironmule-pk2-candidate.py
+```
+
+## Subsequent ordered-worker source release
+
+The second A100's two ordinary starts led to a new Pilot-generated PK2 code
+order and independent author. For that board, the merged source passed the
+16-chunk stock gate and all eight counterbalanced studies. A trained head then
+selected the measured local-calibration profile. Use the linked instructions
+to fit from the saved native outcomes, replay the GitHub publication and
+target receipts, submit a bounded run and withdraw the scoped release.
+[Source PR 62](https://github.com/Tobayko/IronMule/pull/62) · [Instructions and measured scope](../lab/pk6/local-calibration.md)

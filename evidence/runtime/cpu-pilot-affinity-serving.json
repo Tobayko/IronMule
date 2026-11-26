@@ -1,0 +1,111 @@
+{
+  "purpose": "Accuracy and checkpoint isolation with fixed input. No performance comparison.",
+  "arms": [
+    {
+      "scope": "host",
+      "entry": "GgmlBridge.generate_many",
+      "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+      "binding": "f8ba07fa8b4cf095197e548464533ef3173ad152061582bf167b706d8a41060b",
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "profile": {
+        "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+        "cores": 4,
+        "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+        "pilot_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+        "engine_version": 5,
+        "sequences": 4,
+        "context_limit": 512,
+        "shared_pool": false,
+        "capacity": 4,
+        "settings": {
+          "flash_attn": false,
+          "kv_unified": false,
+          "kv_f32": false
+        },
+        "step_costs": {
+          "step_one": 0.010501951999685843,
+          "row": 0.003201429000303809,
+          "prefill_1k": 2.1707580859349207,
+          "kv_1k": 1e-05
+        }
+      },
+      "proposed_model": "cpu-pilot-four-slot-candidate.npz",
+      "candidate_status": {
+        "state": "available for local trial",
+        "sha256": "492c5714352922f730cbc9d7a9b4d6e30d1b1a3aa2f33d6bf508634334b4f283",
+        "trials": 0,
+        "qualified_decisions": 0,
+        "reference_decisions": 2,
+        "inference_us": 0.0
+      },
+      "qualified_offsets": {},
+      "pilot_decisions": 4,
+      "completed": 4,
+      "correct": 4,
+      "tokens": 12,
+      "output_sha256": "460aea30de0fd52b00ac6e4c54d17d7178abf744948963548e4973fa45d141e2"
+    },
+    {
+      "scope": "affinity",
+      "entry": "GgmlBridge.generate_many",
+      "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+      "binding": "c1e264fc1cc2a304528c73d8f9af18353c924f055e5d27329a51549fe1f1352b",
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "profile": {
+        "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+        "cores": 4,
+        "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+        "pilot_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+        "engine_version": 5,
+        "sequences": 4,
+        "context_limit": 512,
+        "shared_pool": false,
+        "capacity": 4,
+        "settings": {
+          "flash_attn": false,
+          "kv_unified": false,
+          "kv_f32": false
+        },
+        "step_costs": {
+          "step_one": 0.010274115000356687,
+          "row": 0.003169892999721924,
+          "prefill_1k": 1.9782345117214106,
+          "kv_1k": 0.0036363229156677335
+        },
+        "cpu_load_scope": {
+          "reader": "linux-affinity-v1",
+          "cpus": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      },
+      "proposed_model": "cpu-pilot-four-slot-candidate.npz",
+      "candidate_status": {
+        "state": "unavailable",
+        "reason": "ValueError"
+      },
+      "qualified_offsets": {},
+      "pilot_decisions": 4,
+      "completed": 4,
+      "correct": 4,
+      "tokens": 12,
+      "output_sha256": "460aea30de0fd52b00ac6e4c54d17d7178abf744948963548e4973fa45d141e2"
+    }
+  ]
+}

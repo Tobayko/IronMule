@@ -1,0 +1,869 @@
+{
+  "candidate": {
+    "binding": {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "cores": 4,
+      "devices": [
+        {
+          "description": "INTEL(R) XEON(R) PLATINUM 8573C",
+          "name": "CPU",
+          "provider": "cpu",
+          "total_memory": 18882662400,
+          "type": "cpu"
+        }
+      ],
+      "engine_settings": {
+        "flash_attn": false,
+        "kv_f32": false,
+        "kv_unified": false
+      },
+      "env_sha256": "2f042c8fc06fabcad82de1ebc177df871d5c62d206839de1e2643996a664abdb",
+      "gpu_layers": 0,
+      "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+      "model_bytes": 105454432,
+      "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+      "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+      "native": {
+        "sha256": {
+          "backend/CPU": "e88e2a86e0b21ce1b919f27c63cd38f071b49941f5a886914dc4036f79a37ec0",
+          "ggml_backend_reg_count": "404b639819bd535e6aeeedfbf2574308d04633899899978be05d66992782bd3a",
+          "ggml_init": "57df2f8555cbe24df5e9fcf5c2c7ffac58b8754b3ed6c576feff293f79ac3349",
+          "llama_backend_init": "502f5da4b2c5865c6b8eded3cdc5fa85cbeb84193bada168456aa7b43775ec8b"
+        }
+      },
+      "offloaded_layers": [],
+      "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+      "prefix_reuse": true,
+      "provider": "cpu",
+      "python": "3.12.14",
+      "speculate": true,
+      "threads": 2
+    },
+    "commit": "a4e2fc4f7de48921b588587e21d12b8f2090e90d",
+    "completed": 16,
+    "correct": 16,
+    "device_free_bytes_after_waves": [],
+    "evaluator_sha256": "c7732eafb4ea83a7b65d31e3c57387d59a48b5f1dd240b68ad9163493021226d",
+    "initialization_s": 3.1327596710000307,
+    "output_sha256": "9c87c086bdba7b92620f3c8bae1bb7b1715db68a0aa5c46886f838b5df57c603",
+    "peak_rss_kib": 239592,
+    "pilot": {
+      "active": true,
+      "cores": 4,
+      "decide_us_mean": 185.1,
+      "decision": {
+        "budget": 1073741824,
+        "cap": 4,
+        "draft": true,
+        "threads": 4
+      },
+      "decisions": 15,
+      "foreign_cores": 0.17,
+      "out_of_range": 0,
+      "reason": null,
+      "version": 2,
+      "weights": "pilot_weights.npz"
+    },
+    "pilot_decisions": 12,
+    "profiled": false,
+    "runtime_source_sha256": {
+      "ggml_engine.py": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+      "gguf_tokenizer.py": "a526cd0b280678d74f0ddc7c2ccffb85aeeb5f88912683389b15c8254725774e",
+      "pilot.py": "0e9fd82788171d9080afe16f7aa3e406c4045ee6e9976d6e46aa5b76e26fbef3"
+    },
+    "schema": "ironmule.serving_trial.v1",
+    "tokens": 48,
+    "total_elapsed_s": 6.611613799999986,
+    "ttft_s": 1.051138319,
+    "wall_s": 3.007289656,
+    "warmup_s": 0.46593365,
+    "waves": [
+      {
+        "answers": [
+          {
+            "answer": " yellow\nCopy",
+            "correct": true,
+            "output_ids": [
+              5724,
+              198,
+              32601
+            ],
+            "prompt_digest": "c1950d2967b1c471cdec9f7b84807c189b5292813dcca0fe9bb5384df2de3d07",
+            "stop": "length",
+            "target": "yellow"
+          },
+          {
+            "answer": " white\nCopy",
+            "correct": true,
+            "output_ids": [
+              2537,
+              198,
+              32601
+            ],
+            "prompt_digest": "0641be51a21d3cd1ecf0a698d9ddb42076aadb0b2f5e8c1937f110fe14394aaa",
+            "stop": "length",
+            "target": "white"
+          },
+          {
+            "answer": " pink\nCopy",
+            "correct": true,
+            "output_ids": [
+              11986,
+              198,
+              32601
+            ],
+            "prompt_digest": "d34342097daea856c02ff10880ae21f7bcab2e370b91101e76d23e82b8f59dc2",
+            "stop": "length",
+            "target": "pink"
+          },
+          {
+            "answer": " brown\nCopy",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              32601
+            ],
+            "prompt_digest": "caf136794613c9daa582b41ee2fbdd14d40889f24f013b0d6b466c20d1b4e4d5",
+            "stop": "length",
+            "target": "brown"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "80ac245ed341c1063c41551a3ca21919d06353d3ccd5c8947c1ecb5ad356a81c",
+        "requests": [
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 8,
+        "tokens": 12,
+        "ttfts_s": [
+          0.393954794,
+          0.095880059,
+          0.193258479,
+          0.291675231
+        ],
+        "wall_s": 0.42502432,
+        "workload": "short"
+      },
+      {
+        "answers": [
+          {
+            "answer": " white\nCopy",
+            "correct": true,
+            "output_ids": [
+              2537,
+              198,
+              32601
+            ],
+            "prompt_digest": "c15787cf9fae03569c9169e4c52c206cc9ee73f7afb9448534201acde5b28a04",
+            "stop": "length",
+            "target": "white"
+          },
+          {
+            "answer": " pink\nColor",
+            "correct": true,
+            "output_ids": [
+              11986,
+              198,
+              13646
+            ],
+            "prompt_digest": "d9bc6fa185c313ec6d65c133f713f4db575df25bf6438c7a1ba59e8f24e2c148",
+            "stop": "length",
+            "target": "pink"
+          },
+          {
+            "answer": " brown\nColor",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              13646
+            ],
+            "prompt_digest": "c02d1ba9c04a9f004ec917608735bf82b93476318a7ab8cf099b70f4cd3af1cb",
+            "stop": "length",
+            "target": "brown"
+          },
+          {
+            "answer": " purple\nColor",
+            "correct": true,
+            "output_ids": [
+              14230,
+              198,
+              13646
+            ],
+            "prompt_digest": "f21d64cdc3d8824141c47334cb89b59cac0c5bad7f2e87de8ea5b50162a4d694",
+            "stop": "length",
+            "target": "purple"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "83d2d3c052a3bf4809d526044db1be10f016fcdbd0a7bf882a8448f7800911a3",
+        "requests": [
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            104,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 9,
+        "tokens": 12,
+        "ttfts_s": [
+          0.240635435,
+          0.481796603,
+          0.733999949,
+          0.980964654
+        ],
+        "wall_s": 1.012588795,
+        "workload": "document"
+      },
+      {
+        "answers": [
+          {
+            "answer": " pink\nCopy",
+            "correct": true,
+            "output_ids": [
+              11986,
+              198,
+              32601
+            ],
+            "prompt_digest": "472774e0b119200392f17dffc07a28e44933aff3446cc0cb55f3392d7546e4ae",
+            "stop": "length",
+            "target": "pink"
+          },
+          {
+            "answer": " brown\nCopy",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              32601
+            ],
+            "prompt_digest": "af52922d0dc3558bf4c966f5765787deb33323023f6fb0537f4a96c109bc6729",
+            "stop": "length",
+            "target": "brown"
+          },
+          {
+            "answer": " purple\nCopy",
+            "correct": true,
+            "output_ids": [
+              14230,
+              198,
+              32601
+            ],
+            "prompt_digest": "6de61117181e5f79b53fbe03b35a9f04a94f31cea1db527a3204d6117f9fe659",
+            "stop": "length",
+            "target": "purple"
+          },
+          {
+            "answer": " orange\nCopy",
+            "correct": true,
+            "output_ids": [
+              10245,
+              198,
+              32601
+            ],
+            "prompt_digest": "952185b58ae8243180da7fcf497eab922807a10fdaad3e8614794463956b0f44",
+            "stop": "length",
+            "target": "orange"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "62d381d7d6ff9a5b4130a9823a05d34187e0d0662e2a883592f1ecf2c317c798",
+        "requests": [
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ],
+          [
+            38,
+            3
+          ],
+          [
+            39,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 9,
+        "tokens": 12,
+        "ttfts_s": [
+          0.093528006,
+          0.204865895,
+          0.445657099,
+          0.324865133
+        ],
+        "wall_s": 0.479942953,
+        "workload": "short"
+      },
+      {
+        "answers": [
+          {
+            "answer": " brown\nColor",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              13646
+            ],
+            "prompt_digest": "bfe8d96776405ba5cf37bc52c4918a16e34b7672de0fd3863a8f13b0f64397f6",
+            "stop": "length",
+            "target": "brown"
+          },
+          {
+            "answer": " purple\nCopy",
+            "correct": true,
+            "output_ids": [
+              14230,
+              198,
+              32601
+            ],
+            "prompt_digest": "ce22b6dbbe03af3405a0cded33426777338be6f8afc75fb5f97ff86baf999ae6",
+            "stop": "length",
+            "target": "purple"
+          },
+          {
+            "answer": " orange\nCopy",
+            "correct": true,
+            "output_ids": [
+              10245,
+              198,
+              32601
+            ],
+            "prompt_digest": "ee0ede1347f189b1334fe9f374f332e93dc0e2eb4e557395c3da9549d7c74b7d",
+            "stop": "length",
+            "target": "orange"
+          },
+          {
+            "answer": " green\nColor",
+            "correct": true,
+            "output_ids": [
+              2654,
+              198,
+              13646
+            ],
+            "prompt_digest": "bd5998d85020f568b391d84b915b7f41f8832704d0ec9cb2cf73609f2ea382da",
+            "stop": "length",
+            "target": "green"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "4312184d0483a6233c00617f2646b1a9980d739db18ff10216bab13260b58c24",
+        "requests": [
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 8,
+        "tokens": 12,
+        "ttfts_s": [
+          1.051138319,
+          0.262133357,
+          0.535104625,
+          0.794467456
+        ],
+        "wall_s": 1.089733588,
+        "workload": "document"
+      }
+    ],
+    "workload": {
+      "clients": 4,
+      "context": 512,
+      "max_tokens": 3,
+      "phases": [
+        "short",
+        "document"
+      ],
+      "seed": 8355,
+      "warmup_waves": 1,
+      "waves": 4
+    }
+  },
+  "candidate_tree": "92087f6a06b2b5c2d9f3ebf37319b20a0fa6cb59",
+  "evaluator_sha256": "c7732eafb4ea83a7b65d31e3c57387d59a48b5f1dd240b68ad9163493021226d",
+  "gate_sha256": "4a00115a706a71c1f0858fb939feb09808e4179e34ddc8c9e04b5026db04a70f",
+  "order_id": "3ed2f6b08324c98503da21d021866e4339b32e6f62be5c9a437b417d68fe39b6",
+  "reference": {
+    "binding": {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "cores": 4,
+      "devices": [
+        {
+          "description": "INTEL(R) XEON(R) PLATINUM 8573C",
+          "name": "CPU",
+          "provider": "cpu",
+          "total_memory": 18882662400,
+          "type": "cpu"
+        }
+      ],
+      "engine_settings": {
+        "flash_attn": false,
+        "kv_f32": false,
+        "kv_unified": false
+      },
+      "env_sha256": "2f042c8fc06fabcad82de1ebc177df871d5c62d206839de1e2643996a664abdb",
+      "gpu_layers": 0,
+      "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+      "model_bytes": 105454432,
+      "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+      "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+      "native": {
+        "sha256": {
+          "backend/CPU": "e88e2a86e0b21ce1b919f27c63cd38f071b49941f5a886914dc4036f79a37ec0",
+          "ggml_backend_reg_count": "404b639819bd535e6aeeedfbf2574308d04633899899978be05d66992782bd3a",
+          "ggml_init": "57df2f8555cbe24df5e9fcf5c2c7ffac58b8754b3ed6c576feff293f79ac3349",
+          "llama_backend_init": "502f5da4b2c5865c6b8eded3cdc5fa85cbeb84193bada168456aa7b43775ec8b"
+        }
+      },
+      "offloaded_layers": [],
+      "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+      "prefix_reuse": true,
+      "provider": "cpu",
+      "python": "3.12.14",
+      "speculate": true,
+      "threads": 2
+    },
+    "commit": "a4e2fc4f7de48921b588587e21d12b8f2090e90d",
+    "completed": 16,
+    "correct": 16,
+    "device_free_bytes_after_waves": [],
+    "evaluator_sha256": "c7732eafb4ea83a7b65d31e3c57387d59a48b5f1dd240b68ad9163493021226d",
+    "initialization_s": 3.177578709000045,
+    "output_sha256": "9c87c086bdba7b92620f3c8bae1bb7b1715db68a0aa5c46886f838b5df57c603",
+    "peak_rss_kib": 239844,
+    "pilot": {
+      "active": true,
+      "cores": 4,
+      "decide_us_mean": 168.6,
+      "decision": {
+        "budget": 1073741824,
+        "cap": 4,
+        "draft": true,
+        "threads": 4
+      },
+      "decisions": 15,
+      "foreign_cores": 0.02,
+      "out_of_range": 0,
+      "reason": null,
+      "version": 2,
+      "weights": "pilot_weights.npz"
+    },
+    "pilot_decisions": 12,
+    "profiled": false,
+    "runtime_source_sha256": {
+      "ggml_engine.py": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+      "gguf_tokenizer.py": "0952416ffdff0e965be1e60f88a74ec35bdd194bcb1646187dca98dccbfb3a11",
+      "pilot.py": "0e9fd82788171d9080afe16f7aa3e406c4045ee6e9976d6e46aa5b76e26fbef3"
+    },
+    "schema": "ironmule.serving_trial.v1",
+    "tokens": 48,
+    "total_elapsed_s": 6.701229051000041,
+    "ttft_s": 1.076521444,
+    "wall_s": 3.0121164,
+    "warmup_s": 0.507246037,
+    "waves": [
+      {
+        "answers": [
+          {
+            "answer": " yellow\nCopy",
+            "correct": true,
+            "output_ids": [
+              5724,
+              198,
+              32601
+            ],
+            "prompt_digest": "c1950d2967b1c471cdec9f7b84807c189b5292813dcca0fe9bb5384df2de3d07",
+            "stop": "length",
+            "target": "yellow"
+          },
+          {
+            "answer": " white\nCopy",
+            "correct": true,
+            "output_ids": [
+              2537,
+              198,
+              32601
+            ],
+            "prompt_digest": "0641be51a21d3cd1ecf0a698d9ddb42076aadb0b2f5e8c1937f110fe14394aaa",
+            "stop": "length",
+            "target": "white"
+          },
+          {
+            "answer": " pink\nCopy",
+            "correct": true,
+            "output_ids": [
+              11986,
+              198,
+              32601
+            ],
+            "prompt_digest": "d34342097daea856c02ff10880ae21f7bcab2e370b91101e76d23e82b8f59dc2",
+            "stop": "length",
+            "target": "pink"
+          },
+          {
+            "answer": " brown\nCopy",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              32601
+            ],
+            "prompt_digest": "caf136794613c9daa582b41ee2fbdd14d40889f24f013b0d6b466c20d1b4e4d5",
+            "stop": "length",
+            "target": "brown"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "80ac245ed341c1063c41551a3ca21919d06353d3ccd5c8947c1ecb5ad356a81c",
+        "requests": [
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 8,
+        "tokens": 12,
+        "ttfts_s": [
+          0.459389463,
+          0.110235707,
+          0.220597445,
+          0.343307738
+        ],
+        "wall_s": 0.501170467,
+        "workload": "short"
+      },
+      {
+        "answers": [
+          {
+            "answer": " white\nCopy",
+            "correct": true,
+            "output_ids": [
+              2537,
+              198,
+              32601
+            ],
+            "prompt_digest": "c15787cf9fae03569c9169e4c52c206cc9ee73f7afb9448534201acde5b28a04",
+            "stop": "length",
+            "target": "white"
+          },
+          {
+            "answer": " pink\nColor",
+            "correct": true,
+            "output_ids": [
+              11986,
+              198,
+              13646
+            ],
+            "prompt_digest": "d9bc6fa185c313ec6d65c133f713f4db575df25bf6438c7a1ba59e8f24e2c148",
+            "stop": "length",
+            "target": "pink"
+          },
+          {
+            "answer": " brown\nColor",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              13646
+            ],
+            "prompt_digest": "c02d1ba9c04a9f004ec917608735bf82b93476318a7ab8cf099b70f4cd3af1cb",
+            "stop": "length",
+            "target": "brown"
+          },
+          {
+            "answer": " purple\nColor",
+            "correct": true,
+            "output_ids": [
+              14230,
+              198,
+              13646
+            ],
+            "prompt_digest": "f21d64cdc3d8824141c47334cb89b59cac0c5bad7f2e87de8ea5b50162a4d694",
+            "stop": "length",
+            "target": "purple"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "83d2d3c052a3bf4809d526044db1be10f016fcdbd0a7bf882a8448f7800911a3",
+        "requests": [
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            104,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 9,
+        "tokens": 12,
+        "ttfts_s": [
+          0.245779286,
+          0.603765662,
+          0.828168218,
+          1.076521444
+        ],
+        "wall_s": 1.115246597,
+        "workload": "document"
+      },
+      {
+        "answers": [
+          {
+            "answer": " pink\nCopy",
+            "correct": true,
+            "output_ids": [
+              11986,
+              198,
+              32601
+            ],
+            "prompt_digest": "472774e0b119200392f17dffc07a28e44933aff3446cc0cb55f3392d7546e4ae",
+            "stop": "length",
+            "target": "pink"
+          },
+          {
+            "answer": " brown\nCopy",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              32601
+            ],
+            "prompt_digest": "af52922d0dc3558bf4c966f5765787deb33323023f6fb0537f4a96c109bc6729",
+            "stop": "length",
+            "target": "brown"
+          },
+          {
+            "answer": " purple\nCopy",
+            "correct": true,
+            "output_ids": [
+              14230,
+              198,
+              32601
+            ],
+            "prompt_digest": "6de61117181e5f79b53fbe03b35a9f04a94f31cea1db527a3204d6117f9fe659",
+            "stop": "length",
+            "target": "purple"
+          },
+          {
+            "answer": " orange\nCopy",
+            "correct": true,
+            "output_ids": [
+              10245,
+              198,
+              32601
+            ],
+            "prompt_digest": "952185b58ae8243180da7fcf497eab922807a10fdaad3e8614794463956b0f44",
+            "stop": "length",
+            "target": "orange"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "62d381d7d6ff9a5b4130a9823a05d34187e0d0662e2a883592f1ecf2c317c798",
+        "requests": [
+          [
+            39,
+            3
+          ],
+          [
+            39,
+            3
+          ],
+          [
+            38,
+            3
+          ],
+          [
+            39,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 9,
+        "tokens": 12,
+        "ttfts_s": [
+          0.102335062,
+          0.194713295,
+          0.383797156,
+          0.287430734
+        ],
+        "wall_s": 0.41153559,
+        "workload": "short"
+      },
+      {
+        "answers": [
+          {
+            "answer": " brown\nColor",
+            "correct": true,
+            "output_ids": [
+              6354,
+              198,
+              13646
+            ],
+            "prompt_digest": "bfe8d96776405ba5cf37bc52c4918a16e34b7672de0fd3863a8f13b0f64397f6",
+            "stop": "length",
+            "target": "brown"
+          },
+          {
+            "answer": " purple\nCopy",
+            "correct": true,
+            "output_ids": [
+              14230,
+              198,
+              32601
+            ],
+            "prompt_digest": "ce22b6dbbe03af3405a0cded33426777338be6f8afc75fb5f97ff86baf999ae6",
+            "stop": "length",
+            "target": "purple"
+          },
+          {
+            "answer": " orange\nCopy",
+            "correct": true,
+            "output_ids": [
+              10245,
+              198,
+              32601
+            ],
+            "prompt_digest": "ee0ede1347f189b1334fe9f374f332e93dc0e2eb4e557395c3da9549d7c74b7d",
+            "stop": "length",
+            "target": "orange"
+          },
+          {
+            "answer": " green\nColor",
+            "correct": true,
+            "output_ids": [
+              2654,
+              198,
+              13646
+            ],
+            "prompt_digest": "bd5998d85020f568b391d84b915b7f41f8832704d0ec9cb2cf73609f2ea382da",
+            "stop": "length",
+            "target": "green"
+          }
+        ],
+        "completed": 4,
+        "correct": 4,
+        "output_sha256": "4312184d0483a6233c00617f2646b1a9980d739db18ff10216bab13260b58c24",
+        "requests": [
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ],
+          [
+            105,
+            3
+          ]
+        ],
+        "reused_prompt_tokens": 8,
+        "tokens": 12,
+        "ttfts_s": [
+          0.956628626,
+          0.258622066,
+          0.499882676,
+          0.725033453
+        ],
+        "wall_s": 0.984163746,
+        "workload": "document"
+      }
+    ],
+    "workload": {
+      "clients": 4,
+      "context": 512,
+      "max_tokens": 3,
+      "phases": [
+        "short",
+        "document"
+      ],
+      "seed": 8355,
+      "warmup_waves": 1,
+      "waves": 4
+    }
+  },
+  "reference_tree": "70fafbb18e9cffacec17a1816914c1c3fa52b4cb"
+}

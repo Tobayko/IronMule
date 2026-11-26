@@ -1,0 +1,74 @@
+{
+  "schema": "ironmule.native-search-stop.v1",
+  "prior_rejections": [
+    {
+      "order": "f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b",
+      "target": {
+        "function": "w4d",
+        "specialization": "w4d<2, 1, 4, 2, 1>",
+        "line": 824,
+        "path": "native/kernels/w4mma.cu",
+        "kernel_seconds_per_step": [
+          0.009108927437500036,
+          0.009093888125000109
+        ],
+        "calls_per_step": [
+          128.0,
+          128.0
+        ],
+        "simulated_31_step_saving_at_10_percent_s": 0.028214364121875224
+      },
+      "reason": "restricted worker exited -6: lCode+0x97)[0x612c47]\n/usr/bin/python3.11[0x633abb]\n/usr/bin/python3.11[0x62fd14]\n/usr/bin/python3.11[0x644375]\n/usr/bin/python3.11(_PyRun_SimpleFileObject+0x194)[0x6439e4]\n/usr/bin/python3.11(_PyRun_AnyFileObject+0x47)[0x6437f7]\n/usr/bin/python3.11(Py_RunMain+0x2c9)[0x63e349]\n/usr/bin/python3.11(Py_BytesMain+0x2d)[0x603f2d]\n/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x70f7764ced90]\n/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x70f7764cee40]\n/usr/bin/python3.11(_start+0x25)[0x603db5]\n",
+      "trial_sha256": "397e610b15a474bfc4daf05e039941f688937aa7ccb2cb5ccc71dbbeae6dbabc"
+    }
+  ],
+  "cost": {
+    "estimated_seconds": 636.2344588134438,
+    "estimated_gpu_usd": 0.3891465790414502,
+    "available_seconds": 900.0,
+    "available_usd": 0.56,
+    "reference_wall_s": 3.300967062,
+    "warm_reference_receipts": {
+      "ref-0.json": "a707fe4958eda43fa182bdac530d5bfceb15d4fc2d479e0ec270eda5dd21b0b7",
+      "ref-1.json": "56798150dd3719bfdde4db9e6676dec7a3706543ba239f697ba2e0426f1fe904",
+      "ref-2.json": "7386747076ce7845cc6743950f38ce36a34b3231c8a101e11b067ecadf1083ad",
+      "ref-3.json": "aab099574aa34963fcfcc2d133fce8b02f34bd12a7274ecfb1b8f32c7ca3112f",
+      "ref-4.json": "449140171c73a57e8f6db10c717445688caf366b782a763196a71b72523bf9ff",
+      "ref-5.json": "1f3f5ec07f492865db13768566046168ba258cf6bc2585fcacb50bb6805870f6"
+    },
+    "warm_reference_waves_s": [
+      3.308065295,
+      3.300463617,
+      3.260906387,
+      3.29287567,
+      3.301470507,
+      3.306166303
+    ],
+    "hourly_gpu_usd": 2.201904761904762
+  },
+  "required_wave_saving_s": 0.0647248443529413,
+  "simulated_device_reduction": 0.1,
+  "unexplored_projections": [
+    {
+      "specialization": "w4f<4, 4, 1, 0>",
+      "simulated_whole_wave_saving_s": 0.019918390474999947
+    },
+    {
+      "specialization": "w4f6<4, 4, 1, 0>",
+      "simulated_whole_wave_saving_s": 0.010990211062500145
+    },
+    {
+      "specialization": "reduce_split",
+      "simulated_whole_wave_saving_s": 0.0021316256812500076
+    },
+    {
+      "specialization": "w4f6<4, 4, 2, 0>",
+      "simulated_whole_wave_saving_s": 0.0015002056687500073
+    },
+    {
+      "specialization": "prep_x",
+      "simulated_whole_wave_saving_s": 0.000782855012499944
+    }
+  ],
+  "reason": "no new target above search sensitivity or remaining operational bounds"
+}

@@ -454,9 +454,15 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
 def _pinned_ggml_options(device: str, args, spec: ModelSpec, store: ProductStore) -> dict:
     """Return only this card's measured options; the driver's visibility is set before process startup."""
     from .placement_devices import worker_environment
+    from ironmule.ggml_profiles import FLAGS
     environment = worker_environment(device)
+    # Importing the legacy raw engine enables its lab defaults in this process. They
+    # are not caller opt-ins for a new, differently placed worker.
+    implicit = getattr(sys.modules.get("ironmule.ggml_engine"), "_IMPLICIT_KERNEL_FLAGS", {})
+    overrides = {k: os.environ[k] for k in FLAGS if k in os.environ and os.environ[k] != implicit.get(k)}
     options = {k: getattr(args, k) for k in ("gguf", "draft_gguf", "speculate", "agent", "model")}
-    payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root), "pinned": device not in ("cpu", "local")}
+    payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root), "pinned": device not in ("cpu", "local"),
+               "kernel_overrides": overrides}
     if device.startswith("rocm:"):
         payload.update(pinned=False, rocm_bus=device.removeprefix("rocm:"))
     child = subprocess.run([sys.executable, "-m", "ironmule_product.pinned_ggml"],
@@ -681,7 +687,7 @@ def serve(argv: list[str], *, calibration_minutes: float | None = None) -> int:
             ggml_options: dict[str | None, dict] = {}
             if args.engine == "ggml":
                 if devices == [None]:
-                    ggml_options[None] = _local_ggml_options(args, spec, store)
+                    ggml_options[None] = _pinned_ggml_options("local", args, spec, store)
                 else:
                     # A process can initialize CUDA only once: pin before importing the bindings or probing.
                     for device in devices:

@@ -1,0 +1,5 @@
+{
+  "arm": "reference",
+  "reason": "startup workload failed: qualified startup receipt changed or expired",
+  "withdrawn": true
+}

@@ -1,0 +1,49 @@
+{
+  "attempt": "product-v2",
+  "control_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
+  "files": {
+    "cost-after-product.json": {
+      "original_sha256": "3f922d0e90a5d83961cb51880d712714cdf89decaa65090d3523f695fdca7013",
+      "sha256": "3f922d0e90a5d83961cb51880d712714cdf89decaa65090d3523f695fdca7013"
+    },
+    "http-decision.json": {
+      "original_sha256": "af3f8044fe79d98c3b178f3ed5cdadc2addf333a4073e7a555dfe68cd1acaa8a",
+      "sha256": "af3f8044fe79d98c3b178f3ed5cdadc2addf333a4073e7a555dfe68cd1acaa8a"
+    },
+    "http-gate-devices-reference.json": {
+      "original_sha256": "59df1587b98c8f07cec031af067ec8ee1cdc0a3acf255dfc36b767e8daefe99d",
+      "sha256": "59df1587b98c8f07cec031af067ec8ee1cdc0a3acf255dfc36b767e8daefe99d"
+    },
+    "http-gate-reference.json": {
+      "original_sha256": "c5e6f9491dd4ed820b15d6bcf74c53d3c44f66cff548e9715652256a64bcb4ca",
+      "sha256": "c5e6f9491dd4ed820b15d6bcf74c53d3c44f66cff548e9715652256a64bcb4ca"
+    },
+    "http-geometry.json": {
+      "original_sha256": "a8608882d5009f48e532d979cfa54f7558353bdca759460f153b8bc8e7c35748",
+      "sha256": "a8608882d5009f48e532d979cfa54f7558353bdca759460f153b8bc8e7c35748"
+    },
+    "http-product-qualify.json": {
+      "original_sha256": "a7a0ecf771cdd2f004c8a40c55c9eba016e75bb08fc2e2fc6642caed05431ec7",
+      "sha256": "a7a0ecf771cdd2f004c8a40c55c9eba016e75bb08fc2e2fc6642caed05431ec7"
+    },
+    "http-trained-head.json": {
+      "original_sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37",
+      "sha256": "22c9447e9807190a035f371ca5da30de822e44f20605ff92075cf70c4b77fa37"
+    },
+    "replan-after-product-declined.json": {
+      "original_sha256": "61a651fbca6a35252742afdebb0bab8fd635fee743c95576136b56c69f54f016",
+      "sha256": "61a651fbca6a35252742afdebb0bab8fd635fee743c95576136b56c69f54f016"
+    },
+    "stock-reference-diagnostic.json": {
+      "original_sha256": "a184cc10fd56029661f979318a9790f737fb936571fbf7a18b72a4463ea4f884",
+      "sha256": "a184cc10fd56029661f979318a9790f737fb936571fbf7a18b72a4463ea4f884"
+    },
+    "tokenizer-preflight.json": {
+      "original_sha256": "5476ccee63801c06c82c39d9591c01ceb39104afb4aeb79edb2eb89c7a774051",
+      "sha256": "5476ccee63801c06c82c39d9591c01ceb39104afb4aeb79edb2eb89c7a774051"
+    }
+  },
+  "head_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+  "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "schema": "ironmule.portable-product-attempt.v1"
+}

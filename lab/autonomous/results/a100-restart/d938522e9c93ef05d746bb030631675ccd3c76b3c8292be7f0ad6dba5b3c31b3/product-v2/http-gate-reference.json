@@ -1,0 +1,15 @@
+{
+  "diagnostic": {
+    "candidates": [],
+    "code": "invalid_argument",
+    "exception_class": null,
+    "exit_code": -6,
+    "schema": "ironmule.gguf-gate-diagnostic.v1",
+    "stage": "reference"
+  },
+  "passes": false,
+  "preferred_settings": null,
+  "ran": false,
+  "reason": "GGUF qualification reference returned invalid_argument",
+  "source_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5"
+}

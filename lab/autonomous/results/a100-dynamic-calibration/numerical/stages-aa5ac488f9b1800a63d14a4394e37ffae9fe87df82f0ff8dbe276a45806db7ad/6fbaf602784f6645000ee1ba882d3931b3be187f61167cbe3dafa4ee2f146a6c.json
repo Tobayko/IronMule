@@ -1,0 +1,55 @@
+{
+  "digest": "832392a7e8fcd8a29201e4a5d671a175276056340bb938f9eb631b329a15ba8b",
+  "label": {
+    "role": "candidate",
+    "settings": {
+      "flash_attn": true,
+      "kv_f32": false,
+      "kv_unified": false
+    },
+    "shared": false
+  },
+  "output": {
+    "facts": {
+      "0:arithmetic-0": true,
+      "0:arithmetic-1": true,
+      "0:arithmetic-2": true,
+      "0:arithmetic-3": true,
+      "0:arithmetic-4": true,
+      "0:arithmetic-5": true,
+      "0:extraction-0": true,
+      "0:extraction-1": true,
+      "0:extraction-2": true,
+      "0:extraction-3": true,
+      "0:extraction-4": true,
+      "0:extraction-5": true,
+      "0:facts-0": true,
+      "0:facts-1": true,
+      "0:facts-2": true,
+      "0:facts-3": true,
+      "0:facts-4": true,
+      "0:facts-5": true
+    },
+    "kg5_launches": null,
+    "nll": [
+      0.46133583884520923,
+      0.8972939902449666,
+      1.1624994068807406,
+      1.3803344265660626,
+      1.9323928091366172,
+      1.419422418762575,
+      1.841807124137319,
+      2.2168018915924437,
+      1.7948621953035666,
+      1.7247276401088747,
+      2.232820651975697,
+      1.9065980444449346,
+      2.060875604084182,
+      2.20518709537364,
+      2.0805337447444727,
+      2.443672834638616
+    ],
+    "prefill_batch": null,
+    "repeat": null
+  }
+}

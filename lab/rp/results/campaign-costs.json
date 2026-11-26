@@ -1,0 +1,142 @@
+{
+ "campaign_budget_usd": 20.0,
+ "booked_with_tail_usd": 16.769796526818844,
+ "journal": [
+  {
+   "kind": "reserve",
+   "time": 1795652466.6766412,
+   "usd": 2.916666666666667,
+   "hourly_quote": 2.201904761904762,
+   "deadline": 1795656066.0
+  },
+  {
+   "kind": "created",
+   "time": 1795652467.632369,
+   "hourly": 2.201904761904762
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795654626.5220594,
+   "old": 1795656066.0,
+   "new": 1795661466.0,
+   "additional_usd": 3.7500000000000004
+  },
+  {
+   "kind": "renewed",
+   "time": 1795654627.602245,
+   "old": 1795656066.0,
+   "new": 1795661466.0,
+   "reserved": 6.666666666666668
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795658934.3998187,
+   "old": 1795661466.0,
+   "new": 1795665066.0,
+   "additional_usd": 2.5000000000000004
+  },
+  {
+   "kind": "renewed",
+   "time": 1795658935.2904494,
+   "old": 1795661466.0,
+   "new": 1795665066.0,
+   "reserved": 9.166666666666668,
+   "control_watchdog_confirmed": true,
+   "pod_watchdog_confirmed": true
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795661734.6732101,
+   "old": 1795665066.0,
+   "new": 1795668666.0,
+   "additional_usd": 2.5000000000000004
+  },
+  {
+   "kind": "renewed",
+   "time": 1795661735.665036,
+   "old": 1795665066.0,
+   "new": 1795668666.0,
+   "reserved": 11.666666666666668,
+   "control_watchdog_confirmed": true,
+   "pod_watchdog_confirmed": true
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795664840.6644685,
+   "old": 1795668666.0,
+   "new": 1795672266.0,
+   "additional_usd": 2.5000000000000004
+  },
+  {
+   "kind": "renewed",
+   "time": 1795664841.759647,
+   "old": 1795668666.0,
+   "new": 1795672266.0,
+   "reserved": 14.166666666666668,
+   "control_watchdog_confirmed": true,
+   "pod_watchdog_confirmed": true
+  },
+  {
+   "kind": "removed",
+   "time": 1795672269.5831742,
+   "booked": 12.479237985487842
+  },
+  {
+   "kind": "extend",
+   "time": 1795683618.844338
+  },
+  {
+   "kind": "reserve",
+   "time": 1795683619.858701,
+   "usd": 5.0,
+   "hourly_quote": 2.2123214285714283,
+   "deadline": 1795690219.0
+  },
+  {
+   "kind": "created",
+   "time": 1795683620.8685656,
+   "hourly": 2.2123214285714283
+  },
+  {
+   "kind": "removed",
+   "time": 1795690001.6700077,
+   "booked": 4.290558541331002
+  }
+ ],
+ "confirmed_owned_pods_remaining": 0,
+ "observed_unix_s": 1795690328.7823474,
+ "provider_account_delta_since_first_reservation_usd": 16.0216502082,
+ "external_settlements_usd": 0,
+ "approved_extensions_minutes": [
+  90.0,
+  60.0,
+  60.0,
+  60.0
+ ],
+ "retained_cleanup_tail_seconds_per_pod": 600,
+ "leases": [
+  {
+   "gpu": "NVIDIA A100-SXM4-80GB",
+   "verified_absent": true,
+   "hours": 5.500807331932916,
+   "account_delta_at_cleanup_usd": 12.048787252999997,
+   "booked_with_tail_usd": 12.479237985487842,
+   "hourly_with_disk_usd": 2.201904761904762,
+   "disk_hourly_upper_usd": 0.011904761904761906,
+   "posted_records": 1,
+   "posted_usd": 12.105505211977288
+  },
+  {
+   "gpu": "NVIDIA A100-SXM4-80GB",
+   "verified_absent": true,
+   "hours": 1.772725361055798,
+   "account_delta_at_cleanup_usd": 3.8397340719000006,
+   "booked_with_tail_usd": 4.290558541331002,
+   "hourly_with_disk_usd": 2.2123214285714283,
+   "disk_hourly_upper_usd": 0.022321428571428572,
+   "posted_records": 1,
+   "posted_usd": 1.9953386702109128
+  }
+ ],
+ "basis": "Posted pod charges can lag. The account delta can include unrelated use. Booked cost conservatively includes a cleanup tail. Fees are USD."
+}

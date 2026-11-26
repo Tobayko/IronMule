@@ -1,0 +1,30 @@
+{
+  "schema": "ironmule.post-restart-native-discovery.v1",
+  "base_commit": "63db7745998383509602601d46ae4bbff0076648",
+  "parent_order": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "control_receipt_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
+  "weights_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+  "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+  "worker_family": "mixed-first-32",
+  "seeds": [
+    97151,
+    97152
+  ],
+  "required": "A real trained selection of the previously qualified complete PR60 profile, correct 18 facts, cold and warm 32 completions and bound hardware/library/mask identities in each independent start.",
+  "parent_decision": "lab/autonomous/results/a100-post-restart-60/decision.json",
+  "selection": "From inventory seed 97151, sum actual llama_decode and llama_get_logits_ith call wall by phase, source caller, log2 batch-row size, sequence count and output-logit count. Select the largest startup cell and largest normal-serving cell. In seed 97152 capture the first occurrence of each selected cell; sample actual device symbols when supported.",
+  "allowable_optimizations": "Examined complete alternative methods must retain actual work, native/state side effects, held-out correctness, timing samples and original replay/fallback checks. Cross-caller setup calls with exactly matching tracked logical KV, row, mask/thread and output fingerprints may justify testing shared setup. Within-caller repeats provide timing samples; never count these as removable. Equal shape alone yields zero editable credit.",
+  "decision": "Only common cross-caller setup duplicates in both runs can be credited to source, never all inclusive native seconds. Count each pair of owners' common signature at most once per run. At 25% of the smaller observed duplicate time, net cold benefit must exceed 2% correct-work threshold, observed between-run spread and the 22-worker qualification amortized over the 256-start sensitivity horizon. Native-owned symbols without a qualified cache-compatible evaluator stay information only. All other source judgments abstain.",
+  "scope": "No benchmark text, answers or token IDs are released. Logical-KV identity is a necessary, insufficient condition for reusing computation. Host ABI call durations may include waiting for asynchronous GPU work, and CUPTI summed intervals may overlap; do not sum device and host attribution.",
+  "max_worker_s": 220,
+  "additional_allocations": 0,
+  "observation_schema": "ironmule.post-restart-native-observation.v1",
+  "qualification_workers": {
+    "aa": 2,
+    "negative": 2,
+    "mixed": 12,
+    "held_out": 4,
+    "separate_trace": 2
+  },
+  "credit_rule": "Startup only. Require two distinct direct source owners, both executing non-statistical setup lines with identical known logical inputs, results, zero native status and same mask, threads and argmax state. Calls within any for/while loop in that direct method are timing samples or repeated work, ineligible. Exclude check_*, measure_kg/replay and verification ancestors. Never credit user waves. Use smaller of both native ABI spans for duplicate once per pair and signature; do not double count a call. One native ABI call may wait for GPU work. Physical graph-cache state is unobserved; a passing trace yields eligibility for a separate controlled experiment."
+}

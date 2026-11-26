@@ -1,0 +1,108 @@
+{
+  "schema": "ironmule.gpu-width-bench.v1",
+  "status": "complete",
+  "stage": "smoke",
+  "provider": "cuda",
+  "runs": [],
+  "threads": 2,
+  "max_output_tokens": 6,
+  "source_sha256": {
+    "lab/portable_gpu/bench.py": "b3115e244433da4fb63ce84e449ffd41bc6b70d250fc652cb77d5853d4ffb9a4",
+    "ironmule_devices.py": "55eb47ea7c5160350a7fc37b0714d12320d1f9b37d84194acbdde79f4576cbfa",
+    "ironmule/ggml_engine.py": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+    "ironmule/ggml_binary.py": "e83d208dd44b241b89239285594bfe0204bcfdf0e09cf77b8a4acb86933609e7",
+    "ironmule/pilot.py": "0e9fd82788171d9080afe16f7aa3e406c4045ee6e9976d6e46aa5b76e26fbef3",
+    "ironmule/speculation.py": "8a66177a0c530c3cf0560de607fb70ec2d33ebb27b85fbff791d6c00d9cd9ee8"
+  },
+  "seq_ctx": 512,
+  "reference_width": 1,
+  "repeats": 2,
+  "devices": [
+    {
+      "provider": "cuda",
+      "name": "CUDA0",
+      "description": "NVIDIA A100-SXM4-80GB",
+      "type": "gpu",
+      "total_memory": 85094825984,
+      "free_memory": 84631355392,
+      "driver": 13020,
+      "runtime": 12080,
+      "pci": "0000:47:00.0"
+    }
+  ],
+  "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|4390e195ae5e7a819f85f3f8b80b7f923f6c902ba0977486d45fcc5e05744c16",
+  "native": {
+    "sha256": {
+      "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+      "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+      "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+      "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+      "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+    }
+  },
+  "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "model_bytes": 105454432,
+  "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+  "cold_model_context_warmup_s": 0.3633638590108603,
+  "offloaded_layers": [
+    [
+      31,
+      31
+    ]
+  ],
+  "first_request": {
+    "tokens_per_second": 196.89658817263853,
+    "ttft_ms": 10.672212,
+    "request_ttft_ms": [
+      10.672212
+    ],
+    "elapsed_s": 0.030472849,
+    "output_tokens": [
+      [
+        4461,
+        198,
+        32601,
+        42,
+        4461,
+        198
+      ]
+    ],
+    "answers": [
+      " blue\nCopy: blue\n"
+    ],
+    "correct": [
+      true
+    ],
+    "stop_reasons": [
+      "length"
+    ]
+  },
+  "warm_request": {
+    "tokens_per_second": 208.79604131057516,
+    "ttft_ms": 10.142361,
+    "request_ttft_ms": [
+      10.142361
+    ],
+    "elapsed_s": 0.028736177,
+    "output_tokens": [
+      [
+        4461,
+        198,
+        32601,
+        42,
+        4461,
+        198
+      ]
+    ],
+    "answers": [
+      " blue\nCopy: blue\n"
+    ],
+    "correct": [
+      true
+    ],
+    "stop_reasons": [
+      "length"
+    ]
+  },
+  "smoke_passed": true
+}

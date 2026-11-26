@@ -1,0 +1,56 @@
+{
+  "schema": "ironmule.runpod.cpu-pilot.v1",
+  "commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "physical_cores": [
+    [
+      "0",
+      "0"
+    ],
+    [
+      "0",
+      "1"
+    ],
+    [
+      "0",
+      "2"
+    ],
+    [
+      "0",
+      "3"
+    ]
+  ],
+  "cpu_max": "1360000 100000",
+  "budget_seconds": 300,
+  "new_resource_bookings_usd": 0,
+  "cost_source": "Occupied lease time is billed in the RunPod campaign journal.",
+  "hypothesis": "Thread costs on this EPYC may differ from the Xeon trial.",
+  "steps": [
+    {
+      "name": "collect",
+      "started_s": 4.7410023398697376e-05,
+      "returncode": 0,
+      "elapsed_s": 178.43150148401037
+    },
+    {
+      "name": "fit",
+      "started_s": 178.43156077608,
+      "returncode": 0,
+      "elapsed_s": 0.31597074994351715
+    },
+    {
+      "name": "serve",
+      "started_s": 178.74754094309174,
+      "returncode": 0,
+      "elapsed_s": 53.22634216200095
+    }
+  ],
+  "result": "qualified choices served",
+  "elapsed_s": 231.97391584701836
+}

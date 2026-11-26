@@ -4426,3 +4426,310 @@ A second experiment used independent one- and three-thread workers on the same C
 The v3 follow-up used the same two CPU workers. IronMule rejected the first campaign after 98.04 seconds because the faster routes changed responses and output counts. Then 32 short requests arrived four at a time. IronMule learned a new workload plan that included two requests ahead on one worker and one on the other. It recreated and drained the observed queues for each measured route. The second campaign took 70.05 seconds. The native reward policy and the native latency model tied on the selection set, and the controller selected the immediate latency model. In the two fresh rounds its total completion time was 48.68% and 55.47% of the shortest-queue reference. Time to first token was 46.69% and 51.38% of the reference. Visible responses, output-token counts and stop reasons matched on every selected route. A subsequent foreground request used the qualified three-thread route. Offline fitting and holdout replay of the saved trace took 0.82 ms with the native trainer already built.
 
 Reproduce this load transition with `python -m lab.placement.cpu_pair --gguf MODEL --state-dir STATE --short-traffic --burst-size 4`. The results cover a single host and this small GGUF with short outputs. [Queue patterns, paired timings and verdicts](../lab/placement/results/smollm2-cpu-reward-burst-v3.json)
+
+### 2026-11-26: CPU Pilot development order and rejected tokenizer change
+
+An offline planner observed four real waves of four concurrent copy requests with SmolLM2-135M-Instruct
+Q4_K_M on the GGML CPU backend. The baseline was the head of PR 57, a4e2fc4, on an Intel Xeon
+Platinum 8573C with a four-core cgroup quota. The serving path encoded the prompts, ran the shipped
+Pilot and native engine, and streamed detokenized output. There was no HTTP transport. From the
+caller-thread profile and its step-cost simulation, IronMule selected GgufTokenizer.encode.
+The estimated recoverable time was 1.9 ms per wave under an assumed 25% reduction in self time.
+
+A Codex worker proposed returning the ctypes token-array slice directly. The development CLI
+received HTTP 401 in this environment. The session dispatched the saved order to a hosted Codex
+worker and imported its response. IronMule compiled the candidate, ran the engine and tokenizer
+tests and evaluated six pairs in independent Linux namespaces. Runtime flags, GGUF digest,
+output IDs, stop reasons and the unprofiled evaluator were matched within pairs. Each pair used a
+fresh seed, alternating which arm ran first, with a fresh engine and one warm-up wave per arm.
+Both arms answered 96/96 correctly, generated 288 tokens and took 72 measured Pilot decisions.
+Per-pair throughput ratios were 1.302, 1.078, 0.919, 1.320, 1.002 and 0.974. The six-win rule
+rejected the candidate. The wide variation exceeds the measured share of the tokenizer.
+The paired workloads consumed 33.84 s of serving and 79.14 s including worker initialization.
+This trial incurred no additional CPU rental or metered API charges. It did not change any serving default.
+
+[Order, waves, patch, outputs and decision](../lab/autonomous/results/cpu-tokenizer-01/).
+
+### 2026-11-26: CPU Pilot thread proposals from paired decode
+
+On a Linux Intel Xeon Platinum 8573C with a four-core quota, the two-slot SmolLM2-135M-Instruct Q4_K_M
+GGML engine attempted 224 eight-token decode measurements. The load and output checks left 116 timed
+arms and ten complete counterbalanced series. A new 20,232-parameter Pilot thread head trained on one CPU
+process from seed 20261126. Adding the measured 256–383-token context bins changed the selected threads
+from two to three for one training input and three to four for another. On the two matched held-out series,
+the new and shipped Pilots each chose three and four threads, respectively. Their summed mean times were
+0.2664 s, against 0.2785 s with one thread and 0.1589 s with all four. Results apply to fixed plain-decode work.
+[Paired measurements](../evidence/runtime/cpu-pilot-thread-trials.json) ·
+[Grouped training and replay](../evidence/runtime/cpu-pilot-thread-replay.json)
+
+Three bounded native-serving audits tested quiet operation and one or two independent CPU load workers.
+The new head proposed three threads instead of two under the heaviest load. The four-triplet qualification
+measured a median candidate/reference ratio of 0.78 and a maximum reference-repeat spread of 0.94.
+IronMule retained the shipped Pilot in all three runs. The four timed 48-token generations in each
+audit matched the reference output and stop reason. No new serving speedup was qualified in these runs.
+[Quiet audit](../evidence/runtime/cpu-pilot-thread-serving.json) ·
+[One load worker](../evidence/runtime/cpu-pilot-thread-contention.json) ·
+[Two load workers](../evidence/runtime/cpu-pilot-thread-two-workers.json) ·
+[Search and qualification observations](../evidence/runtime/cpu-pilot-thread-qualification.json)
+
+The four-slot evaluator needed its own checkpoint. Sixteen series tested the same GGUF with one or four
+decode rows. Eight series met the complete-pair and output checks. On fresh held-out 392- and
+456-token single-row contexts, the fit updated with new experience selected two threads in both cases
+(the earlier fit selected four). The candidate took a summed 0.1721 s and the shipped Pilot took
+0.1486 s. The four-slot candidate therefore carries no blanket performance qualification.
+[Four-slot corpus](../evidence/runtime/cpu-pilot-four-slot-trials.json) ·
+[Four-slot replay](../evidence/runtime/cpu-pilot-four-slot-replay.json) ·
+[Experimental checkpoint](../evidence/runtime/cpu-pilot-four-slot-candidate.npz)
+
+### 2026-11-26: four-slot scratch Pilot in the development loop on Linux CPU
+
+On a four-core quota on an Intel Xeon Platinum 8573C, the locally trained thread head proposed
+five alternatives during 83.030 s of bounded qualification. None passed the fresh on-machine gate.
+The reference completed 16/16 correct copy requests on SmolLM2-135M-Instruct Q4_K_M, produced all
+48 tokens, and made 16 Pilot decisions. The four profiled waves took 2.709 s in total, with engine
+p95 time to first visible token of 1.021 s. The full discovery took 89.813 s. No scratch choice
+qualified in the timed waves, so the experiment stopped before code authoring. The measurements
+came from source 9c9618d, with both raw repeats and rejection reasons retained. Reproduce on the
+matching machine with the bounded CPU command and the four-slot checkpoint in the method guide.
+[Measured discovery and qualification](../evidence/runtime/cpu-pilot-four-slot-discovery.json) ·
+[Experiment commands](OPTIMIZATION_METHODS.md#run-one-development-experiment-on-linux)
+
+### 2026-11-26 RunPod EPYC scratch Pilot in live four-client serving
+
+SmolLM2-135M-Instruct Q4_K_M served on four pinned physical cores of an AMD EPYC 7742, with CUDA masked.
+IronMule collected 48 equal-output native decode measurements across six complete series on commit
+79ee889. The initial fit used 72-token contexts and the update added separate 264-token contexts.
+Both widths of the 392-token family stayed out of both fits. For one and four decode rows, the
+trained head selected four threads and took 52.49 ms and 122.96 ms per eight-token probe. The shipped Pilot
+selected one thread and took 118.39 ms and 349.04 ms. The simple all-four-threads rule matched the new head
+on both held-out cells. The update changed the scores and preserved these two choices.
+[Measurements](../evidence/runtime/cpu-pilot-epyc-trials.json) · [Grouped replay](../evidence/runtime/cpu-pilot-epyc-replay.json) · [Checkpoint](../evidence/runtime/cpu-pilot-epyc-candidate.npz)
+
+A fresh qualification then admitted four threads for plain four-row decode in the 64–127-token context band.
+Across four paired windows, candidate/reference time ranged from 0.313 to 0.347 and the maximum
+A/A spread was 4.94%. Qualification and search took 42.65 s. The head made four qualified choices in
+the subsequent sixteen measured Pilot decisions. Sixteen of sixteen copy requests returned correct
+answers with 48 tokens in 6.166 s. The observed engine p95 time to first visible token was 2.196 s.
+The entire campaign took 231.97 s, including collection, both fits, qualification and serving.
+These profiled waves have no end-to-end baseline arm. The original load feature counts busy time
+across the host, including CPUs outside the worker's affinity.
+[Serving receipt](../evidence/runtime/cpu-pilot-epyc-discovery.json) · [Campaign and time breakdown](../lab/autonomous/results/runpod-epyc-pilot/campaign.json)
+
+The world model used all four completed serving waves and retrieved the prior rejected tokenizer
+experiment. The largest exclusive host-function share in any wave was 0.04764% for
+`GgufTokenizer.encode`. Even removing that entire measured cost falls below the 1.96078% elapsed-time
+saving required for the existing 2% throughput gate. IronMule therefore deferred a Python code order on
+this workload. This estimate covers the instrumented engine and tokenizer source sites only.
+[Decision and retrieved records](../lab/autonomous/results/runpod-epyc-pilot/planner-decision.json)
+
+### 2026-11-26, A100 SXM4 80 GB, prefill cuBLASLt screen deferred a source experiment
+
+The pinned Qwen3-32B Q4_K_M capture at commit `33dc7bf` executed 7,616 prompt rows in 2.369 s.
+The FFN gate/up and down groups were attributed 1,036.75 and 527.10 ms from device times, counts,
+the graph and the actual matrix dimensions. Call-argument traces would give direct confirmation.
+The bounded planner selected a synthetic-input micro-test of the same TN FP16-input/FP32-output
+GEMM layouts. It charged 3.788 s to compile and execute on the existing pod, including 2.222 s
+for compilation. Its portion of the occupied lease is already included in the RunPod journal.
+[Capture](../lab/autonomous/results/a100-prefill-lt/profile.log) · [Experiment plan](../lab/autonomous/results/a100-prefill-lt/plan.json)
+
+| Projection | M × N × K | Calls per prefill | Bitwise matches / Lt heuristics | Best paired median projected saving |
+| --- | --- | ---: | ---: | ---: |
+| Gate/up | 25,600 × 7,616 × 5,120 | 126 | 3 / 3 | 21.12 ms |
+| Down | 5,120 × 7,616 × 25,600 | 63 | 2 / 4 | 3.70 ms |
+
+Each qualifying heuristic matched every output bit across the warm-up and four alternating pairs
+on cuBLAS 12.8.4. The two rejected down heuristics each changed 38,857,337 FP32 values.
+The optimistic sum of the best within-shape estimates was 24.83 ms. Even a wave consisting only of the
+observed prefill would require 46.45 ms to meet the existing 2% throughput gate. The planner deferred
+a new source build. The trial measured isolated GEMMs and left the deployed cuBLAS path in place.
+[Raw timings and quality](../lab/autonomous/results/a100-prefill-lt/measurement.json) · [Planning decision](../lab/autonomous/results/a100-prefill-lt/decision.json) · [Replay](../lab/pk1/prefill-probe.md)
+
+### 2026-11-26 EPYC prefill code trial stopped on mismatched thread profiles
+
+On four pinned cores of an AMD EPYC 7742, a Codex-authored change to `GgmlEngine._prefill` passed
+84 engine and tokenizer tests (six skipped). The first pair of restricted real SmolLM2 135M workers
+each delivered 16 correct answers and 48 matching tokens. The incumbent independently qualified
+offset +3 for load bucket `1:1:4:4`. The candidate qualified offset +2 for `1:2:4:4`.
+That changed the execution conditions. Qualification stopped at the first pair, the raw times are
+excluded from speed training, and the reference stayed active. The complete source order, authored
+patch and first-pair receipts are preserved together.
+[Order](../lab/autonomous/results/runpod-epyc-pilot/prefill-order.json) · [Authored diff](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/candidate.diff) · [Rejection](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/comparison-rejected.json) · [Raw byte hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/sha256.json)
+
+### 2026-11-26 EPYC matched-profile prefill source qualification
+
+The matched trial reused the original code proposal and calibrated a complete reference profile on
+four pinned EPYC 7742 cores. The reference qualified offset +3 for bucket `1:1:4:4` after 79
+visits. It delivered 16 correct calibration answers with three scratch-head decisions. Its search
+and warm-up took 41.72 seconds. Each child then had to requalify the same profile on the live host.
+The two completed triplets delivered 16 correct answers and 48 identical tokens per arm and seed.
+
+| Seed | Incumbent wall | Authored prefill wall | Fixed four-thread rule wall |
+| --- | ---: | ---: | ---: |
+| 18351 | 6.207 s | 2.969 s | 1.753 s |
+| 18352 | 6.180 s | 2.963 s | 1.767 s |
+
+The third incumbent completed. During the following rule worker's startup, the native qualifier
+declined the required regime. Its traceback is preserved. That worker exited before writing its
+native timing samples or serving the scored batch. The experiment stopped with seven verified
+serving arms out of eighteen. The source remains unqualified and the two triplets supply no
+six-pair performance label. The code remained on the incumbent. The cost file records the entire
+shared lease to that point, before its billing tail.
+[Replayed refusal](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/qualification-stopped.json) · [Calibration and probe times](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/profile.json) · [Worker exit](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/rule-18353.log) · [Captured file hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/sha256.json)
+
+### 2026-11-26 EPYC CPU Pilot checkpoint withdrawal and restart
+
+On four pinned physical cores of the same AMD EPYC 7742, the scratch head served real
+SmolLM2-135M-Instruct Q4_K_M requests before and after a process restart. The five stages
+each completed 16 correct requests and generated 48 tokens. Every answer, output token,
+stop reason and prompt digest matched the original serving receipt. The 136.49 s run
+included warmups, qualification and the separate process startup.
+
+| Stage | Active local thread offsets | Scratch choices in measured waves | Complete wave time |
+| --- | --- | ---: | ---: |
+| Initial qualification | 2 → 4 threads in context band 1 | 2 | 3.417 s |
+| One additional CPU worker | 2 → 4 threads in context band 1 | 4 | 4.011 s |
+| Checkpoint withdrawn, same process | Empty | 0 | 3.427 s |
+| Restored checkpoint, new process before qualification | Empty | 0 | 6.338 s |
+| New process after independent qualification | 1 → 4 threads in context band 1 | 4 | 6.412 s |
+
+The idle recheck under external load admitted a separate two-to-three-thread choice in
+context band 2. Both offsets disappeared when the next idle check noticed removal of the
+published checkpoint. The restored file supplied proposals to the restarted process. Its
+first measured waves ran on the shipped Pilot until the local hardware gate admitted the
+new offset. Withdrawal was explicitly induced. The load test observed no performance
+regression. The stage timings describe different process and load states.
+
+Replay all five original sets of answers offline with
+`python -m training.pilot_withdrawal_replay`. The experiment used the existing RunPod
+lease. Its elapsed time is included in the campaign cost journal.
+[Measured outcome and source digests](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/outcome.json) · [Raw receipts](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/raw/) · [Hardware driver](../lab/rp/cpu_pilot_withdrawal.py)
+
+### 2026-11-26 A100 source planning after the PR 60 startup improvement
+
+Two new, separately started Qwen3-32B Q4_K_M workers used the trained CPU startup head.
+Both selected the merged PR 60 source and reused its qualified W4 profile. Each cold worker
+delivered 32 full mixed requests, 32 warm requests and 18 correct factual answers. An
+independent control-host verifier checked source bytes, CUDA objects, masks, qualified
+head scores, executed decisions and complete deliveries.
+
+The planner received disjoint Python source timings from startup and all three serving
+phases. Six source methods had editable implementation time. Across those methods
+combined, startup plus the first wave accounted for only 6.89 ms and 3.67 ms on the two
+seeds. An optimistic 50% reduction at the largest individual site would save 1.58 ms.
+The preregistered 2% correct-work gate required 303.07 ms. The planner deferred authoring.
+These bounds apply to attributed Python implementation time. The 193 native-backed
+decode calls in startup require separate measurements inside their call paths.
+
+The diagnostic used 70.51 seconds of broker time, including the two trained selections.
+Its share of the already running lease was $0.0431 at the reserved hourly rate. The
+planner estimated $0.389 for a full follow-up qualification and left it unspent.
+[Measured source observations and decision](../lab/autonomous/results/a100-post-restart-60/) · [Discovery contract](../training/post_restart_contract.json) · [Qualification contract](../lab/pk1/followup_contract.py)
+
+## 2026-11-26 — Native attribution and prospective calibration decisions after PR 60
+
+Two fresh Qwen processes traced all 193 startup decodes through the active W4 path on
+the A100-SXM4-80GB. Their common unprotected setup in the pass-cost and padding
+calibrations had the same logical KV, input, mask and output. A third call sharing that
+signature belonged to the protected W4 receipt check. The traced large prefill used
+cuBLAS/CUTLASS kernels and kernels with symbols matching IronMule's GGML patches.
+A separate tokenizer diagnostic attempted CUDA allocation during the first inventory.
+Both dependent observations carry a timing exclusion. Their structure and 3,993 CUDA
+device events remain in the archive. No code author order resulted from those times.
+[Source and device inventory, incident and replay](../lab/autonomous/results/a100-post-restart-native-60/)
+
+The next search ranked complete return values across all eight matched PR 60 starts.
+The two continuous calibration outputs varied in all eight. Only the discrete padding
+table repeated exactly. The controller chose to test that forecast in two new complete
+starts. Both returned the predicted empty table, with different underlying sets of 16
+fresh prices. The older full-calibration reference had also recorded a nonempty table.
+An early-sampling simulation reproduced the new answers but its preregistered empirical
+intervals allowed alternative choices at 15 widths in both starts. It abstained.
+[Full original holdouts, state, prediction and abstention](../lab/autonomous/results/a100-calibration-stability/)
+
+The retained raw timings showed elevated early post-warm measurements. A program
+ranked ten fresh-measurement plans within a human-directed search family and selected
+two warmups and two measurements per width. It fixed that plan before a further pair
+of independent starts. All four prospective starts used the trained CPU startup head,
+each served 32 cold and 32 warm completions and answered all 18 factual questions
+correctly. Across the last two, the maximum full-price prediction errors were 0.4001%
+and 0.4498%. Every tested interval gave the same discrete dispatch as the full
+original measurement. Both starts had about 0.682 s of measured tail work outside the
+paid prefix. The program produced Codex order `4e87c90d…` for a source experiment.
+The two separate prospective pairs consumed 141.36 s and an estimated $0.08646 of the
+existing lease. Source qualification has its own independent end-to-end release gate.
+[Bound order, costs, raw measurements and replay](../lab/autonomous/results/a100-calibration-sampling/)
+
+## 2026-11-26 — PR 57 warm HTTP replication on a second A100
+
+On a fresh RunPod A100 SXM4 80 GB, the ordinary PR 57 server selected 32 sequences on
+its local numerical and width gates. Qwen3-32B GGUF Q4_K_M delivered 297.535 tokens/s
+at 32 clients, versus 271.26 for vLLM 0.11.0 with the official Qwen3-32B AWQ checkpoint.
+The original scoring rule gives a ratio of 1.09686. The two IronMule process medians
+were 297.13 and 301.90 tokens/s. At eight clients the medians were 190.805 and
+184.005 tokens/s. At 32 clients the median of the per-wave median TTFT was 2405.9 ms
+for IronMule and 1706.1 ms for vLLM. All six factual batches scored 18/18.
+The nine timed 32-client waves delivered 1024 tokens apiece. The independent verifier
+checks all 288 client timelines against their aggregate token counts and TTFT.
+The complete first IronMule readiness took 1401.12 seconds including fresh calibration,
+vLLM took 158.43 seconds, and the second IronMule start using local state took 80.03
+seconds. The historical pod 37 result was 1.1002. Different quantizations and the
+scope of the single-device workload limit both comparisons. This replication measures
+Claude's existing warm path. [Registration, raw waves and target](../lab/autonomous/results/a100-pr57-warm-repeat/)
+
+## 2026-11-26 — IronMule selects PK2 from two ordinary A100 starts
+
+IronMule ranked the repeated local measurements in two actual PR 57 server starts.
+It selected `GgmlEngine.measure_pk2` (18.807 and 18.752 s) and commissioned a
+separate Codex author. The search family was supplied by the developers. The
+ranked method, order, implementation, measured acceptance and source activation
+are individually attributable in the archive. The earlier losing padding method
+was excluded by its stored result. [Forecast and source response](../lab/autonomous/results/a100-dynamic-calibration/)
+
+The generated code sometimes finishes the five-option GPU calibration in 15 calls.
+Uncertain measurements take the original 20. Both execution paths test their
+threshold with fresh likelihood measurements. The independent 16-chunk stock
+gate on the RunPod A100 SXM4 80 GB gave a 95% upper ratio of 1.00015 against a
+limit of 1.005. Reference, repeat and candidate all answered 18/18 correctly.
+
+With six mixed-first ordered native pairs, first completion of all 32 answers
+took median 55.290 s on the reference and 51.057 s on the candidate. The median
+paired rate ratio was 1.08324. Warm wall-time ratio was 0.99991 and warm p95
+TTFT ratio 1.00000. Peak GPU memory matched. The two held-out factual-first
+pairs achieved 1.06585× and 1.07919×. The eight paired runs and two unchanged
+controls occupied 1,302.04 worker seconds. At the median 4.256 s saving per
+mixed cold start, these workers alone cost the time saved across 306 starts.
+The separate stock quality check occupied another 341.01 s. The experimental
+investment is additional to the controller's measured per-request overhead.
+
+The qualified source was automatically merged in PR 62. Two fresh target
+pairs improved complete first delivery by factors of 1.07901 and 1.08386.
+New processes with original random and newly trained CPU weights chose
+different source profiles for the same mixed input. Including the broker,
+first completion took 55.888 s versus 51.797 s. Both CPU selection calls took
+about 3.11 ms including loading the checkpoint. The fixed always-qualified
+candidate rule tied the learned head on the two held-out factual pairs.
+[Qualification PR](https://github.com/Tobayko/IronMule/pull/62) · [Reproduction commands](../lab/pk6/local-calibration.md)
+
+The unchanged asynchronous ordinary HTTP reference reproduced 31 of 32 warm
+responses exactly. Its mandatory A/A check closed that source experiment.
+The independent PR 57 comparison above measures warm HTTP throughput for the
+existing stack. The ordered source release measures a gain on fresh native
+workers. Source and training receipts bind one device, runtime and GGUF.
+
+The additional caller-supplied JSON interface admitted the same source only
+after independent mixed and factual pairs. Time to complete the submitted batch
+was 56.761 to 52.889 s for 32 mixed prompts and 53.951 to 49.157 s for 18
+factual prompts, with identical delivered text, tokens and stops. A new
+18-question request selected the trained candidate, and a single unsupported
+question used the reference and answered 7. A separate process timed the full
+CLI, from launch until every reply was received. It measured 50.107 s with
+the candidate and 54.334 s after a persisted withdrawal for the exact same
+18 questions. A later request verified the durable latency monitor. Both
+owned RunPod leases were removed. The total conservative booking for this
+first development stage, including both cleanup tails, was $16.77. [Caller evidence](../lab/autonomous/results/a100-dynamic-calibration/client/) · [Campaign cost journal](../lab/rp/results/campaign-costs.json)
+
+After cleanup the RunPod account balance fell by $16.02165 relative to the
+initial reservation. Two successive queries returned the same delta and zero
+remaining owned pods. The provider's individual pod records were still posting
+when the journal was exported. The conservative total of $16.76980 includes
+a ten-minute cleanup tail for each lease and zero metered API charges.

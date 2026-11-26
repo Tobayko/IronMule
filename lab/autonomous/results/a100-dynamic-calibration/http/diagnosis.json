@@ -1,0 +1,7 @@
+{
+  "status": "HTTP source not qualified",
+  "cause": "Two unmodified reference starts with identical weights, width, threshold and NLL returned different text on warm request index 29. Both cold batches and all factual answers agreed. The A/A gate stopped the series before publication.",
+  "operational_setup": ["The first isolated state was too permissive for ProductStore. Its private clone now has mode 0700.", "The relocated native library needed its own directory in the loader path.", "The first clean child environment omitted the container's NVIDIA visibility value. Startup began fresh calibration under a different key; the run was stopped before measured requests. The final broker passes only the target hardware visibility variables needed to reproduce the local binding."],
+  "diagnostic": "A separate, post-terminal candidate start at the A/A seed executed 15 instead of 20 native bursts, selected the same threshold 128 with likelihood ratio 1.00073, delivered the full first mixed batch at 80.192 s and answered 18/18. The reference A/A delivered at 84.487 and 84.995 s. A single diagnostic after a failed control cannot qualify or activate this HTTP source.",
+  "subsequent_evaluator": "The distinct ordered native serving lane uses the existing restart_arm fixture and fresh preregistered seeds, with independent exact-work and performance gates."
+}

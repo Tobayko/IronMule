@@ -1,0 +1,5 @@
+{
+  "checkpoint_withdrawal": "served verified outputs with head unavailable",
+  "initially_served_qualified_decisions": 2,
+  "real_load_recheck": "qualified"
+}

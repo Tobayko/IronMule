@@ -1,0 +1,20 @@
+{
+  "archive_source_sha256": "d46d81e0b9823fcaeb80b32cdb5bbb72bf2a29c6547f4cff8227b99902b5db28",
+  "captured": "Exact original rows referenced by the frozen decision. A byte-for-byte replay of decision.json with these rows was checked.",
+  "knowledge_ids": [
+    "15510228db49f7c7fbe2f6f560f55858c7bbe79a931b7b291a9eb2ee00e28c30",
+    "159cc77b997bb07cddcbcff69304e393585852ba22b19172667a2544d04a0881",
+    "17232205c0c19b1f96b1e8469e71f34cafb48669f9b91a5f911cb8e89dcc0121",
+    "181475b4b0e17141884baa3da290dc3709a8ce23bf1d88db9fdfdd0d503cd886",
+    "1d2075c5808bdb48cbc0af8c64839134073015e47e39bf185654ede0803d4468",
+    "2b48bea8698d662c134c95e42ba7d98234add9ee3468eb262c486dbf71433fc4",
+    "4144f22169c92faca026179f6d847f90d502efa71dc784b743c4a8f282ad9568",
+    "43c47c56b610e8cc341cfe8c606f8d063f40d41836c96cc79da331a0dd0e0df8",
+    "4516795fd11eaf0ae9675e5e8d44c870cb40b64c93801431821e3f1892c48d6c",
+    "5d016764fd554b35ad95419ecc813c29af84080bb7021c86f2b5be730f6e1551",
+    "7274209ae52a4cc9f9c1e42a94a4597dbadb35d51f136fe67279cd5df57a22fa",
+    "e204a9a02aac72962f286fcb69807e61082db252549d0d08b4800428e499b84b",
+    "e5a47f58ba23d81256da636ed510cdecd7686d343d8d0ba5d9025b87dfaf7725"
+  ],
+  "source": "training.experience_archive build before post-PR60 rows were ingested"
+}

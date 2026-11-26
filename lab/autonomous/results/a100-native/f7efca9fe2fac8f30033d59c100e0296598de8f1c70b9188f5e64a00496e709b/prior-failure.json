@@ -1,0 +1,7 @@
+{
+  "source_log_sha256": "2d40696be0cd304c0e7cd6a9efc3cb6b49ec8710d9a0b1d356962e019ba0411e",
+  "final_error": "W4 was not selected on this GPU for the profiled width",
+  "device": "NVIDIA A100-SXM4-80GB",
+  "cc": "8.0",
+  "model_filename": "Qwen3-32B-Q4_K_M.gguf"
+}

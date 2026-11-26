@@ -1,0 +1,551 @@
+{
+  "schema": 1,
+  "binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+  "profile": {
+    "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+    "cores": 4,
+    "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "pilot_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "engine_version": 5,
+    "sequences": 4,
+    "context_limit": 512,
+    "shared_pool": false,
+    "capacity": 4,
+    "settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "step_costs": {
+      "step_one": 0.005119877052493393,
+      "row": 0.0021030583108464875,
+      "prefill_1k": 1.5979499335116998,
+      "kv_1k": 0.0036818018998019397
+    },
+    "gguf": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "platform": "Linux-6.8.0-149-generic-x86_64-with-glibc2.35",
+    "numpy": "2.1.2",
+    "commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+    "cache": "idle slots removed after each arm",
+    "backend": "ggml-cpu",
+    "cost_usd_incremental": 0
+  },
+  "groups": [
+    {
+      "group": "ctx-bin-6",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.005119877052493393,
+        "row": 0.0021030583108464875,
+        "prefill_1k": 1.5979499335116998,
+        "kv_1k": 0.0036818018998019397
+      },
+      "context": 392,
+      "rows": 4,
+      "foreign": 4,
+      "base": 1,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.7907404899597168,
+        1.1135917901992798,
+        1.2471518516540527,
+        0.85680091381073,
+        1.0,
+        -0.40151405334472656,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.7467262148857117,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 3,
+          "seconds": 0.14861198293510824,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.1939762179972604,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.12464223499409854,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.3468764170538634,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.3512057199841365,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.12128127308096737,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.18813585897441953,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": 0.1446147169917822,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-4",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.005119877052493393,
+        "row": 0.0021030583108464875,
+        "prefill_1k": 1.5979499335116998,
+        "kv_1k": 0.0036818018998019397
+      },
+      "context": 264,
+      "rows": 1,
+      "foreign": 4,
+      "base": 1,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.7907404899597168,
+        1.1135917901992798,
+        1.2471518516540527,
+        0.85680091381073,
+        1.0,
+        -0.5891751050949097,
+        0.25,
+        0.25,
+        0.0,
+        0.0,
+        0.697466254234314,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 1,
+          "seconds": 0.11096280894707888,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.06757213303353637,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.04981688200496137,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.04991233302280307,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.05234483093954623,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.054994359030388296,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.06941433507017791,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.10983937501441687,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-6",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.005119877052493393,
+        "row": 0.0021030583108464875,
+        "prefill_1k": 1.5979499335116998,
+        "kv_1k": 0.0036818018998019397
+      },
+      "context": 392,
+      "rows": 1,
+      "foreign": 4,
+      "base": 1,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.7907404899597168,
+        1.1135917901992798,
+        1.2471518516540527,
+        0.85680091381073,
+        1.0,
+        -0.5891751050949097,
+        0.25,
+        0.25,
+        0.0,
+        0.0,
+        0.7467262148857117,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 4,
+          "seconds": 0.0527037390274927,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.06961008498910815,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.05707470094785094,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.11837128305342048,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.11841683892998844,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": 0.053248279029503465,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.07066729303915054,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.05228269402869046,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-4",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.005119877052493393,
+        "row": 0.0021030583108464875,
+        "prefill_1k": 1.5979499335116998,
+        "kv_1k": 0.0036818018998019397
+      },
+      "context": 264,
+      "rows": 4,
+      "foreign": 4,
+      "base": 1,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.7907404899597168,
+        1.1135917901992798,
+        1.2471518516540527,
+        0.85680091381073,
+        1.0,
+        -0.8047189712524414,
+        0.25,
+        1.0,
+        0.0,
+        0.0,
+        0.697466254234314,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 1,
+          "seconds": 0.320318007026799,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.12637024209834635,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.17755341704469174,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.10942409001290798,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.10066581598948687,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.17756789398845285,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": 0.13173964095767587,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.31939486193004996,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-1",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.005119877052493393,
+        "row": 0.0021030583108464875,
+        "prefill_1k": 1.5979499335116998,
+        "kv_1k": 0.0036818018998019397
+      },
+      "context": 72,
+      "rows": 4,
+      "foreign": 4,
+      "base": 1,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.7907404899597168,
+        1.1135917901992798,
+        1.2471518516540527,
+        0.85680091381073,
+        1.0,
+        -0.8047189712524414,
+        0.25,
+        1.0,
+        0.0,
+        0.0,
+        0.5363074541091919,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 2,
+          "seconds": 0.15997839800547808,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.09751702402718365,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.2854142520809546,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.11460762796923518,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.1097637329949066,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.2884487980045378,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.09861856594216079,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.15846322302240878,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-1",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.005119877052493393,
+        "row": 0.0021030583108464875,
+        "prefill_1k": 1.5979499335116998,
+        "kv_1k": 0.0036818018998019397
+      },
+      "context": 72,
+      "rows": 1,
+      "foreign": 4,
+      "base": 1,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.7907404899597168,
+        1.1135917901992798,
+        1.2471518516540527,
+        0.85680091381073,
+        1.0,
+        -0.5891751050949097,
+        0.25,
+        0.25,
+        0.0,
+        0.0,
+        0.5363074541091919,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 1,
+          "seconds": 0.1024878000607714,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.05685890302993357,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.04718641994986683,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.06348141096532345,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.062153030070476234,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.04760489205364138,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": 0.046815439010970294,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.10587122500874102,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 1
+        }
+      ]
+    }
+  ]
+}

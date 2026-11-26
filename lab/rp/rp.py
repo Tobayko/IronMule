@@ -10,7 +10,7 @@ State (pod id, token, start time, spend ledger) lives in $RP_STATE (default ~/.c
   python lab/rp/rp.py job NAME "long command"    # background; then: python lab/rp/rp.py log NAME
   python lab/rp/rp.py stop                       # terminate the pod and book its cost
   python lab/rp/rp.py spend
-Authentication to api.runpod.io is injected by the session proxy.
+Use RUNPOD_API_KEY on the control machine or a credential-injecting proxy.
 """
 from __future__ import annotations
 
@@ -19,15 +19,28 @@ import base64
 import json
 import os
 import secrets
+import select
 import subprocess
 import sys
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
+
+if __package__:
+    from . import accounting
+else:
+    import accounting
+
+CLEANUP_SECONDS = accounting.CLEANUP_SECONDS
+DISK_USD_PER_GB_HOUR = accounting.DISK_USD_PER_GB_HOUR
+MAX_BUDGET = accounting.MAX_BUDGET
+event, held, limit = accounting.event, accounting.held, accounting.limit
+locked, money, reserve, save_atomic = accounting.locked, accounting.money, accounting.reserve, accounting.save
 
 STATE = Path(os.environ.get("RP_STATE", Path.home() / ".cache/ironmule/rp.json"))
 AGENT = Path(__file__).with_name("agent.py")
 IMAGE = "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
-BUDGET = float(os.environ.get("RP_BUDGET", 43.5))  # owner: 20 USD, 5 more, 10 more, then the whole account balance (2026-11-23)
 
 
 def load():
@@ -35,9 +48,7 @@ def load():
 
 
 def save(state):
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(state, indent=1))
-    os.chmod(STATE, 0o600)
+    save_atomic(STATE, state)
 
 
 def curl(args, data=None, timeout=100):
@@ -50,8 +61,12 @@ def curl(args, data=None, timeout=100):
 
 def gql(query, variables=None):
     body = json.dumps({"query": query, "variables": variables or {}}).encode()
-    out = json.loads(curl(["-X", "POST", "https://api.runpod.io/graphql", "-H", "Content-Type: application/json",
-                           "--data-binary", "@-"], body, 60))
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("RUNPOD_API_KEY"):
+        headers["Authorization"] = "Bearer " + os.environ["RUNPOD_API_KEY"]
+    req = urllib.request.Request("https://api.runpod.io/graphql", data=body, headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as response:
+        out = json.load(response)
     if out.get("errors"):
         raise RuntimeError(json.dumps(out["errors"])[:1000])
     return out["data"]
@@ -73,25 +88,80 @@ def agent(pod, method, path, data=None, timeout=100, raw=False):
     return out if raw else json.loads(out)
 
 
-def deploy(a):
+def account():
+    user = gql("{myself{clientBalance currentSpendPerHr pods{id name costPerHr}}}")["myself"]
+    if not user or not isinstance(user.get("pods"), list):
+        raise ValueError("authenticated account telemetry unavailable")
+    money(user["clientBalance"])
+    money(user["currentSpendPerHr"])
+    return user
+
+
+def book(a):
     state = load()
     if state.get("pod"):
-        sys.exit(f"pod already running: {state['pod']['id']}")
-    if state["spent"] >= BUDGET:
-        sys.exit(f"budget spent: {state['spent']:.2f}")
+        raise ValueError("an owned pod or unresolved create already exists")
+    if a.count < 1 or a.disk < 1 or a.minutes < 1 or money(a.max_hourly) == 0:
+        raise ValueError("expected positive count, disk, minutes and maximum hourly rate")
+    user = account()
+    rates = gql("""query($gpu:String!, $secure:Boolean!, $n:Int!) {
+        gpuTypes(input:{id:$gpu}){id lowestPrice(input:{secureCloud:$secure,gpuCount:$n}){
+            uninterruptablePrice stockStatus}}}""",
+                {"gpu": a.gpu, "secure": a.cloud == "SECURE", "n": a.count})["gpuTypes"]
+    quote = next((x["lowestPrice"] for x in rates if x["id"] == a.gpu), None)
+    if not quote or not quote.get("uninterruptablePrice"):
+        raise ValueError("no matching on-demand quote")
+    disk_rate = a.disk * DISK_USD_PER_GB_HOUR
+    quote_rate = money(quote["uninterruptablePrice"]) * a.count + disk_rate
+    if quote_rate > a.max_hourly:
+        raise ValueError("quoted compute and disk exceed hourly cap")
+    amount = (a.minutes * 60 + CLEANUP_SECONDS) / 3600 * a.max_hourly
+    reserve(state, amount, user["clientBalance"])
+    name = "ironmule-" + secrets.token_hex(10)
     token = secrets.token_hex(24)
-    agent_b64 = base64.b64encode(AGENT.read_bytes()).decode()
-    start = "bash -c 'echo $AGENT_B64 | base64 -d > /agent.py && exec python3 /agent.py'"
+    started = time.time()
+    pod = {"name": name, "token": token, "cost": a.max_hourly, "disk_rate": disk_rate,
+           "reserved": amount, "max_hourly": a.max_hourly, "gpu": a.gpu, "started": started,
+           "deadline": int(started + a.minutes * 60), "id": None,
+           "balance_before": user["clientBalance"]}
+    state["pod"] = pod
+    event(state, "reserve", name=name, usd=amount, hourly_quote=quote_rate,
+          stock=quote["stockStatus"], balance=user["clientBalance"], deadline=pod["deadline"])
+    save(state)
+    # Acquire an independent reaper before the first paid mutation. It reconciles
+    # an ambiguous create by exact unique name, even if this process dies.
+    try:
+        launch_watch(name)
+    except OSError:
+        state["pod"] = None
+        event(state, "watch_launch_failed", name=name)
+        save(state)
+        raise
+    start = ("bash -c 'echo $WATCH_B64 | base64 -d > /rp_watch.py && "
+             "(python3 /rp_watch.py &) && echo $AGENT_B64 | base64 -d > /agent.py && exec python3 /agent.py'")
     q = """mutation($i: PodFindAndDeployOnDemandInput) { podFindAndDeployOnDemand(input: $i) {
            id costPerHr machine { gpuDisplayName } } }"""
-    i = {"cloudType": a.cloud, "gpuCount": a.count, "gpuTypeId": a.gpu, "name": "ironmule-lab",
+    env = {"AGENT_TOKEN": token, "AGENT_B64": base64.b64encode(AGENT.read_bytes()).decode(),
+           "WATCH_B64": base64.b64encode(AGENT.with_name("pod_watchdog.py").read_bytes()).decode(),
+           "RP_DEADLINE": str(pod["deadline"])}
+    i = {"cloudType": a.cloud, "gpuCount": a.count, "gpuTypeId": a.gpu, "name": name,
          "imageName": a.image, "containerDiskInGb": a.disk, "volumeInGb": 0, "minVcpuCount": a.vcpu,
          "minMemoryInGb": a.mem, "ports": "8000/http", "dockerArgs": start, "startSsh": False,
-         "env": [{"key": "AGENT_TOKEN", "value": token}, {"key": "AGENT_B64", "value": agent_b64}]}
-    pod = gql(q, {"i": i})["podFindAndDeployOnDemand"]
-    state["pod"] = {"id": pod["id"], "token": token, "cost": pod["costPerHr"], "gpu": a.gpu, "started": time.time()}
+         "env": [{"key": k, "value": v} for k, v in env.items()]}
+    obj = gql(q, {"i": i})["podFindAndDeployOnDemand"]
+    pod["id"] = obj["id"]
     save(state)
-    print(json.dumps({k: v for k, v in state["pod"].items() if k != "token"}))
+    pod["cost"] = money(obj["costPerHr"]) + disk_rate
+    event(state, "created", name=name, id=pod["id"], hourly=pod["cost"])
+    save(state)
+    if pod["cost"] > a.max_hourly:
+        cleanup(state)
+        raise ValueError("provider exceeded quoted maximum, terminated")
+    print(json.dumps(public(pod)))
+
+
+def public(pod):
+    return {k: v for k, v in pod.items() if k != "token"}
 
 
 def wait(a):
@@ -108,25 +178,257 @@ def wait(a):
     sys.exit("agent not ready")
 
 
-def stop(a):
-    state = load()
+def cleanup(state):
     pod = current(state)
-    gql("mutation($i: PodTerminateInput!) { podTerminate(input: $i) }", {"i": {"podId": pod["id"]}})
-    hours = (time.time() - pod["started"]) / 3600
-    cost = hours * pod["cost"]
-    state["spent"] += cost
-    state["pods"].append({"id": pod["id"], "gpu": pod["gpu"], "hours": round(hours, 3), "usd": round(cost, 3)})
+    user = account()
+    if not pod["id"]:
+        matches = [p for p in user["pods"] if p.get("name") == pod["name"]]
+        if len(matches) != 1:
+            raise ValueError("create unresolved; reservation retained, no retry")
+        pod["id"] = matches[0]["id"]
+        pod["cost"] = money(matches[0]["costPerHr"]) + pod["disk_rate"]
+        save(state)
+    if any(p["id"] == pod["id"] for p in user["pods"]):
+        gql("mutation($i: PodTerminateInput!) { podTerminate(input: $i) }", {"i": {"podId": pod["id"]}})
+        user = account()
+    if any(p["id"] == pod["id"] for p in user["pods"]):
+        raise ValueError("termination not yet confirmed")
+    hours = max(0, time.time() - pod["started"]) / 3600
+    estimate = (hours + CLEANUP_SECONDS / 3600) * money(pod["cost"])
+    # Keep the cleanup/billing tail charged even after disappearance. A delayed
+    # account update or minimum charge cannot free this reserve prematurely.
+    delta = max(0, pod.get("balance_before", user["clientBalance"]) - user["clientBalance"])
+    booked = max(estimate, delta)
+    state["spent"] += booked
+    state["pods"].append({"id": pod["id"], "gpu": pod["gpu"], "hours": hours,
+                          "hourly_with_disk_usd": pod["cost"], "disk_hourly_upper_usd": pod["disk_rate"],
+                          "usd": booked, "estimated_with_tail": estimate, "account_delta": delta})
     state["pod"] = None
+    event(state, "removed", id=pod["id"], booked=booked, balance=user["clientBalance"])
     save(state)
-    print(f"terminated {pod['id']} after {hours:.2f} h, {cost:.2f} USD; total {state['spent']:.2f} of {BUDGET}")
+    print(f"confirmed removal of {pod['id']}, charged including tail {booked:.4f} USD")
 
 
-def spend(a):
-    state = load()
+def remote_handoff(pod, action):
+    old, new = (pod["renewal"][k] for k in ("old", "new"))
+    # The path contains only locally generated hex; never place account credentials in a command.
+    tag = pod["renewal"]["tag"]
+    if len(tag) != 24 or any(c not in "0123456789abcdef" for c in tag):
+        raise ValueError("invalid handoff identity")
+    path = f"/run/ironmule-renew-{tag}/handoff.py"
+    if action == "commit":
+        data = AGENT.with_name("renew_watch.py").read_bytes()
+        if agent(pod, "POST", "/put?path=" + path, data, timeout=15).get("bytes") != len(data):
+            raise ValueError("watchdog helper staging failed")
+    command = f"python3 -I {path} {action} {int(old)} {int(new)}"
+    prior_tag = pod["renewal"].get("previous_tag")
+    if prior_tag is not None:
+        if len(prior_tag) != 24 or any(c not in "0123456789abcdef" for c in prior_tag):
+            raise ValueError("invalid previous watchdog identity")
+        command += " --previous-tag " + prior_tag
+    reply = agent(pod, "POST", "/run", json.dumps({"cmd": command, "timeout": 12}).encode(), timeout=17)
+    if reply.get("rc") != 0:
+        raise ValueError("pod watchdog handoff failed")
+    return json.loads(reply["out"])
+
+
+def renew(state, minutes, reason, request_id=None):
+    pod = current(state)
+    if not 1 <= minutes <= 90 or not reason.strip():
+        raise ValueError("renewal requires one to ninety minutes and a concrete need")
+    if not pod.get("id") or "reserved" not in pod:
+        raise ValueError("cannot renew an unresolved lease")
+    token = request_id or f"{minutes}:{reason}"
+    if not token.strip() or len(token) > 512:
+        raise ValueError("invalid renewal request identity")
+    prior = pod.get("renewal")
+    history = pod.get("previous_renewals", [])
+    for item in [*history, *([prior] if prior else [])]:
+        if item.get("request_id", f"{item['minutes']}:{item['reason']}") != token:
+            continue
+        if (item["minutes"], item["reason"]) != (minutes, reason):
+            raise ValueError("renewal identity already used for other terms")
+        if item["status"] == "committed":
+            return public(pod)
+    pending = prior and prior["status"] == "prepared"
+    if pending and prior.get("request_id", f"{prior['minutes']}:{prior['reason']}") != token:
+        raise ValueError("finish the unresolved reserved renewal first")
+    old = pod["deadline"]
+    if time.time() > old - 180:
+        raise ValueError("insufficient time for a verified watchdog handoff")
+    user = account()
+    matching = [p for p in user["pods"] if p["id"] == pod["id"] and p["name"] == pod["name"]]
+    if len(matching) != 1 or money(matching[0]["costPerHr"]) == 0:
+        raise ValueError("cannot confirm live ownership and on-demand rate")
+    if pending and prior["old"] != old:
+        raise ValueError("reserved renewal base deadline changed")
+    if prior and not pending and (prior["status"] != "committed" or prior["new"] != old):
+        raise ValueError("previous lease handoff unresolved")
+    # Migrate either state of an older journal lacking max_hourly, including its already reserved extension.
+    duration_minutes = round(((prior["new"] if pending else old) - pod["started"]) / 60)
+    if duration_minutes <= 0:
+        raise ValueError("invalid current lease duration")
+    rate = money(pod.get("max_hourly", pod["reserved"] * 3600 / (duration_minutes * 60 + CLEANUP_SECONDS)))
+    if rate < money(matching[0]["costPerHr"]) + money(pod["disk_rate"]):
+        raise ValueError("current price exceeds the reservation rate")
+    extra = 0.0 if pending else rate * minutes / 60
+    reserve(state, extra)
+    if pod["reserved"] + extra > money(user["clientBalance"]):
+        raise ValueError("insufficient provider credit for the renewed lease")
+    if not pending:
+        if prior:
+            pod["previous_renewals"] = [*history, prior]
+        pod["max_hourly"] = rate
+        pod["renewal"] = {"old": old, "new": old + 60 * minutes, "minutes": minutes, "reason": reason,
+                          "request_id": token, "tag": secrets.token_hex(12), "status": "prepared"}
+        if prior:
+            pod["renewal"]["previous_tag"] = prior["tag"]
+        pod["reserved"] += extra
+        event(state, "renewal_reserved", old=old, new=old + 60 * minutes, additional_usd=extra)
+        save(state)
+    # A fresh control watchdog must exist before changing either cutoff. Until
+    # the remote acknowledgement is durable the ledger still carries the old cutoff.
+    watch_pid = launch_watch(pod["name"])
+    new = pod["renewal"]["new"]
+    try:
+        if remote_handoff(pod, "commit") != {"effective": new, "live": True}:
+            raise ValueError("missing pod watchdog acknowledgement")
+        pod["deadline"] = new
+        pod["renewal"]["status"] = "committed"
+        event(state, "renewed", name=pod["name"], old=old, new=new, reserved=pod["reserved"],
+              local_ack_pid=watch_pid, remote_ack_deadline=new)
+        save(state)
+    except Exception:
+        # If either acknowledgement was lost, the old control cutoff survives.
+        # Keep the extra reservation until cleanup or an idempotent retry.
+        remote_handoff(pod, "revert")
+        raise
+    return public(pod)
+
+
+def launch_watch(name):
+    reader, writer = os.pipe()
+    try:
+        with os.fdopen(writer, "wb") as ack:
+            child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "watch", name, "--ready-fd", str(ack.fileno())],
+                         env={**os.environ, "RP_STATE": str(STATE.resolve())}, pass_fds=(ack.fileno(),),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        pod = load()["pod"]
+        expected = [pod["deadline"], pod.get("renewal", {}).get("new", pod["deadline"])]
+        if (not select.select([reader], [], [], 5)[0] or os.read(reader, 128) != json.dumps(expected).encode()
+                or child.poll() is not None):
+            raise OSError("independent control watchdog did not acknowledge the current cutoff")
+        return child.pid
+    finally:
+        os.close(reader)
+
+
+def watch(name, ready_fd=None):
+    if ready_fd is not None:
+        with os.fdopen(ready_fd, "wb") as ack:
+            # The parent holds the journal lock through admission. Atomic snapshots let the new reaper acknowledge safely.
+            current_pod = load().get("pod")
+            if not current_pod or current_pod["name"] != name or current_pod["deadline"] <= time.time():
+                return
+            ack.write(json.dumps([current_pod["deadline"], current_pod.get("renewal", {}).get("new", current_pod["deadline"])]).encode())
+    while True:
+        with locked(STATE):
+            state = load()
+            pod = state.get("pod")
+            if not pod or pod.get("name") != name:
+                return
+            if time.time() >= pod["deadline"]:
+                try:
+                    cleanup(state)
+                    return
+                except (ValueError, OSError, RuntimeError):
+                    # Provider uncertainty must retain the reservation across retries.
+                    pass
+        time.sleep(10)
+
+
+def spend(state):
     pod = state.get("pod")
-    live = (time.time() - pod["started"]) / 3600 * pod["cost"] if pod else 0
-    print(json.dumps({"booked": round(state["spent"], 3), "live": round(live, 3), "budget": BUDGET,
-                      "pod": pod and {k: v for k, v in pod.items() if k != "token"}, "history": state["pods"]}))
+    live = max(0, time.time() - pod["started"]) / 3600 * pod["cost"] if pod else 0
+    print(json.dumps({"booked_with_tail": state["spent"], "live_estimate": live,
+                      "reserved": held(state), "budget": limit(state),
+                      "pod": pod and public(pod), "history": state["pods"]}))
+
+
+def posted_billing(pod_id):
+    query = urllib.parse.urlencode({"podId": pod_id, "bucketSize": "day", "lastN": 30})
+    headers = {}
+    if os.environ.get("RUNPOD_API_KEY"):
+        headers["Authorization"] = "Bearer " + os.environ["RUNPOD_API_KEY"]
+    req = urllib.request.Request("https://api.runpod.io/v2/billing/pods?" + query, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as response:
+        report = json.load(response)
+    records = report["records"]
+    if not isinstance(records, list) or any(r["podId"] != pod_id for r in records):
+        raise ValueError("pod billing response has wrong scope")
+    return {"posted_records": len(records),
+            "posted_usd": sum(money(r["totalAmount"]) for r in records) if records else None}
+
+
+def public_cost_events(state):
+    # Export quoted/reserved costs and exclusive cutoffs. Names, account balances,
+    # process IDs, request IDs and free-form notes remain in the private journal.
+    fields = {
+        "reserve": ("usd", "hourly_quote", "deadline"), "created": ("hourly",),
+        "watch_launch_failed": (), "renewal_reserved": ("old", "new", "additional_usd"),
+        "renewed": ("old", "new", "reserved"), "removed": ("booked",), "extend": (),
+        "reserve-external": ("usd",), "settle-external": ("usd",),
+    }
+    rows = []
+    for event in state.get("events", []):
+        kind = event["kind"]
+        if kind not in fields:
+            continue
+        row = {"kind": kind, **{k: money(event[k]) for k in ("time", *fields[kind]) if k in event}}
+        if kind == "renewed" and "local_ack_pid" in event:
+            row["control_watchdog_confirmed"] = bool(event["local_ack_pid"])
+            row["pod_watchdog_confirmed"] = event.get("remote_ack_deadline") == event["new"]
+        rows.append(row)
+    return rows
+
+
+def cost_report(state, output):
+    """Export only allowlisted public fields, after provider-confirmed cleanup."""
+    if state.get("pod") or state.get("external"):
+        raise ValueError("campaign has an outstanding pod or external reservation")
+    user = account()
+    online = {p["id"] for p in user["pods"]}
+    if any(p["id"] in online for p in state["pods"]):
+        raise ValueError("provider still lists an owned pod")
+    reserved = [e for e in state.get("events", []) if e["kind"] == "reserve"]
+    start_balance = money(reserved[0]["balance"]) if reserved else None
+    leases = []
+    for pod in state["pods"]:
+        try:
+            posted = posted_billing(pod["id"])
+        except (KeyError, OSError, ValueError):
+            posted = {"posted_records": None, "posted_usd": None}
+        leases.append({"gpu": pod["gpu"], "verified_absent": True, "hours": pod["hours"],
+                       "account_delta_at_cleanup_usd": pod.get("account_delta"),
+                       "booked_with_tail_usd": pod["usd"],
+                       **{k: pod[k] for k in ("hourly_with_disk_usd", "disk_hourly_upper_usd") if k in pod}, **posted})
+    extras = [e for e in state.get("events", []) if e["kind"] == "settle-external"]
+    summary = {"campaign_budget_usd": limit(state), "booked_with_tail_usd": state["spent"],
+               "journal": public_cost_events(state),
+               "confirmed_owned_pods_remaining": 0, "observed_unix_s": time.time(),
+               "provider_account_delta_since_first_reservation_usd": (start_balance - user["clientBalance"]
+                                                                     if start_balance is not None else None),
+               "external_settlements_usd": sum(money(e["usd"]) for e in extras),
+               "approved_extensions_minutes": [(e["new"] - e["old"]) / 60 for e in state.get("events", [])
+                                               if e["kind"] == "renewed"],
+               "retained_cleanup_tail_seconds_per_pod": CLEANUP_SECONDS, "leases": leases,
+               "basis": "Posted pod charges can lag. The account delta can include unrelated use. "
+                        "Booked cost conservatively includes a cleanup tail. Fees are USD."}
+    if output.resolve() == STATE.resolve():
+        raise ValueError("export destination must differ from the private ledger")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save_atomic(output, summary)
+    return summary
 
 
 def main():
@@ -135,7 +437,9 @@ def main():
     d = s.add_parser("deploy")
     d.add_argument("--gpu", required=True)
     d.add_argument("--count", type=int, default=1)
-    d.add_argument("--cloud", default="COMMUNITY")
+    d.add_argument("--cloud", choices=("SECURE", "COMMUNITY"), default="COMMUNITY")
+    d.add_argument("--minutes", type=int, default=45)
+    d.add_argument("--max-hourly", type=float, default=3.0)
     d.add_argument("--image", default=IMAGE)
     d.add_argument("--disk", type=int, default=200)
     d.add_argument("--vcpu", type=int, default=8)
@@ -159,9 +463,72 @@ def main():
     k.add_argument("name")
     s.add_parser("stop")
     s.add_parser("spend")
+    s.add_parser("account")
+    s.add_parser("report").add_argument("--output", required=True, type=Path)
+    s.add_parser("resume")
+    watcher = s.add_parser("watch")
+    watcher.add_argument("name")
+    watcher.add_argument("--ready-fd", type=int)
+    s.add_parser("extend").add_argument("reason")
+    renewal = s.add_parser("renew")
+    renewal.add_argument("--minutes", type=int, required=True)
+    renewal.add_argument("--reason", required=True)
+    renewal.add_argument("--request-id", help="idempotency key; defaults to the requested minutes and reason")
+    for op in ("reserve-external", "settle-external"):
+        ext = s.add_parser(op)
+        ext.add_argument("name")
+        ext.add_argument("usd", type=money)
     a = p.parse_args()
-    if a.op in ("deploy", "wait", "stop", "spend"):
-        return {"deploy": deploy, "wait": wait, "stop": stop, "spend": spend}[a.op](a)
+    if a.op == "wait":
+        return wait(a)
+    if a.op == "watch":
+        return watch(a.name, a.ready_fd)
+    if a.op == "account":
+        user = account()
+        print(json.dumps({"balance": user["clientBalance"], "hourly": user["currentSpendPerHr"],
+                          "pods": len(user["pods"])}))
+        return
+    with locked(STATE):
+        state = load()
+        if a.op == "report":
+            print(json.dumps(cost_report(state, a.output)))
+            return
+        if a.op == "stop":
+            return cleanup(state)
+        if a.op == "spend":
+            return spend(state)
+        if a.op == "resume":
+            pod = state.get("pod")
+            if pod:
+                if time.time() >= pod["deadline"]:
+                    return cleanup(state)
+                launch_watch(pod["name"])
+            return spend(state)
+        if a.op == "deploy":
+            return book(a)
+        if a.op == "renew":
+            print(json.dumps(renew(state, a.minutes, a.reason, a.request_id)))
+            return
+        if a.op == "extend":
+            if not a.reason.strip():
+                raise ValueError("record concrete additional need")
+            state["budget"] = MAX_BUDGET
+            event(state, "extend", reason=a.reason)
+            return save(state)
+        if a.op in ("reserve-external", "settle-external"):
+            external = state.setdefault("external", {})
+            if a.op == "reserve-external":
+                if a.name in external:
+                    raise ValueError("reservation exists")
+                reserve(state, a.usd)
+                external[a.name] = a.usd
+            else:
+                if a.name not in external:
+                    raise ValueError("no such reservation")
+                del external[a.name]
+                state["spent"] += a.usd
+            event(state, a.op, name=a.name, usd=a.usd)
+            return save(state)
     pod = current(load())
     if a.op == "put":
         print(agent(pod, "POST", "/put?path=" + a.dst, Path(a.src).read_bytes(), timeout=600))

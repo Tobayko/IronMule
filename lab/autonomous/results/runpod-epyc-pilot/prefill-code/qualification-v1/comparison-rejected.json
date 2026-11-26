@@ -1,0 +1,25 @@
+{
+  "correct": {
+    "candidate": 16,
+    "reference": 16
+  },
+  "observed_profiles": {
+    "candidate": {
+      "1:2:4:4": 2
+    },
+    "reference": {
+      "1:1:4:4": 3
+    }
+  },
+  "order": "eb6b1472357c7d89c683f7b9093b91bfc4b79d396992dcc773bca30b23f31e81",
+  "passed": false,
+  "quality_scope": "both completed 16 correct and 48 matching output tokens, not a matched speed comparison",
+  "reason": "independent startup qualification produced different complete decode profiles",
+  "schema": "ironmule.confounded-cpu-pair.v1",
+  "seed": 8351,
+  "training_label": false,
+  "wall_s": {
+    "candidate": 2.4019107770000003,
+    "reference": 6.239368181
+  }
+}
