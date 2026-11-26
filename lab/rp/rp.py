@@ -22,11 +22,20 @@ import secrets
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from accounting import (CLEANUP_SECONDS, DISK_USD_PER_GB_HOUR, MAX_BUDGET, event, held,
-                        limit, locked, money, reserve, save as save_atomic)
+if __package__:
+    from . import accounting
+else:
+    import accounting
+
+CLEANUP_SECONDS = accounting.CLEANUP_SECONDS
+DISK_USD_PER_GB_HOUR = accounting.DISK_USD_PER_GB_HOUR
+MAX_BUDGET = accounting.MAX_BUDGET
+event, held, limit = accounting.event, accounting.held, accounting.limit
+locked, money, reserve, save_atomic = accounting.locked, accounting.money, accounting.reserve, accounting.save
 
 STATE = Path(os.environ.get("RP_STATE", Path.home() / ".cache/ironmule/rp.json"))
 AGENT = Path(__file__).with_name("agent.py")
@@ -111,7 +120,7 @@ def book(a):
     token = secrets.token_hex(24)
     started = time.time()
     pod = {"name": name, "token": token, "cost": a.max_hourly, "disk_rate": disk_rate,
-           "reserved": amount, "gpu": a.gpu, "started": started,
+           "reserved": amount, "max_hourly": a.max_hourly, "gpu": a.gpu, "started": started,
            "deadline": int(started + a.minutes * 60), "id": None,
            "balance_before": user["clientBalance"]}
     state["pod"] = pod
@@ -198,6 +207,79 @@ def cleanup(state):
     print(f"confirmed removal of {pod['id']}, charged including tail {booked:.4f} USD")
 
 
+def remote_handoff(pod, action):
+    old, new = (pod["renewal"][k] for k in ("old", "new"))
+    # The path contains only locally generated hex; never place account credentials in a command.
+    tag = pod["renewal"]["tag"]
+    if len(tag) != 24 or any(c not in "0123456789abcdef" for c in tag):
+        raise ValueError("invalid handoff identity")
+    path = f"/run/ironmule-renew-{tag}/handoff.py"
+    if action == "commit":
+        data = AGENT.with_name("renew_watch.py").read_bytes()
+        if agent(pod, "POST", "/put?path=" + path, data, timeout=15).get("bytes") != len(data):
+            raise ValueError("watchdog helper staging failed")
+    command = f"python3 -I {path} {action} {int(old)} {int(new)}"
+    reply = agent(pod, "POST", "/run", json.dumps({"cmd": command, "timeout": 12}).encode(), timeout=17)
+    if reply.get("rc") != 0:
+        raise ValueError("pod watchdog handoff failed")
+    return json.loads(reply["out"])
+
+
+def renew(state, minutes, reason):
+    pod = current(state)
+    if not 1 <= minutes <= 90 or not reason.strip():
+        raise ValueError("renewal requires one to ninety minutes and a concrete need")
+    if not pod.get("id") or "reserved" not in pod:
+        raise ValueError("cannot renew an unresolved lease")
+    prior = pod.get("renewal")
+    if prior and (minutes != prior["minutes"] or reason != prior["reason"]):
+        raise ValueError("one renewal per lease; retry only the original request")
+    if prior and prior["status"] == "committed":
+        return public(pod)
+    old = pod["deadline"]
+    if time.time() > old - 180:
+        raise ValueError("insufficient time for a verified watchdog handoff")
+    user = account()
+    matching = [p for p in user["pods"] if p["id"] == pod["id"] and p["name"] == pod["name"]]
+    if len(matching) != 1:
+        raise ValueError("cannot confirm ownership of the live pod")
+    if not prior:
+        # Older ledgers stored the rounded-down UTC deadline and the full reservation.
+        # The original booking duration was an integer number of minutes.
+        initial_minutes = round((old - pod["started"]) / 60)
+        if initial_minutes <= 0:
+            raise ValueError("invalid initial lease duration")
+        rate = money(pod.get("max_hourly", pod["reserved"] * 3600 / (initial_minutes * 60 + CLEANUP_SECONDS)))
+        if rate < money(matching[0]["costPerHr"]) + money(pod["disk_rate"]):
+            raise ValueError("current price exceeds the reservation rate")
+        extra = rate * minutes / 60
+        reserve(state, extra)
+        if pod["reserved"] + extra > money(user["clientBalance"]):
+            raise ValueError("insufficient provider credit for the renewed lease")
+        pod["renewal"] = {"old": old, "new": old + 60 * minutes, "minutes": minutes, "reason": reason,
+                          "tag": secrets.token_hex(12), "status": "prepared"}
+        pod["reserved"] += extra
+        event(state, "renewal_reserved", old=old, new=old + 60 * minutes, additional_usd=extra)
+        save(state)
+    # A fresh control watchdog must exist before changing either cutoff. Until
+    # the remote acknowledgement is durable the ledger still carries the old cutoff.
+    launch_watch(pod["name"])
+    new = pod["renewal"]["new"]
+    try:
+        if remote_handoff(pod, "commit") != {"effective": new, "live": True}:
+            raise ValueError("missing pod watchdog acknowledgement")
+        pod["deadline"] = new
+        pod["renewal"]["status"] = "committed"
+        event(state, "renewed", name=pod["name"], old=old, new=new, reserved=pod["reserved"])
+        save(state)
+    except Exception:
+        # If either acknowledgement was lost, the old control cutoff survives.
+        # Keep the extra reservation until cleanup or an idempotent retry.
+        remote_handoff(pod, "revert")
+        raise
+    return public(pod)
+
+
 def launch_watch(name):
     subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "watch", name],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -227,6 +309,58 @@ def spend(state):
     print(json.dumps({"booked_with_tail": state["spent"], "live_estimate": live,
                       "reserved": held(state), "budget": limit(state),
                       "pod": pod and public(pod), "history": state["pods"]}))
+
+
+def posted_billing(pod_id):
+    query = urllib.parse.urlencode({"podId": pod_id, "bucketSize": "day", "lastN": 30})
+    headers = {}
+    if os.environ.get("RUNPOD_API_KEY"):
+        headers["Authorization"] = "Bearer " + os.environ["RUNPOD_API_KEY"]
+    req = urllib.request.Request("https://api.runpod.io/v2/billing/pods?" + query, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as response:
+        report = json.load(response)
+    records = report["records"]
+    if not isinstance(records, list) or any(r["podId"] != pod_id for r in records):
+        raise ValueError("pod billing response has wrong scope")
+    return {"posted_records": len(records),
+            "posted_usd": sum(money(r["totalAmount"]) for r in records) if records else None}
+
+
+def cost_report(state, output):
+    """Export only allowlisted public fields, after provider-confirmed cleanup."""
+    if state.get("pod") or state.get("external"):
+        raise ValueError("campaign has an outstanding pod or external reservation")
+    user = account()
+    online = {p["id"] for p in user["pods"]}
+    if any(p["id"] in online for p in state["pods"]):
+        raise ValueError("provider still lists an owned pod")
+    reserved = [e for e in state.get("events", []) if e["kind"] == "reserve"]
+    start_balance = money(reserved[0]["balance"]) if reserved else None
+    leases = []
+    for pod in state["pods"]:
+        try:
+            posted = posted_billing(pod["id"])
+        except (KeyError, OSError, ValueError):
+            posted = {"posted_records": None, "posted_usd": None}
+        leases.append({"gpu": pod["gpu"], "verified_absent": True, "hours": pod["hours"],
+                       "account_delta_at_cleanup_usd": pod.get("account_delta"),
+                       "booked_with_tail_usd": pod["usd"], **posted})
+    extras = [e for e in state.get("events", []) if e["kind"] == "settle-external"]
+    summary = {"campaign_budget_usd": limit(state), "booked_with_tail_usd": state["spent"],
+               "confirmed_owned_pods_remaining": 0, "observed_unix_s": time.time(),
+               "provider_account_delta_since_first_reservation_usd": (start_balance - user["clientBalance"]
+                                                                     if start_balance is not None else None),
+               "external_settlements_usd": sum(money(e["usd"]) for e in extras),
+               "approved_extensions_minutes": [(e["new"] - e["old"]) / 60 for e in state.get("events", [])
+                                               if e["kind"] == "renewed"],
+               "retained_cleanup_tail_seconds_per_pod": CLEANUP_SECONDS, "leases": leases,
+               "basis": "Posted pod charges can lag. The account delta can include unrelated use. "
+                        "Booked cost conservatively includes a cleanup tail. Fees are USD."}
+    if output.resolve() == STATE.resolve():
+        raise ValueError("export destination must differ from the private ledger")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save_atomic(output, summary)
+    return summary
 
 
 def main():
@@ -262,9 +396,13 @@ def main():
     s.add_parser("stop")
     s.add_parser("spend")
     s.add_parser("account")
+    s.add_parser("report").add_argument("--output", required=True, type=Path)
     s.add_parser("resume")
     s.add_parser("watch").add_argument("name")
     s.add_parser("extend").add_argument("reason")
+    renewal = s.add_parser("renew")
+    renewal.add_argument("--minutes", type=int, required=True)
+    renewal.add_argument("--reason", required=True)
     for op in ("reserve-external", "settle-external"):
         ext = s.add_parser(op)
         ext.add_argument("name")
@@ -281,6 +419,9 @@ def main():
         return
     with locked(STATE):
         state = load()
+        if a.op == "report":
+            print(json.dumps(cost_report(state, a.output)))
+            return
         if a.op == "stop":
             return cleanup(state)
         if a.op == "spend":
@@ -294,6 +435,9 @@ def main():
             return spend(state)
         if a.op == "deploy":
             return book(a)
+        if a.op == "renew":
+            print(json.dumps(renew(state, a.minutes, a.reason)))
+            return
         if a.op == "extend":
             if not a.reason.strip():
                 raise ValueError("record concrete additional need")
