@@ -215,3 +215,12 @@ path and `IRONMULE_PILOT_LEARN=1`. During plain decode the candidate chooses bet
 and the shipped Pilot's thread count. A foreign checkpoint cannot propose actions. A fresh process rechecks
 the saved suggestions. Removing `IRONMULE_PILOT_THREAD_CANDIDATE` at restart restores the standard local
 thread learner. The GGUF weights and GPU kernels are separate from the controller checkpoint.
+
+Use `collect --slots 4` to measure the four-slot geometry used by the code evaluator. It samples one
+and four simultaneous decode rows. During a follow-up on the same machine, `--extend --missing-only`
+prioritizes incomplete context/width pairs. `exercise --foreign-workers 1` or `2` tests externally
+contended CPU operation. Every worker terminates after the bounded audit. To profile real waves under a
+new head and dispatch its resulting development order, pass the four-slot checkpoint to
+`python -m training.optimization_run --gguf "$MODEL" --state pilot-run/optimization --run-id scratch --thread-candidate pilot-run/threads4.npz`.
+The evaluator records the measured scratch choices, the cost of fresh target qualification and the output
+check alongside the code trial. [Evaluation and activation](../docs/OPTIMIZATION_METHODS.md)

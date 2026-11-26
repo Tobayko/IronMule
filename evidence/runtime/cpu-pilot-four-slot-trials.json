@@ -1,0 +1,1411 @@
+{
+  "schema": 1,
+  "binding": "f8ba07fa8b4cf095197e548464533ef3173ad152061582bf167b706d8a41060b",
+  "profile": {
+    "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+    "cores": 4,
+    "gguf_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "pilot_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "engine_version": 5,
+    "sequences": 4,
+    "context_limit": 512,
+    "shared_pool": false,
+    "capacity": 4,
+    "settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "step_costs": {
+      "step_one": 0.007388767999941592,
+      "row": 0.004599843333342808,
+      "prefill_1k": 2.3689365117185446,
+      "kv_1k": 0.006763692708725936
+    },
+    "gguf": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "numpy": "2.5.5",
+    "commit": "dad596ed70a239c91951e47fd281bec89488c735",
+    "cache": "idle slots removed after each arm",
+    "backend": "ggml-cpu",
+    "cost_usd_incremental": 0
+  },
+  "groups": [
+    {
+      "group": "ctx-bin-5",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 328,
+      "rows": 1,
+      "foreign": 0,
+      "base": 4,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.0,
+        0.0,
+        1.0,
+        0.25,
+        0.0,
+        0.0,
+        0.724507212638855,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 1,
+          "seconds": 0.1495005660000288,
+          "tokens_digest": "1c5f8e5119f450103fd52d4bf0e997c0136856faaa3e4014619b8dcbb520c253",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.08956961499995941,
+          "tokens_digest": "1c5f8e5119f450103fd52d4bf0e997c0136856faaa3e4014619b8dcbb520c253",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-6",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 392,
+      "rows": 4,
+      "foreign": 1,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.17067041993141174,
+        -0.52674400806427,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.7467262148857117,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 1,
+          "seconds": 0.3867026770000166,
+          "tokens_digest": "981b6115bcf4b8b608c96bde6fc17f9f83258fd3336e23c2f49e5fa250c77029",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-5",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 328,
+      "rows": 4,
+      "foreign": 0,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.035894062370061874,
+        -0.6490089297294617,
+        0.75,
+        1.0,
+        0.0,
+        0.0,
+        0.724507212638855,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 2,
+          "seconds": 0.20362001499995586,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.21485314099993502,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.3709555299999465,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.19813047599996025,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.1567602559999841,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.34380783799997516,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.19332624399999077,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.23695839499998783,
+          "tokens_digest": "92fe9ee420bf40b4440f1020ac5e181af16fcadd0082fac1f4733ba5a42bf55f",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-7",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 456,
+      "rows": 1,
+      "foreign": 0,
+      "base": 4,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.011306308209896088,
+        -0.12226488441228867,
+        0.75,
+        0.25,
+        0.0,
+        0.0,
+        0.7655854225158691,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 1,
+          "seconds": 0.1266149289999703,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.10052116399992883,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.1308740960000705,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-4",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 264,
+      "rows": 1,
+      "foreign": 1,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.2528718411922455,
+        0.0,
+        1.0,
+        0.25,
+        0.0,
+        0.0,
+        0.697466254234314,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 2,
+          "seconds": 0.07108892899998409,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.09799873300005402,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.0720213459999286,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.07252958100002616,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.07736035599998559,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": 0.07164019900005769,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.10458326599996326,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.07627620200003093,
+          "tokens_digest": "e1fe0702d58dd782aa4fe8065af33e95b28a417e1b9008aca3c813b2850d2221",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-6",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 392,
+      "rows": 1,
+      "foreign": 1,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.22680258750915527,
+        -0.12226488441228867,
+        0.75,
+        0.25,
+        0.0,
+        0.0,
+        0.7467262148857117,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 2,
+          "seconds": 0.06995855399998163,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.10449617799997668,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.0835312020000174,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.08215156500000376,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.08117340700005116,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-2",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 136,
+      "rows": 1,
+      "foreign": 0,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.09548535197973251,
+        -0.12226488441228867,
+        0.75,
+        0.25,
+        0.0,
+        0.0,
+        0.6149976253509521,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 2,
+          "seconds": 0.07334353699991425,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.09103596299996752,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.06749812399993971,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.06680780399995001,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.0702558540000382,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.07166404300005524,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.09398066500000368,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.06990462400005981,
+          "tokens_digest": "db44a966fe22c13453a580f8192ee475c5beebdcedc2691c72c1c41f98dcae9d",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-1",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 72,
+      "rows": 1,
+      "foreign": 0,
+      "base": 4,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.005086464341729879,
+        -0.12226488441228867,
+        0.75,
+        0.25,
+        0.0,
+        0.0,
+        0.5363074541091919,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 4,
+          "seconds": 0.06508183599999029,
+          "tokens_digest": "0b33309421ba2aa780104cb063761616ba9dfda17742161873d3f98db43107f9",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-7",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 456,
+      "rows": 4,
+      "foreign": 1,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.14612078666687012,
+        -0.52674400806427,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.7655854225158691,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-3",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 200,
+      "rows": 4,
+      "foreign": 0,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.056976743042469025,
+        -0.6490089297294617,
+        0.75,
+        1.0,
+        0.0,
+        0.0,
+        0.6629130840301514,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 1,
+          "seconds": 0.3589506050000182,
+          "tokens_digest": "a9123218c39f9b4457378080ad10d2de52b4a034130178ee394a12f25cc43d40",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.18045654000002287,
+          "tokens_digest": "a9123218c39f9b4457378080ad10d2de52b4a034130178ee394a12f25cc43d40",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.15781308300006458,
+          "tokens_digest": "a9123218c39f9b4457378080ad10d2de52b4a034130178ee394a12f25cc43d40",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.1885446610000372,
+          "tokens_digest": "a9123218c39f9b4457378080ad10d2de52b4a034130178ee394a12f25cc43d40",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.2884632390000661,
+          "tokens_digest": "a9123218c39f9b4457378080ad10d2de52b4a034130178ee394a12f25cc43d40",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.17928995799991299,
+          "tokens_digest": "a9123218c39f9b4457378080ad10d2de52b4a034130178ee394a12f25cc43d40",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-3",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 200,
+      "rows": 1,
+      "foreign": 1,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.18072208762168884,
+        -0.12226488441228867,
+        0.75,
+        0.25,
+        0.0,
+        0.0,
+        0.6629130840301514,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 4,
+          "seconds": 0.0994105339999578,
+          "tokens_digest": "e0d5af6d8e34c99cb13c7c232d42ee87ee32033c5d5ab484e125515dd4de01b1",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.12953877900008592,
+          "tokens_digest": "e0d5af6d8e34c99cb13c7c232d42ee87ee32033c5d5ab484e125515dd4de01b1",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.11560360500004663,
+          "tokens_digest": "e0d5af6d8e34c99cb13c7c232d42ee87ee32033c5d5ab484e125515dd4de01b1",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": null,
+          "tokens_digest": null,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-4",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 264,
+      "rows": 4,
+      "foreign": 0,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.11747901886701584,
+        -0.6490089297294617,
+        0.75,
+        1.0,
+        0.0,
+        0.0,
+        0.697466254234314,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 3,
+          "seconds": 0.156538304000037,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.27953494299993054,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.179514063000056,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.20548630400003276,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.21047517099998458,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.1809592839999823,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.2764136859999553,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": 0.1884860090000302,
+          "tokens_digest": "a55158e568867398c59f4476a7c38f33a0383444c296ecb8538fe9ed6c97a59a",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-2",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 136,
+      "rows": 4,
+      "foreign": 0,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.07120943814516068,
+        -0.6490089297294617,
+        0.75,
+        1.0,
+        0.0,
+        0.0,
+        0.6149976253509521,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 2,
+          "seconds": 0.19919210799992015,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 0
+        },
+        {
+          "threads": 4,
+          "seconds": 0.14629578699998547,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.2556511480000836,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.17177273100003276,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.1655401510000729,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.27597237000009045,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.1846887340000194,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.19166355999993812,
+          "tokens_digest": "a702f6adaefc452df45ab4167dc0889090d916c6814bebc9628d96a802eb638d",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-1",
+      "pass": 0,
+      "step_costs": {
+        "step_one": 0.007388767999941592,
+        "row": 0.004599843333342808,
+        "prefill_1k": 2.3689365117185446,
+        "kv_1k": 0.006763692708725936
+      },
+      "context": 72,
+      "rows": 4,
+      "foreign": 0,
+      "base": 3,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.6314279437065125,
+        1.2941709756851196,
+        1.25299072265625,
+        0.9616118669509888,
+        0.10890373587608337,
+        -0.6490089297294617,
+        0.75,
+        1.0,
+        0.0,
+        0.0,
+        0.5363074541091919,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 4,
+          "seconds": 0.13246072899994488,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.27416597800004183,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.166886513999998,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.16211050599997634,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.18843676100004814,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.1798345590000281,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.3122661419999986,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.13934496900003523,
+          "tokens_digest": "d131fb85493f16a271770b0a1dc794e187626f02c31522947a23657c8a1bc7a1",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-7",
+      "pass": 1,
+      "step_costs": {
+        "step_one": 0.009464463999961481,
+        "row": 0.003644717666664595,
+        "prefill_1k": 2.5760055546877325,
+        "kv_1k": 0.009666468750187581
+      },
+      "context": 456,
+      "rows": 1,
+      "foreign": 0,
+      "base": 4,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.5239039659500122,
+        1.085567831993103,
+        1.2174253463745117,
+        1.0091718435287476,
+        0.0,
+        0.0,
+        1.0,
+        0.25,
+        0.0,
+        0.0,
+        0.7655854225158691,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 4,
+          "seconds": 0.07421496099993874,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.10134813599995596,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.07452039400004651,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.07786881700008053,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.07011972800000876,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.07321155500005716,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 1
+        },
+        {
+          "threads": 1,
+          "seconds": 0.12200490700001865,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.07023987200000192,
+          "tokens_digest": "a9c326c3e2eb1f7aea2aa3c67c44e1abc72b890527727a5a12484fb6b2c6bb2f",
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "group": "ctx-bin-6",
+      "pass": 1,
+      "step_costs": {
+        "step_one": 0.009464463999961481,
+        "row": 0.003644717666664595,
+        "prefill_1k": 2.5760055546877325,
+        "kv_1k": 0.009666468750187581
+      },
+      "context": 392,
+      "rows": 1,
+      "foreign": 0,
+      "base": 4,
+      "features": [
+        0.3333333432674408,
+        0.0,
+        0.0,
+        -0.5239039659500122,
+        1.085567831993103,
+        1.2174253463745117,
+        1.0091718435287476,
+        0.017443779855966568,
+        0.0,
+        1.0,
+        0.25,
+        0.0,
+        0.0,
+        0.7467262148857117,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.5,
+        0.3333333432674408
+      ],
+      "observations": [
+        {
+          "threads": 4,
+          "seconds": 0.06961476000003586,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 3,
+          "seconds": 0.15335388500000136,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 2,
+          "seconds": 0.09672703500007174,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.1155635610000445,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 0
+        },
+        {
+          "threads": 1,
+          "seconds": 0.11297832000002472,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        },
+        {
+          "threads": 2,
+          "seconds": 0.09964842500005489,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        },
+        {
+          "threads": 3,
+          "seconds": 0.0771278679999341,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        },
+        {
+          "threads": 4,
+          "seconds": 0.08306161200005135,
+          "tokens_digest": "94865311775bcf06df216a790ba80a277b0b529ee04519ca6d1cd23a515a4a04",
+          "repetition": 1
+        }
+      ]
+    }
+  ]
+}

@@ -4449,3 +4449,34 @@ The paired workloads consumed 33.84 s of serving and 79.14 s including worker in
 This trial incurred no additional CPU rental or metered API charges. It did not change any serving default.
 
 [Order, waves, patch, outputs and decision](../lab/autonomous/results/cpu-tokenizer-01/).
+
+### 2026-11-26: CPU Pilot thread proposals from paired decode
+
+On a Linux Intel Xeon Platinum 8573C with a four-core quota, the two-slot SmolLM2-135M-Instruct Q4_K_M
+GGML engine attempted 224 eight-token decode measurements. The load and output checks left 116 timed
+arms and ten complete counterbalanced series. A new 20,232-parameter Pilot thread head trained on one CPU
+process from seed 20261126. Adding the measured 256–383-token context bins changed the selected threads
+from two to three for one training input and three to four for another. On the two matched held-out series,
+the new and shipped Pilots each chose three and four threads, respectively. Their summed mean times were
+0.2664 s, against 0.2785 s with one thread and 0.1589 s with all four. Results apply to fixed plain-decode work.
+[Paired measurements](../evidence/runtime/cpu-pilot-thread-trials.json) ·
+[Grouped training and replay](../evidence/runtime/cpu-pilot-thread-replay.json)
+
+Three bounded native-serving audits tested quiet operation and one or two independent CPU load workers.
+The new head proposed three threads instead of two under the heaviest load. The four-triplet qualification
+measured a median candidate/reference ratio of 0.78 and a maximum reference-repeat spread of 0.94.
+IronMule retained the shipped Pilot in all three runs. The four timed 48-token generations in each
+audit matched the reference output and stop reason. No new serving speedup was qualified in these runs.
+[Quiet audit](../evidence/runtime/cpu-pilot-thread-serving.json) ·
+[One load worker](../evidence/runtime/cpu-pilot-thread-contention.json) ·
+[Two load workers](../evidence/runtime/cpu-pilot-thread-two-workers.json) ·
+[Search and qualification observations](../evidence/runtime/cpu-pilot-thread-qualification.json)
+
+The four-slot evaluator needed its own checkpoint. Sixteen series tested the same GGUF with one or four
+decode rows. Eight series met the complete-pair and output checks. On fresh held-out 392- and
+456-token single-row contexts, the fit updated with new experience selected two threads in both cases
+(the earlier fit selected four). The candidate took a summed 0.1721 s and the shipped Pilot took
+0.1486 s. The four-slot candidate therefore carries no blanket performance qualification.
+[Four-slot corpus](../evidence/runtime/cpu-pilot-four-slot-trials.json) ·
+[Four-slot replay](../evidence/runtime/cpu-pilot-four-slot-replay.json) ·
+[Experimental checkpoint](../evidence/runtime/cpu-pilot-four-slot-candidate.npz)

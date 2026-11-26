@@ -53,8 +53,14 @@ def acquire(args):
             raise FileExistsError(f"pass --extend to add comparable trials to {args.trials}")
         pass_index = 1 + max((g.get("pass", 0) for g in record["groups"]), default=-1)
         rng = random.Random(9021 + pass_index)
-        cases = [(band, rows) for band in range(1, 8) for rows in (1, 2)]
+        widths = tuple(dict.fromkeys(args.widths or (1, args.slots)))
+        if max(widths) > args.slots:
+            raise ValueError("decode width exceeds the engine slots")
+        cases = [(band, rows) for band in dict.fromkeys(args.context_bands) for rows in widths]
         rng.shuffle(cases)
+        if args.missing_only:
+            completed = {(g["context"] // 64, g["rows"]) for g, _, _ in examples(record)}
+            cases = [case for case in cases if case not in completed]
         for band, rows in cases:
             context = band * 64 + 8
             features = p.features(rows, 0, 0, context)
@@ -188,18 +194,19 @@ def busy(stop):
         hashlib.sha256(block).digest()
 
 
-def request(engine, prompt):
+def request(engine, prompt, clients=1):
     from ironmule.ggml_engine import Job
 
-    job = Job(prompt, 48)
+    jobs = [Job(prompt, 48) for _ in range(clients)]
     start = time.monotonic_ns()
-    engine.run([job])
-    return {"tokens": len(job.tokens), "reason": job.reason, "seconds": (time.monotonic_ns() - start) / 1e9,
-            "ttft_s": (job.first_ns - start) / 1e9,
-            "digest": hashlib.sha256(json.dumps(job.tokens).encode()).hexdigest()}
+    engine.run(jobs)
+    return {"tokens": sum(len(j.tokens) for j in jobs), "reason": [j.reason for j in jobs],
+            "seconds": (time.monotonic_ns() - start) / 1e9,
+            "ttft_s": max(j.first_ns - start for j in jobs) / 1e9,
+            "digest": hashlib.sha256(json.dumps([j.tokens for j in jobs]).encode()).hexdigest()}
 
 
-def qualify_candidate(engine, gguf: Path, weights: Path, state: Path, *, prompt_tokens=97):
+def qualify_candidate(engine, gguf: Path, weights: Path, state: Path, *, prompt_tokens=97, profile_clients=1):
     """Attach the checkpoint and freshly qualify its proposals on this real CPU worker before measurement."""
     from ironmule.ggml_engine import file_sha256
     from ironmule.pilot_learning import ThreadLearning
@@ -214,21 +221,26 @@ def qualify_candidate(engine, gguf: Path, weights: Path, state: Path, *, prompt_
     pilot.learning = learning
     ids = engine.tokenize("Continue the sequence by counting from one to ten.")
     prompt = (ids * (prompt_tokens // len(ids) + 1))[:prompt_tokens]
+    if not 1 <= profile_clients <= engine.seqs:
+        raise ValueError("qualification width exceeds engine slots")
     traces = []
+    idle_results = []
     search_started = time.monotonic()
     previous_reuse = engine.prefix_reuse
     engine.prefix_reuse = False
     try:
         for _ in range(12):
-            traces.append(request(engine, prompt))
+            traces.append(request(engine, prompt, clients=profile_clients))
             learning.idle(lambda: False)
+            idle_results.append(json.loads(json.dumps(learning.last)))
             if learning.weights:
                 break
     finally:
         engine.prefix_reuse = previous_reuse
     return {"binding": {"learner_binding": learning.binding, "weights_sha256": file_sha256(str(weights)),
                         "qualified_offsets": dict(learning.weights)}, "status": json.loads(json.dumps(learning.status())),
-            "search_and_warmup_s": time.monotonic() - search_started, "traces": traces}
+            "search_and_warmup_s": time.monotonic() - search_started, "traces": traces,
+            "idle_results": idle_results}
 
 
 def exercise(args):
@@ -262,10 +274,10 @@ def exercise(args):
         active_calls = {key: learning.visits[key] - before.get(key, 0) for key in learning.weights}
         save(args.report, {"binding": learning.binding, "foreign_workers": len(workers), "prompt_tokens": len(prompt),
                            "search_and_warmup_s": receipt["search_and_warmup_s"],
-                           "profile_binding": receipt["binding"],
+                           "profile_binding": receipt["binding"], "idle_results": receipt["idle_results"],
                            "search_and_warmup": receipt["traces"], "qualification": receipt["status"], "paired_runs": pairs,
                            "qualified_thread_calls": active_calls, "pilot": pilot.status(),
-                           "all_reference_answers_match": len({(t["digest"], t["tokens"], t["reason"])
+                           "all_reference_answers_match": len({(t["digest"], t["tokens"], tuple(t["reason"]))
                                                                for t in pairs}) == 1})
     finally:
         stop.set()
@@ -281,8 +293,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
     collection = sub.add_parser("collect")
+    collection.add_argument("--context-bands", type=int, nargs="+", choices=range(1, 8), default=range(1, 8))
+    collection.add_argument("--widths", type=int, nargs="+", choices=(1, 2, 4))
     collection.add_argument("--slots", type=int, choices=(2, 4), default=2)
     collection.add_argument("--extend", action="store_true")
+    collection.add_argument("--missing-only", action="store_true", help="skip context/width pairs already complete")
     collection.add_argument("--gguf", type=Path, required=True)
     collection.add_argument("--trials", type=Path, required=True)
     collection.add_argument("--state", type=Path, required=True)

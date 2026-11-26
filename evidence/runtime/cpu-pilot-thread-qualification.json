@@ -1,0 +1,287 @@
+[
+  {
+    "audit": "cpu-pilot-thread-serving.json",
+    "sha256": "07d3eb7f76de51e39f8020cda15bc343d147f7ad35e68826b29dc4a7ea1c8a39",
+    "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+    "observations": [
+      {
+        "regime": "1:4:1:0",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 1.1632505855067754,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": 0.0,
+        "reward": -0.1512183150795029
+      },
+      {
+        "regime": "2:4:1:0",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 1.0230008458080297,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.02990806570401006,
+        "reward": -0.02274031376096557
+      },
+      {
+        "regime": "2:4:1:0",
+        "threads": 2,
+        "stage": "search",
+        "ratio": 1.5877380245102983,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.03825624097443323,
+        "reward": -0.46231037724472673
+      },
+      {
+        "regime": "1:4:1:0",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 1.1910632937991399,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.11461200332860504,
+        "reward": -0.17484643236928007
+      },
+      {
+        "regime": "1:4:1:0",
+        "threads": 2,
+        "stage": "search",
+        "ratio": 1.3993322354267261,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.18320306314203255,
+        "reward": -0.3359951481374031
+      }
+    ]
+  },
+  {
+    "audit": "cpu-pilot-thread-contention.json",
+    "sha256": "0e32b7f81e2f35cfd3d1a6acd05ad683540c9a464c631682e92372aa2072e668",
+    "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+    "observations": [
+      {
+        "regime": "1:3:1:1",
+        "threads": 4,
+        "stage": "search",
+        "ratio": 1.1134690515286259,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": 0.0,
+        "reward": -0.10748041346160679
+      },
+      {
+        "regime": "1:3:1:1",
+        "threads": 2,
+        "stage": "search",
+        "ratio": 1.0197472384843869,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": 0.005229669257042946,
+        "reward": -0.019554791179882555
+      },
+      {
+        "regime": "1:3:1:1",
+        "threads": 4,
+        "stage": "search",
+        "ratio": 1.1391216473840486,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.03654695061531256,
+        "reward": -0.13025748067964052
+      },
+      {
+        "regime": "2:3:1:1",
+        "threads": 4,
+        "stage": "search",
+        "ratio": 1.3099724454923447,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.038202787439149864,
+        "reward": -0.2700061030165336
+      },
+      {
+        "regime": "2:3:1:1",
+        "threads": 1,
+        "stage": "search",
+        "ratio": 1.3169606864054115,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": 0.03921447054458727,
+        "reward": -0.27532657144651024
+      },
+      {
+        "regime": "1:3:1:1",
+        "threads": 4,
+        "stage": "search",
+        "ratio": 1.0577109644032792,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.1054899106419798,
+        "reward": -0.05610710556766817
+      },
+      {
+        "regime": "1:3:1:1",
+        "threads": 1,
+        "stage": "search",
+        "ratio": 1.4284972702317553,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.06550189086857779,
+        "reward": -0.3566230317535469
+      }
+    ]
+  },
+  {
+    "audit": "cpu-pilot-thread-two-workers.json",
+    "sha256": "2fd8625fb7af1d20a8370723b108a1900c6b533684a79eea5416b48dd7d19692",
+    "binding": "35bad0827b4c8f40a523476f03077e4fa22fe694d5bcac43c3355008f4d9797f",
+    "observations": [
+      {
+        "regime": "1:2:1:2",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 0.9943346096810017,
+        "matched": 1,
+        "accepted": 1,
+        "aa_spread": null,
+        "prediction": 0.0,
+        "reward": 0.005681499514798364
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 1,
+        "stage": "search",
+        "ratio": 1.7247907219363217,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.0003462110258530126,
+        "reward": -0.5451057225067567
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 3,
+        "stage": "qualification",
+        "ratio": 0.7829517315785972,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": 0.9410269797273664,
+        "prediction": 0.024732799316432158,
+        "reward": 0.0
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 1.1792746638564282,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": 0.0160763195556809,
+        "reward": -0.16489955783011287
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 4,
+        "stage": "search",
+        "ratio": 612.3691569339956,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.03824856867680385,
+        "reward": -1.0
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 0.8398865213642814,
+        "matched": 1,
+        "accepted": 1,
+        "aa_spread": null,
+        "prediction": -0.2641967596740059,
+        "reward": 0.1744884898846926
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 1,
+        "stage": "search",
+        "ratio": 1.004379796105954,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.156478600699354,
+        "reward": -0.004370232712629679
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 1.0475979295997704,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.11700760441887825,
+        "reward": -0.04649985732240535
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 1.1136571595796885,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.09232989293511275,
+        "reward": -0.10764933792630188
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 1,
+        "stage": "search",
+        "ratio": 1.1301297148823541,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.1066036570872588,
+        "reward": -0.12233241806744648
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 3,
+        "stage": "search",
+        "ratio": 2.282609927233141,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.09703500660135364,
+        "reward": -0.8253194932180398
+      },
+      {
+        "regime": "1:2:1:2",
+        "threads": 1,
+        "stage": "search",
+        "ratio": 1.1129312214613694,
+        "matched": 1,
+        "accepted": 0,
+        "aa_spread": null,
+        "prediction": -0.06772957342465105,
+        "reward": -0.10699727475178619
+      }
+    ]
+  }
+]
