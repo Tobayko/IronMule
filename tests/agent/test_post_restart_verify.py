@@ -22,11 +22,11 @@ def test_cpu_selection_replays_real_target_scores_and_refuses_changed_model_choi
 
 def test_disjoint_times_bind_location_and_excluded_native_methods(tmp_path):
     source = tmp_path / "ggml_engine.py"
-    source.write_text("class GgmlEngine:\n    def _decode(self):\n        self.L.llama_decode()\n")
+    source.write_text("class GgmlEngine:\n    def __init__(self):\n        self.L.llama_decode()\n")
     site = verify.post_restart_profile.sites(source)
-    line, eligible, reason = site["GgmlEngine._decode"]
+    line, eligible, reason = site["GgmlEngine.__init__"]
     assert eligible is False
-    row = {"function": "GgmlEngine._decode", "path": verify.SOURCE, "line": line,
+    row = {"function": "GgmlEngine.__init__", "path": verify.SOURCE, "line": line,
            "eligible": eligible, "reason": reason, "self_s": 0.1, "calls": 1}
     phases = [{"phase": "startup", "wall_s": .2, "unassigned_s": .1, "sites": [row]}]
     data = {"initialized_s": .2, "broker_elapsed_s": 1}
@@ -41,4 +41,8 @@ def test_disjoint_times_bind_location_and_excluded_native_methods(tmp_path):
     phases[0]["sites"].pop()
     phases[0]["unassigned_s"] = .2
     with pytest.raises(ValueError, match="sum"):
+        verify.check_phases(phases, ["startup"], site, data)
+
+    phases[0]["sites"].clear()
+    with pytest.raises(ValueError, match="entry point"):
         verify.check_phases(phases, ["startup"], site, data)

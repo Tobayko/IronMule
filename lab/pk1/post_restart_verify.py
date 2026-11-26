@@ -44,6 +44,9 @@ def check_phases(phases, names, sites, arm):
                     "altered attribution, source location or trust exclusion")
             times.append(row["self_s"])
             seen.add(method)
+        entry = "GgmlEngine.__init__" if phase["phase"] == "startup" else "GgmlEngine.run"
+        require(any(r["function"] == entry and r["calls"] > 0 for r in phase["sites"]),
+                "an instrumented phase lacks its observed engine entry point")
         require(abs(math.fsum([unused, *times]) - span) <= 1.01e-6, "unassigned and exclusive times do not sum to phase wall")
         if phase["phase"] == "startup":
             require(span <= arm["initialized_s"] + 1e-6, "instrumented constructor exceeds initialization")
