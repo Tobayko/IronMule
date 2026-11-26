@@ -321,6 +321,8 @@ def product(args, cfg, remote, check, active):
             write_once(local / "product-serve.json", value)
             if value["arm"] != "candidate" or value["completions"][-1]["graded_correct"] != 18:
                 return {**active, "stage": "product retained reference", "product_result": value}
+        if getattr(args, "stop_after_product_phase", None) == op:
+            return {**active, "stage": "product phase checkpointed", "phase": op, "result_sha256": checksum(local/name)}
     from training.restart_replan import replan
 
     next_run = replan(state, checkout=args.checkout, product_dir=local)
@@ -415,7 +417,10 @@ def main():
     p.add_argument("--wait-seconds", type=int, default=0)
     p.add_argument("--serve-product", action="store_true", help="gate the ordinary HTTP startup, then serve it with the trained CPU head")
     p.add_argument("--verify-product-client", action="store_true", help="explicitly submit and score a separate client batch on the live port")
-    p.add_argument("--stop-after-product-gate", choices=("reference","candidate"), help="end this invocation after checkpointing the indicated v3 gate")
+    stops = p.add_mutually_exclusive_group()
+    stops.add_argument("--stop-after-product-gate", choices=("reference","candidate"), help="end this invocation after checkpointing the indicated v3 gate")
+    stops.add_argument("--stop-after-product-phase", choices=("qualify","exercise"),
+                       help="release the target after the six verified HTTP pairs or the rollback exercise")
     p.add_argument("--original-product-width", action="store_true", help="v3 original default numerical gate, followed by real local width selection")
     p.add_argument("--product-preflight", type=Path, help="separate v2 attempt after an actual corrected tokenizer preflight")
     p.add_argument("--product-reference-url", help="existing ordinary local product URL for other traffic")
