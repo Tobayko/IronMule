@@ -1,4 +1,4 @@
-"""Replay mixed-step attribution, KV-span controls and the held-out HTTP retention trial."""
+"""Replay mixed-step attribution, KV-span controls and the paired HTTP retention trial."""
 
 import argparse
 import csv
@@ -188,9 +188,33 @@ def projection_estimates(archive):
     return estimates
 
 
-def mask_coverage(folder):
+def mask_coverage(folder, span, finished_limit):
     results = []
     done = score.read(folder / "complete.json")
+    target = score.read(span / "target.json")
+    if (
+        done["hardware"]["device_sha256"] != target["device_sha256"]
+        or done["gguf"] != target["gguf"]
+        or len(done["waves"]) != 18
+    ):
+        raise ValueError("unmatched mask probe")
+    if done["capacities"] != [
+        {"cells": 65536, "finished_cell_limit": finished_limit}
+    ] * len(SEEDS):
+        raise ValueError("incorrect physical capacity or finished retention limit")
+    output_agreement = {}
+    for w in done["waves"]:
+        original = score.read(span / f"wave-{w['name']}.json")
+        if w["input_digest"] != original["input_digest"]:
+            raise ValueError("instrumented native inputs changed")
+        output_agreement[w["name"]] = sum(
+            x == y
+            for x, y in zip(
+                w["output_digests"], original["output_digests"], strict=True
+            )
+        )
+        if finished_limit is None and output_agreement[w["name"]] != original["width"]:
+            raise ValueError("instrumentation changed stock output")
     if (done["query_tile"], done["key_tile"]) != (8, 256):
         raise ValueError("different mask tiling")
     for seed in SEEDS:
@@ -223,6 +247,10 @@ def mask_coverage(folder):
                     seed=seed,
                     repeat=repeat,
                     calls=len(rows),
+                    median_physical_span=median(int(row[1]) for row in rows),
+                    generation_digests_equal_to_stock=output_agreement[
+                        f"{seed}-{repeat}-32"
+                    ],
                     tiles=counts[0],
                     visible=counts[1],
                     trailing_masked=counts[2],
@@ -232,13 +260,14 @@ def mask_coverage(folder):
     return results
 
 
-def served(folder):
+def served(folder, archived, target):
     cells = []
-    board = None
+    board = target["device_sha256"]
     for i, seed in enumerate(SEEDS, start=1):
         a, b = f"R{i}", f"H{i}"
         pairs = []
         factual = {}
+        profiles = []
         for arm, keep in ((a, 1), (b, 0.03125)):
             root = folder / arm
             plan = score.read(root / "plan.json")
@@ -246,24 +275,50 @@ def served(folder):
             if (
                 plan["seed"] != seed
                 or plan["finished_fraction"] != keep
-                or (board is not None and board != hardware)
+                or hardware["device_sha256"] != board
                 or any(
                     score.read(root / f"{stage}-{arm}.json")["hardware"] != hardware
                     for stage in ("start", "end")
                 )
             ):
                 raise ValueError("unexpected retention trial device or setting")
-            board = hardware
+            receipt = root / f"worker-{arm}.json"
+            if receipt.exists() or arm.startswith("H"):
+                observed = score.read(receipt)
+                if observed["arm"] != arm or observed["finished_fraction"] != keep:
+                    raise ValueError("worker did not inherit the measured retention")
             health = score.read(root / f"ready-{arm}.json")["health"]
-            if not health["gate"]["passes"]:
+            if (
+                not health["gate"]["passes"]
+                or health["shared_pool"]["cap"] != 32
+                or health["kernel_profile"]["gguf_sha256"] != target["gguf"]
+            ):
                 raise ValueError("failed native gate")
+            profiles.append(
+                (
+                    health["kernel_profile"],
+                    health["sequences"]["sequences"],
+                    health["stream_qualification"]["passes"],
+                )
+            )
             waves = score.waves(root, arm)
             grade.bindings(root, arm, waves)
+            prior = score.waves(archived / "http/primary", a)
+            match_keys = ("seed", "repeat", "width", "input_digest")
+            if len(waves) != len(prior) or any(
+                any(w[k] != ref[k] for k in match_keys)
+                for w, ref in zip(waves, prior, strict=True)
+            ):
+                raise ValueError("original HTTP input digests or order changed")
             facts = [r for w in waves if w["repeat"] == 3 for r in w["requests"]]
             if len(facts) != 32 or any(w["seed"] != seed for w in waves):
                 raise ValueError("wrong facts or seed")
             factual[arm] = sum(r["correct"] for r in facts)
             pairs.append(waves)
+        if profiles[0] != profiles[1] or profiles[0][1:] != (32, False):
+            raise ValueError(
+                "unmatched kernel profile or different shared-pool execution"
+            )
         for width in (1, 8, 32):
             r, h = [
                 [w for w in group if w["width"] == width and w["repeat"] < 3]
@@ -278,6 +333,12 @@ def served(folder):
                     width=width,
                     reference=grade.summarize([grade.measure(w) for w in r]),
                     limited=grade.summarize([grade.measure(w) for w in h]),
+                    matched_output_texts=sum(
+                        x["output_sha256"] == y["output_sha256"]
+                        for u, v in zip(r, h, strict=True)
+                        for x, y in zip(u["requests"], v["requests"], strict=True)
+                    ),
+                    timed_requests=sum(len(u["requests"]) for u in r),
                     paired=paired,
                     facts=factual,
                 )
@@ -293,9 +354,12 @@ def replay(archive, root):
         archived_vllm_32=old["metrics"]["32"]["tok_s"],
         archive_and_new_native=step_cost(archive, root / "span"),
         fixed_rows=intervention(root / "span"),
-        tile_counts=mask_coverage(root / "masks"),
+        tile_counts=mask_coverage(root / "masks", root / "span", None),
+        limited_tile_counts=mask_coverage(root / "masks-limited", root / "span", 2048),
         estimated_projection_seconds_per_448_row_graph=projection_estimates(archive),
-        paired_http=served(root / "http"),
+        paired_http=served(
+            root / "http", archive, score.read(root / "span/target.json")
+        ),
     )
 
 

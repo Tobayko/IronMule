@@ -307,7 +307,7 @@ python -m lab.pk6.native_dispatch.bottleneck "$archive" "$receipts" /tmp/bottlen
 cmp /tmp/bottleneck.json "$receipts/summary.json"
 ```
 
-To repeat the GPU observation, set `IRONMULE_GGML_BINDINGS` and `LLAMA_CPP_LIB_PATH` to the isolated CUDA build. Choose a fresh output directory for each run. A single worker uses four CPU threads, flash attention, 32 sequences and 2,048 tokens per sequence. The replay verifies the original HTTP input digests for every timed wave. The token selector is greedy. The native replay and CUDA profiles have different timing boundaries from HTTP.
+To repeat the GPU observation, set `IRONMULE_GGML_BINDINGS` and `LLAMA_CPP_LIB_PATH` to the isolated CUDA build. Choose a fresh output directory for each run. A single worker uses four CPU threads, flash attention, 32 sequences and 2,048 tokens per sequence. The replay verifies the original HTTP input digests for every timed wave. The token selector is greedy. The native replay and CUDA profiles have different timing boundaries from HTTP. The measurement record binds the [executed probe](https://github.com/Tobayko/IronMule/blob/790ee30698e8ea0bcdd874ab4c440e8e5c670766/lab/pk6/native_dispatch/kv_span.py) by SHA-256.
 
 ```bash
 export PYTHONPATH="$PWD"
@@ -336,10 +336,11 @@ The prefix-retention experiment uses the product server, its ordinary quality ch
 )
 ```
 
-After all HTTP workers exit, the optional mask instrumentation counts tiles of eight query rows by 256 keys in the real host mask. Its timings are excluded. The counts distinguish tiles after the final visible tile from fully masked tiles below it. The former can be skipped by the native tail bound. The latter require a different strategy. In the vendored CUDA implementation the mask scan is eligible for at least 1,024 query rows or multiple physical streams. The large mixed steps observed here use a single physical stream.
+After all HTTP workers exit, the optional mask instrumentation counts tiles of eight query rows by 256 keys in the real host mask. Its timings are excluded. The counts distinguish tiles after the final visible tile from fully masked tiles below it. The former can be skipped by the native tail bound. The latter require a different strategy. In the vendored CUDA implementation the mask scan is eligible for at least 1,024 query rows or multiple physical streams. The large mixed steps observed here use a single physical stream. [Vendored kernel dispatch condition](https://github.com/ggml-org/llama.cpp/blob/4227c9b/ggml/src/ggml-cuda/fattn-common.cuh#L842-L857)
 
 ```bash
 python -m lab.pk6.native_dispatch.mask_tiles prepare "$tree"
 cmake --build "$tree/build" --target llama -j 4
 python -m lab.pk6.native_dispatch.mask_tiles observe "$model" /tmp/mask-counts
+IRONMULE_GGML_KEEP=0.03125 python -m lab.pk6.native_dispatch.mask_tiles observe "$model" /tmp/mask-limited
 ```
