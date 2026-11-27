@@ -1,6 +1,6 @@
 {
   "first_unix": 1795738787.9991045,
-  "last_unix": 1795742532.1037056,
+  "last_unix": 1795743397.938071,
   "processes": {
     "controls/capacity/capacity-confirm/H1/end-H1.json": {
       "median_load1_in_requests": 34.33,
@@ -26,6 +26,12 @@
       "request_samples": 31,
       "request_samples_with_native_compiler": 0
     },
+    "http/chunk-http/Q1/end-Q1.json": {
+      "median_load1_in_requests": 29.265,
+      "process_samples": 103,
+      "request_samples": 4,
+      "request_samples_with_native_compiler": 0
+    },
     "http/compact-http-lease-resume/H2/end-H2.json": {
       "median_load1_in_requests": 34.864999999999995,
       "process_samples": 18,
@@ -44,8 +50,20 @@
       "request_samples": 6,
       "request_samples_with_native_compiler": 0
     },
+    "http/draft-mix-v2-lease-resume/K2/end-K2.json": {
+      "median_load1_in_requests": 39.13,
+      "process_samples": 20,
+      "request_samples": 7,
+      "request_samples_with_native_compiler": 0
+    },
     "http/draft-mix-v2-lease-resume/O1/end-O1.json": {
       "median_load1_in_requests": 38.25,
+      "process_samples": 20,
+      "request_samples": 7,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/draft-mix-v2-lease-resume/O2/end-O2.json": {
+      "median_load1_in_requests": 30.3,
       "process_samples": 20,
       "request_samples": 7,
       "request_samples_with_native_compiler": 0

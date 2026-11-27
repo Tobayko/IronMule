@@ -1,6 +1,7 @@
 """Fit the existing CPU Pilot on paired pool profiles and price a restart from observed traffic."""
 
 import argparse
+import gzip
 import math
 import os
 import subprocess
@@ -18,6 +19,9 @@ from lab.pk6.native_dispatch.run import SEEDS
 from lab.pk6.replay_http import checksum
 from lab.pk6.warm_repeat import GGUF, save
 from training.pilot_w4_profiles import fit_head
+from training.scoped_release import rollback
+from training.trial_release import switch_lock
+from lab.rp.accounting import save as persist
 
 NAMES = ("stock", "compact")
 WIDTHS = (1, 8, 32)
@@ -218,18 +222,92 @@ def select(policy, rows, width, hardware, native):
             "reason": "unqualified hardware, workload or document accuracy",
         }
     else:
-        if checksum(policy / "pilot.npz") != proof["weights_sha256"]:
-            raise ValueError("changed checkpoint")
-        with np.load(policy / "pilot.npz", allow_pickle=False) as bundle:
-            heads = [
-                [bundle[f"h{i}_{j}"] for j in range(6)] for i in range(len(FIT_SEEDS))
-            ]
-        decision = choose(heads, features, NAMES)
+        try:
+            if checksum(policy / "pilot.npz") != proof["weights_sha256"]:
+                raise ValueError("changed checkpoint")
+            with np.load(policy / "pilot.npz", allow_pickle=False) as bundle:
+                heads = [
+                    [bundle[f"h{i}_{j}"] for j in range(6)]
+                    for i in range(len(FIT_SEEDS))
+                ]
+            decision = choose(heads, features, NAMES)
+        except (OSError, ValueError, KeyError):
+            decision = {"profile": "stock", "reason": "unusable CPU checkpoint"}
     return {
         **decision,
         "width": width,
         "observed_prompt_range": [min(counts), max(counts)],
         "total_decision_us": (time.perf_counter() - started) * 1e6,
+    }
+
+
+def verify_trial(folder, arm, reference, width, *, controller_s=0.0):
+    started = time.perf_counter()
+    start, end = (
+        score.read(folder / f"{kind}-{arm}.json") for kind in ("start", "end")
+    )
+    target = score.read(folder / "target.json")
+    rows = score.waves(folder, arm)
+    if (
+        start["hardware"] != end["hardware"]
+        or start["hardware"] != target["hardware"]
+        or start["arm"] != arm
+        or end["arm"] != arm
+        or target["gguf_sha256"] != GGUF
+        or not all(
+            start["unix"] <= row["unix_start"] < row["unix_end"] <= end["unix"]
+            for row in rows
+        )
+    ):
+        raise ValueError("invalid serving process or timing")
+    quality = [w for w in rows if w["repeat"] == 3]
+    checks = [w for w in reference if w["repeat"] == 3]
+    if len(rows) != 10 or len(quality) != 1 or len(checks) != 1:
+        raise ValueError("incomplete profile qualification")
+    verified = grade.bindings(folder, arm, rows)
+    pair = grade.paired(
+        [w for w in reference if w["width"] == width and w["repeat"] < 3],
+        [w for w in rows if w["width"] == width and w["repeat"] < 3],
+    )
+    original, actual = checks[0], quality[0]
+    if original["input_digest"] != actual["input_digest"] or [
+        r["case"] for r in original["requests"]
+    ] != [r["case"] for r in actual["requests"]]:
+        raise ValueError("different quality inputs")
+    same_quality = len(actual["requests"]) == 32 and all(
+        r["correct"] is True for r in actual["requests"]
+    )
+    path = folder / f"trace-{arm}.txt"
+    trace = (
+        path.read_bytes()
+        if path.exists()
+        else gzip.decompress(path.with_suffix(".txt.gz").read_bytes())
+    )
+    active = b"physical_pool cells=16384 allocated=16384 cap=32" in trace
+    healthy = (
+        score.read(folder / f"ready-{arm}.json")["health"]["gate"].get("passes") is True
+    )
+    ref_s, live_s = (
+        sum(w["elapsed_s"] for w in block if w["width"] == width and w["repeat"] < 3)
+        for block in (reference, rows)
+    )
+    overhead = controller_s + time.perf_counter() - started
+    net = ref_s / (live_s + overhead)
+    return {
+        "retained": bool(
+            score.clear_win(pair)
+            and same_quality
+            and active
+            and healthy
+            and net >= 1.10
+        ),
+        "controller_fit_launch_verify_s": overhead,
+        "net_fixed_work_speed_ratio": net,
+        "comparison": pair,
+        "factual_correct": sum(r["correct"] for r in actual["requests"]),
+        "verified_allocation": active,
+        "quality_gate": healthy,
+        "trace_sha256": verified["trace_sha256"],
     }
 
 
@@ -262,8 +340,32 @@ def serve(args):
     native = checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
     decision = select(args.policy, rows, args.width, hardware, native)
     args.out.mkdir(parents=True, exist_ok=False)
+    if decision["profile"] == "compact" and (
+        arm != f"R{args.seed_index}"
+        or checksum(args.history) not in proof["files"].values()
+        or args.workload != "stress"
+    ):
+        raise ValueError(
+            "compact qualification needs its matched stock history and workload"
+        )
+    deployment = args.state / "deployment"
+    deployment.mkdir(parents=True, exist_ok=True)
+    pending = deployment / "trial.json"
+    with switch_lock(deployment):
+        unfinished = (
+            pending.exists() and score.read(pending).get("status") != "finished"
+        )
+        if (deployment / "selection.json").exists() or unfinished:
+            decision = {
+                **decision,
+                "profile": "stock",
+                "reason": "pending trial" if unfinished else "persistently withdrawn",
+            }
+        elif decision["profile"] == "compact":
+            persist(pending, {"status": "pending", "output": args.out.name})
     compact = decision["profile"] == "compact"
     chosen = ("H" if compact else "R") + str(args.seed_index)
+    prelaunch = time.perf_counter() - started
     save(
         args.out / "decision.json",
         {
@@ -275,7 +377,7 @@ def serve(args):
             "native": native,
             "gguf": GGUF,
             "seed": SEEDS[args.seed_index - 1],
-            "prelaunch_s": time.perf_counter() - started,
+            "prelaunch_s": prelaunch,
         },
     )
     command = [
@@ -291,7 +393,32 @@ def serve(args):
     ]
     if compact:
         command += ["--pool-plan", str(args.pool_plan)]
-    subprocess.run(command, check=True)
+    try:
+        subprocess.run(command, check=True)
+        if compact:
+            result = verify_trial(
+                args.out / "http",
+                chosen,
+                rows,
+                args.width,
+                controller_s=proof["elapsed_cpu_host_s"] + prelaunch,
+            )
+            save(args.out / "verification.json", result)
+            if not result["retained"]:
+                rollback(args.state, "new fixed-work service comparison failed")
+            with switch_lock(deployment):
+                persist(
+                    pending,
+                    {
+                        "status": "finished",
+                        "retained": result["retained"],
+                        "output": args.out.name,
+                    },
+                )
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+        if compact:
+            rollback(args.state, "compact service or measurement failed")
+        raise
 
 
 if __name__ == "__main__":
@@ -300,8 +427,18 @@ if __name__ == "__main__":
     train = sub.add_parser("fit")
     train.add_argument("evidence", type=Path)
     train.add_argument("out", type=Path)
+    withdraw = sub.add_parser("withdraw")
+    withdraw.add_argument("state", type=Path)
+    withdraw.add_argument("--reason", required=True)
     launch = sub.add_parser("serve")
-    for field in ("policy", "pool-plan", "history", "reference-archive", "out"):
+    for field in (
+        "policy",
+        "pool-plan",
+        "history",
+        "reference-archive",
+        "out",
+        "state",
+    ):
         launch.add_argument("--" + field, required=True, type=Path)
     launch.add_argument("--width", required=True, type=int, choices=WIDTHS)
     launch.add_argument("--seed-index", type=int, choices=(1, 2), required=True)
@@ -314,5 +451,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.mode == "fit":
         fit(args.evidence, args.out)
+    elif args.mode == "withdraw":
+        rollback(args.state, args.reason)
     else:
         serve(args)

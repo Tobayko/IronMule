@@ -97,7 +97,7 @@ The optional draft experiment pairs the Qwen3-32B target with the official Qwen3
 
 To rank the remaining arithmetic candidates on CPU, run `python -m lab.pk6.native_dispatch.next_kernel "$results" /tmp/prompt-order`. For a bounded GPU run in the prepared checkout, supply a library from the matching arithmetic test, for example `--library marlin-check=/work/prompt_marlin.so --max-seconds 1800`. The selector checks the GPU, model evidence and native binary, then launches both seeds under the existing reservation. Pass multiple libraries to let the planner choose among them. Each run writes a new directory with its decision and receipts.
 
-A separate vLLM control loads the identical 32B GGUF using the upstream out-of-tree GGUF plugin. The deployment comparison keeps its original AWQ-Marlin model. For the exact-weight control add `vllm-gguf-plugin==0.0.5` and `gguf==0.19.0` to an isolated Python path for vLLM 0.34.0. The x86-64 plugin wheel SHA-256 is `e795779830ad8907cb0e51bf661dd7784ebaf244b0b324af07a8d3925b6a9739`. Run `python -m lab.pk6.native_dispatch.same_weights --out /work/same-weights --arms vllm` with the same tokenizer, target and reserved lease. [Upstream plugin](https://github.com/vllm-project/vllm-gguf-plugin)
+A separate vLLM control loads the identical 32B GGUF using the upstream out-of-tree GGUF plugin. The deployment comparison keeps its original AWQ-Marlin model. For the exact-weight control add `vllm-gguf-plugin==0.0.5` and `gguf==0.19.0` to an isolated Python path for vLLM 0.34.0. The x86-64 plugin wheel SHA-256 is `e795779830ad8907cb0e51bf661dd7784ebaf244b0b324af07a8d3925b6a9739`. When a decision needs a new exact-weight control, supply its reason with `--vllm-recheck-reason` to `python -m lab.pk6.native_dispatch.same_weights --out /work/same-weights --arms vllm`. The control uses the same tokenizer, target and reserved lease. [Upstream plugin](https://github.com/vllm-project/vllm-gguf-plugin)
 
 #### Compact KV capacity and packed Q4_K
 
@@ -225,3 +225,26 @@ criterion on every streaming metric in both long-document runs. Each correct ref
 retrieval must also survive, with examples at all three document positions and all 32 short
 factual answers correct. Unknown hardware or traffic outside the measured length range selects
 stock. The decisions apply at process startup for a workload observed on that target.
+
+On the qualified board, the bounded restart reads three waves of actual traffic before opening the
+server. Run from the restored pool evaluator. Supply the hardware reservation in `RP_DEADLINE`, the
+matching `LLAMA_CPP_LIB_PATH` and the absolute paths produced above. The original stock history for
+the reverse-order long-document comparison is under the following path in the results archive.
+
+```bash
+history="$results/controls/capacity/capacity-confirm/R1/waves-R1.jsonl"
+python -m lab.pk6.native_dispatch.pool_pilot serve \
+  --policy /tmp/pool-pilot --pool-plan "$results/compact-pool.json" \
+  --reference-archive "$results" --history "$history" --width 32 --seed-index 1 \
+  --state /work/pool-deployment --workload stress --out /work/first-pool-restart
+python -m lab.pk6.native_dispatch.pool_pilot withdraw /work/pool-deployment --reason 'rollback drill'
+python -m lab.pk6.native_dispatch.pool_pilot serve \
+  --policy /tmp/pool-pilot --pool-plan "$results/compact-pool.json" \
+  --reference-archive "$results" --history "$history" --width 32 --seed-index 1 \
+  --state /work/pool-deployment --workload stress --out /work/restored-pool-restart
+```
+
+The observed prompt lengths and concurrency are the model inputs. The selected server must pass its
+own model gate and serve the fixed requests. Verification charges the full CPU fit, startup decision
+and verification to the three 32-client waves. Model loading and server startup are reported
+separately. A regression, incomplete trial or explicit withdrawal selects stock at the next start.

@@ -430,3 +430,17 @@ def test_detached_native_client_can_read_only_the_historical_target(monkeypatch)
     assert saved["scope"] == "historical_target"
     assert saved["metrics"]["32"]["tok_s"]["median"] == pytest.approx(266.55, abs=0.01)
     assert reference.lookup(reference.ARCHIVE, target) is None
+
+
+def test_compact_verification_counts_cpu_cost_in_the_measured_gain():
+    from lab.pk6.native_dispatch import pool_pilot, score
+
+    root = (
+        Path(__file__).resolve().parents[2]
+        / "lab/autonomous/results/l40s-native-dispatch/controls/capacity/capacity-confirm"
+    )
+    stock = score.waves(root / "R1", "R1")
+    assert pool_pilot.verify_trial(root / "H1", "H1", stock, 32)["retained"]
+    assert not pool_pilot.verify_trial(root / "H1", "H1", stock, 32, controller_s=100)[
+        "retained"
+    ]

@@ -4857,3 +4857,10 @@ other. It stayed between 17.6 and 18.7 seconds in all six compact waves. Each pr
 tokens. These observations locate the time difference. Separating the effects of allocation,
 admission and the KV range seen by attention requires another experiment. The vLLM reference
 uses the earlier mixed workload. [Request and memory receipts](../lab/autonomous/results/l40s-native-dispatch/controls/capacity/) · [Native time by wave](../lab/autonomous/results/l40s-native-dispatch/long-document-phases.json)
+
+The 0.6B model-first drafter (K) reached 55.87 and 51.97 tokens/s at one client on the
+ordinary mixed workload. The context-first variant (O) reached 56.33 and 57.18. At 32 clients
+O delivered 129.45 and 129.77 tokens/s, below the native controls. Every K and O start
+answered all 32 factual questions correctly. The existing L40S vLLM target at one client
+is 37.38 tokens/s and a median first token of 0.047 s. The four native draft starts took
+0.061–0.064 s to deliver their median first token. [Draft process receipts](../lab/autonomous/results/l40s-native-dispatch/http/draft-mix-v2-lease-resume/)

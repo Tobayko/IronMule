@@ -323,6 +323,13 @@ def inspect(folder, arm, target, telemetry):
     return rows, summary
 
 
+def clear_win(pair):
+    return pair["same_fixed_work"] and all(
+        v is not None and math.isfinite(v) and (v >= 1.1 if k == "tok_s" else v <= 0.9)
+        for k, v in pair["candidate_over_reference"].items()
+    )
+
+
 def run(root, *, comparator="awq_marlin", reference_archive=None):
     # Each process directory contains its actual target manifest. A missing end receipt is a separate rejected/incomplete arm.
     finished = sorted(root.rglob("end-*.json"))
@@ -408,12 +415,7 @@ def run(root, *, comparator="awq_marlin", reference_archive=None):
                     [r for r in control if r["width"] == w and r["repeat"] < 3],
                     [r for r in rows if r["width"] == w and r["repeat"] < 3],
                 )
-                pair["clear_win"] = pair["same_fixed_work"] and all(
-                    v is not None
-                    and math.isfinite(v)
-                    and (v >= 1.1 if k == "tok_s" else v <= 0.9)
-                    for k, v in pair["candidate_over_reference"].items()
-                )
+                pair["clear_win"] = clear_win(pair)
                 pairs[f"{arm}/{ref}/{w}"] = pair
     complete = {}
     for name in sorted({a[0] for a in arms if a != "vllm"}):
