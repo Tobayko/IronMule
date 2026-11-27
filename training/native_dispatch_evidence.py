@@ -357,20 +357,30 @@ def experiences(root, source, digest):
                 authorship="IronMule fitted its Pilot on measured pressure and mixed workloads.",
                 uncertainty="One GPU, two process seeds. The simple length rule is included for comparison. Runtime release is scored separately.",
             )
-    elif path.name == "pool-restart.json":
+    elif path.name in ("pool-restart.json", "unseen-documents.json"):
         from lab.pk6.replay_http import checksum
 
-        archive = folder / "controls/pool-restart"
-        if result != run(archive):
+        from lab.pk6.native_dispatch.run import SEEDS
+
+        fresh = path.name == "unseen-documents.json"
+        archive = (
+            folder
+            / "controls"
+            / ("unseen-documents/pool-unseen" if fresh else "pool-restart")
+        )
+        if result != run(archive, seeds=(630217, 631223) if fresh else SEEDS):
             raise ValueError("pool restart differs from measured requests")
         for receipt in sorted(archive.rglob("decision.json")):
-            if not (receipt.parent / "http").is_dir():
-                continue
+            http = receipt.parent if fresh else receipt.parent / "http"
             choice = json.loads(receipt.read_bytes())
             arm = choice["arm"]
-            if not (receipt.parent / "http" / f"end-{arm}.json").exists():
+            if not (http / f"end-{arm}.json").exists():
                 continue
             actual = result["arms"][arm]
+            if fresh and choice["history_sha256"] != checksum(
+                archive / "stock/waves-R1.jsonl"
+            ):
+                raise ValueError("restart used different observed traffic")
             if (
                 choice["policy_sha256"] != checksum(folder / "pool-pilot/fit.json")
                 or choice["hardware"] != result["binding"][0]
@@ -403,7 +413,11 @@ def experiences(root, source, digest):
                 memory_mib=actual["resources"]["peak_gpu_mib"],
                 authorship="IronMule selected its pool before serving. Codex implemented the comparator and withdrawal path.",
                 reason=choice["decision"]["reason"],
-                uncertainty="Same physical L40S and archived inputs, with a fresh serving worker.",
+                uncertainty=(
+                    "New seed, same L40S and document generator. Single fresh comparison."
+                    if fresh
+                    else "Same physical L40S and archived inputs, with a fresh serving worker."
+                ),
             )
     elif path.name == "fit.json":
         for i, row in enumerate(result["rows"]):

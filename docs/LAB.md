@@ -4892,7 +4892,9 @@ After an explicit persistent withdrawal, a fresh process read the same inputs an
 stock. It served all 155 requests and answered all 32 factual questions. The two measured
 processes delivered 47.50 vs 29.04 tokens/s, with first content in 8.04 vs 12.56 s
 and p95 completion in 21.51 vs 35.13 s. Peak device memory while serving was 23,834 vs
-36,122 MiB. The profile applies to sustained document traffic on this L40S through the
+36,122 MiB. From launch through the final factual check the workers took 151.43 and
+205.55 s. Charging the full 0.920 s of controller work to compact gives a 1.349× ratio
+over that complete run, including startup. The profile applies to sustained document traffic on this L40S through the
 bounded launcher. [Decisions and rollback](../lab/autonomous/results/l40s-native-dispatch/controls/pool-restart/pool-live/) · [Fresh worker pair](../lab/autonomous/results/l40s-native-dispatch/pool-restart.json)
 
 On the mixed workload the 768-row prefill budget delivered 166.83 and 166.45 output

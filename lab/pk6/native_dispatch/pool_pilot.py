@@ -15,7 +15,6 @@ import numpy as np
 from ironmule.pilot import Pilot
 from lab.pk6.mixed_progress import grade, trial
 from lab.pk6.native_dispatch import document_quality, score
-from lab.pk6.native_dispatch.run import SEEDS
 from lab.pk6.replay_http import checksum
 from lab.pk6.warm_repeat import GGUF, save
 from training.pilot_w4_profiles import fit_head
@@ -317,6 +316,28 @@ def verify_trial(folder, arm, reference, width, *, controller_s=0.0):
     }
 
 
+def verified_stock_history(folder, arm, target, proof, native):
+    if (
+        target.get("workload_sha256") != checksum(Path(__file__).with_name("stress.py"))
+        or target.get("backend_sha256") != native
+        or target.get("engine_sha256") != proof["engine_sha256"]
+        or target.get("pool_plan")
+        or target.get("order") != [arm]
+    ):
+        return False
+    try:
+        _, measured = score.inspect(folder, arm, target, [])
+    except (OSError, ValueError, KeyError):
+        return False
+    return (
+        measured["gate"].get("passes") is True
+        and measured["proof"]["shared_pool"]
+        and not measured["proof"]["fallback"]
+        and not measured["proof"]["observed_pool_capacities"]
+        and set(measured["quality"].values()) == {32}
+    )
+
+
 def serve(args):
     started = time.perf_counter()
     target = score.read(args.history.parent / "target.json")
@@ -346,14 +367,26 @@ def serve(args):
     native = checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
     decision = select(args.policy, rows, args.width, hardware, native)
     args.out.mkdir(parents=True, exist_ok=False)
-    if decision["profile"] == "compact" and (
-        arm != f"R{args.seed_index}"
-        or checksum(args.history) not in proof["files"].values()
-        or args.workload != "stress"
-    ):
-        raise ValueError(
-            "compact qualification needs its matched stock history and workload"
-        )
+    seeds = target["seeds"]
+    if len(seeds) != 2 or {r["seed"] for r in rows} != {seeds[args.seed_index - 1]}:
+        raise ValueError("history does not match the selected seed")
+    if decision["profile"] == "compact":
+        if arm != f"R{args.seed_index}" or args.workload != "stress":
+            decision = {
+                **decision,
+                "profile": "stock",
+                "reason": "no matched stock document history",
+            }
+        elif checksum(args.history) not in proof[
+            "files"
+        ].values() and not verified_stock_history(
+            args.history.parent, arm, target, proof, native
+        ):
+            decision = {
+                **decision,
+                "profile": "stock",
+                "reason": "unverified fresh stock history",
+            }
     deployment = args.state / "deployment"
     deployment.mkdir(parents=True, exist_ok=True)
     pending = deployment / "trial.json"
@@ -382,7 +415,7 @@ def serve(args):
             "hardware": hardware,
             "native": native,
             "gguf": GGUF,
-            "seed": SEEDS[args.seed_index - 1],
+            "seed": seeds[args.seed_index - 1],
             "prelaunch_s": prelaunch,
         },
     )
@@ -396,6 +429,8 @@ def serve(args):
         chosen,
         "--reference-archive",
         str(args.reference_archive),
+        "--seeds",
+        *map(str, seeds),
     ]
     if compact:
         command += ["--pool-plan", str(args.pool_plan)]

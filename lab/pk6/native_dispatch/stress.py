@@ -35,4 +35,4 @@ if __name__ == "__main__":
         os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")
     ).open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        run.main()
+        run.main(workload=run.checksum(Path(__file__)))

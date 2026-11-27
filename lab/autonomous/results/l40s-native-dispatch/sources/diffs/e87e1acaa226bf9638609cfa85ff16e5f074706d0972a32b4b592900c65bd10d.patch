@@ -1,0 +1,5 @@
+--- original
++++ actual
+@@ -38 +38 @@
+-        run.main()
++        run.main(workload=run.checksum(Path(__file__)))

@@ -107,7 +107,8 @@ def inspect(folder, arm, target, telemetry):
     ):
         raise ValueError("invalid process receipt")
     rows = waves(folder, arm)
-    seeds = SEEDS if arm == "vllm" else (SEEDS[int(arm[1:]) - 1],)
+    protocol_seeds = target["seeds"]
+    seeds = protocol_seeds if arm == "vllm" else (protocol_seeds[int(arm[1:]) - 1],)
     expected = [
         (s, r, w)
         for s in seeds
@@ -330,7 +331,7 @@ def clear_win(pair):
     )
 
 
-def run(root, *, comparator="awq_marlin", reference_archive=None):
+def run(root, *, comparator="awq_marlin", reference_archive=None, seeds=SEEDS):
     # Each process directory contains its actual target manifest. A missing end receipt is a separate rejected/incomplete arm.
     finished = sorted(root.rglob("end-*.json"))
     historical = []
@@ -367,7 +368,7 @@ def run(root, *, comparator="awq_marlin", reference_archive=None):
             target.get("comparator_artifact", "awq_marlin") != comparator
             or pin[0]["name"] != "NVIDIA L40S"
             or pin[1] != "2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d"
-            or pin[2:] != [GGUF, _manifest_digest(), "0.34.0", list(SEEDS)]
+            or pin[2:] != [GGUF, _manifest_digest(), "0.34.0", list(seeds)]
             or (binding is not None and pin != binding)
             or arm in arms
             or arm not in target["order"]
@@ -446,5 +447,10 @@ def run(root, *, comparator="awq_marlin", reference_archive=None):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("root", type=Path)
+    p.add_argument("--seeds", type=int, nargs=2, default=SEEDS)
     a = p.parse_args()
-    print(json.dumps(run(a.root), sort_keys=True, indent=2, allow_nan=False))
+    print(
+        json.dumps(
+            run(a.root, seeds=a.seeds), sort_keys=True, indent=2, allow_nan=False
+        )
+    )

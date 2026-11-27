@@ -296,6 +296,21 @@
       "lab/pk6/native_dispatch/score.py": "dc4e1e01db352d994b12bedd72f6a58503ab3387825c4254f6275088633cf86b",
       "lab/pk6/native_dispatch/stress.py": "5eb346342cc1b75c1735c2eefef1e8b4e3d6aa7b5754ee5edaca33954a76a32a"
     },
+    "pool-pilot-unseen": {
+      "ironmule/ggml_engine.py": "1b75d4b0169ff443fba532edca2f0995b8da646d15f7ccba7cf1de7d5748bede",
+      "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
+      "lab/pk6/mixed_progress/schedule.py": "455bea90e8ade951d20eb59cc51f6bca0f5604c065137b03964b833d4255da5d",
+      "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
+      "lab/pk6/native_dispatch/capture.py": "ec81bdf2c53c3ddd9387e4eed143f1ad6ae90a6ed8557181a9291cd8ae152065",
+      "lab/pk6/native_dispatch/document_quality.py": "c8e38e625ef62b416247ff4ecce2ac8f6808a1d925631babec822fad63bfd0d6",
+      "lab/pk6/native_dispatch/pool_pilot.py": "2be44b1d7e93ed963fbd10d3bacd4db248f7f4579bf204a2a9fb4f8ff84ea792",
+      "lab/pk6/native_dispatch/prepare.py": "c4a9c4d81db5dc739989b8881686ff36cf7e756a560fcda137177e2e64d4c35a",
+      "lab/pk6/native_dispatch/reference.py": "e168e19137b024b0c0e33b05571ceb51bf1b828b7f8b8784245732b808012635",
+      "lab/pk6/native_dispatch/run.py": "6c54c092ce539fc3f4861e3ca8e4cc9571363a4533856f229bf10c9842f2b461",
+      "lab/pk6/native_dispatch/score.py": "345e2efda93c66248b41b72aa00e8c98a80fd4c1ca018ed514e93342e632019d",
+      "lab/pk6/native_dispatch/stress.py": "e87e1acaa226bf9638609cfa85ff16e5f074706d0972a32b4b592900c65bd10d"
+    },
     "primary": {
       "ironmule/ggml_engine.py": "f320f1ec6ec9498435ec46b4e501302b375c2504b0e0da2fa72e94e6747cf73a",
       "ironmule/ggml_profiles.py": "90b6972ae8593e12a8d0743fa6e849240ef99c82966da7f61ba40efeea31e43b",
@@ -453,9 +468,19 @@
       "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
       "patch": "8128ec18fcc9efff1ec9e37337d6333da1735589ea3325fc96b9d0114bb67cbc"
     },
+    "2be44b1d7e93ed963fbd10d3bacd4db248f7f4579bf204a2a9fb4f8ff84ea792": {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "commit": null,
+      "patch": "bde7357385505ca652108defddb0c5e7ca60e306064aa7e8d32c5291d227f5d7"
+    },
     "2d9a7be56673219edde1dce956d90f1a688296a64a2463f07ef27f6f960dff5a": {
       "base_sha256": "2d9a7be56673219edde1dce956d90f1a688296a64a2463f07ef27f6f960dff5a",
       "commit": "1ea549f59a245c9c96b488104b997fbbdc099084"
+    },
+    "345e2efda93c66248b41b72aa00e8c98a80fd4c1ca018ed514e93342e632019d": {
+      "base_sha256": "607e9b5f1c61e449ded76ed4f9d3eb75de70c45af598adab8c3040e249a6662a",
+      "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
+      "patch": "da182318dafa7cca4ad958fef5c98c2982b385fb2f5904ee6312c1f52b36a528"
     },
     "3527833973115a20aa5ec37cd8dd831ef5e8c0932b31c9386c92c5c2a8dcfde1": {
       "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -584,6 +609,11 @@
       "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "commit": null,
       "patch": "84101fe897f5b82d72761a69d55d6db57bad6c99aa92ffba4aed71deccd8fe64"
+    },
+    "6c54c092ce539fc3f4861e3ca8e4cc9571363a4533856f229bf10c9842f2b461": {
+      "base_sha256": "05230b43fdec11b2d19321cd2c3d0e992fa2b762ea9d1dda937b6b1e83251a35",
+      "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
+      "patch": "0f977aac5e565ab4b0115155b27755155fb1353c4aececfda81d9fa836eac380"
     },
     "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8": {
       "base_sha256": "17d71f1b480cda75540906e3f3fd803db6a60e4d239040e549c7ae1003718c4f",
@@ -753,6 +783,11 @@
       "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "commit": null,
       "patch": "26650b1ba19b163cd695a8eb5ce02f6713aa112c987818b672b1f6d0db00790f"
+    },
+    "e87e1acaa226bf9638609cfa85ff16e5f074706d0972a32b4b592900c65bd10d": {
+      "base_sha256": "5eb346342cc1b75c1735c2eefef1e8b4e3d6aa7b5754ee5edaca33954a76a32a",
+      "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
+      "patch": "a3b564aa2ecd8b2ffc58563c89ee3cdc2554192e2b52568723978eb06a91269b"
     },
     "ea59f2d9e8d127e7a0da13249dc424947a039bdba71b8794c3737acdbad2f256": {
       "base_sha256": "05230b43fdec11b2d19321cd2c3d0e992fa2b762ea9d1dda937b6b1e83251a35",

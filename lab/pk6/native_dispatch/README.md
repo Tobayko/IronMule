@@ -254,7 +254,9 @@ separately. A regression, incomplete trial or explicit withdrawal selects stock 
 The recorded restart selected compact and retained it at 1.685× net over the archived stock
 run after charging 0.920 s for the controller. Following withdrawal, the new stock process
 served the same 155 requests. At width 32 the fresh compact and stock runs delivered 47.50
-and 29.04 output tokens/s. Both got all 32 factual answers right.
+and 29.04 output tokens/s. Counting both startups and all 155 requests, the elapsed
+ratio was 1.349× with the full controller time charged to compact. Both got all 32
+factual answers right.
 [Actual startup decisions](../../autonomous/results/l40s-native-dispatch/controls/pool-restart/pool-live/) · [Replayed measurements](../../autonomous/results/l40s-native-dispatch/pool-restart.json)
 
 The CPU kernel planner reads the stored vLLM target when it prices the gap. At 32 clients the
@@ -268,3 +270,21 @@ fit command and write a separate output directory. This version fits the median 
 three matched speed ratios per cell. The original fit used each cohort's median elapsed time.
 All twelve model choices agreed across the two objectives. The live restart used the original
 weights. [Both objectives by workload](../../autonomous/results/l40s-native-dispatch/pool-pilot/paired-targets.json)
+
+
+For a new document stream from the same workload generator, record a complete stock process
+on the qualified board. The bounded launcher verifies the native request IDs, backend, source,
+workload identity and numerical gate before using a fresh history. It evaluates the frozen
+weights on the observed traffic and keeps the new requests separate from training. On a
+prepared board with a current reservation, run the following in the `pool-pilot-unseen`
+source checkout with the trained policy and the original pool plan.
+
+```bash
+export PYTHONPATH="$PWD"
+python -m lab.pk6.native_dispatch.stress --arms R1 --seeds 630217 631223 \
+  --out /work/unseen-stock --reference-archive "$results"
+python -m lab.pk6.native_dispatch.pool_pilot serve \
+  --width 32 --seed-index 1 --workload stress --history /work/unseen-stock/waves-R1.jsonl \
+  --state /work/unseen-deployment --out /work/unseen-choice --policy /tmp/pool-pilot \
+  --pool-plan "$results/compact-pool.json" --reference-archive "$results"
+```

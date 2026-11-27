@@ -42,7 +42,7 @@ def rejected_first_seed(folder, arm):
     return None
 
 
-def main(*, comparator="awq_marlin"):
+def main(*, comparator="awq_marlin", workload=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for field, default in (
         ("models", "/models"),
@@ -214,6 +214,16 @@ def main(*, comparator="awq_marlin"):
         args.out / "target.json",
         {
             "hardware": hw,
+            **(
+                {
+                    "workload_sha256": workload,
+                    "backend_sha256": checksum(
+                        Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so"
+                    ),
+                }
+                if workload
+                else {}
+            ),
             "gguf_sha256": GGUF,
             "awq_manifest_sha256": awq_digest,
             **(

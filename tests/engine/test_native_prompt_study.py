@@ -444,3 +444,29 @@ def test_compact_verification_counts_cpu_cost_in_the_measured_gain():
     assert not pool_pilot.verify_trial(root / "H1", "H1", stock, 32, controller_s=100)[
         "retained"
     ]
+
+
+def test_fresh_pool_history_needs_the_served_workload_and_stock_trace():
+    from lab.pk6.native_dispatch import pool_pilot, reference, score, stress
+    from lab.pk6.replay_http import checksum
+
+    root = reference.ARCHIVE
+    proof = score.read(root / "pool-pilot/fit.json")
+    stock = root / "controls/pool-restart/pool-live/restored/http"
+    target = {
+        **score.read(stock / "target.json"),
+        "workload_sha256": checksum(Path(stress.__file__)),
+        "backend_sha256": proof["native"],
+    }
+    assert pool_pilot.verified_stock_history(
+        stock, "R1", target, proof, proof["native"]
+    )
+    for field in ("workload_sha256", "backend_sha256", "engine_sha256"):
+        changed = {**target, field: "changed"}
+        assert not pool_pilot.verified_stock_history(
+            stock, "R1", changed, proof, proof["native"]
+        )
+    wrong_arm = {**target, "order": ["H1"]}
+    assert not pool_pilot.verified_stock_history(
+        stock, "R1", wrong_arm, proof, proof["native"]
+    )

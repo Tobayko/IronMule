@@ -1,6 +1,6 @@
 {
   "first_unix": 1795738787.9991045,
-  "last_unix": 1795745384.5865023,
+  "last_unix": 1795745864.9054136,
   "processes": {
     "controls/capacity/capacity-confirm/H1/end-H1.json": {
       "median_load1_in_requests": 34.33,
@@ -126,6 +126,12 @@
       "median_load1_in_requests": 28.11,
       "process_samples": 21,
       "request_samples": 7,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/native-final/J1/end-J1.json": {
+      "median_load1_in_requests": 37.42,
+      "process_samples": 102,
+      "request_samples": 6,
       "request_samples_with_native_compiler": 0
     },
     "http/native-final/Q2/end-Q2.json": {

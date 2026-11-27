@@ -286,3 +286,24 @@ target receipts, submit a bounded run and withdraw the scoped release.
 The same model family on an L40S selected a shared KV pool and stock kernels after locally generated W4 exhausted memory. On this configuration Qwen3-32B started streaming earlier at width 32 but vLLM 0.11.0 completed the workload faster. Use the per-board gate, fixed-work traces and fresh-start instructions when continuing this comparison. [Run and replay](../lab/pk6/mixed_progress/replay.md) · [Measured L40S profiles](../lab/autonomous/results/l40s-mixed-prefill-progress/result.json)
 
 The subsequent current-release comparison used vLLM 0.34.0 on that same L40S. At 32 clients it delivered 264.2 output tokens/s over two seeds. Increasing IronMule's prompt admission budget raised throughput but delayed streamed text. The fresh rollback served 32/32 correct answers. The production path retains its qualified reference. The archived measurements identify the remaining high-concurrency gap. [Measurements and residual limits](LAB.md#l40s-qwen3-32b-and-the-wait-between-streamed-text-blocks-2026-11-26)
+
+### vLLM targets to reuse on the next lease
+
+Read the stored target on CPU before renting a GPU. For Qwen3-32B AWQ-Marlin 0.34.0
+we have two independent L40S runs with the same driver and different boards and seeds.
+Each supplied six fixed-work waves per width. Their medians are close enough to locate
+the throughput gap on the mixed workload. Compare each new IronMule candidate to the
+reference for its device and workload. Keep the original request timestamps and model
+identities when scoring a direct comparison.
+
+| Clients | Earlier L40S, output tokens/s | Latest L40S, output tokens/s | Difference | Latest target for a 10% lead |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 37.62 | 37.38 | −0.62% | 41.12 |
+| 8 | 163.74 | 164.05 | +0.19% | 180.45 |
+| 32 | 264.20 | 266.55 | +0.89% | 293.20 |
+
+Median time to first content at 32 clients was 1.879 s and 1.709 s, respectively.
+Use the archived distributions for each latency metric. The PR 57 A100 SXM4 80 GB
+warm comparison used vLLM 0.11.0 and recorded 271.26 tokens/s at 32 clients.
+The 900-word L40S document study has its own native reference.
+[Earlier L40S replay](../lab/pk6/mixed_progress/replay.md) · [Latest L40S targets and spreads](../lab/pk6/native_dispatch/README.md#archived-vllm-targets) · [A100 results](../lab/autonomous/results/a100-pr57-warm-repeat/result.json)
