@@ -1,0 +1,17 @@
+{
+  "compact-http": {
+    "waiting": "compact-http-H2",
+    "old": 1795739957,
+    "new": 1795745057
+  },
+  "draft-mix-v2": {
+    "waiting": "draft-mix-v2-K1",
+    "old": 1795739957,
+    "new": 1795745057
+  },
+  "remaining": {
+    "waiting": "remaining-N1",
+    "old": 1795739957,
+    "new": 1795745057
+  }
+}

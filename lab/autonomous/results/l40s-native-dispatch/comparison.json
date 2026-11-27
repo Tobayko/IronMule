@@ -287,6 +287,97 @@
       "start": 1795732393.3798494,
       "startup_s": 62.037831156980246
     },
+    "E1": {
+      "end": 1795738948.5998943,
+      "excluded_from_promotion": null,
+      "gate": {
+        "interval": [
+          1.0,
+          1.0
+        ],
+        "passes": true,
+        "ratio": 1.0
+      },
+      "metrics": {
+        "1": {
+          "eighth": 0.28557464096229523,
+          "end_p95": 0.8095452099805698,
+          "first": 0.06229767599143088,
+          "first_p95": 0.06229767599143088,
+          "gap_p95": 0.05427480291109532,
+          "tok_s": 39.467833253726965,
+          "visible": 0.062298045959323645
+        },
+        "32": {
+          "eighth": 2.4754138410207815,
+          "end_p95": 6.385456054005772,
+          "first": 0.5561366299516521,
+          "first_p95": 4.599977716105059,
+          "gap_p95": 0.29573721601627767,
+          "tok_s": 158.87475961127436,
+          "visible": 0.5561374764656648
+        },
+        "8": {
+          "eighth": 1.222514594963286,
+          "end_p95": 2.2976098359795287,
+          "first": 0.2662359660025686,
+          "first_p95": 1.1622969219461083,
+          "gap_p95": 0.271749597042799,
+          "tok_s": 111.25731964939169,
+          "visible": 0.26623641152400523
+        }
+      },
+      "proof": {
+        "cpu_policy": null,
+        "draft_verified_by_width": {},
+        "fallback": "stock",
+        "matched_native_requests": 155,
+        "native_raw_sha256": "06e1992a7889c88f291a33e76933021b7d215687f32d96c087b9b0cedf6b2ce1",
+        "observed_pool_capacities": [],
+        "profile_flags": {
+          "IRONMULE_GGML_DH2": "0",
+          "IRONMULE_PK6": "0",
+          "IRONMULE_PS1": "0",
+          "IRONMULE_PS1_CONCAT": "0",
+          "IRONMULE_PS1_WARM": "0",
+          "IRONMULE_SV5": "0"
+        },
+        "prompt_plugin_dispatches_in_http_by_width": {
+          "1": 0,
+          "32": 0,
+          "8": 0
+        },
+        "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
+        "shared_pool": true,
+        "streams_pass": false,
+        "verified_compact_pool": false
+      },
+      "quality": {
+        "180341": 32
+      },
+      "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 5.9586819180804405,
+          "32": 2.113640892514474,
+          "8": 2.713464998799372
+        },
+        "estimated_board_joules_per_output_token_by_seed": {
+          "180341": {
+            "1": 5.9586819180804405,
+            "32": 2.113640892514474,
+            "8": 2.713464998799372
+          }
+        },
+        "mean_sampled_watts": 326.0636666666667,
+        "peak_gpu_mib": 36122.0,
+        "process_peak_gpu_mib": 38218.0,
+        "samples": 30
+      },
+      "start": 1795738829.3053658,
+      "startup_s": 88.0516528589651
+    },
     "F1": {
       "end": 1795734059.372262,
       "excluded_from_promotion": "product rejected the proposed numeric profile",
@@ -1612,6 +1703,114 @@
         "gap_p95": 0.507122175387448,
         "tok_s": 0.6640390306026146,
         "visible": 0.3163429936687413
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "E1/R1/1": {
+      "candidate_over_reference": {
+        "eighth": 0.974614958394886,
+        "end_p95": 0.9797956681536839,
+        "first": 0.9984252081799042,
+        "first_p95": 0.9984252081799042,
+        "gap_p95": 0.9889504659734626,
+        "tok_s": 1.0207107793019794,
+        "visible": 0.9984259691710057
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        true,
+        true
+      ]
+    },
+    "E1/R1/32": {
+      "candidate_over_reference": {
+        "eighth": 0.9747140971923925,
+        "end_p95": 0.97924097997023,
+        "first": 0.9751431396743366,
+        "first_p95": 0.9746044679521447,
+        "gap_p95": 0.9742104640929731,
+        "tok_s": 1.023545348145533,
+        "visible": 0.9751423525842761
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "E1/R1/8": {
+      "candidate_over_reference": {
+        "eighth": 0.9596458610298464,
+        "end_p95": 0.9796845075624159,
+        "first": 1.0342357841949168,
+        "first_p95": 0.9775995789267297,
+        "gap_p95": 0.9725508062483624,
+        "tok_s": 1.0205794559112478,
+        "visible": 1.0342370335438094
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "E1/vllm/1": {
+      "candidate_over_reference": {
+        "eighth": 1.0662098711475327,
+        "end_p95": 0.8156927362070695,
+        "first": 1.3744576113305658,
+        "first_p95": 1.3744576113305658,
+        "gap_p95": 1.8787608633812278,
+        "tok_s": 1.2252056397241986,
+        "visible": 1.3744262892964245
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "E1/vllm/32": {
+      "candidate_over_reference": {
+        "eighth": 0.818553121655539,
+        "end_p95": 1.678702429579461,
+        "first": 0.30753821294777717,
+        "first_p95": 1.6080339480138237,
+        "gap_p95": 0.369416222089257,
+        "tok_s": 0.5942096836492743,
+        "visible": 0.30753824757900555
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "E1/vllm/8": {
+      "candidate_over_reference": {
+        "eighth": 1.3518888774682947,
+        "end_p95": 1.47220248892767,
+        "first": 0.37241611214976605,
+        "first_p95": 1.6222153707394398,
+        "gap_p95": 0.4808248091305529,
+        "tok_s": 0.6799059351116441,
+        "visible": 0.37241644543667685
       },
       "clear_win": false,
       "same_fixed_work": true,

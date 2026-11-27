@@ -1,0 +1,99 @@
+{
+  "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "meaning": "Outer native shapes seen during fixed performance and quality HTTP windows. Internal graph splits, actual kernel dispatch and whole-model benefit require measurement.",
+  "prior_http_calls": [
+    0,
+    1
+  ],
+  "prior_ranges": [
+    [
+      1024,
+      5120,
+      128,
+      128,
+      3
+    ],
+    [
+      1024,
+      5120,
+      143,
+      143,
+      3
+    ],
+    [
+      1024,
+      5120,
+      256,
+      256,
+      3
+    ],
+    [
+      1024,
+      5120,
+      384,
+      384,
+      3
+    ],
+    [
+      5120,
+      8192,
+      143,
+      143,
+      2
+    ],
+    [
+      8192,
+      5120,
+      143,
+      143,
+      1
+    ],
+    [
+      8192,
+      5120,
+      256,
+      256,
+      1
+    ]
+  ],
+  "proposed_fraction_of_observed_call_time": [
+    0.7013267892485907,
+    0.4416786844839834
+  ],
+  "reference_cuda": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab",
+  "source_arm": "R1",
+  "source_trace": "dbcae537b14af150608b5c93a61f8a69852d2d9e762f575ccd5e5ea87f2ba31b",
+  "total_http_calls": [
+    289,
+    15
+  ],
+  "widths": [
+    9,
+    16,
+    31,
+    32,
+    123,
+    141,
+    355,
+    441,
+    448,
+    449,
+    450,
+    451,
+    452,
+    453,
+    455,
+    457,
+    458,
+    459,
+    461,
+    462,
+    464
+  ]
+}

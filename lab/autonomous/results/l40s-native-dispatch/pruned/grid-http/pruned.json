@@ -1,0 +1,9 @@
+{
+  "pruned": [
+    "X1",
+    "X2"
+  ],
+  "reason": "No outer native row count in the first fixed-work performance block matched the seven stand-alone selections. Use the measured shape distribution for the next grid. Internal subgraphs can differ.",
+  "source": "dbcae537b14af150608b5c93a61f8a69852d2d9e762f575ccd5e5ea87f2ba31b",
+  "status": "not launched"
+}

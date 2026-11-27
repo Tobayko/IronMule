@@ -121,3 +121,12 @@ bash lab/pk6/native_dispatch/serve.sh /work/http/chunks --arms Q1 Q2 --policy /t
 Run `python -m lab.pk6.native_dispatch.reference` on CPU before reserving a GPU. It reads the original streams and returns medians and observed ranges for one, eight and 32 clients. On this L40S the six 32-client waves ranged from 265.08 to 269.20 output tokens/s. The median was 266.55. A 10% lead over that median requires 293.20 tokens/s with the same work. Each latency metric has its own reference and spread.
 
 The study runner checks the registered model, quantization, vLLM settings, workload, seeds and hardware before starting vLLM. A match writes `reused-vllm.json` with the original timestamps. A matching device class with a different physical fingerprint supplies a historical development target. Paired scoring requires the matching physical device and token digests. For an intentional recheck, record the concrete reason with `--vllm-recheck-reason`. A detached evaluator without the committed evidence can use `--reference-archive PATH`. The extra AWQ restart and optional same-GGUF control for this lease were both cancelled before either server started.
+
+The initial grid selected seven shape/width combinations across two activation seeds. None of its selected widths appeared in the 289 outer calls during R1's timed performance requests. One appeared in the 15 calls during its factual wave. IronMule therefore skipped the two planned server starts and selected 21 widths from actual request windows. These cover 70.1% of the native time in R1's performance requests and 44.2% in its factual wave. The CUDA screen still measures full native graphs because their internal dispatch dimensions can differ from an outer call.
+
+```bash
+python -m lab.pk6.native_dispatch.workload_grid "$results/http/primary" \
+  "$results/native-grid/plan.json" /tmp/workload-grid-order.json
+LLAMA_CPP_LIB_PATH=/work/grid-calibration/bin python -m lab.pk6.native_dispatch.grid_screen \
+  "$model" /work/grid-calibration /work/workload-measurements --workload-order /tmp/workload-grid-order.json
+```

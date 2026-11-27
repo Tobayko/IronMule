@@ -22,7 +22,7 @@ WIDTHS = (9, 16, 24, 32, 64, 128, 143, 256, 384, 432, 448, 449, 464, 512, 1024, 
 SEEDS = (323021, 661907)
 
 
-def screen(gguf, built, out):
+def screen(gguf, built, out, order=None):
     native = built / "bin/libggml-cuda.so"
     manifest = json.loads((built / "build.json").read_bytes())
     if (
@@ -32,10 +32,32 @@ def screen(gguf, built, out):
         or manifest["plan"] is not None
     ):
         raise ValueError("unverified screen binary or model")
+    planned = WIDTHS
+    extra = {}
+    if order:
+        proposal = json.loads(order.read_bytes())
+        planned = tuple(proposal["widths"])
+        if (
+            proposal["hardware"] != manifest["hardware"]
+            or proposal["gguf"] != GGUF
+            or proposal["reference_cuda"] != manifest["reference_cuda"]
+            or not 1 <= len(planned) <= 22
+            or tuple(sorted(set(planned))) != planned
+            or any(type(v) is not int or not 8 <= v <= 512 for v in planned)
+        ):
+            raise ValueError("foreign or unbounded workload grid")
+        extra = {"order_sha256": checksum(order)}
     out.mkdir(exist_ok=False, parents=True)
     save(
         out / "protocol.json",
-        {**manifest, "gguf": GGUF, "widths": WIDTHS, "modes": MODES, "seeds": SEEDS},
+        {
+            **manifest,
+            "gguf": GGUF,
+            "widths": planned,
+            "modes": MODES,
+            "seeds": SEEDS,
+            **extra,
+        },
     )
     with tempfile.TemporaryDirectory(dir=out) as temp:
         tmp = Path(temp)
@@ -51,10 +73,10 @@ def screen(gguf, built, out):
                 t["data"].tofile(w)
                 x = tmp / "activations"
                 np.random.default_rng(seed + n + k).standard_normal(
-                    (max(WIDTHS), k), dtype=np.float32
+                    (max(planned), k), dtype=np.float32
                 ).tofile(x)
                 copies = min(48, max(2, math.ceil((128 << 20) / w.stat().st_size)))
-                widths = list(WIDTHS)
+                widths = list(planned)
                 modes = list(MODES)
                 rng.shuffle(widths)
                 rng.shuffle(modes)
@@ -148,8 +170,12 @@ def select(root):
         shape = s["n"], s["k"]
         for b, choices in s["cells"].items():
             observations.setdefault((*shape, int(b)), {})[s["seed"]] = choices
-    if len(observations) != 5 * len(WIDTHS) or any(
-        set(b) != set(SEEDS) for b in observations.values()
+    expected = set(protocol.get("widths", WIDTHS))
+    shapes = {key[:2] for key in observations}
+    if (
+        len(shapes) != 5
+        or set(observations) != {(n, k, w) for n, k in shapes for w in expected}
+        or any(set(blocks) != set(SEEDS) for blocks in observations.values())
     ):
         raise ValueError("incomplete grid study")
     ranges = []
@@ -179,5 +205,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("gguf", "build", "out"):
         p.add_argument(name, type=Path)
+    p.add_argument("--workload-order", type=Path)
     a = p.parse_args()
-    screen(a.gguf, a.build, a.out)
+    screen(a.gguf, a.build, a.out, a.workload_order)
