@@ -4905,3 +4905,13 @@ tokens/s at that width over HTTP. First qualification took 728 s. Both server st
 answered 32/32 factual questions and reported real generated-kernel dispatch during
 requests. Both experimental profiles remain outside the qualified mixed-workload defaults.
 [HTTP requests and native dispatch](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+With the weights frozen, IronMule observed a third seed (630217) outside training and
+qualification. It checked the fresh stock process, including all native request IDs,
+then selected compact in 79 ms including startup checks. The two servers each served
+155 requests and answered all 32 facts correctly. At 32 clients, throughput was
+47.66 vs 28.34 output tokens/s, median first content was 7.85 vs 14.67 s, and p95
+completion was 21.43 vs 36.12 s. After 0.926 s of controller costs, verification
+retained compact at 1.668× net on the three matched waves. Counting launch through the
+last factual answer, the elapsed ratio was 1.361×. This seed tests new inputs from the
+same 900-word document generator on the same physical L40S. [Fresh requests and scored pairs](../lab/autonomous/results/l40s-native-dispatch/unseen-documents.json) · [Actual decision and retention](../lab/autonomous/results/l40s-native-dispatch/controls/unseen-documents/pool-unseen/pilot/)

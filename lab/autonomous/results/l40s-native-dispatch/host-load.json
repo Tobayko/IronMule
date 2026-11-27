@@ -1,6 +1,6 @@
 {
   "first_unix": 1795738787.9991045,
-  "last_unix": 1795745864.9054136,
+  "last_unix": 1795746320.2622707,
   "processes": {
     "controls/capacity/capacity-confirm/H1/end-H1.json": {
       "median_load1_in_requests": 34.33,
@@ -48,6 +48,18 @@
       "median_load1_in_requests": 66.23,
       "process_samples": 41,
       "request_samples": 28,
+      "request_samples_with_native_compiler": 0
+    },
+    "controls/unseen-documents/pool-unseen/pilot/end-H1.json": {
+      "median_load1_in_requests": 33.334999999999994,
+      "process_samples": 30,
+      "request_samples": 18,
+      "request_samples_with_native_compiler": 0
+    },
+    "controls/unseen-documents/pool-unseen/stock/end-R1.json": {
+      "median_load1_in_requests": 30.66,
+      "process_samples": 41,
+      "request_samples": 29,
       "request_samples_with_native_compiler": 0
     },
     "http/bounded-w4-http-archive-replay/S1/end-S1.json": {

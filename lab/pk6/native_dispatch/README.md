@@ -288,3 +288,10 @@ python -m lab.pk6.native_dispatch.pool_pilot serve \
   --state /work/unseen-deployment --out /work/unseen-choice --policy /tmp/pool-pilot \
   --pool-plan "$results/compact-pool.json" --reference-archive "$results"
 ```
+
+The frozen weights selected compact for seed 630217 after observing 1,243–1,314 prompt
+tokens at 32 clients. Replaying the requests gave 47.66 vs 28.34 output tokens/s and
+7.85 vs 14.67 s to first content. Numerical qualification and all 32 factual checks passed.
+The verifier retained the profile. The second seed argument reserves the unused second arm.
+Run `python -m lab.pk6.native_dispatch.score "$results/controls/unseen-documents/pool-unseen" --seeds 630217 631223`
+for the full result. [Serving receipts](../../autonomous/results/l40s-native-dispatch/controls/unseen-documents/pool-unseen/)

@@ -397,6 +397,8 @@ def run(root, *, comparator="awq_marlin", reference_archive=None, seeds=SEEDS):
             + (
                 ["A" + arm[1:]]
                 if arm.startswith("T")
+                else ["H" + arm[1:]]
+                if arm.startswith("W")
                 else ["K" + arm[1:]]
                 if arm.startswith(("O", "C"))
                 else []

@@ -1,0 +1,43 @@
+{
+  "arm": "H1",
+  "decision": {
+    "cpu_us": 90.967,
+    "margin": 0.5445738211274147,
+    "margin_error": 0.09531017980432493,
+    "observed_prompt_range": [
+      1243,
+      1314
+    ],
+    "profile": "compact",
+    "proposal": "compact",
+    "reason": "qualified model choice",
+    "scores": [
+      [
+        0.007538624107837677,
+        0.5985974073410034
+      ],
+      [
+        0.0005585644394159317,
+        0.5716396570205688
+      ],
+      [
+        0.014532230794429779,
+        0.5591060519218445
+      ]
+    ],
+    "total_decision_us": 4373.954958282411,
+    "width": 32
+  },
+  "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "history_sha256": "3b06c2816e2569d6985b9c27bd591714b6fd93a0f4c7ac65c031cc7847f95f89",
+  "native": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab",
+  "policy_sha256": "a3413e4b9db2c8654703d62197f5f56bd696a555e8a3c05d913d6af5fd5ca4f8",
+  "prelaunch_s": 0.07932862907182425,
+  "seed": 630217
+}
