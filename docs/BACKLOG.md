@@ -122,6 +122,18 @@ correct it.
 
 ## Open: the GGUF engine and the Pilot
 
+### L40S shared-KV attention in mixed document steps
+
+On the Qwen3-32B Q4_K_M L40S path a 449-row mixed step spends 9 ms in GPU attention at
+1,024 physical KV positions and 87–88 ms at 16,384, with identical logical history.
+Test a shared-pool attention kernel that omits fully masked key blocks while preserving the
+order of visible keys. Count which mask tiles the kernel skips on the actual 32-client
+workload. Charge mask discovery, indexing and launch overhead to the candidate. Close the
+candidate if the saved GPU work fails to improve matched HTTP throughput or worsens
+time to first content or p95 streaming pauses on either seed. Keep the previous numerical
+and factual gates. The feed-forward gate/up projections remain a separate measured target
+even at short spans. [L40S measurement and retention comparison](LAB.md#2026-11-27-why-a-mixed-l40s-step-gets-slower-as-the-server-stays-busy)
+
 ### QG1 — A correctness check for answer quality
 
 **Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers

@@ -4945,3 +4945,37 @@ the only leased pod. The journal booked **5.50 USD** of the additional 10.00 USD
 including a ten-minute cleanup allowance. The prior stage had booked 19.71 USD, giving
 **25.21 USD** total across both stages. The public cost journal distinguishes posted pod
 charges from the conservative booking. [This lease](../lab/autonomous/results/l40s-native-dispatch/costs.json) · [Prior stage](../lab/autonomous/results/l40s-mixed-prefill-progress/cost.json)
+
+### 2026-11-27, why a mixed L40S step gets slower as the server stays busy
+
+On the original two Qwen3-32B Q4_K_M seeds, a 32-client wave contains 16 short chats and 16 documents. Six complete HTTP waves had 1,024 output tokens each. In every wave 16 calls each accepted approximately 430–446 document rows alongside ongoing answers. These calls took 3.91–4.99 s, or 66–70% of HTTP wall time. All native decode calls together occupied 97.0–97.7% of the wall. For all 96 short requests the longest gap between streamed chunks overlapped these large calls by at least 80%. The per-wave median overlap was 97.7–98.9%. [HTTP timestamps and native traces](../lab/autonomous/results/l40s-native-dispatch/http/primary/)
+
+A second physical NVIDIA L40S with 46,068 MiB and driver 595.112.07 replayed the two input seeds. The rendered token digests matched all 18 original performance waves. The shared cache allocates space for 65,536 tokens. Its native attention range ends at the highest occupied physical cell, rounded up. For the 16 large calls per wave the median range grew from 5,376 positions in the first wave to 13,440 and 14,208 in the last wave of each seed. The corresponding median step time grew from 242 to 301 ms and from 255 to 324 ms. These are native worker timings. [Target and step-level records](../lab/autonomous/results/l40s-mixed-bottleneck/span/)
+
+On the same board, a controlled single step used 433 document rows and 16 rows from existing short requests. All weights, input rows and logical histories were fixed. Only the length of the masked KV range varied. Four counterbalanced timing rounds and a separate CUDA capture were run on each seed. All 17 greedy picks agreed at all four settings on both seeds.
+
+| Physical KV positions | Median step time, two seeds | GPU flash attention, separate captures | GPU main Q4_K and Q6_K matmuls, separate captures |
+| ---: | ---: | ---: | ---: |
+| 1,024 | 215.7–217.5 ms | 9.4–9.5 ms | 174.1–174.2 ms |
+| 8,192 | 249.1–250.4 ms | 46.0 ms | 169.9–171.4 ms |
+| 16,384 | 289.6–291.8 ms | 87.3–88.1 ms | 167.0–168.6 ms |
+| 32,768 (stress) | 419.0–419.2 ms | 214.2–215.8 ms | 164.6–166.5 ms |
+
+This identifies the source of the growing cost and the largest cost at short spans. The synchronized 448-row operator benchmarks estimate 77 ms for the 128 Q4_K gate/up matrices and 45 ms for the feed-forward down projections per pass on the original board. These are estimates from layer counts and standalone operators. CUDA confirms a large quantized matmul cost in the actual mixed step. The archived vLLM 0.34.0 deployment used AWQ-Marlin and delivered 266.55 output tokens/s at this width. The fresh L40S had a different physical fingerprint. [Isolated operator measurements](../lab/autonomous/results/l40s-native-dispatch/operator-calibration/) · [Validated comparator](../lab/autonomous/results/l40s-native-dispatch/vllm-reference.json)
+
+The product trial limited cache cells held exclusively by completed requests to 2,048 out of 65,536 (`IRONMULE_GGML_KEEP=0.03125`). Active requests retained their context and reservations. Each process used the same conservative kernel flags, the qualified shared pool and 32 sequence slots. Three timed waves per width and seed used the incumbent's rendered inputs. Stock ran first on seed 180341 and second on seed 943819.
+
+| Seed, 32 clients | Stock → limited, output tokens/s | Paired throughput ratio | Paired first-content time ratio | Paired p95 stream-pause ratio | Paired p95 completion ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 180341 | 153.07 → 173.89 | 1.136 | 0.865 | 0.899 | 0.880 |
+| 943819 | 154.98 → 175.84 | 1.135 | 0.864 | 0.895 | 0.886 |
+
+Both settings answered all 64 factual questions correctly and passed the product's numerical gate. The fixed-length performance responses had identical text digests in 121 of the 192 pairs at width 32. At one client the paired throughput ratios were 1.007 and 0.994. At eight they were 0.997 and 1.003. A ratio of the separately reported median throughputs answers a different question from the median of the three within-wave ratios. The retention limit is a high-concurrency candidate on this hardware. Stock remains the serving default. [Product worker receipts](../lab/autonomous/results/l40s-mixed-bottleneck/http/)
+
+The initial H1 worker inherited PS1 and PK6 settings from tokenization in the benchmark's parent process. It used a different qualified kernel profile from the first R1 process. Its H2 and R2 successors also used the explicit profile. The three runs are retained as exploratory evidence. The runner restores the launcher's six kernel flags before each new process. The scored comparison reuses the original conservative R1 and joins it to fresh conservative H1, H2 and R2 workers, verifies the counted candidates' inherited retention value and requires matching kernel profiles and input digests. [Exploratory runs](../lab/autonomous/results/l40s-mixed-bottleneck/exploratory/) · [Study and replay commands](../lab/pk6/native_dispatch/README.md#attribute-the-mixed-step-on-l40s)
+
+On a separate replay, the native mask was inspected before attention at 8 query rows × 256 key positions per tile. Across the six stock waves, 80.7–89.4% of the tiles were entirely masked. In every wave 51.3–73.6% of **all** tiles were masked below the final visible tile for their query group. A scan that only shortens the tail still includes those tiles. The original CUDA dispatch enables its tail scan for at least 1,024 query rows or multiple physical streams. These mixed steps have fewer than 512 rows in one shared stream. Tile counts measure eligible work. The time saved by skipping that work still requires an implementation and a matched serving trial. [Observed masks](../lab/autonomous/results/l40s-mixed-bottleneck/masks/) · [CUDA dispatch](https://github.com/ggml-org/llama.cpp/blob/4227c9b/ggml/src/ggml-cuda/fattn-common.cuh#L842-L857)
+
+The bounded-retention replay verified the same inputs and counted the same 16 mixed calls per wave. Both policies started at a median physical span of 5,376 positions. By the third wave the stock spans reached 13,440 and 14,208. With the cap, both were 4,864. Even then about 70% of the tiles in each third wave were fully masked below the final visible tile. [Bounded-retention masks](../lab/autonomous/results/l40s-mixed-bottleneck/masks-limited/) · [Reproducible summary](../lab/autonomous/results/l40s-mixed-bottleneck/summary.json)
+
+The investigation booked $0.8351 including the cleanup allowance, bringing the $10 campaign journal to $6.3347. RunPod confirmed removal of the L40S. [Cost journal](../lab/autonomous/results/l40s-mixed-bottleneck/costs.json)
