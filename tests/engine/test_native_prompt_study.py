@@ -143,3 +143,40 @@ def test_vllm_reuse_retains_scope_and_raw_reference(tmp_path):
     receipt.write_text(json.dumps({**measured, "original_start": 0}))
     with pytest.raises(ValueError, match="verify"):
         score.run(tmp_path)
+
+
+def test_runner_reuses_vllm_without_launching_the_comparator(tmp_path, monkeypatch):
+    import sys
+    import time
+    from lab.pk6.native_dispatch import reference, run, score
+
+    archived = score.read(reference.ARCHIVE / "http/primary/target.json")
+    output = tmp_path / "http"
+    monkeypatch.setattr(sys, "argv", ["run", "--arms", "vllm", "--out", str(output)])
+    monkeypatch.setenv("RP_DEADLINE", str(int(time.time()) + 120))
+    monkeypatch.setattr(run.trial, "board", lambda: archived["hardware"])
+    monkeypatch.setattr(run, "checksum", lambda _: archived["gguf_sha256"])
+    monkeypatch.setattr(
+        run, "verify", lambda _: {"manifest_sha256": archived["awq_manifest_sha256"]}
+    )
+    monkeypatch.setattr(
+        run.subprocess,
+        "check_output",
+        lambda argv, **kwargs: (
+            archived["source"] if argv[0] == "git" else archived["vllm_version"]
+        ),
+    )
+    monkeypatch.setattr(
+        run.trial,
+        "measure",
+        lambda *args, **kwargs: pytest.fail("unexpected vLLM launch"),
+    )
+    monkeypatch.setattr(run.trial, "SEEDS", run.trial.SEEDS)
+    run.main()
+    assert not (output / "start-vllm.json").exists()
+    completed = score.read(output / "completed.json")
+    assert completed["order"] == [] and completed["reused"] == ["vllm"]
+    assert (
+        score.run(output)["arms"]["vllm"]["start"]
+        == score.read(output / "reused-vllm.json")["original_start"]
+    )

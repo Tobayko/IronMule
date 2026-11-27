@@ -1,0 +1,15 @@
+{
+  "gates": [
+    {
+      "diagnostic": null,
+      "interval": [
+        1.0,
+        1.0
+      ],
+      "kernel_mode": "stock",
+      "passes": true,
+      "ratio": 1.0
+    }
+  ],
+  "log_sha256": "c6c5aa1cf70b31c5c129a3a55c9d799d45026c7c372f5d3b52a9601b974b9317"
+}
