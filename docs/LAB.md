@@ -4864,3 +4864,12 @@ O delivered 129.45 and 129.77 tokens/s, below the native controls. Every K and O
 answered all 32 factual questions correctly. The existing L40S vLLM target at one client
 is 37.38 tokens/s and a median first token of 0.047 s. The four native draft starts took
 0.061–0.064 s to deliver their median first token. [Draft process receipts](../lab/autonomous/results/l40s-native-dispatch/http/draft-mix-v2-lease-resume/)
+
+The independent retrieval check used two more sets of 32 documents. Each contained three
+different six-digit seals. Stock and compact both returned the requested seal in all 64
+cases and answered all 32 subsequent short factual cases correctly. CPU training used all
+widths from seed 943819. On seed 180341 the randomly initialized ensemble chose stock in
+all six cells. After fitting it chose compact for the document cells and stock for mixed
+traffic. A simple length rule made the same choices. The measured criteria admitted the
+compact profile for sustained eight- and 32-client document traffic. At one client the
+streaming pause missed the ten-percent requirement. [Quality cases and serving traces](../lab/autonomous/results/l40s-native-dispatch/controls/document-retrieval/) · [Controller fit and held-out comparisons](../lab/autonomous/results/l40s-native-dispatch/pool-pilot/fit.json)

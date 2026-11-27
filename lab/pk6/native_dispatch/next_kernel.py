@@ -23,6 +23,68 @@ CANDIDATES = {
 }
 
 
+def mixed_time_target(evidence):
+    """Price the requested throughput against the actual mixed-call time in each native wave."""
+    from lab.pk6.mixed_progress import grade
+    from lab.pk6.native_dispatch import reference, score
+
+    known = reference.lookup(evidence)
+    if known is None:
+        return None
+    primary = evidence / "http/primary"
+    external = score.waves(primary, "vllm")
+    observations = []
+    for arm in ("R1", "R2"):
+        rows = score.waves(primary, arm)
+        bound = grade.bindings(primary, arm, rows)
+        for width in (1, 8, 32):
+            selected = [w for w in rows if w["width"] == width and w["repeat"] < 3]
+            compared = [
+                w
+                for w in external
+                if w["width"] == width
+                and w["seed"] == selected[0]["seed"]
+                and w["repeat"] < 3
+            ]
+            if not grade.paired(compared, selected)["same_fixed_work"]:
+                raise ValueError(
+                    "external target describes a different deployment workload"
+                )
+        for w, cell in zip(rows, bound["cells"], strict=True):
+            if w["repeat"] == 3:
+                continue
+            width = str(w["width"])
+            target_rate = 1.1 * known["metrics"][width]["tok_s"]["median"]
+            generated = sum(r["tokens"] for r in w["requests"])
+            target_s = generated / target_rate
+            mixed = cell["phases"].get("mixed", {}).get("llama_decode_s", 0.0)
+            remaining = target_s - (w["elapsed_s"] - mixed)
+            observations.append(
+                {
+                    "arm": arm,
+                    "width": int(width),
+                    "repeat": w["repeat"],
+                    "native_elapsed_s": w["elapsed_s"],
+                    "target_tok_s": target_rate,
+                    "target_elapsed_s": target_s,
+                    "mixed_native_s": mixed,
+                    "required_saved_s": max(0, w["elapsed_s"] - target_s),
+                    "mixed_only_speed_ratio_required": (
+                        1.0
+                        if w["elapsed_s"] <= target_s
+                        else mixed / remaining
+                        if remaining > 0 and mixed > 0
+                        else None
+                    ),
+                }
+            )
+    return {
+        "comparator_waves_sha256": known["waves_sha256"],
+        "observations": observations,
+        "assumption": "Fixed completed work, with every cost outside native mixed prompt/decode calls unchanged. A null ratio means reducing mixed time alone cannot attain the throughput goal.",
+    }
+
+
 def shortlist(evidence):
     operators = evidence / "operator-calibration"
     target = json.loads((operators / "completed.json").read_bytes())
@@ -83,6 +145,7 @@ def shortlist(evidence):
         "hardware": target["hardware"],
         "native": target["ggml_cuda"],
         "candidates": result,
+        "throughput_target": mixed_time_target(evidence),
         "interpretation": "Ranking hypothesis. Warm CUDA arithmetic and full GGML graph timing have different boundaries. Only matched full-server measurements determine benefit.",
     }
 

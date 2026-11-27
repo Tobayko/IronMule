@@ -248,3 +248,9 @@ The observed prompt lengths and concurrency are the model inputs. The selected s
 own model gate and serve the fixed requests. Verification charges the full CPU fit, startup decision
 and verification to the three 32-client waves. Model loading and server startup are reported
 separately. A regression, incomplete trial or explicit withdrawal selects stock at the next start.
+
+The CPU kernel planner reads the stored vLLM target when it prices the gap. At 32 clients the
+six original IronMule waves need a median 3.13 seconds less wall time to reach 293.20 output
+tokens/s. If everything outside native mixed prompt/decode calls stayed fixed, those calls
+would need to run 2.23–3.11 times as fast, depending on the wave. The estimate uses each wave's
+completed tokens and its request-bound native trace. [Per-wave calculation](../../autonomous/results/l40s-native-dispatch/mixed-time-target.json)

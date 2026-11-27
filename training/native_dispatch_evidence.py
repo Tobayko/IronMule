@@ -320,6 +320,91 @@ def experiences(root, source, digest):
             authorship="IronMule selected the measured target. Codex wrote the replacement function.",
             uncertainty="The assumed 10 percent device-time gain ranks experiments. It is not a measured saving.",
         )
+    elif path.name == "fit.json" and folder.name == "pool-pilot":
+        from lab.pk6.replay_http import checksum
+
+        if checksum(folder / "pilot.npz") != result["weights_sha256"] or any(
+            checksum(folder.parent / name) != bound
+            for name, bound in result["files"].items()
+        ):
+            raise ValueError("changed pool controller or training measurements")
+        for row in result["scores"]:
+            workload = row["workload"]
+            seed = row["server_seed_index"]
+            width = row["width"]
+            yield record(
+                "native_pool_pilot_replay",
+                source,
+                digest,
+                f"{workload}/{seed}/{width}",
+                f"l40s-pool-{workload}-process-seed-{seed}",
+                hardware=result["hardware"],
+                base_commit=result["source"],
+                model=result["model"],
+                quantization="Q4_K_M",
+                software={
+                    "controller": result["weights_sha256"],
+                    "ggml_cuda": result["native"],
+                },
+                workload={
+                    "inputs": workload,
+                    "split": row["split"],
+                    "concurrency": width,
+                },
+                decision=row["trained"],
+                metrics=[row],
+                reason="grouped CPU replay of measured complete server profiles",
+                authorship="IronMule fitted its Pilot on measured pressure and mixed workloads.",
+                uncertainty="One GPU, two process seeds. The simple length rule is included for comparison. Runtime release is scored separately.",
+            )
+    elif path.name == "pool-restart.json":
+        from lab.pk6.replay_http import checksum
+
+        archive = folder / "controls/pool-restart"
+        if result != run(archive):
+            raise ValueError("pool restart differs from measured requests")
+        for receipt in sorted(archive.rglob("decision.json")):
+            if not (receipt.parent / "http").is_dir():
+                continue
+            choice = json.loads(receipt.read_bytes())
+            arm = choice["arm"]
+            if not (receipt.parent / "http" / f"end-{arm}.json").exists():
+                continue
+            actual = result["arms"][arm]
+            if (
+                choice["policy_sha256"] != checksum(folder / "pool-pilot/fit.json")
+                or choice["hardware"] != result["binding"][0]
+            ):
+                raise ValueError("restart used a different controller or GPU")
+            yield record(
+                "native_pool_pilot_serving",
+                source,
+                digest,
+                f"{receipt.parent.name}/{arm}",
+                "l40s-capacity-long-documents",
+                hardware=choice["hardware"],
+                base_commit=result["binding"][1],
+                model=choice["gguf"],
+                quantization="Q4_K_M",
+                workload={
+                    "concurrency": choice["decision"]["width"],
+                    "sample_seed": choice["seed"],
+                },
+                decision=choice["decision"]["profile"],
+                profiles=[actual["proof"]],
+                metrics=[
+                    actual["metrics"],
+                    {
+                        "prelaunch_s": choice["prelaunch_s"],
+                        "startup_s": actual["startup_s"],
+                    },
+                ],
+                quality=actual["quality"],
+                memory_mib=actual["resources"]["peak_gpu_mib"],
+                authorship="IronMule selected its pool before serving. Codex implemented the comparator and withdrawal path.",
+                reason=choice["decision"]["reason"],
+                uncertainty="Same physical L40S and archived inputs, with a fresh serving worker.",
+            )
     elif path.name == "fit.json":
         for i, row in enumerate(result["rows"]):
             yield record(
