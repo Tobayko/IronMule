@@ -193,3 +193,21 @@ export PYTHONPATH="$PWD"
 bash "$study/lab/pk6/native_dispatch/serve.sh" /work/http/draft-load --arms C1 C2 \
   --reference-archive "$results" --policy /tmp/draft-load.json
 ```
+
+#### Replaying the long-document tests
+
+The capacity workload sends 900-word inventories, with a mix of shared and distinct prefixes. Each
+process serves the same workload at one, eight and 32 clients, then answers 32 short factual
+questions. A separate quality workload asks for an exact six-digit seal embedded near the
+beginning, middle or end of a document. The other two seals are distractors. It checks two new
+sets of 32 documents and repeats the short factual test after the long ones.
+
+```bash
+python -m lab.pk6.native_dispatch.score "$results/controls/capacity" > /tmp/capacity.json
+python -m lab.pk6.native_dispatch.document_quality assess "$results/controls/document-retrieval" /tmp/retrieval.json
+python -m lab.pk6.native_dispatch.host_load "$results" "$results/host-samples.jsonl.gz" /tmp/host-load.json
+```
+
+The host-load replay joins five-second CPU observations to the actual request windows. Its
+sample count indicates which processes ran after that observer started. The vLLM archive covers
+the earlier mixed workload. The long-document comparison uses IronMule's original physical KV pool.

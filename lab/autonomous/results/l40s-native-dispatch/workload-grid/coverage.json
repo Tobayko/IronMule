@@ -1,0 +1,12 @@
+{
+  "matched_outer_calls": [
+    3,
+    3
+  ],
+  "native_fraction": [
+    0.00946030551816872,
+    0.3286912579749135
+  ],
+  "ranges": 4,
+  "source_trace": "dbcae537b14af150608b5c93a61f8a69852d2d9e762f575ccd5e5ea87f2ba31b"
+}

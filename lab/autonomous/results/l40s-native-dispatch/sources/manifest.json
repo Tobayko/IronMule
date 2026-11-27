@@ -63,6 +63,19 @@
       "lab/pk6/native_dispatch/prepare.py": "a64c3753b96e8dfb2d77bb95e2017f5a4779fab830185c2e8de95acf349372c6",
       "lab/pk6/native_dispatch/run.py": "ea59f2d9e8d127e7a0da13249dc424947a039bdba71b8794c3737acdbad2f256"
     },
+    "document-retrieval": {
+      "ironmule/ggml_engine.py": "1b75d4b0169ff443fba532edca2f0995b8da646d15f7ccba7cf1de7d5748bede",
+      "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
+      "lab/pk6/mixed_progress/schedule.py": "455bea90e8ade951d20eb59cc51f6bca0f5604c065137b03964b833d4255da5d",
+      "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
+      "lab/pk6/native_dispatch/capture.py": "ec81bdf2c53c3ddd9387e4eed143f1ad6ae90a6ed8557181a9291cd8ae152065",
+      "lab/pk6/native_dispatch/document_quality.py": "0220fed4a7bba305b0c8119b17cb0816afceddc371e9f65d563ba1c161fcc8a7",
+      "lab/pk6/native_dispatch/prepare.py": "c4a9c4d81db5dc739989b8881686ff36cf7e756a560fcda137177e2e64d4c35a",
+      "lab/pk6/native_dispatch/reference.py": "3527833973115a20aa5ec37cd8dd831ef5e8c0932b31c9386c92c5c2a8dcfde1",
+      "lab/pk6/native_dispatch/run.py": "5affd7c39f8fd3974108449e9a744f521e76846191de5444cf5dabf9a5dcfabd",
+      "lab/pk6/native_dispatch/score.py": "52eac4a2fab8cc6381b079cc89c219f3fea5247d5fd0a368d7c5374f601bf9d8"
+    },
     "draft-mix-load": {
       "ironmule/ggml_engine.py": "48e90b983c1b2dea32d8635acb8e9a0d5ba4fd38a08bc28a3af331c48c49ab34",
       "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
@@ -103,6 +116,18 @@
       "lab/pk6/native_dispatch/capture.py": "ec81bdf2c53c3ddd9387e4eed143f1ad6ae90a6ed8557181a9291cd8ae152065",
       "lab/pk6/native_dispatch/prepare.py": "43754a9332b20d0610999fae3e03f8487e533a692c05e930895133603abd6d2c",
       "lab/pk6/native_dispatch/run.py": "d23211d84327286dad3be0870dd3ebb38e409e30be4d04a045468cffeca61e77"
+    },
+    "grid-trace-http": {
+      "ironmule/ggml_engine.py": "1b75d4b0169ff443fba532edca2f0995b8da646d15f7ccba7cf1de7d5748bede",
+      "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
+      "lab/pk6/mixed_progress/schedule.py": "455bea90e8ade951d20eb59cc51f6bca0f5604c065137b03964b833d4255da5d",
+      "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
+      "lab/pk6/native_dispatch/capture.py": "ec81bdf2c53c3ddd9387e4eed143f1ad6ae90a6ed8557181a9291cd8ae152065",
+      "lab/pk6/native_dispatch/prepare.py": "c4a9c4d81db5dc739989b8881686ff36cf7e756a560fcda137177e2e64d4c35a",
+      "lab/pk6/native_dispatch/reference.py": "3527833973115a20aa5ec37cd8dd831ef5e8c0932b31c9386c92c5c2a8dcfde1",
+      "lab/pk6/native_dispatch/run.py": "5affd7c39f8fd3974108449e9a744f521e76846191de5444cf5dabf9a5dcfabd",
+      "lab/pk6/native_dispatch/score.py": "52eac4a2fab8cc6381b079cc89c219f3fea5247d5fd0a368d7c5374f601bf9d8"
     },
     "half-http": {
       "ironmule/ggml_engine.py": "1b75d4b0169ff443fba532edca2f0995b8da646d15f7ccba7cf1de7d5748bede",
@@ -282,6 +307,11 @@
     }
   },
   "files": {
+    "0220fed4a7bba305b0c8119b17cb0816afceddc371e9f65d563ba1c161fcc8a7": {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "commit": null,
+      "patch": "3fc3c2c5fb7270d9252ccefa7c03161d5a457f1ad8f954ce604be49a3f85211b"
+    },
     "0284544c3f8f99412c7698ab00166b4387274f7e74bc865be2145b9271ecca9f": {
       "base_sha256": "0284544c3f8f99412c7698ab00166b4387274f7e74bc865be2145b9271ecca9f",
       "commit": "1ea549f59a245c9c96b488104b997fbbdc099084"

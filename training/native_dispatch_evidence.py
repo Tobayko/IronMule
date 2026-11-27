@@ -47,6 +47,100 @@ def experiences(root, source, digest):
                     authorship="Codex wrote the Ada candidates. IronMule ranked the native Q4_K tile order.",
                     uncertainty="System comparison on one board with distinct official quantizations. Diagnostic and rejected paths supply no production labels.",
                 )
+    elif path.name == "capacity-control.json":
+        if result != run(folder / "controls/capacity"):
+            raise ValueError(
+                "capacity comparison differs from its raw streaming receipts"
+            )
+        for seed in (1, 2):
+            h, r = f"H{seed}", f"R{seed}"
+            if h not in result["arms"] or r not in result["arms"]:
+                continue
+            candidate, reference = (result["arms"][key] for key in (h, r))
+            for width in (1, 8, 32):
+                pair = result["pairs"][f"{h}/{r}/{width}"]
+                if (
+                    not pair["same_fixed_work"]
+                    or not candidate["proof"]["verified_compact_pool"]
+                ):
+                    raise ValueError(
+                        "unmatched capacity workload or missing physical pool"
+                    )
+                yield record(
+                    "native_long_document_capacity",
+                    source,
+                    digest,
+                    f"{h}/{r}/{width}",
+                    "l40s-capacity-long-documents",
+                    hardware=result["binding"][0],
+                    base_commit=result["binding"][1],
+                    model=result["binding"][2],
+                    quantization="Q4_K_M",
+                    workload={
+                        "concurrency": width,
+                        "seed": result["binding"][-1][seed - 1],
+                        "document_words": 900,
+                        "output_limit": 32,
+                    },
+                    decision={"reference_cells": 65536, "tested_cells": 16384},
+                    metrics=[
+                        {
+                            "candidate": candidate["metrics"][str(width)],
+                            "reference": reference["metrics"][str(width)],
+                            "paired_ratios": pair["candidate_over_reference"],
+                            "reference_peak_serving_mib": reference["resources"]["peak_gpu_mib"],
+                        }
+                    ],
+                    quality={
+                        "candidate": candidate["quality"],
+                        "reference": reference["quality"],
+                    },
+                    memory_mib=candidate["resources"]["peak_gpu_mib"],
+                    reason="matched long-document pressure and repeated-prefix holdout",
+                    authorship="IronMule sized the pool from measured request demand. Codex integrated and measured the physical allocation.",
+                    uncertainty="Three waves per width on this physical GPU. Factual checks used their separate fixed corpus; there is no vLLM result for this document workload.",
+                )
+    elif path.name == "document-retrieval.json":
+        from lab.pk6.native_dispatch.document_quality import SEEDS, assess
+
+        if result != assess(folder / "controls/document-retrieval"):
+            raise ValueError("document retrieval differs from its original requests")
+        for arm, trial in result.items():
+            yield record(
+                "native_document_retrieval", source, digest, arm,
+                "l40s-capacity-long-documents",
+                hardware=trial["hardware"], base_commit=trial["source"],
+                model=trial["model"], quantization="Q4_K_M",
+                workload={"document_seeds": list(SEEDS), "document_words": 900, "concurrency": 32},
+                profiles=[{"arm": arm, "cells": 16384 if arm == "H2" else 65536}],
+                quality={"correct_by_wave": trial["correct_by_wave"], "requests_per_wave": 32},
+                reason="two exact-retrieval waves followed by the short factual gate",
+                authorship="Codex designed this holdout after the measured compact-pool speedup.",
+                uncertainty="One cold process per profile, two document seeds, retrieval from synthetic inventory logs.",
+            )
+    elif path.name == "draft-load-plan.json":
+        from lab.pk6.native_dispatch.draft_load import propose
+
+        if result != propose(folder / "http", folder / "draft-metadata.json"):
+            raise ValueError(
+                "draft-load proposal differs from measured target verifications"
+            )
+        yield record(
+            "native_draft_load_proposal",
+            source,
+            digest,
+            "four-slots",
+            "l40s-draft-load",
+            hardware=result["hardware"],
+            model=result["gguf"],
+            quantization="Q4_K_M",
+            workload={"draft": result["draft"]},
+            decision={"slots": result["slots"], "max_running": result["max_running"]},
+            provenance="simulated",
+            reason="bounded follow-up from observed draft coverage and footprint",
+            authorship="Codex designed the catch-up scheduling experiment for IronMule to evaluate.",
+            uncertainty=result["scope"],
+        )
     elif path.name == "worker-plan.json":
         from lab.pk6.native_dispatch.w4_profile import select
 

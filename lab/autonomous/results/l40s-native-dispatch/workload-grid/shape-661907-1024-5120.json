@@ -1,0 +1,556 @@
+{
+  "cells": {
+    "9": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 20.23
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 20.31
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3630990969868435e-07,
+        "us": 42.88
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3630990969868435e-07,
+        "us": 42.94
+      }
+    },
+    "16": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 20.26
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 20.32
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3627645734668477e-07,
+        "us": 42.73
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3627645734668477e-07,
+        "us": 42.74
+      }
+    },
+    "31": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 24.22
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 24.19
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.354272450906137e-07,
+        "us": 42.78
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.354272450906137e-07,
+        "us": 42.85
+      }
+    },
+    "32": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 24.34
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 24.33
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3585101277822105e-07,
+        "us": 42.86
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3585101277822105e-07,
+        "us": 43.12
+      }
+    },
+    "123": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 1.4240639245599596e-07,
+        "us": 30.15
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 44.15
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3335845728288405e-07,
+        "us": 97.78
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3335845728288405e-07,
+        "us": 62.55
+      }
+    },
+    "141": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 1.6294868032673548e-07,
+        "us": 27.1
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 33.14
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3445337521698093e-07,
+        "us": 70.94
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.3445337521698093e-07,
+        "us": 52.54
+      }
+    },
+    "355": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.012345987623121e-07,
+        "us": 40.55
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 49.35
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2900743462960236e-07,
+        "us": 99.24
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2900743462960236e-07,
+        "us": 64.38
+      }
+    },
+    "441": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.0848447945809312e-07,
+        "us": 45.33
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 47.62
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.299253421573667e-07,
+        "us": 90.38
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.299253421573667e-07,
+        "us": 65.25
+      }
+    },
+    "448": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.0867436489879765e-07,
+        "us": 44.48
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 47.2
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2981739650495e-07,
+        "us": 90.52
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2981739650495e-07,
+        "us": 65.11
+      }
+    },
+    "449": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1997389865191508e-07,
+        "us": 49.21
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.1
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2994046250678366e-07,
+        "us": 99.83
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2994046250678366e-07,
+        "us": 65.4
+      }
+    },
+    "450": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1986834042309056e-07,
+        "us": 49.29
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.06
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.298796400486026e-07,
+        "us": 99.86
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.298796400486026e-07,
+        "us": 65.4
+      }
+    },
+    "451": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.198374460249397e-07,
+        "us": 50.05
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.26
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.300609137113497e-07,
+        "us": 99.88
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.300609137113497e-07,
+        "us": 65.34
+      }
+    },
+    "452": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1962473795156257e-07,
+        "us": 49.65
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.22
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2984090125864896e-07,
+        "us": 99.82
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2984090125864896e-07,
+        "us": 65.22
+      }
+    },
+    "453": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1955034412712848e-07,
+        "us": 49.28
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 50.95
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.298157764675125e-07,
+        "us": 99.81
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.298157764675125e-07,
+        "us": 65.56
+      }
+    },
+    "455": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1951790074581368e-07,
+        "us": 50.03
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.23
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.295203896414023e-07,
+        "us": 99.86
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.295203896414023e-07,
+        "us": 65.36
+      }
+    },
+    "457": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1971374053464388e-07,
+        "us": 50.5
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.29
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.29602585225075e-07,
+        "us": 99.84
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.29602585225075e-07,
+        "us": 65.34
+      }
+    },
+    "458": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1965230700971006e-07,
+        "us": 49.53
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.0
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2960392104541825e-07,
+        "us": 99.83
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2960392104541825e-07,
+        "us": 65.52
+      }
+    },
+    "459": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.196386930108929e-07,
+        "us": 50.43
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.27
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2946417150014895e-07,
+        "us": 99.83
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2946417150014895e-07,
+        "us": 65.41
+      }
+    },
+    "461": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.19806395307387e-07,
+        "us": 50.66
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.36
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2956148743323865e-07,
+        "us": 99.9
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2956148743323865e-07,
+        "us": 65.44
+      }
+    },
+    "462": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1975080244374112e-07,
+        "us": 49.7
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.21
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2955409778878675e-07,
+        "us": 99.95
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.2955409778878675e-07,
+        "us": 65.39
+      }
+    },
+    "464": {
+      "sk64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 2.1976053687922104e-07,
+        "us": 50.21
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 368,
+        "relative_rms": 0.0,
+        "us": 51.17
+      },
+      "xy": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.295949966286571e-07,
+        "us": 99.91
+      },
+      "xy64": {
+        "dispatches": 368,
+        "graphs": 368,
+        "relative_rms": 3.295949966286571e-07,
+        "us": 65.43
+      }
+    }
+  },
+  "k": 5120,
+  "n": 1024,
+  "seed": 661907,
+  "source": "d480b7f912cb317c08fa9db2e07fd7b6ae39bd6a1956a20335209a02e30b2009",
+  "tensor": "blk.0.attn_k.weight",
+  "weight_copies": 46
+}

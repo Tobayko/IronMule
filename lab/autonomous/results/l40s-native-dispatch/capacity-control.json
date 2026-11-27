@@ -1,5 +1,102 @@
 {
   "arms": {
+    "H2": {
+      "end": 1795741232.2406702,
+      "excluded_from_promotion": null,
+      "gate": {
+        "interval": [
+          1.0,
+          1.0
+        ],
+        "passes": true,
+        "ratio": 1.0
+      },
+      "metrics": {
+        "1": {
+          "eighth": 0.9660339499823749,
+          "end_p95": 1.2509786400478333,
+          "first": 0.8267032500589266,
+          "first_p95": 0.8267032500589266,
+          "gap_p95": 0.06333117303438485,
+          "tok_s": 25.551182401797355,
+          "visible": 0.8267038610065356
+        },
+        "32": {
+          "eighth": 10.664502996543888,
+          "end_p95": 21.381783424993046,
+          "first": 5.762200965022203,
+          "first_p95": 19.615808894042857,
+          "gap_p95": 0.9072269269963726,
+          "tok_s": 47.77548278088649,
+          "visible": 5.762201495526824
+        },
+        "8": {
+          "eighth": 5.31874483556021,
+          "end_p95": 6.126552456058562,
+          "first": 2.188227040984202,
+          "first_p95": 5.208904867991805,
+          "gap_p95": 0.8741076190490276,
+          "tok_s": 41.769637600017944,
+          "visible": 2.1882273764931597
+        }
+      },
+      "proof": {
+        "cpu_policy": null,
+        "draft_verified_by_width": {},
+        "fallback": null,
+        "matched_native_requests": 155,
+        "native_raw_sha256": "055c8b51b7da59e9839dc858495403600cabfaa24d3339106fab32f3ce5ea578",
+        "observed_pool_capacities": [
+          [
+            16384,
+            16384,
+            32
+          ]
+        ],
+        "profile_flags": {
+          "IRONMULE_GGML_DH2": "0",
+          "IRONMULE_PK6": "0",
+          "IRONMULE_PS1": "0",
+          "IRONMULE_PS1_CONCAT": "0",
+          "IRONMULE_PS1_WARM": "0",
+          "IRONMULE_SV5": "0"
+        },
+        "prompt_plugin_dispatches_in_http_by_width": {
+          "1": 0,
+          "32": 0,
+          "8": 0
+        },
+        "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
+        "shared_pool": true,
+        "streams_pass": false,
+        "verified_compact_pool": true
+      },
+      "quality": {
+        "943819": 32
+      },
+      "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 11.769353259842399,
+          "32": 7.169448255091282,
+          "8": 7.719615216704759
+        },
+        "estimated_board_joules_per_output_token_by_seed": {
+          "943819": {
+            "1": 11.769353259842399,
+            "32": 7.169448255091282,
+            "8": 7.719615216704759
+          }
+        },
+        "mean_sampled_watts": 340.6812643678161,
+        "peak_gpu_mib": 23851.0,
+        "process_peak_gpu_mib": 23851.0,
+        "samples": 87
+      },
+      "start": 1795741083.4209661,
+      "startup_s": 60.03662689297926
+    },
     "R2": {
       "end": 1795739767.9981477,
       "excluded_from_promotion": null,
@@ -108,6 +205,61 @@
       943819
     ]
   ],
-  "pairs": {},
+  "pairs": {
+    "H2/R2/1": {
+      "candidate_over_reference": {
+        "eighth": 0.6632891476274309,
+        "end_p95": 0.5944046875934583,
+        "first": 0.6379608718658357,
+        "first_p95": 0.6379608718658357,
+        "gap_p95": 0.9830396616281737,
+        "tok_s": 1.6818098400035175,
+        "visible": 0.637961057283388
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        true,
+        true
+      ]
+    },
+    "H2/R2/32": {
+      "candidate_over_reference": {
+        "eighth": 0.464642913337091,
+        "end_p95": 0.518333088418439,
+        "first": 0.5330223173719909,
+        "first_p95": 0.5347876869768451,
+        "gap_p95": 0.45006228570146145,
+        "tok_s": 1.9276420307274493,
+        "visible": 0.5330223336068035
+      },
+      "clear_win": true,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "H2/R2/8": {
+      "candidate_over_reference": {
+        "eighth": 0.5958087220693256,
+        "end_p95": 0.6283865909634574,
+        "first": 0.6149723437484156,
+        "first_p95": 0.6053108405594801,
+        "gap_p95": 0.5749163720737687,
+        "tok_s": 1.5909290829968814,
+        "visible": 0.6149723881112484
+      },
+      "clear_win": true,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        false,
+        false
+      ]
+    }
+  },
   "two_seed_evaluation": {}
 }
