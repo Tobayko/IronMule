@@ -232,6 +232,9 @@ matching `LLAMA_CPP_LIB_PATH` and the absolute paths produced above. The origina
 the reverse-order long-document comparison is under the following path in the results archive.
 
 ```bash
+python -m lab.pk6.native_dispatch.materialize "$results/sources" pool-pilot /tmp/ironmule-pool-serving
+cd /tmp/ironmule-pool-serving
+export PYTHONPATH="$PWD"
 history="$results/controls/capacity/capacity-confirm/R1/waves-R1.jsonl"
 python -m lab.pk6.native_dispatch.pool_pilot serve \
   --policy /tmp/pool-pilot --pool-plan "$results/compact-pool.json" \
@@ -248,9 +251,20 @@ The observed prompt lengths and concurrency are the model inputs. The selected s
 own model gate and serve the fixed requests. Verification charges the full CPU fit, startup decision
 and verification to the three 32-client waves. Model loading and server startup are reported
 separately. A regression, incomplete trial or explicit withdrawal selects stock at the next start.
+The recorded restart selected compact and retained it at 1.685× net over the archived stock
+run after charging 0.920 s for the controller. Following withdrawal, the new stock process
+served the same 155 requests. At width 32 the fresh compact and stock runs delivered 47.50
+and 29.04 output tokens/s. Both got all 32 factual answers right.
+[Actual startup decisions](../../autonomous/results/l40s-native-dispatch/controls/pool-restart/pool-live/) · [Replayed measurements](../../autonomous/results/l40s-native-dispatch/pool-restart.json)
 
 The CPU kernel planner reads the stored vLLM target when it prices the gap. At 32 clients the
 six original IronMule waves need a median 3.13 seconds less wall time to reach 293.20 output
 tokens/s. If everything outside native mixed prompt/decode calls stayed fixed, those calls
 would need to run 2.23–3.11 times as fast, depending on the wave. The estimate uses each wave's
 completed tokens and its request-bound native trace. [Per-wave calculation](../../autonomous/results/l40s-native-dispatch/mixed-time-target.json)
+
+To test sensitivity to the training target on CPU, append `--paired-targets` to the
+fit command and write a separate output directory. This version fits the median of the
+three matched speed ratios per cell. The original fit used each cohort's median elapsed time.
+All twelve model choices agreed across the two objectives. The live restart used the original
+weights. [Both objectives by workload](../../autonomous/results/l40s-native-dispatch/pool-pilot/paired-targets.json)

@@ -1,6 +1,6 @@
 {
   "first_unix": 1795738787.9991045,
-  "last_unix": 1795744493.9629061,
+  "last_unix": 1795745384.5865023,
   "processes": {
     "controls/capacity/capacity-confirm/H1/end-H1.json": {
       "median_load1_in_requests": 34.33,
@@ -38,9 +38,27 @@
       "request_samples": 14,
       "request_samples_with_native_compiler": 0
     },
+    "controls/pool-restart/pool-live/active/http/end-H1.json": {
+      "median_load1_in_requests": 45.63,
+      "process_samples": 31,
+      "request_samples": 17,
+      "request_samples_with_native_compiler": 0
+    },
+    "controls/pool-restart/pool-live/restored/http/end-R1.json": {
+      "median_load1_in_requests": 66.23,
+      "process_samples": 41,
+      "request_samples": 28,
+      "request_samples_with_native_compiler": 0
+    },
     "http/bounded-w4-http-archive-replay/S1/end-S1.json": {
       "median_load1_in_requests": 56.105000000000004,
       "process_samples": 152,
+      "request_samples": 6,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/bounded-w4-http-archive-replay/S2/end-S2.json": {
+      "median_load1_in_requests": 36.695,
+      "process_samples": 23,
       "request_samples": 6,
       "request_samples_with_native_compiler": 0
     },
@@ -103,6 +121,18 @@
       "process_samples": 0,
       "request_samples": 0,
       "request_samples_with_native_compiler": null
+    },
+    "http/native-final/C1/end-C1.json": {
+      "median_load1_in_requests": 28.11,
+      "process_samples": 21,
+      "request_samples": 7,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/native-final/Q2/end-Q2.json": {
+      "median_load1_in_requests": 30.6,
+      "process_samples": 18,
+      "request_samples": 5,
+      "request_samples_with_native_compiler": 0
     },
     "http/pilot-http/L1/end-L1.json": {
       "median_load1_in_requests": null,

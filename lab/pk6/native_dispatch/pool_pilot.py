@@ -53,7 +53,7 @@ def choose(heads, inputs, qualified):
     )
 
 
-def fit(root, out):
+def fit(root, out, *, paired_targets=False):
     started = time.perf_counter()
     inputs, times, files, bounds, qualifications = {}, {}, {}, {}, {}
     native = score.read(root / "operator-calibration/completed.json")
@@ -132,6 +132,10 @@ def fit(root, out):
                     )
                     for g in groups
                 ]
+                if paired_targets:
+                    # fit_head consumes elapsed-cost ratios. With fixed work the inverse of the
+                    # paired throughput ratio is the paired candidate/stock elapsed-time ratio.
+                    times[key] = [1.0, 1.0 / pair["candidate_over_reference"]["tok_s"]]
                 if family == "documents":
                     qualifications.setdefault(str(width), []).append(pair["clear_win"])
                     if idx == 2:
@@ -199,6 +203,8 @@ def fit(root, out):
         "elapsed_cpu_host_s": time.perf_counter() - started,
         "scope": "Restart planning after measured sustained document traffic. Fit uses seed 943819. Seed 180341 runs in separate processes. A simple document-length rule is the comparison. Throughput labels alone cannot authorize use.",
     }
+    if paired_targets:
+        report["training_objective"] = "median ratio on matched waves"
     save(out / "fit.json", report)
     return report
 
@@ -427,6 +433,11 @@ if __name__ == "__main__":
     train = sub.add_parser("fit")
     train.add_argument("evidence", type=Path)
     train.add_argument("out", type=Path)
+    train.add_argument(
+        "--paired-targets",
+        action="store_true",
+        help="fit on matched ratios for comparison with cohort medians",
+    )
     withdraw = sub.add_parser("withdraw")
     withdraw.add_argument("state", type=Path)
     withdraw.add_argument("--reason", required=True)
@@ -450,7 +461,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.mode == "fit":
-        fit(args.evidence, args.out)
+        fit(args.evidence, args.out, paired_targets=args.paired_targets)
     elif args.mode == "withdraw":
         rollback(args.state, args.reason)
     else:

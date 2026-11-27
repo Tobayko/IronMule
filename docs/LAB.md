@@ -4836,7 +4836,7 @@ speed ratios of 1.139–1.220 across two seeds. The R1 trace spent 2.30 of 28.05
 seconds at that outer width during performance requests. The factual wave had no such
 outer call. Dispatch within each request still requires a serving trace.
 
-H2 reproduced the 12 GiB serving-memory reduction and answered 32/32 factual requests. At 32 clients H1/H2 delivered 159.46/157.46 output tokens/s versus 155.22/153.85 on R1/R2. H2 slowed single-client throughput to 39.3 versus 44.6. The bounded W4 four-worker screen completed on both seeds with identical outputs. At eight clients its two gains were 5.13% and 5.87%; at one client it lost 0.40% and 0.16%. The S serving profile binds the selected table and its generating CUDA library to the same board.
+H2 reproduced the 12 GiB serving-memory reduction and answered 32/32 factual requests. At 32 clients H1/H2 delivered 159.46/157.46 output tokens/s versus 155.22/153.85 on R1/R2. At one client the separate H2 and R2 rate medians were 39.3 and 44.6. The median of the three matched H2/R2 ratios was 1.007. The bounded W4 four-worker screen completed on both seeds with identical outputs. At eight clients its two gains were 5.13% and 5.87%; at one client it lost 0.40% and 0.16%. The S serving profile binds the selected table and its generating CUDA library to the same board.
 
 #### Long documents under sustained KV pressure
 
@@ -4873,3 +4873,33 @@ all six cells. After fitting it chose compact for the document cells and stock f
 traffic. A simple length rule made the same choices. The measured criteria admitted the
 compact profile for sustained eight- and 32-client document traffic. At one client the
 streaming pause missed the ten-percent requirement. [Quality cases and serving traces](../lab/autonomous/results/l40s-native-dispatch/controls/document-retrieval/) · [Controller fit and held-out comparisons](../lab/autonomous/results/l40s-native-dispatch/pool-pilot/fit.json)
+
+For the single-client context-first drafter, paired O/vLLM speed ratios were
+1.501, 1.150 and 2.418 on seed 180341 and 1.534, 1.138 and 2.442 on seed 943819.
+The native stock worker also benefited from repeated short prefixes. Against that stock
+worker the median paired ratios were 0.995 and 0.951. A ratio of separately reported
+median rates answers a different question from the median of the three matched ratios.
+The pool Pilot was fitted on per-cohort median elapsed times and its deployment gate
+uses matched ratios. [Original requests](../lab/autonomous/results/l40s-native-dispatch/http/) · [Scored pairs](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+
+A new process read the observed traffic, loaded the fitted CPU Pilot and chose 16,384 cells.
+It served all 155 requests and passed its numerical gate. At 32 concurrent documents
+it delivered 47.50 output tokens/s. The verifier retained the profile after charging
+0.920 s for the full CPU fit, startup decision and verification, giving 1.685× net speed
+against its recorded stock qualification. The worker took 62.04 s to become ready.
+After an explicit persistent withdrawal, a fresh process read the same inputs and chose
+stock. It served all 155 requests and answered all 32 factual questions. The two measured
+processes delivered 47.50 vs 29.04 tokens/s, with first content in 8.04 vs 12.56 s
+and p95 completion in 21.51 vs 35.13 s. Peak device memory while serving was 23,834 vs
+36,122 MiB. The profile applies to sustained document traffic on this L40S through the
+bounded launcher. [Decisions and rollback](../lab/autonomous/results/l40s-native-dispatch/controls/pool-restart/pool-live/) · [Fresh worker pair](../lab/autonomous/results/l40s-native-dispatch/pool-restart.json)
+
+On the mixed workload the 768-row prefill budget delivered 166.83 and 166.45 output
+tokens/s at 32 clients. It raised median first-content time by 34% and 83% and the p95
+streaming pause by 54% and 48% against each seed's stock process. The four-geometry
+W4 worker gained 5–6% at eight clients in isolation, then reached 113.00 and 113.41
+tokens/s at that width over HTTP. First qualification took 728 s. Both server starts
+answered 32/32 factual questions and reported real generated-kernel dispatch during
+requests. Both experimental profiles remain outside the qualified mixed-workload defaults.
+[HTTP requests and native dispatch](../lab/autonomous/results/l40s-native-dispatch/comparison.json)

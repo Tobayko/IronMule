@@ -376,10 +376,12 @@ def run(root, *, comparator="awq_marlin", reference_archive=None):
                 "different device, source, model, protocol, or duplicate arm"
             )
         binding = pin
-        for d in (folder, folder.parent):
-            csv_path = d / (d.name + ".csv")
-            if csv_path.exists():
-                break
+        # A restart series can share the sampler across multiple role/HTTP directories.
+        d = folder
+        while not (csv_path := d / (d.name + ".csv")).is_file():
+            if d == root or root not in d.parents:
+                raise ValueError(f"missing GPU telemetry for {arm}")
+            d = d.parent
         telemetry = grade.telemetry_samples(csv_path)
         data[arm], arms[arm] = inspect(folder, arm, target, telemetry)
     windows = sorted((a["start"], a["end"]) for a in arms.values())

@@ -91,6 +91,24 @@
       },
       "worst_sampled_energy_ratio": 2.6144408093615925
     },
+    "Q": {
+      "first_stock_start_ratio": null,
+      "highest_serving_vram_ratio": 0.9118263284109555,
+      "profile_eligible": true,
+      "same_factual_accuracy": true,
+      "same_fixed_answers": true,
+      "second_start_over_late_comparator": null,
+      "ten_percent_on_every_width_and_seed": {
+        "eighth": false,
+        "end_p95": false,
+        "first": false,
+        "first_p95": false,
+        "gap_p95": false,
+        "tok_s": false,
+        "visible": false
+      },
+      "worst_sampled_energy_ratio": 1.6159075670061713
+    },
     "R": {
       "first_stock_start_ratio": 2.469896949232672,
       "highest_serving_vram_ratio": 0.9118263284109555,
@@ -108,6 +126,24 @@
         "visible": false
       },
       "worst_sampled_energy_ratio": 1.7396669100651865
+    },
+    "S": {
+      "first_stock_start_ratio": null,
+      "highest_serving_vram_ratio": 0.9816988514451597,
+      "profile_eligible": true,
+      "same_factual_accuracy": true,
+      "same_fixed_answers": true,
+      "second_start_over_late_comparator": null,
+      "ten_percent_on_every_width_and_seed": {
+        "eighth": false,
+        "end_p95": false,
+        "first": false,
+        "first_p95": false,
+        "gap_p95": false,
+        "tok_s": false,
+        "visible": false
+      },
+      "worst_sampled_energy_ratio": 1.7331905397630256
     }
   },
   "scope": "Two input seeds and one GPU cannot establish a win over unmeasured hardware or workloads.",

@@ -1,0 +1,10 @@
+{
+  "arm": "C1",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "unix": 1795744606.5734336
+}
