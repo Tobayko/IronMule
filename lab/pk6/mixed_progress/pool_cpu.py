@@ -12,9 +12,14 @@ from ironmule.gguf_tokenizer import GgufTokenizer
 from training.serving_trial import file_digest, fixture, run_wave
 
 
-def screen(path):
+def screen(path, chunk_rows=0):
     def run(seed, candidate, trace):
-        os.environ["IRONMULE_LAB_POOL_BURST"] = str(int(candidate))
+        if chunk_rows:
+            os.environ["IRONMULE_LAB_SHARED_CHUNK"] = str(
+                chunk_rows if candidate else 0
+            )
+        else:
+            os.environ["IRONMULE_LAB_POOL_BURST"] = str(int(candidate))
         ge.TRACE = str(trace)
         with (
             closing(
@@ -40,10 +45,13 @@ def screen(path):
             r = run_wave(
                 e, tok, [a[i] for i, a in enumerate((short, long) * 4)], 12, {}
             )
+            if e.pool.active or e.pool.reserve:
+                raise ValueError("completed requests retained live KV reservations")
+            marker = "# shared_chunks " if chunk_rows else "# shared_budget "
             return {
                 "seed": seed,
                 "candidate": candidate,
-                "marked": "# shared_budget " in trace.read_text(),
+                "marked": marker in trace.read_text(),
                 **{
                     k: r[k]
                     for k in (
@@ -59,7 +67,7 @@ def screen(path):
 
     rows = []
     with tempfile.TemporaryDirectory() as d:
-        for i, seed in enumerate((970113, 970117)):
+        for i, seed in enumerate((274041, 898013) if chunk_rows else (970113, 970117)):
             for candidate in (False, True) if not i else (True, False):
                 rows.append(run(seed, candidate, Path(d) / f"{seed}-{candidate}.txt"))
     return {
@@ -76,7 +84,9 @@ def screen(path):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("gguf", type=Path)
-    result = screen(p.parse_args().gguf)
+    p.add_argument("--chunk-rows", type=int, default=0)
+    args = p.parse_args()
+    result = screen(args.gguf, args.chunk_rows)
     print(json.dumps(result, indent=2))
     raise SystemExit(
         0 if all(result[k] for k in ("all_correct", "matched_work", "witnessed")) else 1

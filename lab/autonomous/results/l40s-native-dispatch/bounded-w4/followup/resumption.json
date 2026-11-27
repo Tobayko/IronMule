@@ -1,0 +1,9 @@
+{
+  "before": {
+    "attempts": {},
+    "production": false,
+    "status": "incomplete_native_screen"
+  },
+  "reason": "The table build completed after the inherited initial cutoff. Reuse the exact completed table for the original four-worker protocol.",
+  "table": "dd905b611d3aa1da9d9fa65d967b0a43963147133f1beedabfdbfa174df7c2ff"
+}

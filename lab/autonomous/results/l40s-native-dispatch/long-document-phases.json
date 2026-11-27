@@ -1,0 +1,125 @@
+{
+  "pairs": {
+    "180341": {
+      "H1": {
+        "trace_sha256": "1bd637d9bcdac2e6342161394d5b5bebc3255848d3be6f15e6e459d7143bfb99",
+        "waves": [
+          {
+            "http_wall_s": 20.873292476055212,
+            "input_tokens": 40997,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 17.552805,
+            "repeat": 0,
+            "reused_tokens": 12706
+          },
+          {
+            "http_wall_s": 21.533336373977363,
+            "input_tokens": 40960,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 18.399739999999998,
+            "repeat": 1,
+            "reused_tokens": 12631
+          },
+          {
+            "http_wall_s": 21.978335227933712,
+            "input_tokens": 41389,
+            "mixed_calls": 24,
+            "mixed_llama_decode_s": 18.660841000000005,
+            "repeat": 2,
+            "reused_tokens": 12901
+          }
+        ]
+      },
+      "R1": {
+        "trace_sha256": "e7e5f373878577c623c9ec2951fe63e2c299753e332c86d9aff0a9e0923df0e3",
+        "waves": [
+          {
+            "http_wall_s": 24.221558439079672,
+            "input_tokens": 40997,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 21.208918,
+            "repeat": 0,
+            "reused_tokens": 12711
+          },
+          {
+            "http_wall_s": 37.24834784993436,
+            "input_tokens": 40960,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 33.34312499999999,
+            "repeat": 1,
+            "reused_tokens": 12634
+          },
+          {
+            "http_wall_s": 48.671163865947165,
+            "input_tokens": 41389,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 43.294099,
+            "repeat": 2,
+            "reused_tokens": 12914
+          }
+        ]
+      }
+    },
+    "943819": {
+      "H2": {
+        "trace_sha256": "055c8b51b7da59e9839dc858495403600cabfaa24d3339106fab32f3ce5ea578",
+        "waves": [
+          {
+            "http_wall_s": 21.013298038975336,
+            "input_tokens": 40839,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 17.765606,
+            "repeat": 0,
+            "reused_tokens": 12454
+          },
+          {
+            "http_wall_s": 21.43358769803308,
+            "input_tokens": 40769,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 18.297442000000004,
+            "repeat": 1,
+            "reused_tokens": 12523
+          },
+          {
+            "http_wall_s": 21.73535399499815,
+            "input_tokens": 41131,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 18.495067999999996,
+            "repeat": 2,
+            "reused_tokens": 12709
+          }
+        ]
+      },
+      "R2": {
+        "trace_sha256": "875d05b3ba59b5af4af642b7ad82dcd578762af848a0c65693002f3e64b39af0",
+        "waves": [
+          {
+            "http_wall_s": 24.112654889933765,
+            "input_tokens": 40839,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 21.179063,
+            "repeat": 0,
+            "reused_tokens": 12457
+          },
+          {
+            "http_wall_s": 41.316284516011365,
+            "input_tokens": 40769,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 36.937295999999996,
+            "repeat": 1,
+            "reused_tokens": 12533
+          },
+          {
+            "http_wall_s": 51.04159532499034,
+            "input_tokens": 41131,
+            "mixed_calls": 23,
+            "mixed_llama_decode_s": 45.807563,
+            "repeat": 2,
+            "reused_tokens": 12722
+          }
+        ]
+      }
+    }
+  },
+  "scope": "Three successive waves at 32 clients per process. A mixed call evaluated prompt and decode rows together. The effect of allocation, admission and attention range cannot be isolated from these two profiles."
+}

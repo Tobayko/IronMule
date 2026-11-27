@@ -1,0 +1,37 @@
+{
+  "allowed_shapes": [
+    [
+      14,
+      1024,
+      5120
+    ],
+    [
+      12,
+      1024,
+      5120
+    ],
+    [
+      14,
+      151936,
+      5120
+    ],
+    [
+      12,
+      5120,
+      8192
+    ]
+  ],
+  "budget_bytes": 8013846937,
+  "estimated_bytes": 5137643520,
+  "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "library_sha256": "f72c70bb0e99c95dbe17dde0db7a564b5795c03fb5f30d00c2ea48d9974a98b7",
+  "stock_peak_mib": 36122.0,
+  "table_rows": 128,
+  "table_sha256": "dd905b611d3aa1da9d9fa65d967b0a43963147133f1beedabfdbfa174df7c2ff"
+}

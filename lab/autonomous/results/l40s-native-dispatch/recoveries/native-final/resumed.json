@@ -1,0 +1,32 @@
+{
+  "cached-http": {
+    "first_pending": "J1",
+    "old_deadline": 1795745057,
+    "reason": "Unstarted evaluator inherited the previous lease cutoff. Requeued on the acknowledged reservation with original options and a fresh output directory."
+  },
+  "chunk-http": {
+    "first_pending": "Q2",
+    "old_deadline": 1795745057,
+    "reason": "Unstarted evaluator inherited the previous lease cutoff. Requeued on the acknowledged reservation with original options and a fresh output directory."
+  },
+  "draft-mix-load": {
+    "first_pending": "C1",
+    "old_deadline": 1795745057,
+    "reason": "Unstarted evaluator inherited the previous lease cutoff. Requeued on the acknowledged reservation with original options and a fresh output directory."
+  },
+  "grid-trace-http": {
+    "first_pending": "X1",
+    "old_deadline": 1795745057,
+    "reason": "Unstarted evaluator inherited the previous lease cutoff. Requeued on the acknowledged reservation with original options and a fresh output directory."
+  },
+  "half-http": {
+    "first_pending": "Y1",
+    "old_deadline": 1795745057,
+    "reason": "Unstarted evaluator inherited the previous lease cutoff. Requeued on the acknowledged reservation with original options and a fresh output directory."
+  },
+  "packed-http": {
+    "first_pending": "W1",
+    "old_deadline": 1795745057,
+    "reason": "Unstarted evaluator inherited the previous lease cutoff. Requeued on the acknowledged reservation with original options and a fresh output directory."
+  }
+}

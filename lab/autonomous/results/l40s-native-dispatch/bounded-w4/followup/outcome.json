@@ -1,0 +1,10 @@
+{
+  "attempts": {
+    "M1": 0,
+    "M2": 0,
+    "R1": 0,
+    "R2": 0
+  },
+  "production": false,
+  "status": "complete_native_screen"
+}

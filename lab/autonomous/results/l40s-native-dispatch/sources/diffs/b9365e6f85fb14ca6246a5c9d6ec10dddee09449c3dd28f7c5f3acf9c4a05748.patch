@@ -1,0 +1,94 @@
+--- original
++++ actual
+@@ -15,4 +14,0 @@
+-#include "prompt_codec.cuh"
+-#ifdef IM_PROMPT_CACHE
+-#include "weight_cache.cuh"
+-#endif
+@@ -41,20 +36,0 @@
+-#ifdef IM_PROMPT_INT8
+-        // Bound each actual GGUF group independently so large outliers elsewhere in
+-        // the block do not waste the signed byte's precision.
+-        bound = 0.f;
+-        if constexpr (Type == 12) {
+-            const auto *s = p + 4;
+-            for (int g = 0; g < 8; ++g) {
+-                int sc = g < 4 ? s[g] & 63 : (s[g+4] & 15) | ((s[g-4] >> 6) << 4);
+-                int mn = g < 4 ? s[g+4] & 63 : (s[g+4] >> 4) | ((s[g] >> 6) << 4);
+-                float minimum = block_half(p+2) * mn;
+-                float maximum = 15.f * block_half(p) * sc - minimum;
+-                bound = fmaxf(bound, fmaxf(fabsf(minimum), fabsf(maximum)));
+-            }
+-        } else {
+-            for (int g = 0; g < 16; ++g) {
+-                float scale = block_half(p+208) * reinterpret_cast<const int8_t *>(p+192)[g];
+-                bound = fmaxf(bound, 32.f * fabsf(scale));
+-            }
+-        }
+-#else
+@@ -63 +38,0 @@
+-#endif
+@@ -67 +42 @@
+-    if (!lane) scale[n] = largest > 0.f ? largest / packed_max : 1.f;
++    if (!lane) scale[n] = largest > 0.f ? largest / 448.f : 1.f;
+@@ -90 +65 @@
+-            encoded.b[i] = encode((delta * v - bias) * inv);
++            encoded.b[i] = __nv_cvt_float_to_fp8((delta * v - bias) * inv, __NV_SATFINITE, __NV_E4M3);
+@@ -101 +76 @@
+-            encoded.b[i] = encode(delta * v * inv);
++            encoded.b[i] = __nv_cvt_float_to_fp8(delta * v * inv, __NV_SATFINITE, __NV_E4M3);
+@@ -119 +94 @@
+-        factor = high > 0 ? high / packed_max : 1.f;
++        factor = high > 0 ? high / 448.f : 1.f;
+@@ -126,4 +101,4 @@
+-            encode(x[size_t(row)*k+i]*inv) : 0;
+-}
+-
+-__global__ void finish(const Accumulated *src, const float *wscale, const float *xscale,
++            __nv_cvt_float_to_fp8(x[size_t(row)*k+i]*inv, __NV_SATFINITE, __NV_E4M3) : 0;
++}
++
++__global__ void finish(const __nv_bfloat16 *src, const float *wscale, const float *xscale,
+@@ -132 +107 @@
+-    if (i < count) y[i] = decode_accumulated(src[i]) * wscale[i % n] * xscale[i/n];
++    if (i < count) y[i] = __bfloat162float(src[i]) * wscale[i % n] * xscale[i/n];
+@@ -148 +123 @@
+-        if (cublasLtMatmulDescCreate(&op,compute_type,blas_scale_type) ||
++        if (cublasLtMatmulDescCreate(&op,CUBLAS_COMPUTE_32F,CUDA_R_32F) ||
+@@ -150,3 +125,3 @@
+-            cublasLtMatrixLayoutCreate(&w,packed_type,k,n,k) ||
+-            cublasLtMatrixLayoutCreate(&x,packed_type,k,b,k) ||
+-            cublasLtMatrixLayoutCreate(&y,accumulated_type,n,b,n)) return;
++            cublasLtMatrixLayoutCreate(&w,CUDA_R_8F_E4M3,k,n,k) ||
++            cublasLtMatrixLayoutCreate(&x,CUDA_R_8F_E4M3,k,b,k) ||
++            cublasLtMatrixLayoutCreate(&y,CUDA_R_16BF,n,b,n)) return;
+@@ -192,4 +166,0 @@
+-#ifdef IM_PROMPT_CACHE
+-    std::lock_guard<std::mutex> weight_lifetime(persistent_prompt::mutex);
+-    if (persistent_prompt::sessions != 1 || (n64 != 25600 && k64 != 25600)) return 1;
+-#endif
+@@ -212 +183 @@
+-    size_t wb=aligned(size_t(n)*k), xb=aligned(size_t(k)*padded), yb=aligned(size_t(n)*padded*sizeof(Accumulated));
++    size_t wb=aligned(size_t(n)*k), xb=aligned(size_t(k)*padded), yb=aligned(size_t(n)*padded*2);
+@@ -214,3 +184,0 @@
+-#ifdef IM_PROMPT_CACHE
+-    wb=0; ws=0;
+-#endif
+@@ -219 +187 @@
+-    auto *result=reinterpret_cast<Accumulated *>(input+xb);
++    auto *result=reinterpret_cast<__nv_bfloat16 *>(input+xb);
+@@ -226,7 +194 @@
+-    bool fresh=true;
+-#ifdef IM_PROMPT_CACHE
+-    auto *entry=persistent_prompt::get(w,type,n,k,device,stream,fresh);
+-    if (!entry) return 1;
+-    weights=entry->weights; sw=entry->scales;
+-#endif
+-    if (fresh && type==12) {
++    if (type==12) {
+@@ -235 +197 @@
+-    } else if (fresh) {
++    } else {
+@@ -240 +202 @@
+-    const BlasScale alpha=1,beta=0;
++    const float alpha=1.f,beta=0.f;

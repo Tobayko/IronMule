@@ -1,0 +1,9 @@
+--- original
++++ actual
+@@ -24 +24 @@
+-def build(directory, *, native_grid=False):
++def build(directory):
+@@ -65,3 +64,0 @@
+-    if native_grid:
+-        source = substitute(source, 'getenv("IRONMULE_KG_LIB")', 'getenv("IRONMULE_GRID_BACKEND")')
+-        source = substitute(source, '"im_prompt_dispatches"', '"im_mmq_tile_calls"')

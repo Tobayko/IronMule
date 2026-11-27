@@ -4799,3 +4799,149 @@ The shared-pool variant raised width-32 throughput by 10.4% and 6.6% in matched 
 All three processes answered 32/32 fresh factual questions correctly. The 1,024-row rule slightly improved the tail time to first content and raised paired throughput by 3.8%, but the p95 streaming pause grew 65.3%. Both candidates stay experimental. Stock rollback served the full workload with zero budget-change markers. [Reversed fresh pair](../lab/autonomous/results/l40s-pool-holdout) · [Intermediate selection and measured result](../lab/autonomous/results/l40s-pool-balanced)
 
 A separate native screen used the measured memory headroom to select four complete W4 shape entries, representing 128 dispatch rows. Its stock worker answered 18/18 correctly. The GPU offloaded all 65 layers and loaded the candidate library. The collector treated the atomically rewritten attempt map as an append-only file and terminated before saving the candidate worker result. The corrected collector validates successive decoded maps and preserves previous attempts across restart. No paired W4 rate or quality result is available from that run. [W4 screen and diagnostic](../lab/autonomous/results/l40s-bounded-w4) · [Cumulative cost journal](../lab/autonomous/results/l40s-mixed-prefill-progress/cost.json)
+
+### 2026-11-26, Qwen3-32B GPU kernels and CPU profile selection on L40S
+
+One RunPod NVIDIA L40S (46,068 MiB, driver 595.112.07) served two new workload seeds. The IronMule reference used Q4_K_M GGUF and the conservative shared-KV configuration from PR 57. vLLM 0.34.0 used the official AWQ-Marlin checkpoint. The clients supplied identical rendered inputs, used greedy decoding and requested 32 output tokens for every performance request. Each seed included three timed waves per concurrency and a separate 32-question factual check. The references answered all 32 correctly on both seeds.
+
+| Concurrent clients | IronMule output tokens/s, first and second start | vLLM output tokens/s, two-seed median | IronMule median first content, seconds | vLLM median first content, seconds |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 37.2 / 44.6 | 37.4 | 0.064 / 0.064 | 0.047 |
+| 8 | 111.6 / 111.4 | 164.0 | 0.224 / 0.265 | 0.716 |
+| 32 | 155.2 / 153.9 | 266.5 | 0.548 / 0.558 | 1.709 |
+
+During counted streams the native reference peaked at 36,122 MiB and vLLM at 39,615 MiB in one-second device samples. The first native process peaked at 45,160 MiB including setup. Its first readiness took 494.3 seconds, the second 62.1 seconds, and the initial vLLM process took 200.1 seconds. Startup cache state matters for these figures. [Raw streams, matched request identities, sampled board energy and replay](../lab/autonomous/results/l40s-native-dispatch/)
+
+An instrumented mixed call joined 433 prompt rows and 16 decode rows. GPU activity attributed 139 ms to the Q4_K specialization and 26 ms to Q6_K in a 225 ms host interval. The world model priced alternative targets against an unprofiled reference wave. IronMule selected Q4_K and issued a bound code order. Codex supplied an Ada tile limit for 384–512 rows. The isolated native CUDA build replaced one translation unit and retained upstream launch validation. [Order, author response and native build](../lab/autonomous/results/l40s-native-dispatch/tile-order/)
+
+Codex also implemented FP8, integer and Marlin operator candidates. Their standalone arithmetic tests used the target GGUF weights. FP8 failed the full-model quality gate even with all 18 short answers correct. Its lowest upper perplexity ratio exceeded 1.027, above the 1.005 limit. The counted FP8-arm requests ran on the recovery profile. Three scratch-trained cost heads used two activation seeds and 56 projection/width combinations. The candidate selected stock in all 24 held-out cells at a median 16.3 microseconds per CPU decision, matching the constant stock rule. [Grouped CPU replay](../lab/autonomous/results/l40s-native-dispatch/pilot/holdout.json) · [Operator arithmetic and qualification commands](../lab/pk6/native_dispatch/README.md)
+
+The explicit 128-row cuBLAS comparison exposed a gate identity error. After correction, all eight candidate settings failed. Default attention reached an upper perplexity ratio of 1.007736. The actual Linux serving worker received a zero threshold and an empty plugin after fallback. It completed all 155 requests, including 32 correct factual answers. The previously misclassified comparisons remain in the archive and are excluded from promotion. [Merged fix](https://github.com/Tobayko/IronMule/pull/70) · [Serving-worker receipt](../lab/autonomous/results/l40s-native-dispatch/http/fixed-http/worker-B1.json)
+
+### 2026-11-27, L40S memory, numerical gates and reuse of the comparator
+
+On the first Qwen3-32B mixed-workload seed, reducing the unified KV pool from 65,536 to 16,384 cells cut sampled serving memory from 36,122 to 23,834 MiB. Both complete processes peaked at 45,160 MiB during startup. At 32 concurrent clients the smaller pool delivered 159.46 output tokens/s against the native reference's 155.22. It answered 32/32 factual requests correctly. The program records both the scheduler capacity and the actual allocation reported by llama.cpp.
+
+The trained CPU policy replayed 56 operator decisions in 5.32 ms including loading the model, and selected stock. The separate step-cost model fitted native mixed calls from the first process and predicted the second seed and restart with 25.5 ms mean absolute error. The earlier A100 parameters scored 49.7 ms and a constant fitted on the first L40S process scored 60.9 ms. The planner selected a 768-row shared-KV prefill experiment. Four CPU smoke-test waves on SmolLM2-135M completed all 32 copy tasks.
+
+The full INT8 and Marlin programs failed the product quality gate. Across eight native configurations each, the lowest upper bounds on the perplexity ratio were 1.11060 and 1.00762 respectively, above the 1.005 ceiling. Their HTTP workers returned to stock. Each uninformative second fallback run was cancelled. Before those results the planner ranked Marlin and INT8. After recording the rejections and the cached-INT8 arithmetic measurements, it proposed the cached variant. [Experiment, source and replay](../lab/pk6/native_dispatch/README.md)
+
+The earlier vLLM 0.34.0 AWQ-Marlin reference already contains six performance waves per concurrency level. At 32 clients its measured range was 265.08–269.20 output tokens/s. Both optional comparator restarts in this lease were cancelled before loading a model. The CPU reference command checks raw receipts, input protocol, software and tokenizer identity and reports the spread. [Reference evidence](../lab/autonomous/results/l40s-native-dispatch/vllm-reference.json) · [Repository rule](https://github.com/Tobayko/IronMule/pull/71)
+
+The commissioned 96-column Q4_K tile built successfully. Its T1 process tried all eight
+numeric profiles on the L40S. The smallest upper perplexity ratio was 1.005743 against
+the existing 1.005 limit, and the process exited before readiness. It served zero waves.
+The packed Marlin screen admitted four weight geometries, all at 16 rows, after graph-level
+speed ratios of 1.139–1.220 across two seeds. The R1 trace spent 2.30 of 28.05 native
+seconds at that outer width during performance requests. The factual wave had no such
+outer call. Dispatch within each request still requires a serving trace.
+
+H2 reproduced the 12 GiB serving-memory reduction and answered 32/32 factual requests. At 32 clients H1/H2 delivered 159.46/157.46 output tokens/s versus 155.22/153.85 on R1/R2. At one client the separate H2 and R2 rate medians were 39.3 and 44.6. The median of the three matched H2/R2 ratios was 1.007. The bounded W4 four-worker screen completed on both seeds with identical outputs. At eight clients its two gains were 5.13% and 5.87%; at one client it lost 0.40% and 0.16%. The S serving profile binds the selected table and its generating CUDA library to the same board.
+
+#### Long documents under sustained KV pressure
+
+On the same L40S and Qwen3-32B, a wave of 32 simultaneous 900-word inventories showed a
+larger effect. Each timed answer used the fixed 32-token limit. The two seed pairs ran in
+opposite process order. Each process answered 32/32 short factual questions after its timed
+waves. The generated inventory summaries sometimes differed between profiles.
+
+| Seed | Stock → compact, output tokens/s | Stock → compact, median first token | Stock → compact, p95 completion |
+| --- | ---: | ---: | ---: |
+| 943819 | 24.78 → 47.78 | 10.81 → 5.76 s | 41.25 → 21.38 s |
+| 180341 | 27.49 → 47.55 | 11.85 → 7.96 s | 37.18 → 21.52 s |
+
+The time inside llama.cpp calls that processed prompt and decode rows together grew across
+the three stock waves from 21.2 to 45.8 seconds on one seed and from 21.2 to 43.3 on the
+other. It stayed between 17.6 and 18.7 seconds in all six compact waves. Each profile ran
+23 mixed calls per wave on the first seed. The pair reused almost the same number of input
+tokens. These observations locate the time difference. Separating the effects of allocation,
+admission and the KV range seen by attention requires another experiment. The vLLM reference
+uses the earlier mixed workload. [Request and memory receipts](../lab/autonomous/results/l40s-native-dispatch/controls/capacity/) · [Native time by wave](../lab/autonomous/results/l40s-native-dispatch/long-document-phases.json)
+
+The 0.6B model-first drafter (K) reached 55.87 and 51.97 tokens/s at one client on the
+ordinary mixed workload. The context-first variant (O) reached 56.33 and 57.18. At 32 clients
+O delivered 129.45 and 129.77 tokens/s, below the native controls. Every K and O start
+answered all 32 factual questions correctly. The existing L40S vLLM target at one client
+is 37.38 tokens/s and a median first token of 0.047 s. The four native draft starts took
+0.061–0.064 s to deliver their median first token. [Draft process receipts](../lab/autonomous/results/l40s-native-dispatch/http/draft-mix-v2-lease-resume/)
+
+The independent retrieval check used two more sets of 32 documents. Each contained three
+different six-digit seals. Stock and compact both returned the requested seal in all 64
+cases and answered all 32 subsequent short factual cases correctly. CPU training used all
+widths from seed 943819. On seed 180341 the randomly initialized ensemble chose stock in
+all six cells. After fitting it chose compact for the document cells and stock for mixed
+traffic. A simple length rule made the same choices. The measured criteria admitted the
+compact profile for sustained eight- and 32-client document traffic. At one client the
+streaming pause missed the ten-percent requirement. [Quality cases and serving traces](../lab/autonomous/results/l40s-native-dispatch/controls/document-retrieval/) · [Controller fit and held-out comparisons](../lab/autonomous/results/l40s-native-dispatch/pool-pilot/fit.json)
+
+For the single-client context-first drafter, paired O/vLLM speed ratios were
+1.501, 1.150 and 2.418 on seed 180341 and 1.534, 1.138 and 2.442 on seed 943819.
+The native stock worker also benefited from repeated short prefixes. Against that stock
+worker the median paired ratios were 0.995 and 0.951. A ratio of separately reported
+median rates answers a different question from the median of the three matched ratios.
+The pool Pilot was fitted on per-cohort median elapsed times and its deployment gate
+uses matched ratios. [Original requests](../lab/autonomous/results/l40s-native-dispatch/http/) · [Scored pairs](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+
+A new process read the observed traffic, loaded the fitted CPU Pilot and chose 16,384 cells.
+It served all 155 requests and passed its numerical gate. At 32 concurrent documents
+it delivered 47.50 output tokens/s. The verifier retained the profile after charging
+0.920 s for the full CPU fit, startup decision and verification, giving 1.685× net speed
+against its recorded stock qualification. The worker took 62.04 s to become ready.
+After an explicit persistent withdrawal, a fresh process read the same inputs and chose
+stock. It served all 155 requests and answered all 32 factual questions. The two measured
+processes delivered 47.50 vs 29.04 tokens/s, with first content in 8.04 vs 12.56 s
+and p95 completion in 21.51 vs 35.13 s. Peak device memory while serving was 23,834 vs
+36,122 MiB. From launch through the final factual check the workers took 151.43 and
+205.55 s. Charging the full 0.920 s of controller work to compact gives a 1.349× ratio
+over that complete run, including startup. The profile applies to sustained document traffic on this L40S through the
+bounded launcher. [Decisions and rollback](../lab/autonomous/results/l40s-native-dispatch/controls/pool-restart/pool-live/) · [Fresh worker pair](../lab/autonomous/results/l40s-native-dispatch/pool-restart.json)
+
+On the mixed workload the 768-row prefill budget delivered 166.83 and 166.45 output
+tokens/s at 32 clients. It raised median first-content time by 34% and 83% and the p95
+streaming pause by 54% and 48% against each seed's stock process. The four-geometry
+W4 worker gained 5–6% at eight clients in isolation, then reached 113.00 and 113.41
+tokens/s at that width over HTTP. First qualification took 728 s. Both server starts
+answered 32/32 factual questions and reported real generated-kernel dispatch during
+requests. Both experimental profiles remain outside the qualified mixed-workload defaults.
+[HTTP requests and native dispatch](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+With the weights frozen, IronMule observed a third seed (630217) outside training and
+qualification. It checked the fresh stock process, including all native request IDs,
+then selected compact in 79 ms including startup checks. The two servers each served
+155 requests and answered all 32 facts correctly. At 32 clients, throughput was
+47.66 vs 28.34 output tokens/s, median first content was 7.85 vs 14.67 s, and p95
+completion was 21.43 vs 36.12 s. After 0.926 s of controller costs, verification
+retained compact at 1.668× net on the three matched waves. Counting launch through the
+last factual answer, the elapsed ratio was 1.361×. This seed tests new inputs from the
+same 900-word document generator on the same physical L40S. [Fresh requests and scored pairs](../lab/autonomous/results/l40s-native-dispatch/unseen-documents.json) · [Actual decision and retention](../lab/autonomous/results/l40s-native-dispatch/controls/unseen-documents/pool-unseen/pilot/)
+
+The workload-selected MMQ grid passed the native numerical check (upper perplexity ratio
+1.00124) and actually dispatched in the first 32-client block and factual wave. The
+matched throughput ratio at 32 was 1.011, with a p95 streaming pause ratio of 1.005.
+The packed Marlin variant paired its four screened weight geometries with the compact
+pool. Its first worker served all facts and counted 846, 1,692 and 282 dispatches during
+the eight-client, 32-client and factual waves respectively. Compared with the same
+compact pool alone, its paired 32-client throughput ratio was 1.000 to three decimals.
+The full-width cached INT8 trial's best upper perplexity ratio across eight settings was
+1.20356. The product recovered to stock and counted zero INT8 dispatches during requests.
+[Process measurements, native markers and matched controls](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+On the second mixed-workload seed the MMQ grid counted 96 dispatches during factual
+requests and zero during timed requests. The packed Marlin worker counted 846 and
+1,692 during the eight- and 32-client waves and zero during the factual wave. Its
+matched throughput ratio against the compact pool alone was 1.003 at 32 clients.
+The cached FP16 program passed its native numerical gate, but neither start recorded
+a dispatch during counted HTTP requests. The higher-load drafter really verified tokens
+with more than two active requests on both seeds. At eight clients it delivered
+84.75 and 87.76 tokens/s. The two-slot model-first control delivered 112.84 and
+101.19. Each start answered all 32 facts correctly. No mixed-workload candidate met
+the seven streaming requirements at all three widths. The kernel planner exhausted
+its screened arithmetic programs and a repeat on CPU selected no further GPU experiment.
+[Source-bound results](../lab/autonomous/results/l40s-native-dispatch/comparison.json) · [Final kernel ranking](../lab/autonomous/results/l40s-native-dispatch/post-serving-ranking.json)
+
+The additional L40S campaign ran for 4.77 hours. The provider confirmed deletion of
+the only leased pod. The journal booked **5.50 USD** of the additional 10.00 USD,
+including a ten-minute cleanup allowance. The prior stage had booked 19.71 USD, giving
+**25.21 USD** total across both stages. The public cost journal distinguishes posted pod
+charges from the conservative booking. [This lease](../lab/autonomous/results/l40s-native-dispatch/costs.json) · [Prior stage](../lab/autonomous/results/l40s-mixed-prefill-progress/cost.json)

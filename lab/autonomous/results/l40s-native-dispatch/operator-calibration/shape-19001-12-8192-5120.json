@@ -1,0 +1,171 @@
+{
+  "cells": {
+    "64": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013464879244565964,
+        "us": 196.2
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.03966401517391205,
+        "us": 81.92
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 60.65
+      }
+    },
+    "128": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013354340568184853,
+        "us": 188.36
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.04075990244746208,
+        "us": 100.59
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 85.27
+      }
+    },
+    "143": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013654702343046665,
+        "us": 209.51
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0414707250893116,
+        "us": 108.58
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 104.1
+      }
+    },
+    "256": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013235542923212051,
+        "us": 245.59
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.039928317070007324,
+        "us": 133.19
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 126.04
+      }
+    },
+    "448": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013134711422026157,
+        "us": 328.61
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.039663538336753845,
+        "us": 191.31
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 202.88
+      }
+    },
+    "512": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013113941997289658,
+        "us": 336.35
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.03974255174398422,
+        "us": 244.16
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 221.42
+      }
+    },
+    "1024": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013212102465331554,
+        "us": 583.26
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.039799608290195465,
+        "us": 415.26
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 399.61
+      }
+    },
+    "2048": {
+      "cublas": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.013102186843752861,
+        "us": 993.9
+      },
+      "fp8": {
+        "dispatches": 36,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.039887674152851105,
+        "us": 708.8
+      },
+      "stock": {
+        "dispatches": 0,
+        "graphs": 36,
+        "relative_rms_to_stock": 0.0,
+        "us": 868.0
+      }
+    }
+  },
+  "copies": 6,
+  "k": 8192,
+  "matrix_count": 64,
+  "n": 5120,
+  "name": "blk.0.attn_output.weight",
+  "seed": 19001,
+  "type": 12
+}

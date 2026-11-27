@@ -79,40 +79,44 @@ def quality_cases(seed):
     ]
 
 
-def measure(args, arm, board_id, row_budget, deadline):
+def vllm_command(args):
+    return [
+        str(args.vllm / "bin/vllm"),
+        "serve",
+        str(args.models / "qwen3-32b-awq"),
+        "--served-model-name",
+        "compare",
+        "--tokenizer",
+        str(args.models / "tokenizers/qwen3-32b"),
+        "--dtype",
+        "half",
+        "--quantization",
+        "awq_marlin",
+        "--generation-config",
+        "vllm",
+        "--max-model-len",
+        "2048",
+        "--max-num-seqs",
+        "32",
+        "--gpu-memory-utilization",
+        "0.88",
+        "--tensor-parallel-size",
+        "1",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8002",
+    ]
+
+
+def measure(args, arm, board_id, row_budget, deadline, *, draft=None, vllm_gguf=False):
     competitor = arm == "vllm"
     eng = "vllm" if competitor else "ironmule"
     model = "compare" if competitor else "gguf/Qwen3-32B-Q4_K_M"
     server = {"base_url": "http://127.0.0.1:8002", "model_id": model}
     env = dict(os.environ)
     if competitor:
-        cmd = [
-            str(args.vllm / "bin/vllm"),
-            "serve",
-            str(args.models / "qwen3-32b-awq"),
-            "--served-model-name",
-            model,
-            "--tokenizer",
-            str(args.models / "tokenizers/qwen3-32b"),
-            "--dtype",
-            "half",
-            "--quantization",
-            "awq_marlin",
-            "--generation-config",
-            "vllm",
-            "--max-model-len",
-            "2048",
-            "--max-num-seqs",
-            "32",
-            "--gpu-memory-utilization",
-            "0.88",
-            "--tensor-parallel-size",
-            "1",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "8002",
-        ]
+        cmd = vllm_command(args)
     else:
         env.pop("IRONMULE_COMPARE_LOCAL_KEY", None)
         env.update(
@@ -140,6 +144,23 @@ def measure(args, arm, board_id, row_budget, deadline):
             "--api-key-env",
             "IRONMULE_COMPARE_LOCAL_KEY",
         ]
+    if vllm_gguf:
+        if not competitor:
+            raise ValueError("GGUF comparator options belong to vLLM")
+        cmd[2] = str(args.models / GGUF_NAME)
+        cmd[cmd.index("--quantization") + 1] = "gguf"
+        cmd.extend(
+            [
+                "--load-format",
+                "gguf",
+                "--hf-config-path",
+                str(args.models / "tokenizers/qwen3-32b"),
+            ]
+        )
+    if draft is not None:
+        if competitor:
+            raise ValueError("native draft belongs to IronMule")
+        cmd.extend(["--draft-gguf", str(draft)])
     if board() != board_id:
         raise ValueError("physical device changed")
     started = time.monotonic()

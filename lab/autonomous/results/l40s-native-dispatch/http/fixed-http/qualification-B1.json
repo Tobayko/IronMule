@@ -1,0 +1,294 @@
+{
+  "gates": [
+    {
+      "diagnostic": {
+        "candidates": [
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0078046693492002,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": true,
+              "kv_f32": false,
+              "kv_unified": false
+            }
+          },
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0076865091232117,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": false,
+              "kv_f32": false,
+              "kv_unified": true
+            }
+          },
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0078754390288898,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": true,
+              "kv_f32": false,
+              "kv_unified": true
+            }
+          },
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0077358691867313,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": false,
+              "kv_f32": false,
+              "kv_unified": false
+            }
+          },
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0077821230137112,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": false,
+              "kv_f32": true,
+              "kv_unified": true
+            }
+          },
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0078600795147747,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": false,
+              "kv_f32": true,
+              "kv_unified": false
+            }
+          },
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0078754390288898,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": true,
+              "kv_f32": true,
+              "kv_unified": true
+            }
+          },
+          {
+            "bound": 1.005,
+            "dispatch_required": false,
+            "factual": {
+              "arithmetic": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "extraction": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              },
+              "facts": {
+                "candidate_correct": 6,
+                "reference_correct": 6,
+                "repeat_correct": 6,
+                "total": 6
+              }
+            },
+            "kg5_launches": null,
+            "nll_upper": 1.0078046693492002,
+            "passes": false,
+            "role": "option",
+            "settings": {
+              "flash_attn": true,
+              "kv_f32": true,
+              "kv_unified": false
+            }
+          }
+        ],
+        "code": "quality_rejected",
+        "exception_class": null,
+        "exit_code": null,
+        "schema": "ironmule.gguf-gate-diagnostic.v1",
+        "stage": "acceptance"
+      },
+      "interval": null,
+      "kernel_mode": "cublas",
+      "passes": false,
+      "ratio": null
+    },
+    {
+      "diagnostic": null,
+      "interval": [
+        1.0,
+        1.0
+      ],
+      "kernel_mode": "stock",
+      "passes": true,
+      "ratio": 1.0
+    }
+  ],
+  "log_sha256": "eb851c72a542841d228ca3a2e951fa97b2eab04212833f3a5b26955b2ffd84d8"
+}

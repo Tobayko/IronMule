@@ -1,0 +1,16 @@
+--- original
++++ actual
+@@ -82 +82 @@
+-def measure(args, arm, board_id, row_budget, deadline):
++def measure(args, arm, board_id, row_budget, deadline, *, draft=None, vllm_gguf=False):
+@@ -142,0 +143,10 @@
++    if vllm_gguf:
++        if not competitor:
++            raise ValueError("GGUF comparator options belong to vLLM")
++        cmd[2] = str(args.models / GGUF_NAME)
++        cmd[cmd.index("--quantization") + 1] = "gguf"
++        cmd.extend(["--load-format", "gguf", "--hf-config-path", str(args.models / "tokenizers/qwen3-32b")])
++    if draft is not None:
++        if competitor:
++            raise ValueError("native draft belongs to IronMule")
++        cmd.extend(["--draft-gguf", str(draft)])

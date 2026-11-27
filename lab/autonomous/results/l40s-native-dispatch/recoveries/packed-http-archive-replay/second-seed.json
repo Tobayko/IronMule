@@ -1,0 +1,9 @@
+{
+  "action": "measure",
+  "declined_reason": null,
+  "fallback": null,
+  "first": "W1",
+  "first_trace": "31d0fe52f2a0bbfe1142326f5f76d8504ea66e796dca368bed2d376439ab661e",
+  "first_waves": "34869783c570352ab20a5d22cf4fa7a85bbaf2faa8067e551b3f5600630c69ac",
+  "reason": "First seed exercised the packed profile. Measure the matched second seed."
+}

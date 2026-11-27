@@ -46,6 +46,12 @@ Two starts of the Qwen3-32B server spent almost 19 seconds each on one calibrati
 
 On an NVIDIA L40S, the trade-off changes with the queue. With one client IronMule delivered **43.3 output tokens/s** and vLLM 0.34.0 delivered **37.7**. With 32 clients IronMule started streaming in a median **0.56 seconds**, versus **1.68 seconds** for vLLM. Across the full group vLLM finished faster at **266.6 vs 154.7 tokens/s**. Both served Qwen3-32B with the same inputs and fixed output length, using Q4_K_M and AWQ-Marlin respectively. These are three repeats from the first matched seed. [Per-request measurements, quality checks and replay](lab/pk6/mixed_progress/replay.md)
 
+IronMule can also tell you which optimization it declined. On a second L40S run, it traced a slow GPU operation back to the requests waiting for it and issued a Q4_K kernel experiment to Codex. A separate FP8 kernel completed the short factual checks, but missed the model's perplexity limit. The server returned to its verified profile. You can replay the decisions and inspect the same fixed-length streams on a CPU. [L40S kernel experiments and replay](lab/pk6/native_dispatch/README.md)
+
+**What happens when 32 people send long documents at once?** On one L40S, a smaller KV cache freed **12 GiB during requests**. On two sets of 900-word documents it raised throughput from **24.78 to 47.78** and from **27.49 to 47.55 tokens/s**. Both cache sizes found all 64 six-digit seals hidden among distractors in a separate retrieval test. The trained CPU Pilot chose that cache on a fresh server and delivered **47.50 tokens/s**. A tested rollback restored the original cache and delivered **29.04 tokens/s** on the same requests. Initial qualification peaked at 45,160 MiB. [Document results, memory measurements and CPU replay](lab/pk6/native_dispatch/README.md)
+
+With one client and an experimental 0.6B draft model, IronMule finished each of six matched 32-token requests faster than vLLM 0.34.0 AWQ-Marlin. Median paired throughput was **1.50× and 1.53×** over the two seeds. vLLM still started streaming sooner. At 32 clients vLLM retained its throughput lead. [Per-load results and vLLM reference](lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
 ## Quick start
 
 ### Serve a GGUF on Linux CPU

@@ -1,0 +1,16 @@
+{
+  "bounds": [
+    1.0081036824890446,
+    1.0090501462438572,
+    1.0140188920100672,
+    1.0093172909006674,
+    1.0076206669882684,
+    1.0081036824890446,
+    1.0120813376938955,
+    1.0090501462438572
+  ],
+  "experiment": "marlin-http",
+  "pruned": "M2",
+  "reason": "The immutable numeric profile failed target quality qualification before serving and the next seed would only repeat its stock fallback.",
+  "rejected": "M1"
+}

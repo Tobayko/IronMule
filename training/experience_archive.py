@@ -1048,6 +1048,15 @@ def build(root=ROOT) -> Iterator[dict]:
                         "lab/autonomous/results/l40s-mixed-prefill-progress/result.json"}:
             from training.mixed_progress_evidence import experiences
             yield from experiences(root, source, digest)
+        elif source.startswith("lab/autonomous/results/l40s-native-dispatch/") and (
+            path.name in ("comparison.json", "fit.json", "order.json", "chunk-plan.json", "worker-plan.json", "capacity-control.json", "draft-load-plan.json", "document-retrieval.json", "pool-restart.json", "unseen-documents.json") or
+            path.name.startswith("qualification-") and path.suffix == ".json" or
+            path.name.startswith("shape-") and path.parent.name in ("native-grid", "workload-grid") or
+            path.name == "result.json" and path.parent.name in (
+                "kernel-check", "int8-check", "cached-check", "marlin-check", "half-check", "fused-check", "gate-fix")
+        ):
+            from training.native_dispatch_evidence import experiences
+            yield from experiences(root, source, digest)
         elif source == "lab/autonomous/results/a100-first-token/result.json":
             yield from first_token_trial(root, source, digest)
         elif source == "lab/autonomous/results/a100-pr57-warm-repeat/protocol.json":

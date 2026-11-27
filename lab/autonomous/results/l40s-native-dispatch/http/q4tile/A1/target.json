@@ -1,0 +1,22 @@
+{
+  "awq_manifest_sha256": "00fd219734c5f6ff13b31c0038317ed7d6631e626619c8abf76c87412ea1395b",
+  "engine_sha256": "eccb06e1ed5787615e9f705467eb5893f3834c2026743e709f6329b28e7f30cd",
+  "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "library_sha256": "6ab14d7442ba29120a209b3f0379d58d8f68cee3ebda6ddd12445692c80c4b03",
+  "order": [
+    "A1"
+  ],
+  "seeds": [
+    180341,
+    943819
+  ],
+  "source": "2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d",
+  "threshold": 128,
+  "vllm_version": "0.34.0"
+}
