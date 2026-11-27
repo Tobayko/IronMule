@@ -194,3 +194,66 @@ def test_runner_reuses_vllm_without_launching_the_comparator(tmp_path, monkeypat
         score.run(output)["arms"]["vllm"]["start"]
         == score.read(output / "reused-vllm.json")["original_start"]
     )
+
+
+def test_detached_comparator_requires_the_existing_archive(tmp_path, monkeypatch):
+    import sys
+    from lab.pk6.native_dispatch import run
+
+    out = tmp_path / "run"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run",
+            "--arms",
+            "vllm",
+            "--out",
+            str(out),
+            "--reference-archive",
+            str(tmp_path / "missing"),
+        ],
+    )
+    monkeypatch.setattr(run.trial, "board", lambda: pytest.fail("unexpected GPU probe"))
+    with pytest.raises(SystemExit) as error:
+        run.main()
+    assert error.value.code == 2 and not out.exists()
+
+
+def test_native_only_rerun_needs_no_external_weights_or_runtime(tmp_path, monkeypatch):
+    import os
+    import sys
+    import time
+    from lab.pk6.native_dispatch import reference, run, score
+
+    external = reference.lookup(reference.ARCHIVE)
+    output = tmp_path / "run"
+    monkeypatch.setattr(sys, "argv", ["run", "--arms", "R1", "--out", str(output)])
+    monkeypatch.setattr(
+        run.os, "environ", {**os.environ, "RP_DEADLINE": str(time.time() + 180)}
+    )
+    monkeypatch.setattr(run.trial, "board", lambda: external["hardware"])
+    monkeypatch.setattr(run.trial, "SEEDS", run.trial.SEEDS)
+    monkeypatch.setattr(run, "checksum", lambda _: run.GGUF)
+    monkeypatch.setattr(
+        run, "verify", lambda _: pytest.fail("unexpected AWQ verification")
+    )
+    monkeypatch.setattr(
+        reference, "installation", lambda *_: pytest.fail("unexpected vLLM probe")
+    )
+
+    def commit(argv, **kwargs):
+        assert argv == ["git", "rev-parse", "HEAD"]
+        return "a" * 40
+
+    measured = []
+    monkeypatch.setattr(run.subprocess, "check_output", commit)
+    monkeypatch.setattr(
+        run.trial, "measure", lambda args, arm, *rest: measured.append(arm)
+    )
+    run.main()
+    assert measured == ["R1"]
+    target = score.read(output / "target.json")
+    assert target["external_reference_waves_sha256"] == external["waves_sha256"]
+    assert target["awq_manifest_sha256"] == external["quantized_model"]
+    assert "vllm_installation" not in target

@@ -7,12 +7,24 @@ The study starts from PR 57 at `2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d`. It te
 From the repository root, run the following commands with the repository's Python dependencies. The HTTP replay checks the board, model and comparator digests, process windows, all native request IDs, seven streaming metrics, output counts, factual case identities and one-second device samples.
 
 ```bash
-results=lab/autonomous/results/l40s-native-dispatch
+results="$(realpath lab/autonomous/results/l40s-native-dispatch)"
 python -m lab.pk6.native_dispatch.score "$results/http" > /tmp/ironmule-comparison.json
 python -m lab.pk6.native_dispatch.tile_order "$results/http/primary" /tmp/ironmule-native-order
 ```
 
 The order uses stock HTTP and independent CUPTI traces to rank two GGUF types and their compiled tile sizes. The predicted savings assume a 10% reduction in the sampled device interval. The target and the Codex response are bound by digest. The build replaces one Q4_K translation unit using the target's own compilation database, then relinks an isolated CUDA backend. The tile experiment retains native shared-memory and shape validation. The baseline and candidate can also run on the same alternative binary with the candidate disabled or enabled.
+
+### Archived vLLM targets
+
+Each range covers six fixed-work waves on the recorded L40S. The ten-percent throughput column gives an engineering target at each concurrency. Replay `python -m lab.pk6.native_dispatch.reference` for the latency distributions and the original measurement times.
+
+| Clients | vLLM output tokens/s, median (range) | 10% faster, tokens/s | Median time to first token |
+| ---: | ---: | ---: | ---: |
+| 1 | 37.38 (32.17–37.53) | 41.12 | 0.047 s |
+| 8 | 164.05 (163.64–165.33) | 180.45 | 0.716 s |
+| 32 | 266.55 (265.08–269.20) | 293.20 | 1.709 s |
+
+With the archive available, a native-only run reads the external target from its original receipts and checks the current IronMule model locally. The target manifest records which external waves supplied the comparison.
 
 ## Run on the registered GPU
 
@@ -33,6 +45,7 @@ The scratch-trained CPU head uses the existing Pilot selector. Training, uncerta
 For a bounded serving run, keep the experiment sources from this PR in the disposable checkout used by the runner. Set up a detached checkout of the base revision before applying the instrumentation. The target's weight files, gate thresholds and reference executables stay fixed.
 
 ```bash
+results="$(realpath lab/autonomous/results/l40s-native-dispatch)"
 base=2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d
 git worktree add --detach /work/prompt-study "$base"
 cp -R lab/pk6/native_dispatch /work/prompt-study/lab/pk6/
@@ -40,7 +53,7 @@ cd /work/prompt-study
 export PYTHONPATH="$PWD"
 python -m lab.pk6.native_dispatch.prepare .
 bash lab/pk6/native_dispatch/serve.sh /work/http/primary \
-  --lib /work/fp8/fp8.so --arms vllm R1 F1 F2 R2
+  --reference-archive "$results" --lib /work/fp8/fp8.so --arms vllm R1 F1 F2 R2
 ```
 
 Use fresh output directories. The two native blocks run with different seeds. A diagnostic D process samples actual CUDA symbols and never supplies performance labels. F uses a prompt-only FP8 KG1 plugin. I uses signed INT8 products and int32 accumulation. M extends the vendored Q4_K Marlin conversion to long prompts and has an explicit model lifetime and a bounded repack cache. U widens the shared physical batch and admission budget. V applies that same complete scheduling profile with F. N evaluates an independent non-flash split-KV stream configuration after a rejected flash probe. G adds the explicit PS1 and PK6 configuration to N. Each setting and generated library needs a separate model gate.

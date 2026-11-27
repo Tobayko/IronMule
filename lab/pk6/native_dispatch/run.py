@@ -40,6 +40,18 @@ def main(*, comparator="awq_marlin"):
         help="record what decision needs a fresh comparator process",
     )
     args = parser.parse_args()
+    from lab.pk6.native_dispatch.reference import ARCHIVE, installation, lookup
+
+    archive = args.reference_archive or ARCHIVE
+    reason = (args.vllm_recheck_reason or "").strip()
+    if (
+        "vllm" in args.arms
+        and not (archive / "vllm-reference.json").is_file()
+        and not reason
+    ):
+        parser.error(
+            "archived vLLM evidence missing: pass --reference-archive from the study checkout or record a --vllm-recheck-reason"
+        )
     args.out.mkdir(mode=0o700, parents=True, exist_ok=False)
     hw = trial.board()
     gguf = args.models / trial.GGUF_NAME
@@ -122,31 +134,41 @@ def main(*, comparator="awq_marlin"):
             or chunk_plan["rows"] not in (256, 384, 512, 768, 1024, 1536)
         ):
             raise ValueError("foreign chunked prefill forecast")
-    awq = verify(args.models / "qwen3-32b-awq")
     trial.SEEDS = tuple(args.seeds)
-    version = subprocess.check_output(
-        [
-            str(args.vllm / "bin/python"),
-            "-c",
-            "import importlib.metadata as m; print(m.version('vllm'))",
-        ],
-        text=True,
-    ).strip()
-    if version != "0.34.0":
-        raise ValueError("unexpected comparator")
+    reference = (
+        lookup(archive, artifact=comparator) if "vllm" not in args.arms else None
+    )
     comparator_install = None
-    if "vllm" in args.arms:
-        from lab.pk6.native_dispatch.reference import installation
-
-        comparator_install = installation(
-            args.vllm / "bin/python", args.models / "tokenizers/qwen3-32b"
-        )
+    if reference:
+        version = reference["version"]
+        awq_digest = reference["quantized_model"]
+    else:
+        awq_digest = verify(args.models / "qwen3-32b-awq")["manifest_sha256"]
+        version = subprocess.check_output(
+            [
+                str(args.vllm / "bin/python"),
+                "-c",
+                "import importlib.metadata as m; print(m.version('vllm'))",
+            ],
+            text=True,
+        ).strip()
+        if version != "0.34.0":
+            raise ValueError("unexpected comparator")
+        if "vllm" in args.arms:
+            comparator_install = installation(
+                args.vllm / "bin/python", args.models / "tokenizers/qwen3-32b"
+            )
     save(
         args.out / "target.json",
         {
             "hardware": hw,
             "gguf_sha256": GGUF,
-            "awq_manifest_sha256": awq["manifest_sha256"],
+            "awq_manifest_sha256": awq_digest,
+            **(
+                {"external_reference_waves_sha256": reference["waves_sha256"]}
+                if reference
+                else {}
+            ),
             "seeds": trial.SEEDS,
             "order": args.arms,
             "vllm_version": version,
@@ -168,13 +190,8 @@ def main(*, comparator="awq_marlin"):
     reused = []
     for arm in args.arms:
         if arm == "vllm":
-            from lab.pk6.native_dispatch.reference import ARCHIVE, lookup
-
             target = json.loads((args.out / "target.json").read_bytes())
-            known = lookup(
-                args.reference_archive or ARCHIVE, target, artifact=comparator
-            )
-            reason = (args.vllm_recheck_reason or "").strip()
+            known = lookup(archive, target, artifact=comparator)
             if known and not reason:
                 save(args.out / "reused-vllm.json", known)
                 reused.append(arm)

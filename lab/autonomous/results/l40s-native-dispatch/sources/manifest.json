@@ -55,6 +55,24 @@
       "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
       "lab/pk6/native_dispatch/run.py": "12f5a48087fcf9dad9b0b6c6df6586e0c2741935b64c2ccef3d5fcd3c6229553"
     },
+    "grid-http": {
+      "ironmule/ggml_engine.py": "1b75d4b0169ff443fba532edca2f0995b8da646d15f7ccba7cf1de7d5748bede",
+      "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
+      "lab/pk6/mixed_progress/schedule.py": "455bea90e8ade951d20eb59cc51f6bca0f5604c065137b03964b833d4255da5d",
+      "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
+      "lab/pk6/native_dispatch/capture.py": "ec81bdf2c53c3ddd9387e4eed143f1ad6ae90a6ed8557181a9291cd8ae152065",
+      "lab/pk6/native_dispatch/run.py": "d23211d84327286dad3be0870dd3ebb38e409e30be4d04a045468cffeca61e77"
+    },
+    "half-http": {
+      "ironmule/ggml_engine.py": "1b75d4b0169ff443fba532edca2f0995b8da646d15f7ccba7cf1de7d5748bede",
+      "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
+      "lab/pk6/mixed_progress/schedule.py": "455bea90e8ade951d20eb59cc51f6bca0f5604c065137b03964b833d4255da5d",
+      "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
+      "lab/pk6/native_dispatch/capture.py": "ec81bdf2c53c3ddd9387e4eed143f1ad6ae90a6ed8557181a9291cd8ae152065",
+      "lab/pk6/native_dispatch/run.py": "d23211d84327286dad3be0870dd3ebb38e409e30be4d04a045468cffeca61e77"
+    },
     "int8-http": {
       "ironmule/ggml_engine.py": "9947f64f886ea7e7c7efd341bfe8e837a3dbd85b89a12069708b255c6e74c410",
       "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
@@ -185,6 +203,18 @@
       "lab/pk6/native_dispatch/operators.py": "411a6053c4e3c188aad05c27718bdfe4c95bad4e2f20b66b17e318c93c67e267",
       "lab/pk6/native_dispatch/run.py": "388b439c7080ce6eac3a6b465df950f410fad92b47d5978f4997abf05cceea73",
       "lab/pk6/native_dispatch/tile_build.py": "e09e93c306fda86f139be5b805fbadb1f92ba86f963632a5ea36a03978b2df9b"
+    },
+    "workload-grid": {
+      "ironmule/ggml_engine.py": "c8d388abff8fb24515c08622b40c6f41fd76f8f627d793d2f98c3bf1ffc66382",
+      "ironmule/ggml_profiles.py": "17d71f1b480cda75540906e3f3fd803db6a60e4d239040e549c7ae1003718c4f",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
+      "lab/pk6/mixed_progress/schedule.py": "455bea90e8ade951d20eb59cc51f6bca0f5604c065137b03964b833d4255da5d",
+      "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
+      "lab/pk6/native_dispatch/grid_build.py": "09f9afb635b39ff6428c937610ae7f7e9d22167dc7d9657b6f719b4143598a5c",
+      "lab/pk6/native_dispatch/grid_screen.py": "c85750534038ffba98d6e33aebe67c2887fd7c5505afff8a5716cd2a53ee7d65",
+      "lab/pk6/native_dispatch/operators.py": "121ead47e9a65c6b0aecb6f03900d41441f5160ca05771ddb420be5d7e24d687",
+      "lab/pk6/native_dispatch/packed_screen.py": "61f819d5ab29de818ed15fb2ba1c466f62e12c29e6c8cd4510ea526788c46230",
+      "lab/pk6/native_dispatch/tile_build.py": "422596229f0173de6635b11b52189fb132f36bfef334b140da31ec235b0207f0"
     }
   },
   "files": {
@@ -402,6 +432,11 @@
       "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
       "patch": "d136eef57bf79e99f95a43f9032c55d38887fe8f5e9edae41714fee418db05e5"
     },
+    "c85750534038ffba98d6e33aebe67c2887fd7c5505afff8a5716cd2a53ee7d65": {
+      "base_sha256": "9f4c49a71ffc8c7465810669d0d8d7f1fdca5427ff9cd71d8204f29e2af1c6a1",
+      "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
+      "patch": "746b09622064690a7473f74ee423a8b39a2b748f25ca65d5004ee0fe7647f46f"
+    },
     "c8d388abff8fb24515c08622b40c6f41fd76f8f627d793d2f98c3bf1ffc66382": {
       "base_sha256": "c8d388abff8fb24515c08622b40c6f41fd76f8f627d793d2f98c3bf1ffc66382",
       "commit": "2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d"
@@ -414,6 +449,11 @@
     "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955": {
       "base_sha256": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
       "commit": "2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d"
+    },
+    "d23211d84327286dad3be0870dd3ebb38e409e30be4d04a045468cffeca61e77": {
+      "base_sha256": "05230b43fdec11b2d19321cd2c3d0e992fa2b762ea9d1dda937b6b1e83251a35",
+      "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
+      "patch": "470ab34df788982c84e8777c60f72b1b6a3666fd64017c78f54b433f19b875b1"
     },
     "dc914a2bbbd10e375c95d8b8d09a06e9a8fbe0d1f6b71a077016e10c9060b287": {
       "base_sha256": "17d71f1b480cda75540906e3f3fd803db6a60e4d239040e549c7ae1003718c4f",

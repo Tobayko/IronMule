@@ -1,0 +1,54 @@
+--- original
++++ actual
+@@ -25 +25 @@
+-def screen(gguf, built, out):
++def screen(gguf, built, out, order=None):
+@@ -34,0 +35,15 @@
++    planned = WIDTHS
++    extra = {}
++    if order:
++        proposal = json.loads(order.read_bytes())
++        planned = tuple(proposal["widths"])
++        if (
++            proposal["hardware"] != manifest["hardware"]
++            or proposal["gguf"] != GGUF
++            or proposal["reference_cuda"] != manifest["reference_cuda"]
++            or not 1 <= len(planned) <= 22
++            or tuple(sorted(set(planned))) != planned
++            or any(type(v) is not int or not 8 <= v <= 512 for v in planned)
++        ):
++            raise ValueError("foreign or unbounded workload grid")
++        extra = {"order_sha256": checksum(order)}
+@@ -38 +53,8 @@
+-        {**manifest, "gguf": GGUF, "widths": WIDTHS, "modes": MODES, "seeds": SEEDS},
++        {
++            **manifest,
++            "gguf": GGUF,
++            "widths": planned,
++            "modes": MODES,
++            "seeds": SEEDS,
++            **extra,
++        },
+@@ -54 +76 @@
+-                    (max(WIDTHS), k), dtype=np.float32
++                    (max(planned), k), dtype=np.float32
+@@ -57 +79 @@
+-                widths = list(WIDTHS)
++                widths = list(planned)
+@@ -151,3 +173,8 @@
+-    if len(observations) != 5 * len(WIDTHS) or any(
+-        set(b) != set(SEEDS) for b in observations.values()
+-    ):
++    expected = set(protocol.get("widths", WIDTHS))
++    if (
++        len(observations) != 5 * len(expected)
++        or any(
++            {b for n0, k0, b in observations if (n0, k0) == (n, k)} != expected
++            for n, k in {key[:2] for key in observations}
++        )
++    ) or any(set(b) != set(SEEDS) for b in observations.values()):
+@@ -181,0 +209 @@
++    p.add_argument("--workload-order", type=Path)
+@@ -183 +211 @@
+-    screen(a.gguf, a.build, a.out)
++    screen(a.gguf, a.build, a.out, a.workload_order)

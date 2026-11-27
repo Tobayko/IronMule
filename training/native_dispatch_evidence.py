@@ -47,6 +47,74 @@ def experiences(root, source, digest):
                     authorship="Codex wrote the Ada candidates. IronMule ranked the native Q4_K tile order.",
                     uncertainty="System comparison on one board with distinct official quantizations. Diagnostic and rejected paths supply no production labels.",
                 )
+    elif path.name.startswith("qualification-"):
+        target = json.loads((folder / "target.json").read_bytes())
+        arm = path.stem.removeprefix("qualification-")
+        if arm not in target["order"] or len(result["log_sha256"]) != 64:
+            raise ValueError("qualification receipt missing its process binding")
+        for i, gate in enumerate(result["gates"]):
+            if gate["passes"]:
+                continue
+            diagnostic = gate.get("diagnostic") or {}
+            yield record(
+                "native_rejected_startup",
+                source,
+                digest,
+                f"{arm}/{i}",
+                f"l40s-qualification-{arm[:-1]}",
+                hardware=target["hardware"],
+                base_commit=target["source"],
+                model=target["gguf_sha256"],
+                quantization="Q4_K_M",
+                software={
+                    "engine_sha256": target["engine_sha256"],
+                    "kernel_mode": gate["kernel_mode"],
+                },
+                decision="rejected",
+                reason=diagnostic.get("code") or "quality gate failed",
+                workload={"process": arm, "stage": diagnostic.get("stage")},
+                metrics=diagnostic.get("candidates", []),
+                quality=gate.get("interval"),
+                authorship="IronMule qualified the requested profile and recorded the outcome.",
+                uncertainty="A later successful fallback describes the profile that served. Its throughput cannot be attributed to the rejected profile.",
+            )
+    elif path.name.startswith("shape-"):
+        protocol = json.loads((folder / "protocol.json").read_bytes())
+        if result["seed"] not in protocol["seeds"] or set(
+            map(int, result["cells"])
+        ) != set(protocol["widths"]):
+            raise ValueError("native grid cells differ from the device protocol")
+        for width, choices in result["cells"].items():
+            if set(choices) != set(protocol["modes"]):
+                raise ValueError("missing native grid comparison")
+            yield record(
+                "native_cuda_grid",
+                source,
+                digest,
+                width,
+                f"l40s-native-grid-{result['n']}-{result['k']}",
+                hardware=protocol["hardware"],
+                model=protocol["gguf"],
+                quantization="Q4_K",
+                software={
+                    "backend": protocol["backend"],
+                    "reference_cuda": protocol["reference_cuda"],
+                },
+                workload={
+                    "tensor": result["tensor"],
+                    "n": result["n"],
+                    "k": result["k"],
+                    "rows": int(width),
+                    "activation_seed": result["seed"],
+                    "weight_copies": result["weight_copies"],
+                },
+                metrics=[
+                    {"mode": mode, **reading} for mode, reading in choices.items()
+                ],
+                reason="measured complete graph for each native CUDA variant",
+                authorship="Codex wrote the dispatch variants. IronMule used timed HTTP calls to select the follow-up widths.",
+                uncertainty="Two seeds for one geometry stay in the same training group. End-to-end throughput requires an independent serving measurement.",
+            )
     elif path.name == "chunk-plan.json":
         from lab.pk6.native_dispatch.chunk_plan import propose
 
