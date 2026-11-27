@@ -1,0 +1,113 @@
+{
+  "arms": {
+    "R2": {
+      "end": 1795739767.9981477,
+      "excluded_from_promotion": null,
+      "gate": {
+        "interval": [
+          1.0,
+          1.0
+        ],
+        "passes": true,
+        "ratio": 1.0
+      },
+      "metrics": {
+        "1": {
+          "eighth": 1.4564296030439436,
+          "end_p95": 2.0816823249915615,
+          "first": 1.2958525930298492,
+          "first_p95": 1.2958525930298492,
+          "gap_p95": 0.05751811107620597,
+          "tok_s": 15.368549450537477,
+          "visible": 1.2958531740587205
+        },
+        "32": {
+          "eighth": 22.952040567994118,
+          "end_p95": 41.251048607053235,
+          "first": 10.810430965502746,
+          "first_p95": 36.67961954197381,
+          "gap_p95": 2.01713865599595,
+          "tok_s": 24.78441641099571,
+          "visible": 10.810431631514803
+        },
+        "8": {
+          "eighth": 8.926933491486125,
+          "end_p95": 10.20660015696194,
+          "first": 5.042812573548872,
+          "first_p95": 8.64420260710176,
+          "gap_p95": 1.5418156170053408,
+          "tok_s": 25.071185149821915,
+          "visible": 5.0428130439831875
+        }
+      },
+      "proof": {
+        "cpu_policy": null,
+        "draft_verified_by_width": {},
+        "fallback": null,
+        "matched_native_requests": 155,
+        "native_raw_sha256": "875d05b3ba59b5af4af642b7ad82dcd578762af848a0c65693002f3e64b39af0",
+        "observed_pool_capacities": [],
+        "profile_flags": {
+          "IRONMULE_GGML_DH2": "0",
+          "IRONMULE_PK6": "0",
+          "IRONMULE_PS1": "0",
+          "IRONMULE_PS1_CONCAT": "0",
+          "IRONMULE_PS1_WARM": "0",
+          "IRONMULE_SV5": "0"
+        },
+        "prompt_plugin_dispatches_in_http_by_width": {
+          "1": 0,
+          "32": 0,
+          "8": 0
+        },
+        "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
+        "shared_pool": true,
+        "streams_pass": false,
+        "verified_compact_pool": false
+      },
+      "quality": {
+        "943819": 32
+      },
+      "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 19.10550701274011,
+          "32": 12.988537005067299,
+          "8": 12.69545394096052
+        },
+        "estimated_board_joules_per_output_token_by_seed": {
+          "943819": {
+            "1": 19.10550701274011,
+            "32": 12.988537005067299,
+            "8": 12.69545394096052
+          }
+        },
+        "mean_sampled_watts": 340.0698076923077,
+        "peak_gpu_mib": 36122.0,
+        "process_peak_gpu_mib": 36122.0,
+        "samples": 156
+      },
+      "start": 1795739548.3413763,
+      "startup_s": 62.04302876198199
+    }
+  },
+  "binding": [
+    {
+      "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+      "driver": "595.112.07",
+      "memory_mib": 46068,
+      "name": "NVIDIA L40S"
+    },
+    "2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d",
+    "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+    "00fd219734c5f6ff13b31c0038317ed7d6631e626619c8abf76c87412ea1395b",
+    "0.34.0",
+    [
+      180341,
+      943819
+    ]
+  ],
+  "pairs": {},
+  "two_seed_evaluation": {}
+}

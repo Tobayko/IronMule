@@ -1,0 +1,217 @@
+{
+  "cells": {
+    "16": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 125.51
+      },
+      "relative_rms_to_stock": 0.009914507158100605,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 142.9
+      }
+    },
+    "24": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 128.35
+      },
+      "relative_rms_to_stock": 0.012573005631566048,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 138.45
+      }
+    },
+    "30": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 130.64
+      },
+      "relative_rms_to_stock": 0.012153681367635727,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 141.49
+      }
+    },
+    "32": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 130.66
+      },
+      "relative_rms_to_stock": 0.012387760914862156,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 142.49
+      }
+    },
+    "64": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 139.54
+      },
+      "relative_rms_to_stock": 0.011762664653360844,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 153.76
+      }
+    },
+    "128": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 203.52
+      },
+      "relative_rms_to_stock": 0.012147542089223862,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 201.69
+      }
+    },
+    "143": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 249.49
+      },
+      "relative_rms_to_stock": 0.011879583820700645,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 263.21
+      }
+    },
+    "256": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 376.47
+      },
+      "relative_rms_to_stock": 0.012520940974354744,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 366.13
+      }
+    },
+    "384": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 554.72
+      },
+      "relative_rms_to_stock": 0.01234146486967802,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 521.48
+      }
+    },
+    "432": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 604.85
+      },
+      "relative_rms_to_stock": 0.012398993596434593,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 602.95
+      }
+    },
+    "448": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 609.66
+      },
+      "relative_rms_to_stock": 0.012442095205187798,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 604.89
+      }
+    },
+    "449": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 666.21
+      },
+      "relative_rms_to_stock": 0.012463807128369808,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 664.46
+      }
+    },
+    "464": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 674.51
+      },
+      "relative_rms_to_stock": 0.012460639700293541,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 660.62
+      }
+    },
+    "512": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 699.33
+      },
+      "relative_rms_to_stock": 0.012463804334402084,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 668.33
+      }
+    },
+    "1024": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 1467.19
+      },
+      "relative_rms_to_stock": 0.01237198244780302,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 1265.31
+      }
+    },
+    "2048": {
+      "marlin": {
+        "dispatches": 16,
+        "graphs": 16,
+        "us": 2954.41
+      },
+      "relative_rms_to_stock": 0.012684132903814316,
+      "stock": {
+        "dispatches": 0,
+        "graphs": 16,
+        "us": 2511.16
+      }
+    }
+  },
+  "copies": 2,
+  "harness": "06c8a0c88ce6ae94ad47b6b547ca8293682c89df8b78498605eacbb28c5ac7f1",
+  "k": 5120,
+  "n": 25600,
+  "seed": 913099
+}

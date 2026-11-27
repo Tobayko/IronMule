@@ -4827,3 +4827,11 @@ The trained CPU policy replayed 56 operator decisions in 5.32 ms including loadi
 The full INT8 and Marlin programs failed the product quality gate. Across eight native configurations each, the lowest upper bounds on the perplexity ratio were 1.11060 and 1.00762 respectively, above the 1.005 ceiling. Their HTTP workers returned to stock. Each uninformative second fallback run was cancelled. Before those results the planner ranked Marlin and INT8. After recording the rejections and the cached-INT8 arithmetic measurements, it proposed the cached variant. [Experiment, source and replay](../lab/pk6/native_dispatch/README.md)
 
 The earlier vLLM 0.34.0 AWQ-Marlin reference already contains six performance waves per concurrency level. At 32 clients its measured range was 265.08–269.20 output tokens/s. Both optional comparator restarts in this lease were cancelled before loading a model. The CPU reference command checks raw receipts, input protocol, software and tokenizer identity and reports the spread. [Reference evidence](../lab/autonomous/results/l40s-native-dispatch/vllm-reference.json) · [Repository rule](https://github.com/Tobayko/IronMule/pull/71)
+
+The commissioned 96-column Q4_K tile built successfully. Its T1 process tried all eight
+numeric profiles on the L40S. The smallest upper perplexity ratio was 1.005743 against
+the existing 1.005 limit, and the process exited before readiness. It served zero waves.
+The packed Marlin screen admitted four weight geometries, all at 16 rows, after graph-level
+speed ratios of 1.139–1.220 across two seeds. The R1 trace spent 2.30 of 28.05 native
+seconds at that outer width during performance requests. The factual wave had no such
+outer call. Dispatch within each request still requires a serving trace.
