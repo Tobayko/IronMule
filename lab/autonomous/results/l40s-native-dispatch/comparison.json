@@ -669,6 +669,97 @@
       "start": 1795736845.555811,
       "startup_s": 62.03962104697712
     },
+    "M1": {
+      "end": 1795738074.863598,
+      "excluded_from_promotion": "product rejected the proposed numeric profile",
+      "gate": {
+        "interval": [
+          0.9903767454357966,
+          1.0012351303128075
+        ],
+        "passes": true,
+        "ratio": 0.9962530276359698
+      },
+      "metrics": {
+        "1": {
+          "eighth": 0.27884862292557955,
+          "end_p95": 0.8292247010394931,
+          "first": 0.06106785195879638,
+          "first_p95": 0.06106785195879638,
+          "gap_p95": 0.05874181096442044,
+          "tok_s": 38.56140220541075,
+          "visible": 0.06106829200871289
+        },
+        "32": {
+          "eighth": 2.502046519482974,
+          "end_p95": 6.494115190929733,
+          "first": 0.5480750449933112,
+          "first_p95": 4.672234307043254,
+          "gap_p95": 0.2988812979310751,
+          "tok_s": 157.26382373815918,
+          "visible": 0.5480755955213681
+        },
+        "8": {
+          "eighth": 1.288798235473223,
+          "end_p95": 2.2455186310689896,
+          "first": 0.24262203800026327,
+          "first_p95": 1.147239365032874,
+          "gap_p95": 0.263682171003893,
+          "tok_s": 113.78073562258037,
+          "visible": 0.24262246896978468
+        }
+      },
+      "proof": {
+        "cpu_policy": null,
+        "draft_verified_by_width": {},
+        "fallback": "stock",
+        "matched_native_requests": 155,
+        "native_raw_sha256": "4dbb47cdd94770c50e6dbb708e4c93c47f1802233fbdd72395de506d98d7c4f2",
+        "observed_pool_capacities": [],
+        "profile_flags": {
+          "IRONMULE_GGML_DH2": "0",
+          "IRONMULE_PK6": "0",
+          "IRONMULE_PS1": "0",
+          "IRONMULE_PS1_CONCAT": "0",
+          "IRONMULE_PS1_WARM": "0",
+          "IRONMULE_SV5": "0"
+        },
+        "prompt_plugin_dispatches_in_http_by_width": {
+          "1": 0,
+          "32": 0,
+          "8": 0
+        },
+        "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
+        "shared_pool": true,
+        "streams_pass": false,
+        "verified_compact_pool": false
+      },
+      "quality": {
+        "180341": 32
+      },
+      "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 5.985224098859594,
+          "32": 2.132461344461692,
+          "8": 2.8075990721322497
+        },
+        "estimated_board_joules_per_output_token_by_seed": {
+          "180341": {
+            "1": 5.985224098859594,
+            "32": 2.132461344461692,
+            "8": 2.8075990721322497
+          }
+        },
+        "mean_sampled_watts": 328.066,
+        "peak_gpu_mib": 36122.0,
+        "process_peak_gpu_mib": 41902.0,
+        "samples": 30
+      },
+      "start": 1795737543.2253215,
+      "startup_s": 500.1767057389952
+    },
     "P1": {
       "end": 1795732858.4817035,
       "excluded_from_promotion": "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70",
@@ -1953,6 +2044,114 @@
         "gap_p95": 0.4566608855597169,
         "tok_s": 0.7052047839227488,
         "visible": 0.3012347739162916
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "M1/R1/1": {
+      "candidate_over_reference": {
+        "eighth": 0.970613454483565,
+        "end_p95": 0.970472402221417,
+        "first": 0.9952296656232891,
+        "first_p95": 0.9952296656232891,
+        "gap_p95": 0.9820088234546619,
+        "tok_s": 1.0300144293855675,
+        "visible": 0.9952348280836265
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        true,
+        true
+      ]
+    },
+    "M1/R1/32": {
+      "candidate_over_reference": {
+        "eighth": 0.9784486789260333,
+        "end_p95": 0.9922004265788287,
+        "first": 0.9822121504784077,
+        "first_p95": 0.9833575048944709,
+        "gap_p95": 0.9950761221601232,
+        "tok_s": 1.0155102835158916,
+        "visible": 0.9822231906561946
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "M1/R1/8": {
+      "candidate_over_reference": {
+        "eighth": 0.9712709016275658,
+        "end_p95": 0.98354896050748,
+        "first": 0.9454729359315396,
+        "first_p95": 0.9866878037854928,
+        "gap_p95": 0.9983200434300036,
+        "tok_s": 1.0155581434057057,
+        "visible": 0.9454727198582915
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "M1/vllm/1": {
+      "candidate_over_reference": {
+        "eighth": 1.0892598993020393,
+        "end_p95": 0.835521669429219,
+        "first": 1.347324319833717,
+        "first_p95": 1.347324319833717,
+        "gap_p95": 2.052381532672019,
+        "tok_s": 1.1970671699663415,
+        "visible": 1.3472953234200766
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "M1/vllm/32": {
+      "candidate_over_reference": {
+        "eighth": 0.82735983580249,
+        "end_p95": 1.7072683386715504,
+        "first": 0.3097676199563919,
+        "first_p95": 1.6332929945499772,
+        "gap_p95": 0.378798151181109,
+        "tok_s": 0.5881846001313817,
+        "visible": 0.3097713866958304
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "M1/vllm/8": {
+      "candidate_over_reference": {
+        "eighth": 1.4251870750789184,
+        "end_p95": 1.452729724416621,
+        "first": 0.33727772886493157,
+        "first_p95": 1.6011995702075639,
+        "gap_p95": 0.49924976193283926,
+        "tok_s": 0.6882013762768301,
+        "visible": 0.3372782149576566
       },
       "clear_win": false,
       "same_fixed_work": true,
