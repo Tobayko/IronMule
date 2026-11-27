@@ -1,0 +1,130 @@
+--- original
++++ actual
+@@ -38 +38 @@
+-        arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y", "G"))
++        arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y", "W", "S", "G"))
+@@ -41,0 +42,8 @@
++    if arm.startswith("Q") and (
++        not proof["shared_pool"]
++        or not proof.get("shared_chunks_in_http")
++        or not proof.get("shared_chunks_in_quality")
++    ):
++        return (
++            "chunked unified KV path absent from actual performance or quality requests"
++        )
+@@ -47 +55,8 @@
+-    if arm.startswith("H") and not proof.get("verified_compact_pool"):
++    if arm.startswith(("K", "O")):
++        required = "context" if arm.startswith("O") else "model"
++        if not any(
++            v[required]["rows"]
++            for v in proof.get("draft_verified_by_width", {}).values()
++        ):
++            return "the target did not verify the proposed draft source during performance measurement"
++    if arm.startswith(("H", "W")) and not proof.get("verified_compact_pool"):
+@@ -49 +64 @@
+-    if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y")) and (
++    if arm.startswith(("F", "V", "I", "M", "Z", "T", "X", "J", "Y", "W", "S")) and (
+@@ -158,0 +174 @@
++        chunks = []
+@@ -160,0 +177 @@
++        drafts = []
+@@ -161,0 +179,11 @@
++            if line.startswith("# draft_verified "):
++                parts = line.split()
++                fields = dict(v.split("=") for v in parts[2:-1])
++                drafts.append(
++                    (
++                        float(parts[-1]),
++                        fields["source"],
++                        int(fields["rows"]),
++                        int(fields["accepted"]),
++                    )
++                )
+@@ -166,0 +195,5 @@
++            if line.startswith("# shared_chunks "):
++                shape = dict(s.split("=") for s in line.split()[2:-1])
++                if int(shape["rows"]) != target["shared_chunk_plan"]["rows"]:
++                    raise ValueError("wrong chunk execution profile")
++                chunks.append(float(line.split()[-1]))
+@@ -171,0 +205,15 @@
++        draft_counts = {}
++        for width in (1, 8, 32):
++            counted = {
++                source: {"rows": 0, "accepted": 0} for source in ("model", "context")
++            }
++            for r in rows:
++                if r["repeat"] >= 3 or r["width"] != width:
++                    continue
++                lo = min(x["t_send"] for x in r["requests"])
++                hi = max(x["t_done"] for x in r["requests"])
++                for t, source, guesses, accepted in drafts:
++                    if lo <= t <= hi:
++                        counted[source]["rows"] += guesses
++                        counted[source]["accepted"] += accepted
++            draft_counts[str(width)] = counted
+@@ -172,0 +221,3 @@
++            "draft_verified_by_width": draft_counts
++            if target.get("draft_gguf_sha256")
++            else {},
+@@ -223,0 +275,26 @@
++        if target.get("shared_chunk_plan"):
++            for field, quality_wave in (
++                ("shared_chunks_in_http", False),
++                ("shared_chunks_in_quality", True),
++            ):
++                proof[field] = sum(
++                    1
++                    for r in rows
++                    if (r["repeat"] == 3) == quality_wave
++                    for t in chunks
++                    if min(x["t_send"] for x in r["requests"])
++                    <= t
++                    <= max(x["t_done"] for x in r["requests"])
++                )
++    if arm.startswith("B") and proof.get("fallback") == "stock":
++        worker = read(folder / f"worker-{arm}.json")
++        if not (
++            worker["process"] == "ironmule_product/worker.py"
++            and worker["hardware"] == target["hardware"]
++            and worker["start"] == start["unix"]
++            and start["unix"] <= worker["unix"] <= end["unix"]
++            and worker["threshold"] == "0"
++            and worker["empty_plugin"] is True
++        ):
++            raise ValueError("stock fallback did not reach the actual worker")
++        proof["worker_after_rejection"] = worker
+@@ -238 +315 @@
+-def run(root):
++def run(root, *, comparator="awq_marlin", reference_archive=None):
+@@ -240,0 +318,14 @@
++    historical = []
++    for receipt in sorted(root.rglob("reused-vllm.json")):
++        from lab.pk6.native_dispatch.reference import ARCHIVE, lookup
++
++        archived = reference_archive or ARCHIVE
++        target = read(receipt.with_name("target.json"))
++        stored = read(receipt)
++        if not stored or stored != lookup(archived, target, artifact=comparator):
++            raise ValueError("could not verify the recorded vLLM reference")
++        if stored["scope"] == "same_device":
++            if not any(f.name == "end-vllm.json" for f in finished):
++                finished.append(archived / "http/primary/end-vllm.json")
++        else:
++            historical.append(stored["waves_sha256"])
+@@ -258 +349,2 @@
+-            pin[0]["name"] != "NVIDIA L40S"
++            target.get("comparator_artifact", "awq_marlin") != comparator
++            or pin[0]["name"] != "NVIDIA L40S"
+@@ -283 +375,8 @@
+-            ["vllm", "R" + arm[1:]] + (["A" + arm[1:]] if arm.startswith("T") else [])
++            ["vllm", "R" + arm[1:]]
++            + (
++                ["A" + arm[1:]]
++                if arm.startswith("T")
++                else ["K" + arm[1:]]
++                if arm.startswith("O")
++                else []
++            )
+@@ -327,0 +427 @@
++        **({"historical_vllm_targets": sorted(set(historical))} if historical else {}),

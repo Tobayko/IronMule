@@ -20,7 +20,7 @@ def restore(capsules, family, checkout):
     prepared = {}
     for name, actual in files.items():
         path = Path(name)
-        if path.is_absolute() or ".." in path.parts or path.suffix not in (".py", ".cu", ".cuh"):
+        if path.is_absolute() or ".." in path.parts or path.suffix not in (".py", ".cu", ".cuh", ".cpp"):
             raise ValueError("invalid source path")
         row = manifest["files"][actual]
         base = (

@@ -186,7 +186,10 @@ count at verification. A C run requires evidence that the higher limit actually 
 
 ```bash
 python -m lab.pk6.native_dispatch.draft_load "$results/http" "$results/draft-metadata.json" /tmp/draft-load.json
-# In a disposable study checkout prepared with --draft-mix
-bash lab/pk6/native_dispatch/serve.sh /work/http/draft-load --arms C1 C2 \
+study="$(pwd)"
+python -m lab.pk6.native_dispatch.materialize "$results/sources" draft-mix-load /work/replay-draft-load
+cd /work/replay-draft-load
+export PYTHONPATH="$PWD"
+bash "$study/lab/pk6/native_dispatch/serve.sh" /work/http/draft-load --arms C1 C2 \
   --reference-archive "$results" --policy /tmp/draft-load.json
 ```

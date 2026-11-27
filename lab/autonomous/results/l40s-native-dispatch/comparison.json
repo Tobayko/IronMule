@@ -1070,6 +1070,97 @@
       "start": 1795737543.2253215,
       "startup_s": 500.1767057389952
     },
+    "N1": {
+      "end": 1795740963.164692,
+      "excluded_from_promotion": "candidate split streams did not serve",
+      "gate": {
+        "interval": [
+          0.9903767454357966,
+          1.0012351303128075
+        ],
+        "passes": true,
+        "ratio": 0.9962530276359698
+      },
+      "metrics": {
+        "1": {
+          "eighth": 0.2860906559508294,
+          "end_p95": 0.736150388023816,
+          "first": 0.06043515889905393,
+          "first_p95": 0.06043515889905393,
+          "gap_p95": 0.05908833595458418,
+          "tok_s": 43.43475706399388,
+          "visible": 0.06043567997403443
+        },
+        "32": {
+          "eighth": 2.5196550385444425,
+          "end_p95": 6.478456259937957,
+          "first": 0.5504813870065846,
+          "first_p95": 4.7172469440847635,
+          "gap_p95": 0.305008044000715,
+          "tok_s": 157.47834611733091,
+          "visible": 0.5504819480120204
+        },
+        "8": {
+          "eighth": 1.2625811774632894,
+          "end_p95": 2.2361194830155,
+          "first": 0.24097797746071592,
+          "first_p95": 1.1598267920780927,
+          "gap_p95": 0.2632987250108272,
+          "tok_s": 114.27921078172763,
+          "visible": 0.2409784629708156
+        }
+      },
+      "proof": {
+        "cpu_policy": null,
+        "draft_verified_by_width": {},
+        "fallback": null,
+        "matched_native_requests": 155,
+        "native_raw_sha256": "8826f46af4d98c8d45fcadd1cb0d7d7eab0d9657156f92e2bfb3f8943b4898b6",
+        "observed_pool_capacities": [],
+        "profile_flags": {
+          "IRONMULE_GGML_DH2": "0",
+          "IRONMULE_PK6": "0",
+          "IRONMULE_PS1": "0",
+          "IRONMULE_PS1_CONCAT": "0",
+          "IRONMULE_PS1_WARM": "0",
+          "IRONMULE_SV5": "0"
+        },
+        "prompt_plugin_dispatches_in_http_by_width": {
+          "1": 0,
+          "32": 0,
+          "8": 0
+        },
+        "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
+        "shared_pool": true,
+        "streams_pass": false,
+        "verified_compact_pool": false
+      },
+      "quality": {
+        "180341": 32
+      },
+      "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 5.914749007467148,
+          "32": 2.1442864416109173,
+          "8": 2.8186781154612226
+        },
+        "estimated_board_joules_per_output_token_by_seed": {
+          "180341": {
+            "1": 5.914749007467148,
+            "32": 2.1442864416109173,
+            "8": 2.8186781154612226
+          }
+        },
+        "mean_sampled_watts": 330.06233333333336,
+        "peak_gpu_mib": 36122.0,
+        "process_peak_gpu_mib": 40898.0,
+        "samples": 30
+      },
+      "start": 1795740429.5787637,
+      "startup_s": 502.18284912605304
+    },
     "P1": {
       "end": 1795732858.4817035,
       "excluded_from_promotion": "explicit cuBLAS threshold incorrectly qualified as identical stock; see PR 70",
@@ -2786,6 +2877,114 @@
         "gap_p95": 0.49924976193283926,
         "tok_s": 0.6882013762768301,
         "visible": 0.3372782149576566
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "N1/R1/1": {
+      "candidate_over_reference": {
+        "eighth": 0.9656081712949466,
+        "end_p95": 0.9608405292229381,
+        "first": 0.9947498584650281,
+        "first_p95": 0.9947498584650281,
+        "gap_p95": 0.9786610431854816,
+        "tok_s": 1.0418123436117637,
+        "visible": 0.9947504278589462
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        true,
+        true
+      ]
+    },
+    "N1/R1/32": {
+      "candidate_over_reference": {
+        "eighth": 0.9957232648188863,
+        "end_p95": 0.9935030173289141,
+        "first": 1.0041270781640637,
+        "first_p95": 0.9987399387599861,
+        "gap_p95": 0.9970599420835276,
+        "tok_s": 1.0081575561608231,
+        "visible": 1.0041273404759128
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "N1/R1/8": {
+      "candidate_over_reference": {
+        "eighth": 0.9501722734563915,
+        "end_p95": 0.9768474024115746,
+        "first": 0.9582958599494237,
+        "first_p95": 0.9799183892448424,
+        "gap_p95": 0.9945289350734179,
+        "tok_s": 1.0240144981365673,
+        "visible": 0.9582955069736558
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "N1/vllm/1": {
+      "candidate_over_reference": {
+        "eighth": 0.9469091918690908,
+        "end_p95": 0.7417405684871566,
+        "first": 1.3333653754949484,
+        "first_p95": 1.3333653754949484,
+        "gap_p95": 2.045384729551923,
+        "tok_s": 1.348351427673839,
+        "visible": 1.3333385676663716
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "N1/vllm/32": {
+      "candidate_over_reference": {
+        "eighth": 0.8331825018984154,
+        "end_p95": 1.7031516890104785,
+        "first": 0.31993455937137927,
+        "first_p95": 1.6490282552228614,
+        "gap_p95": 0.3840708474396393,
+        "tok_s": 0.5889869382458514,
+        "visible": 0.3199345964603184
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "N1/vllm/8": {
+      "candidate_over_reference": {
+        "eighth": 1.3898130478576571,
+        "end_p95": 1.4466489813880063,
+        "first": 0.33499226044884983,
+        "first_p95": 1.6187678156750176,
+        "gap_p95": 0.47272940382914624,
+        "tok_s": 0.6912163971297703,
+        "visible": 0.33499282312619755
       },
       "clear_win": false,
       "same_fixed_work": true,

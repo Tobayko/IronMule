@@ -13,5 +13,10 @@
     "waiting": "remaining-N1",
     "old": 1795739957,
     "new": 1795745057
+  },
+  "product-default": {
+    "waiting": "product-default-E2",
+    "old": 1795739957,
+    "new": 1795745057
   }
 }

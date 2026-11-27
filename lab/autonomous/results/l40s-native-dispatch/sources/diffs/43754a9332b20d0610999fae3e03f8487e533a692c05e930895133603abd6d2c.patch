@@ -1,0 +1,84 @@
+--- original
++++ actual
+@@ -17 +17 @@
+-def prepare(root, candidates=True):
++def prepare(root, candidates=True, draft_mix=False, shared_chunks=False):
+@@ -151,0 +152,72 @@
++    if shared_chunks:
++        code = substitute(
++            code,
++            '                mark("pilot_admit")',
++            """                chunk_rows = int(os.getenv("IRONMULE_LAB_SHARED_CHUNK", "0"))
++                chunk_cohort = (self.pool is not None and not PROMPT_BUDGET
++                                and len(pending) >= 4 and len(active) < chunk_rows <= self.batch_cap
++                                and not any(j.hardware_probe for j in pending))
++                if chunk_cohort:
++                    budget = max(budget, self.batch_cap)
++                mark("pilot_admit")""",
++        )
++        code = substitute(
++            code,
++            '                mark("select")',
++            """                if (chunk_cohort and len(fresh) >= 2
++                        and sum(len(j.ids)-keep for _,j,keep in fresh) + len(active) > chunk_rows
++                        and len(active) + len(fresh) < chunk_rows):
++                    from lab.pk6.mixed_progress.schedule import serve as serve_shared_chunks
++
++                    active.update((seq, job) for seq, job, _ in fresh)
++                    trace_note(f"shared_chunks rows={chunk_rows} fresh={len(fresh)} running={len(active)-len(fresh)}")
++                    serve_shared_chunks(self, fresh, active, take, finish, chunk_rows, shared=True)
++                    arrived = 0
++                    continue
++                mark("select")""",
++        )
++        cache = substitute(
++            cache,
++            "    return key",
++            '    if os.getenv("IRONMULE_LAB_SHARED_CHUNK"):\n'
++            '        key.extend(["unified-chunk-profile", os.environ["IRONMULE_LAB_SHARED_CHUNK"]])\n    return key',
++        )
++    if draft_mix:
++        code = substitute(
++            code,
++            "                modelled: dict[int, list[int]] = {}",
++            """                modelled: dict[int, list[int]] = {}
++                local_drafts = {}
++                draft_mix = os.environ.get("IRONMULE_LAB_DRAFT_MIX") if self.drafter is not None else None""",
++        )
++        code = substitute(
++            code,
++            "                            wants[seq] = (job.full_context(), room)",
++            """                            if (draft_mix == "context_first" and self.policy is not None
++                                    and len(order) <= self.drafter.max_running):
++                                offer = job.context.draft(room)
++                                if self.collective is not None and len(offer[0]) < 2:
++                                    shared_offer = self.collective.draft(job.full_context(), room)
++                                    if len(shared_offer[0]) > len(offer[0]):
++                                        offer = shared_offer
++                                if len(offer[0]) >= 2:
++                                    local_drafts[seq] = offer
++                                    continue
++                            wants[seq] = (job.full_context(), room)""",
++        )
++        code = substitute(
++            code,
++            "                    if seq in modelled:\n                        offers.append((modelled[seq], DRAFT_BUCKET))",
++            """                    if seq in local_drafts:
++                        offers.append(local_drafts[seq])
++                        continue
++                    if seq in modelled:
++                        offers.append((modelled[seq], DRAFT_BUCKET))""",
++        )
++        code = substitute(
++            code,
++            "                        self.policy.observe_drafts(bucket, r, min(r, len(new) - 1))",
++            """                        self.policy.observe_drafts(bucket, r, min(r, len(new) - 1))
++                    if draft_mix and TRACE and r and (seq in modelled or seq in local_drafts):
++                        trace_note(f"draft_verified source={'model' if seq in modelled else 'context'} rows={r} accepted={min(r, len(new)-1)}")""",
++        )
+@@ -159,0 +232,2 @@
++    p.add_argument("--draft-mix", action="store_true")
++    p.add_argument("--shared-chunks", action="store_true")
+@@ -161 +235 @@
+-    prepare(args.root, not args.baseline)
++    prepare(args.root, not args.baseline, args.draft_mix, args.shared_chunks)

@@ -1,7 +1,6 @@
 """Rank a bounded drafting experiment from real target-verified proposals and mixed HTTP waves."""
 
 import argparse
-import json
 from pathlib import Path
 
 
