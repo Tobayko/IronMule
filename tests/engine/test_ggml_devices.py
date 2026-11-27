@@ -69,7 +69,7 @@ def test_hip_build_uses_local_upstream_backend_and_excludes_cuda_patches(monkeyp
     monkeypatch.setattr(build_ggml, "patch", lambda tree, names: calls.append(names) or names)
     monkeypatch.setattr(build_ggml, "run", lambda cmd, **kw: calls.append(cmd))
     build_ggml.main(["--dest", str(tmp_path), "--rocm", "gfx1100,gfx942"])
-    assert calls[0] == ["fa1", "row1", "am1"]
+    assert calls[0] == ["fa1", "row1", "am1", "tk1", "tl1", "ps1", "tl2", "ps1a"]  # tk1 (the tokenizer) is not CUDA code
     assert "-DGGML_HIP=ON" in calls[1] and "-DAMDGPU_TARGETS=gfx1100;gfx942" in calls[1]
     assert "-DGGML_CUDA=ON" not in calls[1]
     with pytest.raises(SystemExit):
@@ -205,7 +205,7 @@ def test_failed_generated_kernel_requalifies_real_stock_mode(monkeypatch, tmp_pa
 
     monkeypatch.setattr(ggml_engine, 'gate', gate)
     checked = cli._qualify_ggml_kernels('model.gguf', 'model.gguf', tmp_path)
-    assert calls == ['/local/candidate.so', None]
+    assert calls == ['/local/candidate.so', '']
     assert checked['kernel_fallback']['serving'] == 'stock'
     assert checked['settings'] == {'flash_attn': False}
     assert [row['passes'] for row in checked['kernel_fallback']['attempts']] == [False, True]
@@ -273,7 +273,7 @@ def test_stock_or_independent_gate_failure_never_admits_or_retries(monkeypatch, 
     monkeypatch.delenv('IRONMULE_KG_LIB')
     with pytest.raises(InvalidRequest, match='reference: out_of_memory'):
         cli._qualify_ggml_kernels('model.gguf', 'model.gguf', tmp_path)
-    assert calls == ['/local/candidate.so', None]
+    assert calls == ['/local/candidate.so', '']
 
 
 def test_unsupported_w4_tries_the_general_cuda_generator(monkeypatch, tmp_path):

@@ -1,0 +1,71 @@
+--- original
++++ actual
+@@ -17,0 +18 @@
++DRAFT_SHA256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+@@ -41,0 +43,5 @@
++    draft = None
++    if any(a.startswith(("K", "O")) for a in args.arms):
++        draft = args.models / "Qwen3-0.6B-Q8_0.gguf"
++        if checksum(draft) != DRAFT_SHA256:
++            raise ValueError("foreign draft model")
+@@ -78 +84 @@
+-    if any(a.startswith("H") for a in args.arms):
++    if any(a.startswith(("H", "W")) for a in args.arms):
+@@ -87,0 +94,15 @@
++    packed_receipt = None
++    if any(a.startswith("W") for a in args.arms):
++        if not args.routing_receipt or not args.lib:
++            raise ValueError("missing measured packed program")
++        packed_receipt = json.loads(args.routing_receipt.read_bytes())
++        if (
++            packed_receipt["kind"] != "packed-marlin"
++            or packed_receipt["hardware"] != hw
++            or packed_receipt["gguf"] != GGUF
++            or packed_receipt["pool_cells"] != pool["cells"]
++            or packed_receipt["library_sha256"] != checksum(args.lib)
++            or packed_receipt["ggml_cuda"]
++            != checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
++        ):
++            raise ValueError("foreign packed kernel or KV capacity")
+@@ -115,0 +137 @@
++            "draft_gguf_sha256": DRAFT_SHA256 if draft else None,
+@@ -116,0 +139 @@
++            "packed_program": packed_receipt,
+@@ -120,0 +144,4 @@
++        if time.monotonic() >= deadline:
++            raise TimeoutError(
++                "qualification window exhausted before starting another server"
++            )
+@@ -123,0 +151 @@
++            "IRONMULE_LAB_DRAFT_MIX",
+@@ -139,0 +168,4 @@
++        if arm.startswith(("K", "O")):
++            os.environ["IRONMULE_LAB_DRAFT_MIX"] = (
++                "context_first" if arm.startswith("O") else "model_first"
++            )
+@@ -152 +184 @@
+-        if arm.startswith("H"):
++        if arm.startswith(("H", "W")):
+@@ -170 +202 @@
+-        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y")):
++        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y", "W")):
+@@ -179 +211 @@
+-            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E")
++            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O")
+@@ -182 +214,4 @@
+-        trial.measure(args, arm, hw, 0, deadline)
++        if arm.startswith(("K", "O")):
++            trial.measure(args, arm, hw, 0, deadline, draft=draft)
++        else:
++            trial.measure(args, arm, hw, 0, deadline)
+@@ -190 +225,9 @@
+-        fcntl.flock(lock, fcntl.LOCK_EX)
++        while True:
++            remaining = float(os.environ["RP_DEADLINE"]) - time.time() - 45
++            if remaining <= 0:
++                raise TimeoutError("device wait exhausted the reserved window")
++            try:
++                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
++                break
++            except BlockingIOError:
++                time.sleep(min(remaining, 1.0))

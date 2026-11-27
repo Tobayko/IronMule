@@ -1,0 +1,19 @@
+{
+  "schema": "ironmule.post-restart-discovery-contract.v1",
+  "base_commit": "63db7745998383509602601d46ae4bbff0076648",
+  "parent_order": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "control_receipt_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
+  "weights_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+  "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+  "allowed_paths": ["ironmule/ggml_engine.py"],
+  "worker_family": "mixed-first-32",
+  "seeds": [96751, 96752],
+  "phases": ["startup", "cold", "warm", "factual"],
+  "attribution": "Exclusive cProfile time of Python code objects in the actual frozen source. Each code object is charged once per phase. Direct native calls, guard and qualification methods, non-owned source, external and unresolved time carry zero editable credit.",
+  "scenarios": {"sustained_warm_waves_per_restart": [0, 1, 8], "editable_time_reduction": [0.10, 0.25, 0.50], "future_starts_for_cost_sensitivity": [1, 32, 256]},
+  "minimum_rate_ratio": 1.02,
+  "uncertainty": "Use the smaller measured saving across both seeds. Charge the absolute span of measured site durations as noise. Exact-site prior rejections reduce estimated savings in proportion to their count.",
+  "decision": "Rank all supported owned methods and compare with retaining the incumbent. Only authorize a code order when the 25% saving still clears the complete cold-work gate and noise, the repeated workload gains after warm work, and the six-pair experiment's measured cost can be repaid within the 256-start sensitivity horizon. The 50% scenario can prioritize additional targeted measurement; insufficient optimistic headroom defers. None of these forecasts qualifies code.",
+  "qualification": {"seeds": [96851,96852,96853,96854,96855,96856], "factual_first_seeds": [96951,96952], "warm_32_and_18_facts": true, "trained_cache_incumbent_both_arms": true, "existing_cold_warm_latency_quality_memory_gate": true},
+  "cost": "Report actual broker seconds, current lease hourly price, discovery time, A/A, six paired arms and two factual-first pairs. Do not impute production restart demand from test traffic."
+}

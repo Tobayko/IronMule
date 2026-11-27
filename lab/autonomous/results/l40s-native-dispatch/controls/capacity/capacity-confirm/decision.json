@@ -1,0 +1,19 @@
+{
+  "candidate": "H2",
+  "next": [
+    "H1",
+    "R1"
+  ],
+  "ratio": {
+    "eighth": 0.464642913337091,
+    "end_p95": 0.518333088418439,
+    "first": 0.5330223173719909,
+    "first_p95": 0.5347876869768451,
+    "gap_p95": 0.45006228570146145,
+    "tok_s": 1.9276420307274493,
+    "visible": 0.5330223336068035
+  },
+  "reason": "Repeat the large fixed-work 32-client effect on the other seed with reversed process order and the same frozen evaluator. No external server.",
+  "reference": "R2",
+  "source": "capacity-holdout"
+}

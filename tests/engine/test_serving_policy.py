@@ -100,3 +100,77 @@ def test_a_completed_request_is_logged_with_its_group_width(tmp_path):
     rows = ServingLog(tmp_path).read()
     assert len(rows) == 2 and {r["width"] for r in rows} == {2}
     assert all(r["arrive"] <= r["start"] <= r["first"] <= r["end"] for r in rows)
+
+
+def test_adm1_appends_the_same_bytes_and_keeps_the_cap(tmp_path, monkeypatch):
+    import ironmule_product.serving_policy as sp
+
+    rows = [{"arrive": i, "start": i, "first": i, "end": i, "prompt_tokens": 1, "new_tokens": 1, "width": 1}
+            for i in range(200)]
+    files = {}
+    for on in (True, False):
+        monkeypatch.setattr(sp, "_ADM1", on)
+        root = tmp_path / str(on)
+        root.mkdir()
+        log = ServingLog(root, max_bytes=2000)
+        for row in rows:
+            log.append(row)
+        files[on] = (root / "serving-log.jsonl").read_bytes()
+    assert files[True] == files[False] and 0 < len(files[True]) <= 2000
+
+
+def test_adm2_a_deferred_log_writes_the_same_lines_in_order_and_flushes_on_read(tmp_path, monkeypatch):
+    import threading
+
+    import ironmule_product.serving_policy as sp
+
+    monkeypatch.setattr(sp, "_ADM2", True)
+    rows = [{"arrive": i, "start": i, "first": i, "end": i, "prompt_tokens": 1, "new_tokens": 1, "width": 1}
+            for i in range(400)]
+    plain, behind = tmp_path / "plain", tmp_path / "behind"
+    plain.mkdir()
+    behind.mkdir()
+    reference = ServingLog(plain)
+    deferred = ServingLog(behind, deferred=True)
+    assert deferred.deferred and not reference.deferred
+    for row in rows[:200]:
+        reference.append(row)
+    threads = [threading.Thread(target=lambda part=part: [deferred.append(r) for r in part])
+               for part in (rows[:200],)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert [r["arrive"] for r in deferred.read()] == list(range(200))  # read() flushes first
+    deferred.flush()
+    assert (behind / "serving-log.jsonl").read_bytes() == (plain / "serving-log.jsonl").read_bytes()
+    capped = ServingLog(tmp_path / "capped" if (tmp_path / "capped").mkdir() is None else None, max_bytes=2000,
+                        deferred=True)
+    for row in rows:
+        capped.append(row)
+    sp.flush_logs()  # every deferred log of the process
+    assert 0 < (tmp_path / "capped" / "serving-log.jsonl").stat().st_size <= 2000
+    assert capped.read()[-1]["arrive"] == 399
+    monkeypatch.setattr(sp, "_ADM2", False)  # IRONMULE_ADM2=0: written on the caller's thread, after what waits
+    capped.append(rows[0])
+    assert capped.read()[-1]["arrive"] == 0 and not capped._waiting
+
+
+def test_adm2_close_writes_every_line_and_stops_the_writer_thread(tmp_path):
+    """Codex review on #57: a deferred log's writer waited forever; close() drains it, joins the thread, and later
+    lines are written directly."""
+    import json
+    import threading
+
+    from ironmule_product.serving_policy import ServingLog
+
+    log = ServingLog(tmp_path, deferred=True)
+    for k in range(5):
+        log.append({"k": k})
+    thread = log._thread
+    assert thread is not None
+    log.close()
+    assert not thread.is_alive() and log._thread is None
+    log.append({"k": 5})  # after close: on the caller's thread
+    assert not any(t.name == "ironmule-log-writer" and t.is_alive() and t is thread for t in threading.enumerate())
+    assert [json.loads(line)["k"] for line in log.path.read_text().splitlines()] == [0, 1, 2, 3, 4, 5]

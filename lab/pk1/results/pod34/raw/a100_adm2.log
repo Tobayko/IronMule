@@ -1,0 +1,186 @@
+== 11:00:34 c4001f69da8a152eb9a6148f0b6af873a9565497; patches: .ironmule-am1 .ironmule-em1 .ironmule-fa1 .ironmule-fu1 .ironmule-gr1 .ironmule-gr2 .ironmule-gr3 .ironmule-gr4 .ironmule-kg1 .ironmule-kg5 .ironmule-pd1 .ironmule-pk2 .ironmule-pk3 .ironmule-pk4 .ironmule-pk5 .ironmule-qk1 .ironmule-row1 .ironmule-tk1 .ironmule-tl1 
+NVIDIA A100-SXM4-80GB, 1410 MHz, 1593 MHz, 500.00 W, 595.112.07
+192
+== 11:00:35 S0: first start (gate, tuning) with the lab switch
+== 11:22:08 S0 startup 1293 s
+# pass_costs {"1": 19.41, "8": 21.09, "16": 21.85, "32": 28.85, "127": 125.7, "128": 121.43, "256": 147.67, "1024": 383.32} 655430.925297
+== 11:22:08 A1: R / A / P / AP
+SUMMARY {"R": {"waves": 8, "tok_s_median": 299.645, "wall_s_median": 3.41765, "ttft_p50_median_ms": 2406.05}, "A": {"waves": 8, "tok_s_median": 311.475, "wall_s_median": 3.2876000000000003, "ttft_p50_median_ms": 2299.6000000000004, "paired_wall_ms_vs_R": {"median": -138.7, "faster_rounds": 8, "rounds": 8}}, "P": {"waves": 8, "tok_s_median": 299.495, "wall_s_median": 3.4191000000000003, "ttft_p50_median_ms": 2396.8500000000004, "paired_wall_ms_vs_R": {"median": -45.1, "faster_rounds": 5, "rounds": 8}}, "AP": {"waves": 8, "tok_s_median": 311.25, "wall_s_median": 3.29, "ttft_p50_median_ms": 2307.0, "paired_wall_ms_vs_R": {"median": -132.2, "faster_rounds": 8, "rounds": 8}}}
+SUMMARY {"R": {"waves": 4, "tok_s_median": 191.86, "wall_s_median": 1.3343500000000001, "ttft_p50_median_ms": 745.2, "quality": ["18/18"]}, "A": {"waves": 4, "tok_s_median": 190.06, "wall_s_median": 1.347, "ttft_p50_median_ms": 734.2, "quality": ["18/18"], "paired_wall_ms_vs_R": {"median": 16.3, "faster_rounds": 2, "rounds": 4}}, "P": {"waves": 4, "tok_s_median": 190.95, "wall_s_median": 1.3407499999999999, "ttft_p50_median_ms": 744.95, "quality": ["18/18"], "paired_wall_ms_vs_R": {"median": 12.3, "faster_rounds": 0, "rounds": 4}}, "AP": {"waves": 4, "tok_s_median": 192.265, "wall_s_median": 1.3315, "ttft_p50_median_ms": 735.85, "quality": ["18/18"], "paired_wall_ms_vs_R": {"median": 2.8, "faster_rounds": 1, "rounds": 4}}}
+{"rule": {"A": {"saving_ms": 138.7, "faster_rounds": "8/8", "wave8_ratio": 1.0095, "ttft32_ratio": 0.9558, "facts": [18], "facts_ref": [18], "passes": true}, "P": {"saving_ms": 45.1, "faster_rounds": "5/8", "wave8_ratio": 1.0048, "ttft32_ratio": 0.9962, "facts": [18], "facts_ref": [18], "passes": false}, "AP": {"saving_ms": 132.2, "faster_rounds": "8/8", "wave8_ratio": 0.9979, "ttft32_ratio": 0.9588, "facts": [18], "facts_ref": [18], "passes": true}}, "chosen": "A"}
+== 11:24:42 A1 verdict: B=A
+== 11:24:42 A2: B={"ADM1":1,"ADM2":0,"PX2":0,"BF1":0} against C={"ADM1":1,"ADM2":1,"PX2":0,"BF1":1}
+SUMMARY {"B": {"waves": 8, "tok_s_median": 309.22, "wall_s_median": 3.3116, "ttft_p50_median_ms": 2310.9}, "C": {"waves": 8, "tok_s_median": 312.605, "wall_s_median": 3.27575, "ttft_p50_median_ms": 2295.9, "paired_wall_ms_vs_B": {"median": -33.1, "faster_rounds": 8, "rounds": 8}}}
+SUMMARY {"B": {"waves": 4, "tok_s_median": 181.18, "wall_s_median": 1.41295, "ttft_p50_median_ms": 740.3499999999999, "quality": ["18/18"]}, "C": {"waves": 4, "tok_s_median": 181.59, "wall_s_median": 1.4097, "ttft_p50_median_ms": 734.75, "quality": ["18/18"], "paired_wall_ms_vs_B": {"median": -3.8, "faster_rounds": 4, "rounds": 4}}}
+{"rule": {"C": {"saving_ms": 33.1, "faster_rounds": "8/8", "wave8_ratio": 0.9977, "ttft32_ratio": 0.9935, "facts": [18], "facts_ref": [18], "passes": true}}, "chosen": "C"}
+== 11:26:02 A2 verdict: kept=C F={"ADM1":1,"ADM2":1,"PX2":0,"BF1":1}
+== 11:26:17 H: fresh starts, reference (IRONMULE_ADM1=0 IRONMULE_ADM2=0 IRONMULE_GGML_PX2=0 IRONMULE_GGML_BF1=0) and final (IRONMULE_ADM1=1 IRONMULE_ADM2=1 IRONMULE_GGML_PX2=0 IRONMULE_GGML_BF1=1) alternating
+== 11:27:42 R1 startup 85 s
+R1 0.224
+R1 (0, 32, 280.96, 3.645, 2632.1, 2639.4, None, None)
+R1 (1, 32, 301.61, 3.395, 2366.2, 2373.8, None, None)
+R1 (2, 32, 309.33, 3.31, 2324.9, 2331.4, None, None)
+R1q 0.134
+R1q (0, 8, 177.91, 1.439, 741.5, 743.7, '18/18', [])
+R1q (1, 8, 188.52, 1.358, 752.1, 753.7, '18/18', [])
+== 11:29:38 F1 startup 85 s
+F1 0.232
+F1 (0, 32, 300.77, 3.405, 2404.0, 2411.4, None, None)
+F1 (1, 32, 311.8, 3.284, 2272.8, 2278.4, None, None)
+F1 (2, 32, 314.35, 3.258, 2275.2, 2281.3, None, None)
+F1q 0.134
+F1q (0, 8, 183.45, 1.395, 731.4, 733.3, '18/18', [])
+F1q (1, 8, 190.13, 1.346, 736.9, 737.9, '18/18', [])
+== 11:31:34 R2 startup 85 s
+R2 0.213
+R2 (0, 32, 297.87, 3.438, 2408.7, 2414.8, None, None)
+R2 (1, 32, 302.92, 3.38, 2360.4, 2367.4, None, None)
+R2 (2, 32, 303.29, 3.376, 2332.8, 2340.1, None, None)
+R2q 0.136
+R2q (0, 8, 175.84, 1.456, 739.2, 741.3, '18/18', [])
+R2q (1, 8, 188.36, 1.359, 744.1, 745.9, '18/18', [])
+== 11:33:35 F2 startup 90 s
+F2 0.221
+F2 (0, 32, 301.92, 3.392, 2388.1, 2396.4, None, None)
+F2 (1, 32, 312.36, 3.278, 2288.7, 2295.5, None, None)
+F2 (2, 32, 312.44, 3.277, 2278.5, 2286.6, None, None)
+F2q 0.135
+F2q (0, 8, 184.15, 1.39, 734.1, 736.1, '18/18', [])
+F2q (1, 8, 189.57, 1.35, 735.3, 736.8, '18/18', [])
+== 11:34:06 H: vLLM
+== 11:36:12 vllm startup 126 s
+vllm 0.595
+vllm (0, 32, 288.69, 3.547, 1910.1, 2831.7, None, None)
+vllm (1, 32, 293.5, 3.489, 1842.6, 2776.3, None, None)
+vllm (2, 32, 293.41, 3.49, 1505.1, 2785.5, None, None)
+vllmq 0.149
+vllmq (0, 8, 195.97, 1.306, 775.6, 776.8, '18/18', [])
+vllmq (1, 8, 194.55, 1.316, 785.8, 786.6, '18/18', [])
+{
+ "F": {
+  "tok_s_32": [
+   300.77,
+   311.8,
+   314.35,
+   301.92,
+   312.36,
+   312.44
+  ],
+  "wall_32": [
+   3.405,
+   3.284,
+   3.258,
+   3.392,
+   3.278,
+   3.277
+  ],
+  "tok_s_32_median": 312.08000000000004,
+  "wall_32_median": 3.2809999999999997,
+  "ttft_p50_32_median": 2283.6,
+  "by_position": {
+   "0": 3.3985,
+   "1": 3.2809999999999997,
+   "2": 3.2675
+  },
+  "tok_s_8_median": 186.86,
+  "wall_8": [
+   1.395,
+   1.346,
+   1.39,
+   1.35
+  ],
+  "facts_8": [
+   "18/18",
+   "18/18",
+   "18/18",
+   "18/18"
+  ]
+ },
+ "R": {
+  "tok_s_32": [
+   280.96,
+   301.61,
+   309.33,
+   297.87,
+   302.92,
+   303.29
+  ],
+  "wall_32": [
+   3.645,
+   3.395,
+   3.31,
+   3.438,
+   3.38,
+   3.376
+  ],
+  "tok_s_32_median": 302.265,
+  "wall_32_median": 3.3875,
+  "ttft_p50_32_median": 2363.3,
+  "by_position": {
+   "0": 3.5415,
+   "1": 3.3875,
+   "2": 3.343
+  },
+  "tok_s_8_median": 183.135,
+  "wall_8": [
+   1.439,
+   1.358,
+   1.456,
+   1.359
+  ],
+  "facts_8": [
+   "18/18",
+   "18/18",
+   "18/18",
+   "18/18"
+  ]
+ },
+ "vllm": {
+  "tok_s_32": [
+   288.69,
+   293.5,
+   293.41
+  ],
+  "wall_32": [
+   3.547,
+   3.489,
+   3.49
+  ],
+  "tok_s_32_median": 293.41,
+  "wall_32_median": 3.49,
+  "ttft_p50_32_median": 1842.6,
+  "by_position": {
+   "0": 3.547,
+   "1": 3.489,
+   "2": 3.49
+  },
+  "tok_s_8_median": 195.26,
+  "wall_8": [
+   1.306,
+   1.316
+  ],
+  "facts_8": [
+   "18/18",
+   "18/18"
+  ]
+ },
+ "verdict": {
+  "ratio_tok_s": 1.0636,
+  "target_reached": false,
+  "gap_ms": 108.3,
+  "gap_ms_by_position": {
+   "0": 174.0,
+   "1": 109.2,
+   "2": 94.8
+  },
+  "final_vs_ref_tok_s": 1.0325,
+  "final_vs_ref_8": 1.0203
+ }
+}
+== 11:36:29 D: py-spy of the worker over 32-client waves of F
+== 11:37:54 D1 startup 85 s
+D1 0.211
+D1 (0, 32, 304.5, 3.363, 2368.8, 2375.1, None, None)
+D1 (1, 32, 307.04, 3.335, 2318.5, 2325.6, None, None)
+D1 (2, 32, 311.66, 3.286, 2281.9, 2288.6, None, None)
+== 11:38:23 A100-ADM2-DONE

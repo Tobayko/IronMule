@@ -1,0 +1,2 @@
+{"label": "vllmq", "width": 8, "repeat": 0, "wave_s": 1.3727, "prompt_tokens": 1908, "requests": 8, "chain_s": {"burst": 0.0073, "decode": 0.5273}, "last_first_token_s": 0.8454}
+{"label": "vllmq", "width": 8, "repeat": 1, "wave_s": 1.3659, "prompt_tokens": 1908, "requests": 8, "chain_s": {"burst": 0.0054, "decode": 0.5261}, "last_first_token_s": 0.8398}

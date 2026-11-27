@@ -1,0 +1,39 @@
+{
+  "base_commit": "63db7745998383509602601d46ae4bbff0076648",
+  "parent_order": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3",
+  "control_receipt_sha256": "de74395813fd3d71edf6b0a860da01dc352f5a95d3c5f997dc7fc6799cb1d639",
+  "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+  "weights_sha256": "a490979b3ebb77a2bcae6659c7ae44b70a813acb4fb05be4a2da7c19d7a46254",
+  "worker_family": "mixed-first-32",
+  "schema": "ironmule.calibration-sampling-discovery.v1",
+  "observation_schema": "ironmule.calibration-sampling-observation.v1",
+  "seeds": [
+    97351,
+    97352
+  ],
+  "origin": "After the preregistered 3-sample rule abstained in both real starts due to early post-warm variability, rank all supported prefix warmup/sample counts on those complete recorded timing sequences. The algorithm chooses among eligible discrete calibrated return values; the search family and economics were developed by human-directed Codex.",
+  "training_seeds": [
+    97251,
+    97252
+  ],
+  "warms": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "samples": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "ref_warms": 1,
+  "ref_samples": 5,
+  "uncertainty_slack": 0.01,
+  "max_price_relative_error": 0.02,
+  "rule": "Rank every measured complete discrete calibration with recorded fresh width-based series and its source-defined price-to-dispatch function. For each prefix plan compute all retained warm and timing work by actual position, estimate every price from its fresh sample median, and use [0.99*sample_min,1.01*sample_max] intervals. Require unchanged decision for every vector in this box, exact full discrete decision, original measured median within its interval and maximum relative error <=2% across all widths in every training and blind observation. Unknown return semantics or any ambiguity falls back to full original procedure. Require potential saving from trimmed original timed calls alone, net of all prefix warmups, >2% correct-work threshold for each arm. Measurement may perturb shape scheduling; actual complete serving gate remains mandatory.",
+  "selection": "Rank eligible plans by worst observed tail time saved across both training starts, then smaller continuous error, then fewer repeats. Lock one selected plan and method before observing either blind seed. Failure on either new seed rejects the plan; alternatives cannot be substituted afterward.",
+  "cost": "Prospective research authorization funds a bounded experiment separately from qualification. Show full 22-worker minimum independent release cost, two learning and two holdout workers, arithmetic for 1/32/256 future restarts and break-even. No claim that future traffic will amortize it. Any additional validation workers cost extra.",
+  "unknown": "Actual speed, whole serving outputs/masks, real measured between-arm price drift, telemetry and idle effects as well as robust fallback must be evaluated on fresh target hardware. Actual source changes and qualification parameters are distinct artifacts."
+}

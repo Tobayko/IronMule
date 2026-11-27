@@ -1,0 +1,29 @@
+{
+  "gates": [
+    {
+      "diagnostic": {
+        "candidates": [],
+        "code": "out_of_memory",
+        "exception_class": null,
+        "exit_code": -6,
+        "schema": "ironmule.gguf-gate-diagnostic.v1",
+        "stage": "tuning"
+      },
+      "interval": null,
+      "kernel_mode": "generated",
+      "passes": false,
+      "ratio": null
+    },
+    {
+      "diagnostic": null,
+      "interval": [
+        1.0,
+        1.0
+      ],
+      "kernel_mode": "stock",
+      "passes": true,
+      "ratio": 1.0
+    }
+  ],
+  "log_sha256": "f1645593eb67cf1d71095b9332fdbaf6a929a3a866ceb6b173e340234a03f3f3"
+}

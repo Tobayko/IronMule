@@ -168,3 +168,17 @@ def test_service_close_interrupts_a_cancel_drain(tmp_path: Path) -> None:
 
     assert time.monotonic() - started < 2
     assert not service._thread.is_alive()  # noqa: SLF001 - lifecycle assertion
+
+
+def test_adm1_ready_is_health_ready_without_the_report(tmp_path: Path) -> None:
+    spec = _spec(tmp_path)
+    backend = _Backend()
+    service = ProductService(_Store(spec), backend=backend, spec=spec)
+    try:
+        assert service.ready() is True and service.health()["ready"] is True
+        backend.ready = False  # a lost worker with no replacement: not ready either way
+        assert service.ready() is False and service.health()["ready"] is False
+        backend.ready = True
+    finally:
+        service.close()
+    assert service.ready() is False and service.health()["ready"] is False

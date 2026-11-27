@@ -10,14 +10,27 @@ import time
 from typing import Any, Callable, Sequence
 
 from .engine_bridge import EngineBridgeResult
+from .errors import StateError
 
+
+
+def _request_tag(emit) -> str | None:
+    """PF1: the serving request id behind a token callback (the worker's stream), for the engine trace only."""
+    owner = getattr(emit, "__self__", None)
+    tag = getattr(owner, "request_id", None)
+    return tag if isinstance(tag, str) else None
 
 class GgmlBridge:
     configuration = "ggml"
 
     def __init__(self, gguf: str, tokenizer: Any, *, speculate: bool, gate: dict[str, Any] | None = None):
-        from ironmule.ggml_engine import CHECK_TEXT, GgmlEngine, file_sha256
+        from ironmule.ggml_engine import CHECK_TEXT, GgmlEngine, file_sha256, gpu_layers
 
+        if gate is not None and "kernel_profile" in gate:
+            from .pinned_ggml import verify
+            verify(gate["kernel_profile"], gguf)
+        elif gpu_layers():
+            raise ValueError("GPU worker requires a locally qualified PS1/PK6 profile")
         settings = {k: bool(v) for k, v in ((gate or {}).get("settings") or {}).items()
                     if k in ("flash_attn", "kv_unified", "kv_f32", "kv_q8")}  # GG1: what the first start measured, and the gate passed
         if bus := (gate or {}).get("placement_rocm_bus"):
@@ -66,11 +79,18 @@ class GgmlBridge:
         self._arrival_epoch = 0
         self._admission = None
         self._start_agent()
+        self._experiment_queue = None
+        if queue_dir := os.environ.get("IRONMULE_EXPERIMENT_QUEUE"):
+            from .experiment_queue import ExperimentQueue
+            try:
+                self._experiment_queue = ExperimentQueue(queue_dir, self._agent.requests if self._agent is not None else 0)
+            except OSError:
+                pass  # unavailable evaluation storage cannot prevent serving
         self._bind_pilot_learning()
         self._bind_admission_learning()
         self._idle_thread = None
         if (self._agent is not None or getattr(getattr(self._engine, "pilot", None), "learning", None) is not None
-                or self._admission is not None and self._admission.enabled):
+                or self._admission is not None and self._admission.enabled or self._experiment_queue is not None):
             self._idle_thread = threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True)
             self._idle_thread.start()
 
@@ -160,6 +180,12 @@ class GgmlBridge:
         while not self._stop.wait(1.0):
             if self._run_lock.locked() or time.monotonic() - self._last_run < 3.0:
                 continue
+            queue = getattr(self, "_experiment_queue", None)
+            if queue is not None:
+                try:
+                    queue.idle(self._agent, self._gguf_sha256)
+                except (OSError, ValueError, RuntimeError, StateError):
+                    pass  # Retry during another idle spell. The serving reference is independent.
             learning = getattr(getattr(self._engine, "pilot", None), "learning", None)
             if learning is not None and self._run_lock.acquire(blocking=False):
                 try:
@@ -248,7 +274,7 @@ class GgmlBridge:
         emitters = list(on_tokens) if on_tokens is not None else [None] * len(prompt_ids)
         stops = list(cancelled) if cancelled is not None else [None] * len(prompt_ids)
         probes = [False] * len(prompt_ids) if hardware_probes is None else hardware_probes
-        jobs = [Job(list(ids), int(limit), emit, stop, hardware_probe=probe)
+        jobs = [Job(list(ids), int(limit), emit, stop, tag=_request_tag(emit), hardware_probe=probe)
                 for ids, limit, emit, stop, probe in zip(prompt_ids, limits, emitters, stops, probes, strict=True)]
         arrived = {id(job): time.monotonic() for job in jobs}
 
@@ -259,7 +285,7 @@ class GgmlBridge:
                 ids, limit, emit = row[:3]
                 if len(row) > 3 and row[3] is not None:
                     raise ValueError("the ggml engine serves one-shot prompts")
-                fresh.append(Job(list(ids), int(limit), emit, row[4] if len(row) > 4 else None,
+                fresh.append(Job(list(ids), int(limit), emit, row[4] if len(row) > 4 else None, tag=_request_tag(emit),
                                  hardware_probe=len(row) > 5 and row[5]))
                 arrived[id(fresh[-1])] = time.monotonic()
             return fresh
@@ -286,14 +312,19 @@ class GgmlBridge:
                     self._agent.observe_request(arrived.get(id(job), time.monotonic()), len(job.ids),
                                                 max(1, len(job.tokens)), len(job.ids) - job.reused,
                                                 first=job.first_ns / 1e9, finished=job.finished_ns / 1e9)
+        elif queue := getattr(self, "_experiment_queue", None):
+            queue.observe(served)
         reasons = {"eos": "stop", "length": "length", "cancelled": "cancelled"}
         results = []
+        # SV5 (2026-11-23): one engine summary for the whole run, not one per request (32 summaries here held the
+        # interpreter while the token writer still had the run's last frames to send)
+        metadata = {**self.metadata(), **self.counters()} if served else {}
         for job in served:
             text = self._tokenizer.decode([t for t in job.tokens if t not in self._eos])
             results.append(EngineBridgeResult(tokens=list(job.tokens), text=text,
                                               finish_reason=reasons[job.reason or "cancelled"],
                                               token_count=len(job.tokens), metrics={},
-                                              metadata={**self.metadata(), **self.counters()}))
+                                              metadata=dict(metadata)))
         return results
 
     def close(self) -> None:
@@ -303,6 +334,8 @@ class GgmlBridge:
             idle_thread.join()
         with self._run_lock:
             self._engine.close()
+        if queue := getattr(self, "_experiment_queue", None):
+            queue.close()
         admission = getattr(self, "_admission", None)
         if admission is not None:
             admission.path.unlink(missing_ok=True)

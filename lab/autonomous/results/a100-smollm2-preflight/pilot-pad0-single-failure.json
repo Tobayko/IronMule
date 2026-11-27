@@ -1,0 +1,26 @@
+{
+  "schema": "ironmule.pilot-preflight-failure.v1",
+  "status": "failed",
+  "source_log_sha256": "d8f87f144069048d23a052d0e984387d0d75d3beae1402f50a3cdefe92d36693",
+  "base_commit": "a4e2fc4f7de48921b588587e21d12b8f2090e90d",
+  "provider": "cuda",
+  "model": "SmolLM2-135M-Instruct-Q4_K_M",
+  "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+  "settings": {
+    "IRONMULE_PILOT": "1",
+    "IRONMULE_GGML_PAD": "0",
+    "IRONMULE_GGML_GPU_LAYERS": "999",
+    "clients": 1,
+    "threads": 2,
+    "seed": 1241,
+    "waves": 4
+  },
+  "observations": [
+    "load_tensors: offloaded 31/31 layers to GPU",
+    "CUDA error: an unsupported value or parameter was passed to the function"
+  ],
+  "native_call": "cublasGemmBatchedEx",
+  "native_function": "ggml_cuda_mul_mat_batched_cublas_impl",
+  "completed_qualification_pairs": 0,
+  "uncertainty": "Diagnostic retry of the Pilot-on failure. This excerpt identifies the failing call. Its cause remains unresolved."
+}

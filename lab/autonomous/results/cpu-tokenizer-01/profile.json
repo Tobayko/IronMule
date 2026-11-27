@@ -1,0 +1,426 @@
+{
+  "schema": "ironmule.serving_trial.v1",
+  "profiled": true,
+  "binding": {
+    "provider": "cpu",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_bytes": 105454432,
+    "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+    "devices": [
+      {
+        "provider": "cpu",
+        "name": "CPU",
+        "description": "INTEL(R) XEON(R) PLATINUM 8573C",
+        "type": "cpu",
+        "total_memory": 18882662400
+      }
+    ],
+    "native": {
+      "sha256": {
+        "llama_backend_init": "502f5da4b2c5865c6b8eded3cdc5fa85cbeb84193bada168456aa7b43775ec8b",
+        "ggml_init": "57df2f8555cbe24df5e9fcf5c2c7ffac58b8754b3ed6c576feff293f79ac3349",
+        "ggml_backend_reg_count": "404b639819bd535e6aeeedfbf2574308d04633899899978be05d66992782bd3a",
+        "backend/CPU": "e88e2a86e0b21ce1b919f27c63cd38f071b49941f5a886914dc4036f79a37ec0"
+      }
+    },
+    "python": "3.12.14",
+    "gpu_layers": 0,
+    "offloaded_layers": [],
+    "affinity": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "cores": 4,
+    "threads": 2,
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "prefix_reuse": true,
+    "speculate": true,
+    "env_sha256": "71b5a9ad404a4f35fcc2d3b9368816bff9ad73fc4cc2c86a400319ed47552868"
+  },
+  "workload": {
+    "seed": 1241,
+    "clients": 4,
+    "waves": 4,
+    "max_tokens": 3,
+    "warmup_waves": 1,
+    "context": 512,
+    "phases": [
+      "short",
+      "document"
+    ]
+  },
+  "commit": "a4e2fc4f7de48921b588587e21d12b8f2090e90d",
+  "evaluator_sha256": "65897868a8807e565c86dac1e1e36a8179907e841ad6b568cc74d80599a3fb81",
+  "initialization_s": 11.615344500000049,
+  "warmup_s": 1.113806953,
+  "wall_s": 8.847342676,
+  "ttft_s": 3.191491366,
+  "output_sha256": "9326feb1c8382c7e6f5603a18b0bd76868447fd3001fdbe68571950758e4b42b",
+  "waves": [
+    {
+      "workload": "short",
+      "wall_s": 1.128279566,
+      "ttfts_s": [
+        1.035652445,
+        0.246143394,
+        0.51949744,
+        0.755576949
+      ],
+      "output_sha256": "35f74b957373f8ff88ae8b24a69b01efe3aec98132fec6f30675135cbeb1983b",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 8,
+      "answers": [
+        {
+          "prompt_digest": "6cbc4be24be13e104cba5d3029323f6a59574fb277be903feb06a35da8923384",
+          "output_ids": [
+            2654,
+            198,
+            32601
+          ],
+          "answer": " green\nCopy",
+          "stop": "length",
+          "target": "green",
+          "correct": true
+        },
+        {
+          "prompt_digest": "86c128c7f16bf8ee9d611cbf9a85136916739deb3438f172f1ed5a52d24e9839",
+          "output_ids": [
+            2632,
+            198,
+            32601
+          ],
+          "answer": " black\nCopy",
+          "stop": "length",
+          "target": "black",
+          "correct": true
+        },
+        {
+          "prompt_digest": "b6a02076fa6ba7766ba3bed3372ff0230fbb394b637bd95f31d736366ae1153f",
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "answer": " yellow\nCopy",
+          "stop": "length",
+          "target": "yellow",
+          "correct": true
+        },
+        {
+          "prompt_digest": "1a8e6aaaaf3b193a0fbd9ee8d5cb72e4e8ecba2c760e6ac51b895b01f5e2fee6",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "workload": "document",
+      "wall_s": 3.36557038,
+      "ttfts_s": [
+        3.191491366,
+        0.658176184,
+        1.767464438,
+        2.419449082
+      ],
+      "output_sha256": "aecdb0e74577e2555f222a827b6f09f0211024a5f61f56a091b63fa34c31f5fe",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          104,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 8,
+      "answers": [
+        {
+          "prompt_digest": "99c162b96d50eb3ea7d40f848f53b89b9ca1fe0a650f9416fb46f48297a5761c",
+          "output_ids": [
+            2632,
+            198,
+            32601
+          ],
+          "answer": " black\nCopy",
+          "stop": "length",
+          "target": "black",
+          "correct": true
+        },
+        {
+          "prompt_digest": "644f24f91aeeb70aa3802bbb3dd7fecf880ac760bb5340b2ada2a29765d7d996",
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "answer": " yellow\nCopy",
+          "stop": "length",
+          "target": "yellow",
+          "correct": true
+        },
+        {
+          "prompt_digest": "a95a13d0665cac44f7171e34fc974c0baa09aa99889e7719c26036ba7837c667",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        },
+        {
+          "prompt_digest": "930a4d56142fbc499adade2a4f358e7c00ff39822b93f43567302b2689cb7cbc",
+          "output_ids": [
+            11986,
+            198,
+            13646
+          ],
+          "answer": " pink\nColor",
+          "stop": "length",
+          "target": "pink",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "workload": "short",
+      "wall_s": 2.200425907,
+      "ttfts_s": [
+        2.099989787,
+        0.491336924,
+        1.066656687,
+        1.765781517
+      ],
+      "output_sha256": "745c1e82a6d7e10f5942ea59827ea69d365d2373082b0613a68696bc7b6d26bc",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 10,
+      "answers": [
+        {
+          "prompt_digest": "2e317e8872f7fc65b279bca01c771163447a2e606c31a423ed89f21be67974aa",
+          "output_ids": [
+            5724,
+            198,
+            32601
+          ],
+          "answer": " yellow\nCopy",
+          "stop": "length",
+          "target": "yellow",
+          "correct": true
+        },
+        {
+          "prompt_digest": "8790e578fe7558d7288e39940ec90c13ecd841affe52b694f6610c7144dd22a7",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        },
+        {
+          "prompt_digest": "4f563b8689b92cee144e318088026a11c42ca92eb61868ca617d6a61b87c00df",
+          "output_ids": [
+            11986,
+            198,
+            32601
+          ],
+          "answer": " pink\nCopy",
+          "stop": "length",
+          "target": "pink",
+          "correct": true
+        },
+        {
+          "prompt_digest": "40427951a62ed9b4c82c3d4dd0b341df38b63cac5839afa7ed1fbd843a2a4e27",
+          "output_ids": [
+            6354,
+            198,
+            32601
+          ],
+          "answer": " brown\nCopy",
+          "stop": "length",
+          "target": "brown",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "workload": "document",
+      "wall_s": 2.153066823,
+      "ttfts_s": [
+        2.080304251,
+        0.590139378,
+        1.085266477,
+        1.582813767
+      ],
+      "output_sha256": "ccc07746010f29ac7148f0814991ae5ca7d5bef317af348fc507b50f9772d7e3",
+      "completed": 4,
+      "tokens": 12,
+      "correct": 4,
+      "requests": [
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "reused_prompt_tokens": 9,
+      "answers": [
+        {
+          "prompt_digest": "0d192f236545a9cca418bb1c5744d11535f8a32bd615f932f0c0ea0e26df86e3",
+          "output_ids": [
+            2537,
+            198,
+            32601
+          ],
+          "answer": " white\nCopy",
+          "stop": "length",
+          "target": "white",
+          "correct": true
+        },
+        {
+          "prompt_digest": "d70cfe562e8ecc640a13e9c2f3971b43fb112abe0a1806e057a07a169a6148bb",
+          "output_ids": [
+            11986,
+            198,
+            13646
+          ],
+          "answer": " pink\nColor",
+          "stop": "length",
+          "target": "pink",
+          "correct": true
+        },
+        {
+          "prompt_digest": "375f434bc90975c63f58907c5493d56f75c0ac27e0afd6788e373fb8b4e1cf63",
+          "output_ids": [
+            6354,
+            198,
+            13646
+          ],
+          "answer": " brown\nColor",
+          "stop": "length",
+          "target": "brown",
+          "correct": true
+        },
+        {
+          "prompt_digest": "2dd4a9f6f927ab87024e74b2f5742e6ab5489d87527f7c3d06788aeceb9b2416",
+          "output_ids": [
+            14230,
+            198,
+            13646
+          ],
+          "answer": " purple\nColor",
+          "stop": "length",
+          "target": "purple",
+          "correct": true
+        }
+      ]
+    }
+  ],
+  "completed": 16,
+  "correct": 16,
+  "tokens": 48,
+  "pilot_decisions": 12,
+  "pilot": {
+    "version": 2,
+    "active": true,
+    "reason": null,
+    "weights": "pilot_weights.npz",
+    "cores": 4,
+    "foreign_cores": 2.36,
+    "decision": {
+      "threads": 2,
+      "cap": 4,
+      "budget": 1073741824,
+      "draft": true
+    },
+    "decisions": 15,
+    "decide_us_mean": 339.1,
+    "out_of_range": 0
+  },
+  "peak_rss_kib": 240800,
+  "device_free_bytes_after_waves": [],
+  "total_elapsed_s": 21.718258777000017
+}

@@ -1,0 +1,207 @@
+{
+  "calls": [
+    {
+      "decode_rows": 0,
+      "kv": 256,
+      "prompt_rows": 30,
+      "seconds": 0.04554605996236205
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03199108806438744
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03199556504841894
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030180491041392088
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03013884904794395
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030130206025205553
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030146019998937845
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030163606046698987
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030127011006698012
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03017129795625806
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030149305006489158
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03013431199360639
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030145448981784284
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030149535043165088
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030160491005517542
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030149103957228363
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03012560901697725
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030152650084346533
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03013117692898959
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03013574401848018
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03016215399838984
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030143877025693655
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030122363939881325
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03014184394851327
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030159299029037356
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030126270023174584
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030159761081449687
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03015566396061331
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030130777042359114
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030131447943858802
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.03014635993167758
+    },
+    {
+      "decode_rows": 1,
+      "kv": 256,
+      "prompt_rows": 0,
+      "seconds": 0.030158518929965794
+    }
+  ],
+  "input_digest": "e7d08364e30a457c9b8968e58bdd85f85d2d851ebe7643b77114ddebe7a02ea7",
+  "output_counts": [
+    32
+  ],
+  "output_digests": [
+    "049b8387db4c920cce050f292cddaeb0c58b8812c00d225ab2846c64e3d9aaad"
+  ],
+  "repeat": 0,
+  "seconds": 0.9851709130452946,
+  "seed": 180341,
+  "width": 1
+}

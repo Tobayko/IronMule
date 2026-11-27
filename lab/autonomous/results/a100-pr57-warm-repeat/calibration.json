@@ -1,0 +1,105 @@
+{
+  "schema": "ironmule.external-http-local-calibration.v1",
+  "hardware": {
+    "device_sha256": "112d8a87ea0f7aab9de32ad3b2f2d65318c3bce1044ee30b75f78c528c923e2b",
+    "driver": "595.112.07",
+    "memory": "81920 MiB",
+    "name": "NVIDIA A100-SXM4-80GB"
+  },
+  "pr57_executable": "8cf0a3106f09a3338eb53c28047af7e36fc7b340",
+  "gate_original_sha256": "624ad763da1b817385463add19acd3988de9d1389eaa5c6064084857150ff247",
+  "gate": {
+    "passes": true,
+    "ratio": 0.9940459236928927,
+    "interval": [
+      0.9851111812015977,
+      1.000845966611683
+    ],
+    "chunks": 16,
+    "seconds": 447.7,
+    "settings": {
+      "flash_attn": true,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "reference": "llama.cpp's default setting on the same GGUF",
+    "checkpoint_stages": {
+      "measured": 4,
+      "reused": 0
+    }
+  },
+  "factual": {
+    "version": "qg1-v3",
+    "seed": 0,
+    "shape": null,
+    "total": 18,
+    "reference_correct": 18,
+    "repeat_correct": 18,
+    "candidate_correct": 18,
+    "by_category": {
+      "arithmetic": {
+        "total": 6,
+        "reference_correct": 6,
+        "repeat_correct": 6,
+        "candidate_correct": 6,
+        "aa_difference": 0,
+        "passes": true
+      },
+      "extraction": {
+        "total": 6,
+        "reference_correct": 6,
+        "repeat_correct": 6,
+        "candidate_correct": 6,
+        "aa_difference": 0,
+        "passes": true
+      },
+      "facts": {
+        "total": 6,
+        "reference_correct": 6,
+        "repeat_correct": 6,
+        "candidate_correct": 6,
+        "aa_difference": 0,
+        "passes": true
+      }
+    },
+    "passes": true
+  },
+  "width_original_sha256": "5d6264bcf7b5d94e72e9720f5cef0131668a0c53af57aee1b438c0500c2af175",
+  "width": {
+    "rates": {
+      "8": 352.0395168186261,
+      "16": 674.7260409746758,
+      "32": 1027.667812154675,
+      "64": 752.1253461019185
+    },
+    "sequences": 32,
+    "fitting": [
+      8,
+      16,
+      32,
+      64
+    ],
+    "memory_total": 85094825984,
+    "memory_available": 84150255616,
+    "seconds": 231.5,
+    "reason": "the widest width whose doubling still bought the gain rule",
+    "seq_ctx": 2048
+  },
+  "w4_library_sha256": "19af79dc15afb226112953cf140579037270d21337aaee0d3206499d35cef6c8",
+  "dispatch_table_sha256": "1232da533c2619cee981d6751598e593a1cb8f285da5ac2c2e01a2fa8b1bdaf1",
+  "device_load_sha256": "471a3b5df6124fa6f7ce2951f31b9dada04ef091f16e0c6d18671aca6ea81038",
+  "device_load_columns": [
+    "UTC time",
+    "used MiB",
+    "total MiB",
+    "GPU utilization percent",
+    "SM clock MHz"
+  ],
+  "device_load_period_s": 10,
+  "native_trace_sha256": {
+    "K1": "ed682a0d70a5a19d0715510fa530e61f13125c32df65cfc9ebe3f56db21b0b78",
+    "K2": "9eed7c203e99f328baa2778ac2af7516bc24cc57c33d9b5c1e41b56a19fc6230"
+  },
+  "cost_reference": "lab/rp/results/campaign-costs.json",
+  "direct_qualification": false
+}

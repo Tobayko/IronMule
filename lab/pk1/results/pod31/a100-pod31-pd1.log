@@ -1,0 +1,200 @@
+== 18:19:25 8184485 lab/pd1: pack the session's results on exit; patches: .ironmule-am1 .ironmule-em1 .ironmule-fa1 .ironmule-fu1 .ironmule-gr1 .ironmule-gr2 .ironmule-gr3 .ironmule-gr4 .ironmule-kg1 .ironmule-kg5 .ironmule-pd1 .ironmule-pk2 .ironmule-pk3 .ironmule-pk4 .ironmule-pk5 .ironmule-qk1 .ironmule-row1 .ironmule-tk1 
+NVIDIA A100-SXM4-80GB, 1410 MHz, 1593 MHz, 400.00 W, 590.48.01
+== 18:19:25 1. W4R tuning
+12 1024 5120 16 235 1;12 1024 5120 24 182 8;12 1024 5120 32 239 1;12 1024 5120 8 126 1;12 25600 5120 16 284 1;12 25600 5120 24 176 1;12 25600 5120 32 184 1;12 25600 5120 8 98 1;12 5120 25600 16 232 1;12 5120 25600 24 182 4;12 5120 25600 32 256 4;12 5120 25600 8 128 1;12 5120 8192 16 174 4;12 5120 8192 24 181 1;12 5120 8192 32 189 1;12 5120 8192 8 128 1;12 8192 5120 16 284 8;12 8192 5120 24 182 4;12 8192 5120 32 256 4;12 8192 5120 8 134 1;14 1024 5120 16 270 8;14 1024 5120 24 206 8;14 1024 5120 32 214 8;14 1024 5120 8 92 8;14 5120 25600 16 270 4;14 5120 25600 24 206 8;14 5120 25600 32 267 8;14 5120 25600 8 80 4;
+== 18:27:52 2. correctness round (bit check on)
+STEP {"round": 0, "arm": "ref", "width": 8, "seed": 3, "wall_s": 1.3644, "decode_calls": 31, "decode_ms_median": 20.38, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "ref", "width": 8, "seed": 4, "wall_s": 1.3801, "decode_calls": 31, "decode_ms_median": 20.362, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "ref", "width": 16, "seed": 3, "wall_s": 2.0108, "decode_calls": 31, "decode_ms_median": 22.505, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "ref", "width": 16, "seed": 4, "wall_s": 1.9847, "decode_calls": 31, "decode_ms_median": 22.516, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "ref", "width": 24, "seed": 3, "wall_s": 2.786, "decode_calls": 31, "decode_ms_median": 26.773, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "ref", "width": 24, "seed": 4, "wall_s": 2.8028, "decode_calls": 31, "decode_ms_median": 27.136, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "ref", "width": 32, "seed": 3, "wall_s": 3.5147, "decode_calls": 31, "decode_ms_median": 30.411, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 0, "arm": "ref", "width": 32, "seed": 4, "wall_s": 3.3581, "decode_calls": 31, "decode_ms_median": 30.404, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 0, "arm": "pd1", "width": 8, "seed": 3, "wall_s": 1.3662, "decode_calls": 31, "decode_ms_median": 20.404, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "pd1", "width": 8, "seed": 4, "wall_s": 1.3808, "decode_calls": 31, "decode_ms_median": 20.41, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "pd1", "width": 16, "seed": 3, "wall_s": 2.0428, "decode_calls": 31, "decode_ms_median": 23.795, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "pd1", "width": 16, "seed": 4, "wall_s": 2.0268, "decode_calls": 31, "decode_ms_median": 23.797, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "pd1", "width": 24, "seed": 3, "wall_s": 2.8406, "decode_calls": 31, "decode_ms_median": 28.244, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "pd1", "width": 24, "seed": 4, "wall_s": 2.8229, "decode_calls": 31, "decode_ms_median": 28.233, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "pd1", "width": 32, "seed": 3, "wall_s": 3.5798, "decode_calls": 31, "decode_ms_median": 32.147, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 0, "arm": "pd1", "width": 32, "seed": 4, "wall_s": 3.4253, "decode_calls": 31, "decode_ms_median": 32.179, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "pd1", "width": 8, "seed": 3, "wall_s": 1.3649, "decode_calls": 31, "decode_ms_median": 20.401, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "pd1", "width": 8, "seed": 4, "wall_s": 1.3817, "decode_calls": 31, "decode_ms_median": 20.401, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "pd1", "width": 16, "seed": 3, "wall_s": 2.0445, "decode_calls": 31, "decode_ms_median": 23.802, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "pd1", "width": 16, "seed": 4, "wall_s": 2.026, "decode_calls": 31, "decode_ms_median": 23.806, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "pd1", "width": 24, "seed": 3, "wall_s": 2.841, "decode_calls": 31, "decode_ms_median": 28.264, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "pd1", "width": 24, "seed": 4, "wall_s": 2.8192, "decode_calls": 31, "decode_ms_median": 28.242, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "pd1", "width": 32, "seed": 3, "wall_s": 3.5827, "decode_calls": 31, "decode_ms_median": 32.159, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "pd1", "width": 32, "seed": 4, "wall_s": 3.4157, "decode_calls": 31, "decode_ms_median": 32.172, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "ref", "width": 8, "seed": 3, "wall_s": 1.3696, "decode_calls": 31, "decode_ms_median": 20.37, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "ref", "width": 8, "seed": 4, "wall_s": 1.3799, "decode_calls": 31, "decode_ms_median": 20.375, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "ref", "width": 16, "seed": 3, "wall_s": 1.9996, "decode_calls": 31, "decode_ms_median": 22.507, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "ref", "width": 16, "seed": 4, "wall_s": 1.9849, "decode_calls": 31, "decode_ms_median": 22.498, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "ref", "width": 24, "seed": 3, "wall_s": 2.785, "decode_calls": 31, "decode_ms_median": 26.761, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "ref", "width": 24, "seed": 4, "wall_s": 2.7735, "decode_calls": 31, "decode_ms_median": 26.761, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "ref", "width": 32, "seed": 3, "wall_s": 3.5189, "decode_calls": 31, "decode_ms_median": 30.409, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "ref", "width": 32, "seed": 4, "wall_s": 3.3614, "decode_calls": 31, "decode_ms_median": 30.411, "tokens_equal_to_ref": 1024, "tokens": 1024}
+CHECK {"compared_halves": 45485568000, "differing_halves": 0, "enabled": "1"}
+== 18:30:43 3. decode step A/B (no diagnostics)
+STEP {"round": 0, "arm": "ref", "width": 8, "seed": 3, "wall_s": 1.3858, "decode_calls": 31, "decode_ms_median": 20.496, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "ref", "width": 8, "seed": 4, "wall_s": 1.4021, "decode_calls": 31, "decode_ms_median": 20.473, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "ref", "width": 16, "seed": 3, "wall_s": 2.0042, "decode_calls": 31, "decode_ms_median": 22.586, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "ref", "width": 16, "seed": 4, "wall_s": 2.0012, "decode_calls": 31, "decode_ms_median": 22.515, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "ref", "width": 24, "seed": 3, "wall_s": 2.7836, "decode_calls": 31, "decode_ms_median": 26.775, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "ref", "width": 24, "seed": 4, "wall_s": 2.7741, "decode_calls": 31, "decode_ms_median": 26.829, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "ref", "width": 32, "seed": 3, "wall_s": 3.5206, "decode_calls": 31, "decode_ms_median": 30.501, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 0, "arm": "ref", "width": 32, "seed": 4, "wall_s": 3.373, "decode_calls": 31, "decode_ms_median": 30.559, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 0, "arm": "pd1", "width": 8, "seed": 3, "wall_s": 1.3681, "decode_calls": 31, "decode_ms_median": 20.455, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "pd1", "width": 8, "seed": 4, "wall_s": 1.3864, "decode_calls": 31, "decode_ms_median": 20.432, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 0, "arm": "pd1", "width": 16, "seed": 3, "wall_s": 1.983, "decode_calls": 31, "decode_ms_median": 22.021, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "pd1", "width": 16, "seed": 4, "wall_s": 1.9686, "decode_calls": 31, "decode_ms_median": 22.0, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 0, "arm": "pd1", "width": 24, "seed": 3, "wall_s": 2.7676, "decode_calls": 31, "decode_ms_median": 26.184, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "pd1", "width": 24, "seed": 4, "wall_s": 2.758, "decode_calls": 31, "decode_ms_median": 26.182, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 0, "arm": "pd1", "width": 32, "seed": 3, "wall_s": 3.4987, "decode_calls": 31, "decode_ms_median": 29.778, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 0, "arm": "pd1", "width": 32, "seed": 4, "wall_s": 3.3506, "decode_calls": 31, "decode_ms_median": 29.776, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "pd1", "width": 8, "seed": 3, "wall_s": 1.3677, "decode_calls": 31, "decode_ms_median": 20.434, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "pd1", "width": 8, "seed": 4, "wall_s": 1.3847, "decode_calls": 31, "decode_ms_median": 20.427, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "pd1", "width": 16, "seed": 3, "wall_s": 1.9798, "decode_calls": 31, "decode_ms_median": 21.968, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "pd1", "width": 16, "seed": 4, "wall_s": 1.9674, "decode_calls": 31, "decode_ms_median": 21.974, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "pd1", "width": 24, "seed": 3, "wall_s": 2.7597, "decode_calls": 31, "decode_ms_median": 26.118, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "pd1", "width": 24, "seed": 4, "wall_s": 2.7498, "decode_calls": 31, "decode_ms_median": 26.149, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "pd1", "width": 32, "seed": 3, "wall_s": 3.491, "decode_calls": 31, "decode_ms_median": 29.611, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "pd1", "width": 32, "seed": 4, "wall_s": 3.3365, "decode_calls": 31, "decode_ms_median": 29.624, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "ref", "width": 8, "seed": 3, "wall_s": 1.3642, "decode_calls": 31, "decode_ms_median": 20.392, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "ref", "width": 8, "seed": 4, "wall_s": 1.3805, "decode_calls": 31, "decode_ms_median": 20.39, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 1, "arm": "ref", "width": 16, "seed": 3, "wall_s": 1.9973, "decode_calls": 31, "decode_ms_median": 22.506, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "ref", "width": 16, "seed": 4, "wall_s": 1.9851, "decode_calls": 31, "decode_ms_median": 22.512, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 1, "arm": "ref", "width": 24, "seed": 3, "wall_s": 2.7871, "decode_calls": 31, "decode_ms_median": 26.759, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "ref", "width": 24, "seed": 4, "wall_s": 2.7758, "decode_calls": 31, "decode_ms_median": 26.767, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 1, "arm": "ref", "width": 32, "seed": 3, "wall_s": 3.5181, "decode_calls": 31, "decode_ms_median": 30.47, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 1, "arm": "ref", "width": 32, "seed": 4, "wall_s": 3.3639, "decode_calls": 31, "decode_ms_median": 30.482, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 2, "arm": "ref", "width": 8, "seed": 3, "wall_s": 1.366, "decode_calls": 31, "decode_ms_median": 20.411, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 2, "arm": "ref", "width": 8, "seed": 4, "wall_s": 1.3818, "decode_calls": 31, "decode_ms_median": 20.391, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 2, "arm": "ref", "width": 16, "seed": 3, "wall_s": 1.9997, "decode_calls": 31, "decode_ms_median": 22.544, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 2, "arm": "ref", "width": 16, "seed": 4, "wall_s": 1.9852, "decode_calls": 31, "decode_ms_median": 22.511, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 2, "arm": "ref", "width": 24, "seed": 3, "wall_s": 2.7837, "decode_calls": 31, "decode_ms_median": 26.768, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 2, "arm": "ref", "width": 24, "seed": 4, "wall_s": 2.7727, "decode_calls": 31, "decode_ms_median": 26.756, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 2, "arm": "ref", "width": 32, "seed": 3, "wall_s": 3.5176, "decode_calls": 31, "decode_ms_median": 30.486, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 2, "arm": "ref", "width": 32, "seed": 4, "wall_s": 3.3633, "decode_calls": 31, "decode_ms_median": 30.473, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 2, "arm": "pd1", "width": 8, "seed": 3, "wall_s": 1.3658, "decode_calls": 31, "decode_ms_median": 20.416, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 2, "arm": "pd1", "width": 8, "seed": 4, "wall_s": 1.3818, "decode_calls": 31, "decode_ms_median": 20.437, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 2, "arm": "pd1", "width": 16, "seed": 3, "wall_s": 1.9835, "decode_calls": 31, "decode_ms_median": 21.972, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 2, "arm": "pd1", "width": 16, "seed": 4, "wall_s": 1.968, "decode_calls": 31, "decode_ms_median": 21.972, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 2, "arm": "pd1", "width": 24, "seed": 3, "wall_s": 2.7629, "decode_calls": 31, "decode_ms_median": 26.117, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 2, "arm": "pd1", "width": 24, "seed": 4, "wall_s": 2.7539, "decode_calls": 31, "decode_ms_median": 26.119, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 2, "arm": "pd1", "width": 32, "seed": 3, "wall_s": 3.4929, "decode_calls": 31, "decode_ms_median": 29.643, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 2, "arm": "pd1", "width": 32, "seed": 4, "wall_s": 3.334, "decode_calls": 31, "decode_ms_median": 29.632, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 3, "arm": "pd1", "width": 8, "seed": 3, "wall_s": 1.3652, "decode_calls": 31, "decode_ms_median": 20.42, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 3, "arm": "pd1", "width": 8, "seed": 4, "wall_s": 1.3829, "decode_calls": 31, "decode_ms_median": 20.426, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 3, "arm": "pd1", "width": 16, "seed": 3, "wall_s": 1.9828, "decode_calls": 31, "decode_ms_median": 21.982, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 3, "arm": "pd1", "width": 16, "seed": 4, "wall_s": 1.9658, "decode_calls": 31, "decode_ms_median": 21.963, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 3, "arm": "pd1", "width": 24, "seed": 3, "wall_s": 2.7604, "decode_calls": 31, "decode_ms_median": 26.117, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 3, "arm": "pd1", "width": 24, "seed": 4, "wall_s": 2.7532, "decode_calls": 31, "decode_ms_median": 26.119, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 3, "arm": "pd1", "width": 32, "seed": 3, "wall_s": 3.4889, "decode_calls": 31, "decode_ms_median": 29.604, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 3, "arm": "pd1", "width": 32, "seed": 4, "wall_s": 3.339, "decode_calls": 31, "decode_ms_median": 29.671, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 3, "arm": "ref", "width": 8, "seed": 3, "wall_s": 1.3649, "decode_calls": 31, "decode_ms_median": 20.381, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 3, "arm": "ref", "width": 8, "seed": 4, "wall_s": 1.3809, "decode_calls": 31, "decode_ms_median": 20.392, "tokens_equal_to_ref": 256, "tokens": 256}
+STEP {"round": 3, "arm": "ref", "width": 16, "seed": 3, "wall_s": 1.9986, "decode_calls": 31, "decode_ms_median": 22.554, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 3, "arm": "ref", "width": 16, "seed": 4, "wall_s": 1.9847, "decode_calls": 31, "decode_ms_median": 22.515, "tokens_equal_to_ref": 512, "tokens": 512}
+STEP {"round": 3, "arm": "ref", "width": 24, "seed": 3, "wall_s": 2.7838, "decode_calls": 31, "decode_ms_median": 26.76, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 3, "arm": "ref", "width": 24, "seed": 4, "wall_s": 2.7714, "decode_calls": 31, "decode_ms_median": 26.756, "tokens_equal_to_ref": 768, "tokens": 768}
+STEP {"round": 3, "arm": "ref", "width": 32, "seed": 3, "wall_s": 3.5241, "decode_calls": 31, "decode_ms_median": 30.485, "tokens_equal_to_ref": 1024, "tokens": 1024}
+STEP {"round": 3, "arm": "ref", "width": 32, "seed": 4, "wall_s": 3.3647, "decode_calls": 31, "decode_ms_median": 30.486, "tokens_equal_to_ref": 1024, "tokens": 1024}
+SUMMARY {"ref_8": {"per_wave": [20.496, 20.473, 20.392, 20.39, 20.411, 20.391, 20.381, 20.392], "median": 20.392}, "pd1_8": {"per_wave": [20.455, 20.432, 20.434, 20.427, 20.416, 20.437, 20.42, 20.426], "median": 20.429}, "ref_16": {"per_wave": [22.586, 22.515, 22.506, 22.512, 22.544, 22.511, 22.554,
+== 18:35:24 4. diagnostics: kernel tables, PD1 off / on
+-- PD1=0
+== decode: 456.9 ms of kernels
+   144.46 ms  31.6% x2048   void (anonymous namespace)::w4d<2, 1, 4, 2, 1>(unsigned char const*, __half const*, float const*, float*, int,
+    72.75 ms  15.9% x1536   void (anonymous namespace)::w4f<4, 4, 1>(unsigned char const*, __half const*, float const*, float*, int, int, 
+    54.43 ms  11.9% x512    void (anonymous namespace)::w4f6<8, 4, 1>(unsigned char const*, __half const*, float const*, float*, int, int,
+    35.54 ms   7.8% x1024   void (anonymous namespace)::w4d<8, 4, 4, 2, 1>(unsigned char const*, __half const*, float const*, float*, int,
+    33.95 ms   7.4% x1024   void flash_attn_ext_f16<128, 128, 1, 8, 4, 1, false, false>(char const*, char const*, char const*, char const*
+    19.49 ms   4.3% x4112   (anonymous namespace)::prep_x(float const*, __half*, float*, int, int, int)
+    18.85 ms   4.1% x1536   void (anonymous namespace)::w4d<16, 16, 4, 1, 1>(unsigned char const*, __half const*, float const*, float*, in
+    15.46 ms   3.4% x2048   void ironmule_add_rms_norm_mul_f32<1024>(float const*, float const*, float*, float*, float const*, int, int, f
+     9.67 ms   2.1% x2048   void rms_norm_f32<32, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long
+     8.22 ms   1.8% x2560   (anonymous namespace)::reduce_split(float const*, float*, unsigned long, int)
+     7.74 ms   1.7% x16     void (anonymous namespace)::w4f6<4, 4, 2>(unsigned char const*, __half const*, float const*, float*, int, int,
+     6.73 ms   1.5% x1024   void unary_gated_op_kernel<&_INTERNAL_fe259106_8_unary_cu_eb6d5366::op_silu, float>(float const*, float const*
+     6.30 ms   1.4% x2048   void rope_neox<true, false, float>(float const*, float*, int, int, int, int, int, int const*, float, float, fl
+     5.97 ms   1.3% x2048   void k_set_rows<float, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, l
+     5.84 ms   1.3% x512    void (anonymous namespace)::w4d6<4, 2, 4, 2>(unsigned char const*, __half const*, float const*, float*, int, i
+     5.09 ms   1.1% x1024   void flash_attn_stream_k_fixup<128, 1, 8>(float*, float2 const*, int, int, int, int)
+     2.49 ms   0.5% x96     Memcpy HtoD (Pinned -> Device)
+     2.11 ms   0.5% x1024   void flash_attn_mask_to_KV_max<1>(__half2 const*, int*, int, int, int)
+     1.33 ms   0.3% x16     argmax_f32(float const*, int*, long)
+     0.22 ms   0.0% x16     void cpy_flt<&(void _INTERNAL_8db1dfbb_6_cpy_cu_843ac19f::cpy_1_flt<float, __half>(char const*, char*))>(char 
+     0.13 ms   0.0% x16     void rms_norm_f32<1024, true>(float const*, float*, int, long, long, long, float, float const*, long, long, lo
+     0.11 ms   0.0% x32     void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, unsigned long, unsigned long
+     0.03 ms   0.0% x16     Memcpy DtoH (Device -> Pageable)
+     0.02 ms   0.0% x16     Memcpy HtoD (Pageable -> Device)
+-- PD1=1
+== decode: 442.2 ms of kernels
+   144.38 ms  32.7% x2048   void (anonymous namespace)::w4d<2, 1, 4, 2, 1>(unsigned char const*, __half const*, float const*, float*, int,
+    72.88 ms  16.5% x1536   void (anonymous namespace)::w4f<4, 4, 1>(unsigned char const*, __half const*, float const*, float*, int, int, 
+    54.26 ms  12.3% x512    void (anonymous namespace)::w4f6<8, 4, 1>(unsigned char const*, __half const*, float const*, float*, int, int,
+    35.50 ms   8.0% x1024   void (anonymous namespace)::w4d<8, 4, 4, 2, 1>(unsigned char const*, __half const*, float const*, float*, int,
+    33.94 ms   7.7% x1024   void flash_attn_ext_f16<128, 128, 1, 8, 4, 1, false, false>(char const*, char const*, char const*, char const*
+    18.84 ms   4.3% x1536   void (anonymous namespace)::w4d<16, 16, 4, 1, 1>(unsigned char const*, __half const*, float const*, float*, in
+    15.85 ms   3.6% x2048   void ironmule_add_rms_norm_mul_f32<1024>(float const*, float const*, float*, float*, float const*, int, int, f
+     9.74 ms   2.2% x2048   void rms_norm_f32<32, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long
+     8.21 ms   1.9% x2560   (anonymous namespace)::reduce_split(float const*, float*, unsigned long, int)
+     7.73 ms   1.7% x16     void (anonymous namespace)::w4f6<4, 4, 2>(unsigned char const*, __half const*, float const*, float*, int, int,
+     7.10 ms   1.6% x1024   ironmule_swiglu_f32(float const*, float const*, float*, __half*, long, long, long, long, int)
+     6.31 ms   1.4% x2048   void rope_neox<true, false, float>(float const*, float*, int, int, int, int, int, int const*, float, float, fl
+     5.97 ms   1.3% x2048   void k_set_rows<float, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, l
+     5.84 ms   1.3% x512    void (anonymous namespace)::w4d6<4, 2, 4, 2>(unsigned char const*, __half const*, float const*, float*, int, i
+     5.11 ms   1.2% x1024   void flash_attn_stream_k_fixup<128, 1, 8>(float*, float2 const*, int, int, int, int)
+     4.07 ms   0.9% x1040   (anonymous namespace)::prep_x(float const*, __half*, float*, int, int, int)
+     2.48 ms   0.6% x96     Memcpy HtoD (Pinned -> Device)
+     2.12 ms   0.5% x1024   void flash_attn_mask_to_KV_max<1>(__half2 const*, int*, int, int, int)
+     1.34 ms   0.3% x16     argmax_f32(float const*, int*, long)
+     0.22 ms   0.1% x16     void cpy_flt<&(void _INTERNAL_8db1dfbb_6_cpy_cu_843ac19f::cpy_1_flt<float, __half>(char const*, char*))>(char 
+     0.12 ms   0.0% x16     void rms_norm_f32<1024, true>(float const*, float*, int, long, long, long, float, float const*, long, long, lo
+     0.11 ms   0.0% x32     void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, unsigned long, unsigned long
+     0.03 ms   0.0% x16     Memcpy DtoH (Device -> Pageable)
+     0.02 ms   0.0% x16     Memcpy HtoD (Pageable -> Device)
+SUMMARY 32-row gain per round (ms, conservative): [0.723, 0.846, 0.83, 0.814]; tokens equal: True; check: {'compared_halves': 45485568000, 'differing_halves': 0, 'enabled': '1'}
+HTTP=1
+== 18:37:27 5. HTTP: IronMule reference / PD1 alternating, then vLLM
+== 18:58:50 ref1 startup 1283 s
+ref1 0.228
+ref1 (0, 32, 273.5, 3.744, 2679.1, 2695.5, '18/18', [])
+ref1 (0, 8, 173.95, 1.472, 788.9, 792.2, '18/18', [])
+ref1 (1, 32, 271.94, 3.766, 2723.1, 2737.6, '18/18', [])
+ref1 (1, 8, 176.39, 1.451, 792.1, 796.0, '18/18', [])
+== 19:21:02 pd1 startup 1303 s
+pd1 0.234
+pd1 (0, 32, 283.38, 3.613, 2550.5, 2565.3, '18/18', [])
+pd1 (0, 8, 172.66, 1.483, 800.9, 803.3, '18/18', [])
+pd1 (1, 32, 277.63, 3.688, 2641.2, 2653.8, '18/18', [])
+pd1 (1, 8, 176.97, 1.447, 786.8, 790.1, '18/18', [])
+== 19:23:01 ref2 startup 90 s
+ref2 0.227
+ref2 (0, 32, 185.33, 5.525, 4439.2, 4451.9, '18/18', [])
+ref2 (0, 8, 172.46, 1.484, 774.8, 778.1, '18/18', [])
+ref2 (1, 32, 270.44, 3.786, 2728.7, 2741.2, '18/18', [])
+ref2 (1, 8, 169.31, 1.512, 832.6, 833.7, '18/18', [])
+== 19:24:53 pd2 startup 80 s
+pd2 0.229
+pd2 (0, 32, 270.29, 3.789, 2742.2, 2754.3, '18/18', [])
+pd2 (0, 8, 172.75, 1.482, 775.0, 777.8, '18/18', [])
+pd2 (1, 32, 278.83, 3.673, 2647.4, 2659.0, '18/18', [])
+pd2 (1, 8, 175.93, 1.455, 796.0, 800.7, '18/18', [])
+vllm 0.633
+vllm (0, 32, 277.62, 3.688, 2161.9, 2965.6, '18/18')
+vllm (0, 8, 188.02, 1.362, 828.7, 830.7, '18/18')
+vllm (1, 32, 276.4, 3.705, 1809.2, 2985.6, '18/18')
+vllm (1, 8, 188.11, 1.361, 831.1, 832.7, '18/18')
+{"label": "pd1", "repeat": 0, "wave_s": 3.6085, "requests": 32, "last_prefill_end_s": 2.5773, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.5773, "short": {"n": 16, "ttft_s": [0.157, 2.54, 2.541, 2.542, 2.543, 2.543, 2.544, 2.545, 2.546, 2.546, 2.547, 2.548, 2.548, 2.55, 2.551, 2.552], "ttft_median_s": 2.5, "done_s": [3.383, 3.547, 3.548, 3.549, 3.552, 3
+{"label": "pd1", "repeat": 1, "wave_s": 3.6838, "requests": 32, "last_prefill_end_s": 2.6646, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.6646, "short": {"n": 16, "ttft_s": [0.2, 0.201, 2.63, 2.63, 2.63, 2.631, 2.632, 2.634, 2.635, 2.635, 2.635, 2.636, 2.637, 2.638, 2.638, 2.642], "ttft_median_s": 2.6, "done_s": [3.597, 3.599, 3.632, 3.634, 3.635, 3.63
+{"label": "pd2", "repeat": 0, "wave_s": 3.7811, "requests": 32, "last_prefill_end_s": 2.7751, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.7751, "short": {"n": 16, "ttft_s": [1.197, 1.197, 1.198, 1.199, 1.199, 1.201, 1.203, 1.203, 2.741, 2.742, 2.743, 2.743, 2.743, 2.743, 2.743, 2.743], "ttft_median_s": 2.0, "done_s": [3.715, 3.717, 3.72, 3.722, 3.724, 
+{"label": "pd2", "repeat": 1, "wave_s": 3.6684, "requests": 32, "last_prefill_end_s": 2.6629, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.6629, "short": {"n": 16, "ttft_s": [2.631, 2.636, 2.637, 2.639, 2.643, 2.644, 2.645, 2.645, 2.645, 2.647, 2.648, 2.648, 2.65, 2.65, 2.653, 2.655], "ttft_median_s": 2.6, "done_s": [3.605, 3.606, 3.609, 3.611, 3.614, 3
+{"label": "ref1", "repeat": 0, "wave_s": 3.7394, "requests": 32, "last_prefill_end_s": 2.7098, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.7098, "short": {"n": 16, "ttft_s": [0.154, 1.073, 1.074, 1.075, 1.076, 1.078, 2.675, 2.677, 2.677, 2.679, 2.679, 2.68, 2.681, 2.682, 2.683, 2.684], "ttft_median_s": 2.7, "done_s": [3.637, 3.672, 3.673, 3.676, 3.678,
+{"label": "ref1", "repeat": 1, "wave_s": 3.7613, "requests": 32, "last_prefill_end_s": 2.7481, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.7481, "short": {"n": 16, "ttft_s": [2.709, 2.712, 2.713, 2.713, 2.714, 2.715, 2.716, 2.717, 2.717, 2.72, 2.72, 2.721, 2.722, 2.723, 2.723, 2.726], "ttft_median_s": 2.7, "done_s": [3.7, 3.702, 3.704, 3.706, 3.708, 3.
+{"label": "ref2", "repeat": 0, "wave_s": 5.5205, "requests": 32, "last_prefill_end_s": 4.4634, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 4.4634, "short": {"n": 16, "ttft_s": [0.425, 4.428, 4.429, 4.431, 4.432, 4.432, 4.432, 4.432, 4.433, 4.433, 4.435, 4.437, 4.439, 4.44, 4.443, 4.444], "ttft_median_s": 4.4, "done_s": [5.431, 5.468, 5.471, 5.472, 5.474,
+{"label": "ref2", "repeat": 1, "wave_s": 3.7827, "requests": 32, "last_prefill_end_s": 2.7512, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.7512, "short": {"n": 16, "ttft_s": [0.406, 2.72, 2.72, 2.722, 2.723, 2.724, 2.724, 2.724, 2.725, 2.726, 2.726, 2.726, 2.726, 2.728, 2.729, 2.731], "ttft_median_s": 2.7, "done_s": [3.7, 3.735, 3.737, 3.738, 3.74, 3.7
+{"label": "vllm", "repeat": 0, "wave_s": 3.6838, "requests": 32, "last_prefill_end_s": 2.9908, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 2.9908, "short": {"n": 16, "ttft_s": [0.705, 0.707, 0.709, 1.435, 1.436, 1.437, 1.438, 1.439, 2.161, 2.164, 2.165, 2.165, 2.892, 2.893, 2.893, 2.895], "ttft_median_s": 1.8, "done_s": [3.604, 3.605, 3.605, 3.627, 3.628
+{"label": "vllm", "repeat": 1, "wave_s": 3.7008, "requests": 32, "last_prefill_end_s": 3.0061, "last_prefill_end_source": "client (last long first token)", "last_long_first_token_s": 3.0061, "short": {"n": 16, "ttft_s": [0.239, 0.267, 0.465, 1.078, 1.079, 1.807, 1.807, 1.809, 1.81, 1.811, 2.536, 2.537, 2.538, 2.539, 2.984, 2.985], "ttft_median_s": 1.8, "done_s": [3.551, 3.574, 3.62, 3.643, 3.644, 
+== 19:28:07 A100-PD1-DONE

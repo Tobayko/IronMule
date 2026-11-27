@@ -1,0 +1,76 @@
+{
+  "arithmetic_sha256": "eb24e8cd2d5ce38461e05edde553ac726ff0d64a59fbf74ddc4436a21538640a",
+  "backend": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab",
+  "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "meaning": "Two native-graph seeds selected candidate intervals. Intermediate widths and whole-model performance require independent system qualification.",
+  "memory": {
+    "cache_gib": 15,
+    "hardware": {
+      "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+      "driver": "595.112.07",
+      "memory_mib": 46068,
+      "name": "NVIDIA L40S"
+    },
+    "measured_reference_peak_mib": 36122.0,
+    "measured_serving_peak_mib": 23834.0,
+    "pool_cells": 16384,
+    "reserve_mib": 6144,
+    "source": "884291aae3739bf061fbaf1ee5544dfb8a4748c3b520f686c10f66c50733ee9a",
+    "stage": "simulated next profile"
+  },
+  "plugin": "0c08b08013fb1cc480a1a5120b09069b4bc000b7fcf0479a884a6880075d497f",
+  "ranges": [
+    [
+      5120,
+      8192,
+      16,
+      16
+    ],
+    [
+      5120,
+      25600,
+      16,
+      16
+    ],
+    [
+      8192,
+      5120,
+      16,
+      16
+    ],
+    [
+      25600,
+      5120,
+      16,
+      16
+    ]
+  ],
+  "seeds": [
+    913099,
+    347711
+  ],
+  "widths": [
+    16,
+    24,
+    30,
+    32,
+    64,
+    128,
+    143,
+    256,
+    384,
+    432,
+    448,
+    449,
+    464,
+    512,
+    1024,
+    2048
+  ]
+}

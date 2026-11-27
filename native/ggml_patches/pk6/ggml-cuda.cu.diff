@@ -1,0 +1,154 @@
+1288a1289,1290
+> static void ironmule_pk6_check_miss(const ggml_tensor * src1, const void * data, unsigned long long epoch);  // PK6
+> 
+1373a1376
+>                     ironmule_pk6_check_miss(src1, src1_ddf_i, epoch);  // PK6
+3106c3109
+<         const int sat16 = 0) {
+---
+>         const int sat16 = 0, const int skip32 = 0) {
+3140c3143,3145
+<         dst[col] = v;
+---
+>         if (!skip32) {  // PK6
+>             dst[col] = v;
+>         }
+3197a3203,3305
+> // PK6 (IronMule): in a prompt step on the cuBLAS path, the f32 outputs of SWIGLU (PK4) and of FU1's normalised row are
+> // read only by matmuls that take the fp16 copy their producer already wrote into PK3's slot. When every reader of such
+> // a tensor in the graph is a Q4_K / Q6_K matmul reading it as src1 over more than 64 rows (KG1's libraries decline
+> // those, PK2 sends them to cuBLAS) and nothing between the producer and its last reader can replace PK3's copy (another
+> // matmul, GLU or ADD), the producer skips the f32 write. A cuBLAS matmul that misses PK3's copy of a skipped tensor
+> // aborts instead of reading it. Read at every graph from IRONMULE_PK6 ("1" on); IRONMULE_PK6_LOG=1 prints the skips of
+> // every graph that had one.
+> struct ironmule_pk6_info { int readers = 0; int last = -1; bool ok = true; };
+> static std::unordered_map<const ggml_tensor *, ironmule_pk6_info> ironmule_pk6_map;
+> static std::vector<int> ironmule_pk6_prefix;  // [j] = interferers among nodes 0 .. j-1
+> static const ggml_cgraph * ironmule_pk6_graph = nullptr;
+> static unsigned long long ironmule_pk6_indexed = ~0ull;
+> struct ironmule_pk6_skip { const void * node; const void * data; unsigned long long epoch; };
+> static ironmule_pk6_skip ironmule_pk6_skipped[256];
+> static long long ironmule_pk6_n = 0;
+> 
+> static bool ironmule_pk6_on() {
+>     const char * v = getenv("IRONMULE_PK6");
+>     return v != nullptr && atoi(v) != 0;
+> }
+> 
+> static bool ironmule_pk6_interferer(const ggml_tensor * n) {
+>     return n->op == GGML_OP_MUL_MAT || n->op == GGML_OP_MUL_MAT_ID || n->op == GGML_OP_GLU || n->op == GGML_OP_ADD;
+> }
+> 
+> static bool ironmule_pk6_reader(const ggml_tensor * n, const ggml_tensor * t) {
+>     const ggml_tensor * w = n->src[0];
+>     return n->op == GGML_OP_MUL_MAT && n->src[1] == t && w != nullptr && w != t &&
+>            (w->type == GGML_TYPE_Q4_K || w->type == GGML_TYPE_Q6_K) && w->ne[2] == 1 && w->ne[3] == 1 &&
+>            n->type == GGML_TYPE_F32;
+> }
+> 
+> // the graph's readers of every GLU / MUL output, once per graph compute
+> static void ironmule_pk6_index(const ggml_cgraph * g, unsigned long long epoch) {
+>     if (g == ironmule_pk6_graph && epoch == ironmule_pk6_indexed) {
+>         return;
+>     }
+>     static const bool log = getenv("IRONMULE_PK6_LOG") != nullptr && atoi(getenv("IRONMULE_PK6_LOG")) != 0;
+>     static long long logged = 0;
+>     if (log && ironmule_pk6_n > logged) {  // the previous indexed graph's skips
+>         fprintf(stderr, "pk6: %lld f32 writes skipped in graph %llu\n", ironmule_pk6_n - logged, ironmule_pk6_indexed);
+>         logged = ironmule_pk6_n;
+>     }
+>     ironmule_pk6_graph = g;
+>     ironmule_pk6_indexed = epoch;
+>     ironmule_pk6_map.clear();
+>     ironmule_pk6_prefix.assign(g->n_nodes + 1, 0);
+>     for (int j = 0; j < g->n_nodes; j++) {
+>         const ggml_tensor * n = g->nodes[j];
+>         ironmule_pk6_prefix[j + 1] = ironmule_pk6_prefix[j] + (ironmule_pk6_interferer(n) ? 1 : 0);
+>         for (int k = 0; k < GGML_MAX_SRC; k++) {
+>             const ggml_tensor * src = n->src[k];
+>             if (src == nullptr) {
+>                 continue;
+>             }
+>             const ggml_tensor * base = src->view_src != nullptr ? src->view_src : src;
+>             if (base->op != GGML_OP_GLU && base->op != GGML_OP_MUL) {
+>                 continue;
+>             }
+>             ironmule_pk6_info & e = ironmule_pk6_map[base];
+>             if (src != base || k != 1 || !ironmule_pk6_reader(n, base)) {
+>                 e.ok = false;  // read as a view, as a weight or by anything but such a matmul
+>             } else {
+>                 e.readers++;
+>                 e.last = j;
+>             }
+>         }
+>     }
+> }
+> 
+> // true when the producer of `t` (last graph node of the producer: i) need not write its f32 values
+> static bool ironmule_pk6_skip_f32(const ggml_cgraph * g, int i, const ggml_tensor * t, int64_t nrows) {
+>     if (g == nullptr || !ironmule_pk6_on() || nrows <= 64 || ironmule_pk2_min_rows() <= 0 ||
+>         nrows < ironmule_pk2_min_rows() || t->type != GGML_TYPE_F32 || (t->flags & GGML_TENSOR_FLAG_OUTPUT) ||
+>         t->ne[2] != 1 || t->ne[3] != 1 || t->ne[1] != nrows) {
+>         return false;
+>     }
+>     const unsigned long long epoch = ironmule_graph_epoch.load(std::memory_order_relaxed);
+>     ironmule_pk6_index(g, epoch);
+>     const auto it = ironmule_pk6_map.find(t);
+>     if (it == ironmule_pk6_map.end() || !it->second.ok || it->second.readers < 1 || it->second.last <= i) {
+>         return false;
+>     }
+>     const int last = it->second.last;
+>     if (ironmule_pk6_prefix[last] - ironmule_pk6_prefix[i + 1] != it->second.readers - 1) {
+>         return false;  // something between could replace PK3's copy
+>     }
+>     ironmule_pk6_skipped[ironmule_pk6_n % 256] = {t, t->data, epoch};
+>     ironmule_pk6_n++;
+>     return true;
+> }
+> 
+> // PK3's miss: a skipped tensor's f32 values were never written
+> static void ironmule_pk6_check_miss(const ggml_tensor * src1, const void * data, unsigned long long epoch) {
+>     const int n = ironmule_pk6_n < 256 ? (int) ironmule_pk6_n : 256;
+>     for (int k = 0; k < n; k++) {
+>         const ironmule_pk6_skip & s = ironmule_pk6_skipped[k];
+>         if (s.node == (const void *) src1 && s.data == data && s.epoch == epoch) {
+>             GGML_ABORT("PK6: a matmul missed the fp16 copy of %s, whose f32 values were not written", src1->name);
+>         }
+>     }
+> }
+> 
+3200c3308
+<         const int64_t n, const int64_t o0, const int64_t o1, const int sat16 = 0) {
+---
+>         const int64_t n, const int64_t o0, const int64_t o1, const int sat16 = 0, const int skip32 = 0) {
+3209c3317,3319
+<     dst[i] = v;
+---
+>     if (!skip32) {  // PK6
+>         dst[i] = v;
+>     }
+3213c3323,3324
+< static bool ironmule_pk4_swiglu(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+---
+> static bool ironmule_pk4_swiglu(ggml_backend_cuda_context & ctx, ggml_tensor * dst, const ggml_cgraph * cgraph = nullptr,
+>         int i = -1) {
+3247a3359
+>     const int skip32 = !sat16 && ironmule_pk6_skip_f32(cgraph, i, dst, ggml_nrows(dst)) ? 1 : 0;  // PK6
+3249c3361
+<                                                                     sat16);
+---
+>                                                                     sat16, skip32);
+3297a3410
+>     const int skip32 = dst16 != nullptr && !sat16 && ironmule_pk6_skip_f32(cgraph, i + 2, mul, nrows) ? 1 : 0;  // PK6
+3301c3414
+<             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16, sat16);
+---
+>             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16, sat16, skip32);
+3305c3418
+<             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16, sat16);
+---
+>             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16, sat16, skip32);
+3402c3515
+<                     if (ironmule_pk4_swiglu(*cuda_ctx, node)) {  // PK4
+---
+>                     if (ironmule_pk4_swiglu(*cuda_ctx, node, cgraph, i)) {  // PK4

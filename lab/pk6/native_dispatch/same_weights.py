@@ -1,0 +1,46 @@
+"""Run the independently pinned vLLM GGUF plugin on the exact GGUF served by the native reference."""
+
+import fcntl
+import json
+import os
+from pathlib import Path
+
+from lab.pk6.mixed_progress import trial
+from lab.pk6.native_dispatch import run
+from lab.pk6.warm_repeat import save
+
+PLUGIN_SHA256 = "e795779830ad8907cb0e51bf661dd7784ebaf244b0b324af07a8d3925b6a9739"
+
+
+def main():
+    baseline = trial.measure
+
+    def exact(args, arm, hw, budget, deadline):
+        if arm != "vllm":
+            raise ValueError("same-weight control is reserved for vLLM")
+        from importlib.metadata import distribution
+
+        plugin = distribution("vllm-gguf-plugin")
+        if plugin.version != "0.0.5":
+            raise ValueError("unexpected GGUF plugin version")
+        manifest = args.out / "target.json"
+        target = json.loads(manifest.read_bytes())
+        target["comparator_artifact"] = "identical_gguf"
+        target["external_plugin"] = {
+            "name": plugin.metadata["Name"],
+            "version": plugin.version,
+            "wheel_sha256": PLUGIN_SHA256,
+        }
+        save(manifest, target)
+        baseline(args, arm, hw, budget, deadline, vllm_gguf=True)
+
+    trial.measure = exact
+    with Path(
+        os.environ.get("IRONMULE_LAB_GPU_LOCK", "/work/native-dispatch.lock")
+    ).open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        run.main(comparator="identical_gguf")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1 @@
+ENGINE {"start_s": 50.36, "pack": true, "pk2": {"min_rows": 128, "reason": "2.38x a packed burst, likelihood ratio 1.00073", "rows": 1908, "calibration": "mix", "burst_ms": {"0": 1531.1, "128": 642.6, "256": 647.5, "512": 645.4, "1024": 645.3}}, "ubatch": "8192", "kg_tokens": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32]}

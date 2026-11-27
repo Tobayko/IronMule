@@ -1,0 +1,267 @@
+{
+  "schema": "ironmule.cpu-prefill-attribution.v1",
+  "kind": "measured",
+  "method": "GgmlEngine._prefill",
+  "base_commit": "79ee889e679f38835df5f30e215215aa9d0c60d2",
+  "evaluator_sha256": "c6e6c587dd12c128f83b700e4bb51fc06139e15ae10dcaf2a2b88b7a09f40ba7",
+  "source_sha256": "aae9299715c89437116ac8aa6f9d65c18149ca148a0ba18878b29eaa3ba718b5",
+  "prior_sha256": "a546e61929e7f62c88b6f31cd898e76e9bfbbf2a4c17deff1cc5f05dfcbf68ca",
+  "instrument_sha256": "8dd78729042cd0df60fad4e6c220e3a956c81ddc7654baa0d6428d04052323f8",
+  "binding": {
+    "provider": "cpu",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_bytes": 105454432,
+    "machine": "x86_64|128|AMD EPYC 7742 64-Core Processor|5d97440a36ea2b9bec0bb4c34d03bb4bed855eb0aa3f4987308dcc6e4c239cb4",
+    "devices": [
+      {
+        "provider": "cpu",
+        "name": "CPU",
+        "description": "AMD EPYC 7742 64-Core Processor",
+        "type": "cpu",
+        "total_memory": 2151618019328
+      }
+    ],
+    "native": {
+      "sha256": {
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+      }
+    },
+    "python": "3.11.11",
+    "gpu_layers": 0,
+    "offloaded_layers": [],
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "cores": 4,
+    "threads": 2,
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "prefix_reuse": true,
+    "speculate": false,
+    "env_sha256": "6643d43111951fb7d2ea1109be20ea25b339a5c4708f172180c032bf1be3576b",
+    "scratch_thread_head": {
+      "learner_binding": "2f66fab88eeb1c6f3c974912e0f3d183c065a6eabaf6d768f3ffb74b24e13d50",
+      "weights_sha256": "f66700d1593befeee7f01c9835606c644bebd3b2ca6aeb1bbb36c81b9157def0",
+      "qualified_offsets": {
+        "1:1:4:4": 3
+      },
+      "helper_sha256": "aa021ab39508acd20faca56ef7c21ebf9ee67ffaeebdd5e355a5ceb15497b5cb",
+      "learner_sha256": "22b9eb0c20b734a71dde28bf5e37e42ca9b27842c65539aa1d16a8a67f2fce8c"
+    }
+  },
+  "workload": {
+    "seed": 1241,
+    "clients": 4,
+    "waves": 4,
+    "max_tokens": 3,
+    "warmup_waves": 1,
+    "context": 512,
+    "phases": [
+      "short",
+      "document"
+    ]
+  },
+  "measured_choices": 2,
+  "correct": 16,
+  "tokens": 48,
+  "qualify_s": 42.9572608290473,
+  "windows": [
+    {
+      "wall_s": 0.87569179,
+      "prefill": [
+        {
+          "tokens": 37,
+          "threads": 1,
+          "seconds": 0.197516721
+        },
+        {
+          "tokens": 37,
+          "threads": 1,
+          "seconds": 0.200310322
+        },
+        {
+          "tokens": 37,
+          "threads": 1,
+          "seconds": 0.203262532
+        }
+      ],
+      "output_sha256": "35f74b957373f8ff88ae8b24a69b01efe3aec98132fec6f30675135cbeb1983b",
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "ttfts_s": [
+        0.802119716,
+        0.198037676,
+        0.398410425,
+        0.601725666
+      ]
+    },
+    {
+      "wall_s": 2.267173862,
+      "prefill": [
+        {
+          "tokens": 103,
+          "threads": 1,
+          "seconds": 0.557210885
+        },
+        {
+          "tokens": 103,
+          "threads": 1,
+          "seconds": 0.555252464
+        },
+        {
+          "tokens": 103,
+          "threads": 1,
+          "seconds": 0.556908424
+        }
+      ],
+      "output_sha256": "77d1238350fcefece9d093957952a934f7e990e7a9122ad633df3bd5fc18b75c",
+      "requests": [
+        [
+          104,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "ttfts_s": [
+        2.223908033,
+        0.558241874,
+        1.113534293,
+        1.670500236
+      ]
+    },
+    {
+      "wall_s": 0.867181534,
+      "prefill": [
+        {
+          "tokens": 36,
+          "threads": 1,
+          "seconds": 0.194962433
+        },
+        {
+          "tokens": 36,
+          "threads": 1,
+          "seconds": 0.195302606
+        },
+        {
+          "tokens": 37,
+          "threads": 1,
+          "seconds": 0.199003561
+        }
+      ],
+      "output_sha256": "745c1e82a6d7e10f5942ea59827ea69d365d2373082b0613a68696bc7b6d26bc",
+      "requests": [
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ],
+        [
+          39,
+          3
+        ]
+      ],
+      "ttfts_s": [
+        0.796506667,
+        0.196069406,
+        0.391411066,
+        0.590454442
+      ]
+    },
+    {
+      "wall_s": 2.25411012,
+      "prefill": [
+        {
+          "tokens": 102,
+          "threads": 1,
+          "seconds": 0.551485934
+        },
+        {
+          "tokens": 103,
+          "threads": 1,
+          "seconds": 0.551665112
+        },
+        {
+          "tokens": 103,
+          "threads": 1,
+          "seconds": 0.559920868
+        }
+      ],
+      "output_sha256": "bb2c2ba47fd918425cfd2e623426729b1cb53a753bf2a4404e7a24a7087af5c5",
+      "requests": [
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ],
+        [
+          105,
+          3
+        ]
+      ],
+      "ttfts_s": [
+        2.215719575,
+        0.552501514,
+        1.104206813,
+        1.664184127
+      ]
+    }
+  ],
+  "inclusive_seconds": 4.522801862,
+  "threads_by_call_count": {
+    "1": 12
+  },
+  "total_window_seconds": 6.2641573059999995
+}

@@ -1,0 +1,30 @@
+--- original
++++ actual
+@@ -24 +24 @@
+-def build(directory, *, native_grid=False):
++def build(directory, *, native_grid=False, model_lifetime=False):
+@@ -66 +66,3 @@
+-        source = substitute(source, 'getenv("IRONMULE_KG_LIB")', 'getenv("IRONMULE_GRID_BACKEND")')
++        source = substitute(
++            source, 'getenv("IRONMULE_KG_LIB")', 'getenv("IRONMULE_GRID_BACKEND")'
++        )
+@@ -67,0 +70,19 @@
++    if model_lifetime:
++        # The harness frees and reallocates GGML weight buffers at each width.
++        # Tell a packing plugin where these immutable pointer lifetimes actually end.
++        source = substitute(
++            source,
++            "        for (int i = 0; i < 3; i++)",
++            """        const char *session_lib = getenv("IRONMULE_KG_LIB");
++        void *session = session_lib && *session_lib ? dlopen(session_lib,RTLD_NOW) : NULL;
++        void (*begin)(void) = session ? dlsym(session,"im_prompt_begin") : NULL;
++        void (*end)(void) = session ? dlsym(session,"im_prompt_end") : NULL;
++        if (session && (!begin || !end)) return 42;
++        if (begin) begin();
++        for (int i = 0; i < 3; i++)""",
++        )
++        source = substitute(
++            source,
++            "        ggml_backend_buffer_free(buf);",
++            "        if (end) end();\n        if (session) dlclose(session);\n        ggml_backend_buffer_free(buf);",
++        )

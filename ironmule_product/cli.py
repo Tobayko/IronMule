@@ -261,7 +261,8 @@ def _ggml_agent_plan(width: dict[str, Any], root: Any, flash_only: bool = False)
 def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
     # Qualification sets these inputs for its subprocesses. Keep the results on
     # their worker; a later server in this process must see the caller's settings.
-    tuned_env = ("IRONMULE_W4_TABLE", "IRONMULE_GGML_PACK", "IRONMULE_GGML_UBATCH", "IRONMULE_CUDA_GRAPHS_ROWS")
+    tuned_env = ("IRONMULE_W4_TABLE", "IRONMULE_GGML_PACK", "IRONMULE_GGML_UBATCH", "IRONMULE_CUDA_GRAPHS_ROWS",
+                 "IRONMULE_CUBLAS_MIN_ROWS")
     previous = {key: os.environ.get(key) for key in ("IRONMULE_KG_LIB", "IRONMULE_GGML_SEQS", *tuned_env)}
     try:
         result = _measure_ggml_options(args, spec, store, pinned=pinned)
@@ -279,10 +280,20 @@ def _local_ggml_options(args, spec, store, *, pinned: bool = False) -> dict:
 
 def _qualify_ggml_kernels(snapshot, gguf, cache):
     """Keep only a qualified kernel selection, including after the generated kernel fails."""
-    from ironmule.ggml_engine import gate
+    from ironmule.ggml_engine import gate, gpu_layers
+    from ironmule.ggml_profiles import cublas_override
     from ironmule.ggml_gate_diagnostics import sanitize
 
+    threshold = cublas_override()
+    explicit_cublas = threshold is not None and gpu_layers() > 0
+
     def qualify(mode):
+        if mode == "stock":
+            # The raw packed engine auto-attaches W4 when the variable is absent.
+            # An explicit empty choice disables that path in every qualification child.
+            os.environ["IRONMULE_KG_LIB"] = ""
+            if explicit_cublas:
+                os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = "0"
         result = gate(snapshot, gguf, cache=cache)
         summary = {"kernel_mode": mode, "passes": result.get("passes") is True,
                    "diagnostic": sanitize(result.get("diagnostic"))}
@@ -291,14 +302,15 @@ def _qualify_ggml_kernels(snapshot, gguf, cache):
         return result, summary
 
     probe = os.environ.get("IRONMULE_KG5") == "1"
-    mode = "generated" if probe or os.environ.get("IRONMULE_KG_LIB") else "stock"
+    mode = "cublas" if explicit_cublas else "stock"
+    if probe or os.environ.get("IRONMULE_KG_LIB"):
+        mode = "generated"
     result, first = qualify(mode)
     diagnostic = first["diagnostic"] or {}
     # Tokenization, model mutation and the unmodified reference precede any candidate kernel. A
     # separate explicitly requested KG5 experiment must continue to require its dispatch witness.
-    if (not first["passes"] and mode == "generated" and not probe
+    if (not first["passes"] and mode != "stock" and not probe
             and diagnostic.get("stage") not in {"tokenize", "reference", "model_changed"}):
-        os.environ.pop("IRONMULE_KG_LIB", None)
         result, stock = qualify("stock")
         result = {**result, "kernel_fallback": {"attempts": [first, stock], "serving": "stock" if stock["passes"] else None}}
     if result.get("passes") is not True:
@@ -454,9 +466,15 @@ def _measure_ggml_options(args, spec, store, *, pinned: bool) -> dict:
 def _pinned_ggml_options(device: str, args, spec: ModelSpec, store: ProductStore) -> dict:
     """Return only this card's measured options; the driver's visibility is set before process startup."""
     from .placement_devices import worker_environment
+    from ironmule.ggml_profiles import FLAGS
     environment = worker_environment(device)
+    # Importing the legacy raw engine enables its lab defaults in this process. They
+    # are not caller opt-ins for a new, differently placed worker.
+    implicit = getattr(sys.modules.get("ironmule.ggml_engine"), "_IMPLICIT_KERNEL_FLAGS", {})
+    overrides = {k: os.environ[k] for k in FLAGS if k in os.environ and os.environ[k] != implicit.get(k)}
     options = {k: getattr(args, k) for k in ("gguf", "draft_gguf", "speculate", "agent", "model")}
-    payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root), "pinned": device not in ("cpu", "local")}
+    payload = {"options": options, "spec": spec.as_dict(), "root": str(store.root), "pinned": device not in ("cpu", "local"),
+               "kernel_overrides": overrides}
     if device.startswith("rocm:"):
         payload.update(pinned=False, rocm_bus=device.removeprefix("rocm:"))
     child = subprocess.run([sys.executable, "-m", "ironmule_product.pinned_ggml"],
@@ -681,7 +699,7 @@ def serve(argv: list[str], *, calibration_minutes: float | None = None) -> int:
             ggml_options: dict[str | None, dict] = {}
             if args.engine == "ggml":
                 if devices == [None]:
-                    ggml_options[None] = _local_ggml_options(args, spec, store)
+                    ggml_options[None] = _pinned_ggml_options("local", args, spec, store)
                 else:
                     # A process can initialize CUDA only once: pin before importing the bindings or probing.
                     for device in devices:
@@ -844,6 +862,10 @@ def serve(argv: list[str], *, calibration_minutes: float | None = None) -> int:
             service.idle_task = IdleTuner(service, spec, lambda: MLXWorkerClient(
                 spec, execution_variant="current_engine", chat_reuse=args.chat_reuse,
                 thinking=not args.no_thinking, cuda_device=devices[0]), cuda_device=devices[0])
+        if os.environ.get("IRONMULE_LAB_SWITCH"):  # diagnostics: paired A/B switches (lab_switch.py)
+            from .lab_switch import start as lab_switch
+
+            lab_switch()
         if calibration_minutes is not None:
             from .placement_training import wait_for_calibration
             return wait_for_calibration(service, calibration_minutes)

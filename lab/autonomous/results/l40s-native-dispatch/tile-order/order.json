@@ -1,0 +1,52 @@
+{
+  "base_commit": "2e3c1bb69b8cedc2b889156e6dd0912bc1a6235d",
+  "editable_symbol": "prompt_tile_limit",
+  "evaluator": "Same native MMQ operation, device, tensors and completed output. Confirm in an independent product gate and paired HTTP run.",
+  "fixed_work_stock_mixed_s": 4.892515,
+  "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "kind": "simulated experiment ranking",
+  "matched_request_ids": 17,
+  "options": [
+    {
+      "executed_tile": 128,
+      "ggml_type": 12,
+      "observed_s": 0.1393577840000001,
+      "simulated_wave_saving_s": 0.30313055695856084
+    },
+    {
+      "executed_tile": 128,
+      "ggml_type": 14,
+      "observed_s": 0.02643442099999993,
+      "simulated_wave_saving_s": 0.05750005870218955
+    },
+    {
+      "executed_tile": 24,
+      "ggml_type": 14,
+      "observed_s": 0.0013436890000000131,
+      "simulated_wave_saving_s": 0.0029227875419509785
+    },
+    {
+      "executed_tile": 24,
+      "ggml_type": 12,
+      "observed_s": 0.0003316509999999835,
+      "simulated_wave_saving_s": 0.000721406077653033
+    }
+  ],
+  "order_id": "e2876ca49e81f029421416fc600e18f33aadd35b6dd968c8f635ce963f65da81",
+  "sample_sha256": "046cb865166b4c7edb6e7e16fd62e68c0ba09aeecc8fc377a4370be9e1556425",
+  "schema": "ironmule.native-prompt-order.v1",
+  "target": {
+    "executed_tile": 128,
+    "ggml_type": 12,
+    "observed_s": 0.1393577840000001,
+    "simulated_wave_saving_s": 0.30313055695856084
+  },
+  "task": "Return one bounded tile-limit experiment for the selected quantization on Ada. Keep native launch validation. Empty/default configuration must preserve stock. Do not modify quality or budget.",
+  "trace_sha256": "f21c881740a19cc70ed04355f61b0a113b744a5d905c1c85fe327ab86e7a17a5"
+}

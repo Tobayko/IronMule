@@ -1,0 +1,332 @@
+{
+  "target": {
+    "awq_manifest_sha256": "00fd219734c5f6ff13b31c0038317ed7d6631e626619c8abf76c87412ea1395b",
+    "awq_revision": "0499c3ac83fdef8810b907a23894ba91e95eddd8",
+    "engine_sha256": "a1985d5af074571d1cafd59e918f95f22f1bd16754d2229488da49d2d69288fd",
+    "external_waves_sha256": "5543ab721ff0579d88319d9d249cb35f5b22b5c5a899115583a765845f818e43",
+    "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+    "hardware": {
+      "device_sha256": "7a2f320d896258b67549ecebcae06a0c38e93f46c405d111e32888eeff161b02",
+      "driver": "595.112.07",
+      "memory_mib": 46068,
+      "name": "NVIDIA L40S"
+    },
+    "pool_engine_sha256": "cc7a2467f00c138d8cfde890a0e025d7bd421c8ad5e9dd3de98c08f4bd9f1b9d",
+    "rows": 2048,
+    "source": "7fa0e4d8974c190192f056f6bc5b30dc72b82571",
+    "stock_retry_revision": "f97a05f74561a9b5bf4dbebcc727d900c108df29",
+    "stock_retry_sources": {
+      "ironmule/ggml_profiles.py": "17d71f1b480cda75540906e3f3fd803db6a60e4d239040e549c7ae1003718c4f",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955"
+    },
+    "vllm_version": "0.11.0"
+  },
+  "starts": {
+    "S1": {
+      "trace_sha256": "068a70083e928d98e29983e59a7414eb0baacd25587c7e46c2806757d83704b4",
+      "waves_sha256": "47392e908bf6534d01dc8838138b70197161c24334052bbc096f6acdd0bb6de9",
+      "changes": [
+        {
+          "width": 1,
+          "seed": 761401,
+          "repeat": 0,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 761401,
+          "repeat": 0,
+          "changes": 1
+        },
+        {
+          "width": 32,
+          "seed": 761401,
+          "repeat": 0,
+          "changes": 4
+        },
+        {
+          "width": 1,
+          "seed": 761401,
+          "repeat": 1,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 761401,
+          "repeat": 1,
+          "changes": 1
+        },
+        {
+          "width": 32,
+          "seed": 761401,
+          "repeat": 1,
+          "changes": 4
+        },
+        {
+          "width": 1,
+          "seed": 761401,
+          "repeat": 2,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 761401,
+          "repeat": 2,
+          "changes": 1
+        },
+        {
+          "width": 32,
+          "seed": 761401,
+          "repeat": 2,
+          "changes": 4
+        },
+        {
+          "width": 32,
+          "seed": 761401,
+          "repeat": 3,
+          "changes": 2
+        }
+      ],
+      "quality": [
+        32,
+        32
+      ],
+      "by_width": {
+        "1": {
+          "tok_s": 44.23036206381978,
+          "first": 0.06214671197813004,
+          "visible": 0.0621471629710868,
+          "first_p95": 0.06214671197813004,
+          "eighth": 0.28843042091466486,
+          "gap_p95": 0.05925276596099138,
+          "end_p95": 0.7225757329724729
+        },
+        "8": {
+          "tok_s": 111.29042447287736,
+          "first": 1.0632054884918034,
+          "visible": 1.0632061449578032,
+          "first_p95": 1.0665532590355724,
+          "eighth": 1.3045296135242097,
+          "gap_p95": 1.002244221046567,
+          "end_p95": 2.295635894057341
+        },
+        "32": {
+          "tok_s": 171.1390046418852,
+          "first": 1.0334049084922299,
+          "visible": 1.0334053345141,
+          "first_p95": 4.003590804990381,
+          "eighth": 4.482689020514954,
+          "gap_p95": 1.0176848890259862,
+          "end_p95": 5.958831927040592
+        }
+      },
+      "vs_primary_reference": {
+        "1": {
+          "same_fixed_work": true,
+          "text_digests_match": [
+            true,
+            true,
+            false
+          ],
+          "candidate_over_reference": {
+            "tok_s": 0.9928790269430406,
+            "first": 0.9957676394947216,
+            "visible": 0.9957576976054342,
+            "first_p95": 0.9957676394947216,
+            "eighth": 1.0046474444926015,
+            "gap_p95": 0.9851010643488716,
+            "end_p95": 1.007319124770447
+          }
+        },
+        "8": {
+          "same_fixed_work": true,
+          "text_digests_match": [
+            false,
+            false,
+            false
+          ],
+          "candidate_over_reference": {
+            "tok_s": 1.0034282863883521,
+            "first": 4.1198958356894355,
+            "visible": 4.119890171703699,
+            "first_p95": 0.9356952201618279,
+            "eighth": 1.071093654033186,
+            "gap_p95": 3.7826799754732425,
+            "end_p95": 0.9961799948005964
+          }
+        },
+        "32": {
+          "same_fixed_work": true,
+          "text_digests_match": [
+            false,
+            false,
+            false
+          ],
+          "candidate_over_reference": {
+            "tok_s": 1.1041441638368357,
+            "first": 1.8484302636188634,
+            "visible": 1.848428675064827,
+            "first_p95": 0.8510464747611536,
+            "eighth": 1.8065228166418341,
+            "gap_p95": 3.3372225072227923,
+            "end_p95": 0.914329475201268
+          }
+        }
+      }
+    },
+    "S2": {
+      "trace_sha256": "65a849d71f649d11929489ad99fa5af1a36146bdfdb6c707f7b9be433208f9ed",
+      "waves_sha256": "85967cea49b71deae3de91699b3bb39206ac5561faafce60e15c77095c436a71",
+      "changes": [
+        {
+          "width": 1,
+          "seed": 961507,
+          "repeat": 0,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 961507,
+          "repeat": 0,
+          "changes": 1
+        },
+        {
+          "width": 32,
+          "seed": 961507,
+          "repeat": 0,
+          "changes": 4
+        },
+        {
+          "width": 1,
+          "seed": 961507,
+          "repeat": 1,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 961507,
+          "repeat": 1,
+          "changes": 1
+        },
+        {
+          "width": 32,
+          "seed": 961507,
+          "repeat": 1,
+          "changes": 4
+        },
+        {
+          "width": 1,
+          "seed": 961507,
+          "repeat": 2,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 961507,
+          "repeat": 2,
+          "changes": 1
+        },
+        {
+          "width": 32,
+          "seed": 961507,
+          "repeat": 2,
+          "changes": 4
+        },
+        {
+          "width": 32,
+          "seed": 961507,
+          "repeat": 3,
+          "changes": 2
+        }
+      ],
+      "quality": [
+        32,
+        32
+      ],
+      "by_width": {
+        "1": {
+          "tok_s": 43.907499572049566,
+          "first": 0.061290703946724534,
+          "visible": 0.06129132502246648,
+          "first_p95": 0.061290703946724534,
+          "eighth": 0.2808209740323946,
+          "gap_p95": 0.04637055809143931,
+          "end_p95": 0.7279643460642546
+        },
+        "8": {
+          "tok_s": 112.97809113139256,
+          "first": 1.0722937979735434,
+          "visible": 1.0722945790039375,
+          "first_p95": 1.0761177300009876,
+          "eighth": 1.2859594390029088,
+          "gap_p95": 0.8152764990227297,
+          "end_p95": 2.26272899704054
+        },
+        "32": {
+          "tok_s": 172.78168913689544,
+          "first": 1.030190699500963,
+          "visible": 1.0301914255251177,
+          "first_p95": 3.9943407280370593,
+          "eighth": 4.460383580008056,
+          "gap_p95": 1.012404309003614,
+          "end_p95": 5.872399858082645
+        }
+      },
+      "vs_primary_reference": {
+        "1": {
+          "same_fixed_work": true,
+          "text_digests_match": [
+            true,
+            true,
+            true
+          ],
+          "candidate_over_reference": {
+            "tok_s": 1.0016380631211503,
+            "first": 0.9980173321782873,
+            "visible": 0.9980162603829253,
+            "first_p95": 0.9980173321782873,
+            "eighth": 0.9990329246641173,
+            "gap_p95": 0.9816774364909175,
+            "end_p95": 0.9983344701607135
+          }
+        },
+        "8": {
+          "same_fixed_work": true,
+          "text_digests_match": [
+            false,
+            false,
+            false
+          ],
+          "candidate_over_reference": {
+            "tok_s": 1.00785079986733,
+            "first": 4.1019321930636234,
+            "visible": 4.101927876647938,
+            "first_p95": 0.9478611805314173,
+            "eighth": 1.0243203317642444,
+            "gap_p95": 3.927878331576303,
+            "end_p95": 0.992173457427185
+          }
+        },
+        "32": {
+          "same_fixed_work": true,
+          "text_digests_match": [
+            false,
+            false,
+            false
+          ],
+          "candidate_over_reference": {
+            "tok_s": 1.0655329529419493,
+            "first": 1.8981481182237345,
+            "visible": 1.8981468817445875,
+            "first_p95": 0.8753097396038418,
+            "eighth": 1.8558076259302951,
+            "gap_p95": 3.4538964126779614,
+            "end_p95": 0.9433001759938824
+          }
+        }
+      }
+    }
+  },
+  "promotion": false,
+  "scope": "Discovery seeds followed the incumbent. A separate paired holdout, net-benefit gate and rollback are required for promotion."
+}

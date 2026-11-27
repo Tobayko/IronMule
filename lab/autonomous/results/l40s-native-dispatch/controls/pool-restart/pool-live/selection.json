@@ -1,0 +1,5 @@
+{
+  "arm": "reference",
+  "reason": "Explicit rollback drill after controlled live qualification",
+  "withdrawn": true
+}

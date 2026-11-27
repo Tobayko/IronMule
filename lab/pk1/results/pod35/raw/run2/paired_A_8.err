@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/work/IronMule/lab/adm2/paired.py", line 106, in <module>
+    main()
+  File "/work/IronMule/lab/adm2/paired.py", line 47, in main
+    compare.stream(a.engine, server, compare.WARMUP, 8, deadline)
+  File "/work/IronMule/ironmule_product/compare.py", line 106, in stream
+    raise RuntimeError(f"{engine} chat endpoint returned HTTP {response.status}: {response.read(500)!r}")
+RuntimeError: ironmule chat endpoint returned HTTP 503: b'{"error":{"message":"product service is not ready","type":"backend_unavailable","code":"backend_unavailable"}}'

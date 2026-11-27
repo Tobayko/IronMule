@@ -1,0 +1,4 @@
+{
+  "passed": false,
+  "reason": "reference product gate failed: GGUF qualification reference returned invalid_argument"
+}

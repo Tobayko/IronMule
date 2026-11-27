@@ -1313,3 +1313,68 @@ def test_the_failure_note_names_what_the_engines_fallbacks_caught_without_a_mess
     finally:
         sys.stderr = stderr
     assert json.loads(note)["fallbacks"] == kinds and "secret" not in note and "result count" not in note
+
+
+def test_sv5_renders_a_join_of_several_requests_as_one_batch_with_the_same_prompt_ids(monkeypatch):
+    """SV5: a join's requests go through SV4's batched rendering (one template call, one batched tokenization), and
+    the rows the engine admits carry the same prompt ids as the one-by-one rendering."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    batched = []
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize, **extra):
+            if messages and isinstance(messages[0], list):  # a batch of conversations
+                batched.append(len(messages))
+                return [m[0]["content"] for m in messages]
+            return [ord(c) for c in messages[0]["content"]]
+
+        def __call__(self, texts, add_special_tokens=False):
+            return {"input_ids": [[ord(c) for c in text] for text in texts]}
+
+    def run(sv5):
+        monkeypatch.setenv("IRONMULE_SV5", sv5)
+        monkeypatch.setattr(worker, "_BATCH_RENDER", {})
+        admitted = []
+
+        class Bridge:
+            def metadata(self):
+                return {"configuration": "current_profile"}
+
+            def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+                worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [
+                    {"request_id": rid, "model": "m", "messages": [{"role": "user", "content": text}],
+                     "max_tokens": 4, "stream": True} for rid, text in (("c", "xyz"), ("d", "uv"), ("e", "q"))]})
+                joined = admit(64)
+                admitted.extend(row[0] for row in joined)
+                emitters = list(on_tokens) + [row[2] for row in joined]
+                for emit in emitters:
+                    emit(0)
+                return [SimpleNamespace(tokens=[0], text="", finish_reason="stop", token_count=1, metadata={})
+                        for _ in emitters]
+
+        sent = []
+        monkeypatch.setattr(worker, "_emit", sent.append)
+        monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+        command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+                   "requests": [{"request_id": "a", "model": "m", "messages": [{"role": "user", "content": "x"}],
+                                 "max_tokens": 4, "stream": True}]}
+        worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+        assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "c", "d", "e"]
+        return admitted
+
+    batched.clear()
+    off = run("0")
+    assert batched == []  # one by one
+    on = run("1")
+    assert batched == [3]  # the join's three requests in one template call
+    assert on == off and [list(ids) for ids in on] == [[120, 121, 122], [117, 118], [113]]

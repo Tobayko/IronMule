@@ -1,0 +1,2 @@
+{"label": "vllm_quality", "engine": "vllm", "warmup_s": 0.166}
+{"label": "vllm_quality", "engine": "vllm", "repeat": 0, "width": 32, "tok_s": 796.36, "wall_s": 1.286, "ttft_p50_ms": 550.8, "ttft_p95_ms": 562.3, "ttft_max_ms": 562.5, "tokens": 1024, "prompt_tokens": 7632, "texts": "f2f65948596d23b5", "quality": "18/18", "quality_misses": []}

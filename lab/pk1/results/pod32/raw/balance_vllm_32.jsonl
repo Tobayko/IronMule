@@ -1,0 +1,3 @@
+{"label": "vllm", "width": 32, "repeat": 0, "wave_s": 4.855, "prompt_tokens": 7632, "requests": 32, "chain_s": {"burst": 0.0261, "decode": 0.7008}, "last_first_token_s": 4.1543}
+{"label": "vllm", "width": 32, "repeat": 1, "wave_s": 3.6693, "prompt_tokens": 7632, "requests": 32, "chain_s": {"burst": 0.0243, "decode": 0.7045}, "last_first_token_s": 2.9649}
+{"label": "vllm", "width": 32, "repeat": 2, "wave_s": 3.686, "prompt_tokens": 7632, "requests": 32, "chain_s": {"burst": 0.0231, "decode": 0.6978}, "last_first_token_s": 2.9882}

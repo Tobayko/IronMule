@@ -1,0 +1,39 @@
+{
+  "cuda_device": "NVIDIA A100-SXM4-80GB",
+  "status": "calibration_returned",
+  "torch_version": "2.8.0.dev20250319+cu128",
+  "vendor_libs": [
+    {
+      "bytes": 105140976,
+      "path": "/usr/local/lib/python3.11/dist-packages/nvidia/cublas/lib/libcublas.so.12",
+      "sha256": "9b6997d8ac06badb59b90fd08cb89b1f807576306f6b0d762f3e72000b69d260"
+    },
+    {
+      "bytes": 749169616,
+      "path": "/usr/local/lib/python3.11/dist-packages/nvidia/cublas/lib/libcublasLt.so.12",
+      "sha256": "fbbf5c66fcc42c4eb6e56a7cb40be3936edbf0d08e757761e95c84afb9606cb6"
+    },
+    {
+      "bytes": 728800,
+      "path": "/usr/local/lib/python3.11/dist-packages/nvidia/cuda_runtime/lib/libcudart.so.12",
+      "sha256": "218eec4c8385a32e258a0235be4d449986844f2d0de3430052f0924e6fe60f71"
+    }
+  ],
+  "vendor_libs_after": [
+    {
+      "bytes": 105140976,
+      "path": "/usr/local/lib/python3.11/dist-packages/nvidia/cublas/lib/libcublas.so.12",
+      "sha256": "9b6997d8ac06badb59b90fd08cb89b1f807576306f6b0d762f3e72000b69d260"
+    },
+    {
+      "bytes": 749169616,
+      "path": "/usr/local/lib/python3.11/dist-packages/nvidia/cublas/lib/libcublasLt.so.12",
+      "sha256": "fbbf5c66fcc42c4eb6e56a7cb40be3936edbf0d08e757761e95c84afb9606cb6"
+    },
+    {
+      "bytes": 728800,
+      "path": "/usr/local/lib/python3.11/dist-packages/nvidia/cuda_runtime/lib/libcudart.so.12",
+      "sha256": "218eec4c8385a32e258a0235be4d449986844f2d0de3430052f0924e6fe60f71"
+    }
+  ]
+}

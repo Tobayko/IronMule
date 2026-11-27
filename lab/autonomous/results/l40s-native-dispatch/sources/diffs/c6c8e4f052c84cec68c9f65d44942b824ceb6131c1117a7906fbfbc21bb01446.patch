@@ -1,0 +1,87 @@
+--- original
++++ actual
+@@ -17,0 +18 @@
++DRAFT_SHA256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+@@ -41,0 +43,5 @@
++    draft = None
++    if any(a.startswith(("K", "O")) for a in args.arms):
++        draft = args.models / "Qwen3-0.6B-Q8_0.gguf"
++        if checksum(draft) != DRAFT_SHA256:
++            raise ValueError("foreign draft model")
+@@ -78 +84 @@
+-    if any(a.startswith("H") for a in args.arms):
++    if any(a.startswith(("H", "W")) for a in args.arms):
+@@ -87,0 +94,26 @@
++    packed_receipt = None
++    if any(a.startswith("W") for a in args.arms):
++        if not args.routing_receipt or not args.lib:
++            raise ValueError("missing measured packed program")
++        packed_receipt = json.loads(args.routing_receipt.read_bytes())
++        if (
++            packed_receipt["kind"] != "packed-marlin"
++            or packed_receipt["hardware"] != hw
++            or packed_receipt["gguf"] != GGUF
++            or packed_receipt["pool_cells"] != pool["cells"]
++            or packed_receipt["library_sha256"] != checksum(args.lib)
++            or packed_receipt["ggml_cuda"]
++            != checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
++        ):
++            raise ValueError("foreign packed kernel or KV capacity")
++    chunk_plan = None
++    if any(a.startswith("Q") for a in args.arms):
++        if args.policy is None:
++            raise ValueError("missing measured device forecast")
++        chunk_plan = json.loads(args.policy.read_bytes())
++        if (
++            chunk_plan["hardware"] != hw
++            or chunk_plan["gguf"] != GGUF
++            or chunk_plan["rows"] not in (256, 384, 512, 768, 1024, 1536)
++        ):
++            raise ValueError("foreign chunked prefill forecast")
+@@ -115,0 +148 @@
++            "draft_gguf_sha256": DRAFT_SHA256 if draft else None,
+@@ -116,0 +150,2 @@
++            "packed_program": packed_receipt,
++            "shared_chunk_plan": chunk_plan,
+@@ -120,0 +156,4 @@
++        if time.monotonic() >= deadline:
++            raise TimeoutError(
++                "qualification window exhausted before starting another server"
++            )
+@@ -123,0 +163 @@
++            "IRONMULE_LAB_DRAFT_MIX",
+@@ -125,0 +166 @@
++            "IRONMULE_LAB_SHARED_CHUNK",
+@@ -139,0 +181,4 @@
++        if arm.startswith(("K", "O")):
++            os.environ["IRONMULE_LAB_DRAFT_MIX"] = (
++                "context_first" if arm.startswith("O") else "model_first"
++            )
+@@ -152 +197,3 @@
+-        if arm.startswith("H"):
++        if arm.startswith("Q"):
++            os.environ["IRONMULE_LAB_SHARED_CHUNK"] = str(chunk_plan["rows"])
++        if arm.startswith(("H", "W")):
+@@ -170 +217 @@
+-        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y")):
++        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y", "W")):
+@@ -179 +226 @@
+-            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E")
++            ("Q", "R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O")
+@@ -182 +229,4 @@
+-        trial.measure(args, arm, hw, 0, deadline)
++        if arm.startswith(("K", "O")):
++            trial.measure(args, arm, hw, 0, deadline, draft=draft)
++        else:
++            trial.measure(args, arm, hw, 0, deadline)
+@@ -190 +240,9 @@
+-        fcntl.flock(lock, fcntl.LOCK_EX)
++        while True:
++            remaining = float(os.environ["RP_DEADLINE"]) - time.time() - 45
++            if remaining <= 0:
++                raise TimeoutError("device wait exhausted the reserved window")
++            try:
++                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
++                break
++            except BlockingIOError:
++                time.sleep(min(remaining, 1.0))

@@ -1,0 +1,13 @@
+{
+  "schema": "ironmule.xeon-affinity-load-stop.v1",
+  "protocol_sha256": "9e8797bf17a31e8a28bec341fc72f1e6faa33d8c4dfab899a58bebaed2aa8ca1",
+  "worker_sha256": "618b35245bcda2004868d720343ff6cee902fe6943903a62ae72cd6c30976032",
+  "watchdog_seconds": 75,
+  "exit_code": 124,
+  "last_complete_block": "train quiet 97651",
+  "log_sha256": "74edddf1a2a40788b65583d863b670ed24e1bc21a81192aeef2b071335868c4e",
+  "complete_holdout": false,
+  "reason": "The bounded real workload reached the time limit before any held-out price or output comparison was archived. The earlier missing dependency and busy-host preflight occurred before any measured block.",
+  "training_label": false,
+  "activation": null
+}

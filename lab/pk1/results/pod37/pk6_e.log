@@ -1,0 +1,35 @@
+== 22:01:30 0d6d69d PK6 + SV5 candidates; patches: .ironmule-am1 .ironmule-em1 .ironmule-fa1 .ironmule-fu1 .ironmule-gr1 .ironmule-gr2 .ironmule-gr3 .ironmule-gr4 .ironmule-kg1 .ironmule-kg5 .ironmule-pd1 .ironmule-pk2 .ironmule-pk3 .ironmule-pk4 .ironmule-pk5 .ironmule-pk6 .ironmule-ps1 .ironmule-ps1a .ironmule-qk1 .ironmule-row1 .ironmule-tk1 .ironmule-tl1 .ironmule-tl2 .ironmule-tl2c 
+      1 rows 2466 prefill_s 0.918 tokens [[220, 16, 15, 15, 17, 16878, 220, 17, 17], [16878, 220, 16, 17, 8153, 11, 1790, 220, 16], [11, 1790, 220, 16, 13, 12911, 220, 16, 15], [220, 16, 15, 16, 16, 16878, 22
+      1 pk6: 189 f32 writes skipped in graph 141
+      1 pk6: 189 f32 writes skipped in graph 2
+      1 pk6: 189 f32 writes skipped in graph 42
+      1 pk6: 189 f32 writes skipped in graph 44
+      1 pk6: 189 f32 writes skipped in graph 46
+      1 pk6: 189 f32 writes skipped in graph 48
+      1 pk6: 189 f32 writes skipped in graph 50
+      1 pk6: 189 f32 writes skipped in graph 52
+E check logits (32, 151936) max |on - off| 0.0
+E check tokens (9, 32) max |on - off| 0.0
+E check prefill_s () max |on - off| 0.014866906916722655
+E check rows () max |on - off| 0.0
+WAVE {"wave": 0, "pk6": 0, "pair": null, "wall_ms": 4184.0, "prefill_ms": 2345.47, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 1, "pk6": 0, "pair": 0, "wall_ms": 4195.5, "prefill_ms": 2343.07, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 2, "pk6": 1, "pair": 0, "wall_ms": 4153.6, "prefill_ms": 2313.15, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 3, "pk6": 1, "pair": 1, "wall_ms": 4149.5, "prefill_ms": 2312.89, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 4, "pk6": 0, "pair": 1, "wall_ms": 4178.5, "prefill_ms": 2340.51, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 5, "pk6": 0, "pair": 2, "wall_ms": 4185.5, "prefill_ms": 2344.35, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 6, "pk6": 1, "pair": 2, "wall_ms": 4156.2, "prefill_ms": 2314.84, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 7, "pk6": 1, "pair": 3, "wall_ms": 4149.0, "prefill_ms": 2313.85, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 8, "pk6": 0, "pair": 3, "wall_ms": 4182.2, "prefill_ms": 2341.49, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 9, "pk6": 0, "pair": 4, "wall_ms": 4181.8, "prefill_ms": 2341.95, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 10, "pk6": 1, "pair": 4, "wall_ms": 4153.6, "prefill_ms": 2314.64, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 11, "pk6": 1, "pair": 5, "wall_ms": 4157.2, "prefill_ms": 2318.31, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 12, "pk6": 0, "pair": 5, "wall_ms": 4182.8, "prefill_ms": 2344.0, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 13, "pk6": 0, "pair": 6, "wall_ms": 4186.4, "prefill_ms": 2345.73, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 14, "pk6": 1, "pair": 6, "wall_ms": 4157.1, "prefill_ms": 2313.5, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 15, "pk6": 1, "pair": 7, "wall_ms": 4151.6, "prefill_ms": 2314.36, "prefill_rows": 7632, "calls": 1}
+WAVE {"wave": 16, "pk6": 0, "pair": 7, "wall_ms": 4180.6, "prefill_ms": 2342.6, "prefill_rows": 7632, "calls": 1}
+SUMMARY {"prefill_ms": {"median_on_minus_off": -27.94, "on_shorter": "8/8", "off_median": 2342.835, "on_median": 2314.105}, "wall_ms": {"median_on_minus_off": -29.15, "on_shorter": "8/8", "off_median": 4182.5, "on_median": 4153.6}, "same_tokens_pairs": "8/8"}
+E graphs with skips: 7
+      7 189
+== 22:03:25 E-DONE

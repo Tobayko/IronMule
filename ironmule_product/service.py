@@ -174,8 +174,9 @@ class ProductService:
         # RSI4: the scheduling policy (default = SERVE8) and the log `ironmule dream` learns it from.
         root = getattr(store, "root", None)
         self.policy = load_policy(root) if root is not None else ServingPolicy()
-        self.serving_log = ServingLog(root) if root is not None else None
-        self.stability_log = ServingLog(root, 4 << 20, STABILITY_LOG) if root is not None else None
+        # ADM2: both written behind by their own thread, every waiting line in one call
+        self.serving_log = ServingLog(root, deferred=True) if root is not None else None
+        self.stability_log = ServingLog(root, 4 << 20, STABILITY_LOG, deferred=True) if root is not None else None
         self._identity = _identity_of(backend)  # a replacement must match it
         self._restarts: list[float] = []
         self._thread = threading.Thread(target=self._run, name="ironmule-scheduler", daemon=True)
@@ -221,6 +222,10 @@ class ProductService:
             if getattr(self.backend, "ggml_gate", None) is not None:  # GG1: the gate the engine passed at its start
                 result["ggml"] = {"gate": {k: self.backend.ggml_gate.get(k) for k in ("ratio", "interval", "passes")},
                                   "answers": "may differ from the MLX plans, within the gate"}
+                profile = self.backend.ggml_gate.get("kernel_profile")
+                if profile:
+                    result["ggml"]["kernel_profile"] = {key: profile[key] for key in ("profile", "flags", "gguf_sha256")}
+                    result["ggml"]["kernel_profile"]["fallback"] = bool(profile.get("fallback_reason"))
                 if self.backend.ggml_gate.get("diagnostic"):
                     from ironmule.ggml_gate_diagnostics import sanitize
 
@@ -305,6 +310,12 @@ class ProductService:
             result["knobs"] = {"source": engine.get("profile_source"), "values": engine["selected_knobs"],
                                "class_a": class_a_knobs(engine["selected_knobs"]) is not None}
         return result
+
+    def ready(self) -> bool:
+        """ADM1: health()["ready"] alone, without the optimizer status and the rest of the report (no file reads)."""
+        with self._lock:
+            return bool(not self._closed.is_set() and self._backend_ready()
+                        and (getattr(self, "_idle_busy", False) or (self.backend is not None and self.backend.ready)))
 
     def live_samples(self) -> list[dict]:
         """Recent completed real requests, limited to timings and counts."""
@@ -823,9 +834,13 @@ class ProductService:
             self._active.discard(session.request.request_id)
         self._pending.task_done()
         # A consumer observing the terminal record can now see the retired request in the counters.
+        # PF1: the request's own times on the monotonic clock the engine trace and the client use (seconds)
         self.note("end", id=session.request.request_id, group=session.group, outcome=session.outcome,
                   error=session.error, tokens=session.tokens,
-                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed)
+                  queue_s=queue_seconds, first_s=first_seconds, total_s=elapsed,
+                  t_submit=session.submitted_ns / 1e9,
+                  t_dispatch=None if dispatch is None else dispatch / 1e9,
+                  t_first=None if session.first_ns is None else session.first_ns / 1e9, t_end=session.end_ns / 1e9)
 
     def _queued(self) -> tuple[int, list[tuple[int, GenerationRequest]]]:
         """Waiting requests and the oldest eight as (submitted_ns, request): metadata for RSI3-LIVE."""
@@ -1552,3 +1567,7 @@ class ProductService:
                 self._pending.task_done()
             except queue.Empty:
                 break
+        for log in (self.stability_log, self.serving_log):  # ADM2: every line written behind is in its file
+            stop = getattr(log, "close", None) or getattr(log, "flush", None)  # and its writer thread stopped
+            if callable(stop):
+                stop()

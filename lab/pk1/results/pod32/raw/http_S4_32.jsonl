@@ -1,0 +1,2 @@
+{"label": "S4", "engine": "ironmule", "warmup_s": 0.226}
+{"label": "S4", "engine": "ironmule", "repeat": 0, "width": 32, "tok_s": 275.49, "wall_s": 3.717, "ttft_p50_ms": 2660.8, "ttft_p95_ms": 2672.5, "ttft_max_ms": 2675.0, "tokens": 1024, "prompt_tokens": 7632, "texts": "21950a3c06ed190c", "queue_ms": [7.3, 88.5], "dispatch_to_first_ms": [2534.3, 2561.0], "first_to_end_ms": [1012.8, 1027.6]}

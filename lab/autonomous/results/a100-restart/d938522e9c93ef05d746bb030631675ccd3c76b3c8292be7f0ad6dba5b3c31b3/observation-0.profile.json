@@ -1,0 +1,424 @@
+{
+  "base_commit": "a4e2fc4f7de48921b588587e21d12b8f2090e90d",
+  "binding": {
+    "fp": {
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "devices": [
+        {
+          "uuid": "8bada50eb8f2d9615369a30d9e1eade6",
+          "name": "NVIDIA A100-SXM4-80GB",
+          "cc": "80"
+        }
+      ],
+      "cc": "80",
+      "driver": "NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  595.112.07  Release Build  (dvs-builder@U22-I3-AL23-31-2)  Tue Oct 20 09:16:38 UTC 2026\nGCC version:  gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04.1)",
+      "generator": "93907e004deb7f362e3f34541944d4d5648cb26524c38580275dbd310ab8eae7",
+      "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:23:50_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0",
+      "kg": 4
+    },
+    "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+    "v": 2,
+    "src": "34e713dcabe8ca63f8ed40ed593737c69d295e3f16f637976a101ea56d5fdab0",
+    "tuner": "b4e12d47e97da944cdefb9bca305850403586fddf7f16b3ed217dea1502c20d9",
+    "native": {
+      "sha256": {
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+      }
+    },
+    "serving_sources": {
+      "ironmule/ggml_engine.py": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+      "ironmule/gguf_tokenizer.py": "0952416ffdff0e965be1e60f88a74ec35bdd194bcb1646187dca98dccbfb3a11",
+      "ironmule/pilot.py": "0e9fd82788171d9080afe16f7aa3e406c4045ee6e9976d6e46aa5b76e26fbef3"
+    },
+    "tuning_receipt_sha256": "a644004af5371c1cc5e06e9168a3682543374a1e72c0a48cc4bede4f1b43a548",
+    "w4_sha256": "9d88c60855453860a53b1daa74b4c21e8b67e93c76ad53d8c6d1fa1b3516f1e1",
+    "table_sha256": "ecd29307bb073d364aadd8941596b249d0a87ecf26c1fc846a82832269fca79e",
+    "source_sha256": "670c958add42cd138472c76a431a64d2ceb9b4c583320f48bdb292f42e6e8a8b",
+    "engine": {
+      "flash_attn": true,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "mask": {
+      "lib": "kernel.so",
+      "entries": 256,
+      "tokens_served": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "step_ms_on": {
+        "1": 26.52,
+        "2": 25.32,
+        "3": 26.08,
+        "4": 26.74,
+        "5": 28.83,
+        "6": 29.54,
+        "7": 30.3,
+        "8": 31.01,
+        "16": 31.67,
+        "24": 35.61,
+        "32": 38.85
+      },
+      "step_ms_off": {
+        "1": 28.69,
+        "2": 33.53,
+        "3": 40.02,
+        "4": 47.39,
+        "5": 53.93,
+        "6": 59.9,
+        "7": 65.82,
+        "8": 79.59,
+        "16": 49.97,
+        "24": 56.45,
+        "32": 61.49
+      },
+      "q6k_tokens_served": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "step_ms_q6k": {
+        "1": 25.09,
+        "2": 24.32,
+        "3": 24.04,
+        "4": 23.99,
+        "5": 24.7,
+        "6": 24.72,
+        "7": 24.92,
+        "8": 24.93,
+        "16": 26.79,
+        "24": 31.21,
+        "32": 33.17
+      }
+    }
+  },
+  "width": 32,
+  "decode_steps": 16,
+  "prompt_tokens_per_client": 238,
+  "kind": "measured_native_diagnostic",
+  "reference_flags": {
+    "PS1": "1",
+    "PS1_WARM": "0",
+    "PK6": "1",
+    "CUDA_GRAPHS_ROWS": "32",
+    "GGML_PACK": "1",
+    "GGML_UBATCH": "8192"
+  },
+  "dispatch_rows_type_n_k_batch_variant_ksplit": [
+    [
+      12,
+      1024,
+      5120,
+      32,
+      239,
+      1
+    ],
+    [
+      12,
+      5120,
+      8192,
+      32,
+      256,
+      4
+    ],
+    [
+      12,
+      5120,
+      25600,
+      32,
+      256,
+      8
+    ],
+    [
+      12,
+      8192,
+      5120,
+      32,
+      256,
+      4
+    ],
+    [
+      12,
+      25600,
+      5120,
+      32,
+      184,
+      1
+    ],
+    [
+      14,
+      1024,
+      5120,
+      32,
+      266,
+      8
+    ],
+    [
+      14,
+      5120,
+      25600,
+      32,
+      266,
+      4
+    ],
+    [
+      14,
+      151936,
+      5120,
+      32,
+      269,
+      1
+    ]
+  ],
+  "device_events": [
+    [
+      {
+        "symbol": "void (anonymous namespace)::w4d<2, 1, 4, 2, 1>(unsigned char const*, __half const*, float const*, float*, int, int, int, int)",
+        "device_s": 0.14621499199999966,
+        "calls": 2048
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4f<4, 4, 1, 0>(unsigned char const*, __half const*, float const*, float*, int, int, int, int, float*, int*)",
+        "device_s": 0.10390013000000149,
+        "calls": 2560
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4f6<4, 4, 1, 0>(unsigned char const*, __half const*, float const*, float*, int, int, int, int, float*, int*)",
+        "device_s": 0.05723838499999921,
+        "calls": 1024
+      },
+      {
+        "symbol": "void flash_attn_ext_f16<128, 128, 1, 8, 4, 1, false, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, int, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "device_s": 0.03388709800000001,
+        "calls": 1024
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4d<16, 16, 4, 1, 1>(unsigned char const*, __half const*, float const*, float*, int, int, int, int)",
+        "device_s": 0.018772298000001457,
+        "calls": 1536
+      },
+      {
+        "symbol": "void ironmule_add_rms_norm_mul_f32<1024>(float const*, float const*, float*, float*, float const*, int, int, float, __half*, int, int)",
+        "device_s": 0.016143618000000637,
+        "calls": 2048
+      },
+      {
+        "symbol": "(anonymous namespace)::reduce_split(float const*, float*, unsigned long, int)",
+        "device_s": 0.011076124000001573,
+        "calls": 3584
+      },
+      {
+        "symbol": "void rms_norm_f32<32, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)",
+        "device_s": 0.009908836000001024,
+        "calls": 2048
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4f6<4, 4, 2, 0>(unsigned char const*, __half const*, float const*, float*, int, int, int, int, float*, int*)",
+        "device_s": 0.0077874859999999164,
+        "calls": 16
+      },
+      {
+        "symbol": "ironmule_swiglu_f32(float const*, float const*, float*, __half*, long, long, long, long, int, int)",
+        "device_s": 0.007191691000000031,
+        "calls": 1024
+      },
+      {
+        "symbol": "void rope_neox<true, false, float>(float const*, float*, int, int, int, int, int, int const*, float, float, float, rope_corr_dims, float, float const*)",
+        "device_s": 0.006317765000000254,
+        "calls": 2048
+      },
+      {
+        "symbol": "void k_set_rows<float, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+        "device_s": 0.006028377000001423,
+        "calls": 2048
+      },
+      {
+        "symbol": "void flash_attn_stream_k_fixup<128, 1, 8>(float*, float2 const*, int, int, int, int)",
+        "device_s": 0.005156421000000569,
+        "calls": 1024
+      },
+      {
+        "symbol": "(anonymous namespace)::prep_x(float const*, __half*, float*, int, int, int)",
+        "device_s": 0.0040730560000001295,
+        "calls": 1040
+      },
+      {
+        "symbol": "Memcpy HtoD (Pinned -> Device)",
+        "device_s": 0.002503992999999971,
+        "calls": 96
+      },
+      {
+        "symbol": "void flash_attn_mask_to_KV_max<1>(__half2 const*, int*, int, int, int)",
+        "device_s": 0.0021076840000009756,
+        "calls": 1024
+      },
+      {
+        "symbol": "argmax_f32(float const*, int*, long)",
+        "device_s": 0.0013452099999999917,
+        "calls": 16
+      },
+      {
+        "symbol": "void cpy_flt<&(void _INTERNAL_8db1dfbb_6_cpy_cu_843ac19f::cpy_1_flt<float, __half>(char const*, char*))>(char const*, char*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, char**, int)",
+        "device_s": 0.0002224630000000016,
+        "calls": 16
+      },
+      {
+        "symbol": "void rms_norm_f32<1024, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)",
+        "device_s": 0.00012527899999996043,
+        "calls": 16
+      },
+      {
+        "symbol": "void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "device_s": 0.00011138900000016296,
+        "calls": 32
+      },
+      {
+        "symbol": "Memcpy DtoH (Device -> Pageable)",
+        "device_s": 3.4975000000064025e-05,
+        "calls": 16
+      },
+      {
+        "symbol": "Memcpy HtoD (Pageable -> Device)",
+        "device_s": 1.657600000007915e-05,
+        "calls": 16
+      }
+    ],
+    [
+      {
+        "symbol": "void (anonymous namespace)::w4d<2, 1, 4, 2, 1>(unsigned char const*, __half const*, float const*, float*, int, int, int, int)",
+        "device_s": 0.1454700890000004,
+        "calls": 2048
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4f<4, 4, 1, 0>(unsigned char const*, __half const*, float const*, float*, int, int, int, int, float*, int*)",
+        "device_s": 0.1029075180000008,
+        "calls": 2560
+      },
+      {
+        "symbol": "void flash_attn_ext_f16<128, 128, 1, 8, 4, 1, false, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, int, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "device_s": 0.0588527920000002,
+        "calls": 1024
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4f6<4, 4, 1, 0>(unsigned char const*, __half const*, float const*, float*, int, int, int, int, float*, int*)",
+        "device_s": 0.0567803880000001,
+        "calls": 1024
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4d<16, 16, 4, 1, 1>(unsigned char const*, __half const*, float const*, float*, int, int, int, int)",
+        "device_s": 0.01862654500000083,
+        "calls": 1536
+      },
+      {
+        "symbol": "void ironmule_add_rms_norm_mul_f32<1024>(float const*, float const*, float*, float*, float const*, int, int, float, __half*, int, int)",
+        "device_s": 0.016127990000000557,
+        "calls": 2048
+      },
+      {
+        "symbol": "(anonymous namespace)::reduce_split(float const*, float*, unsigned long, int)",
+        "device_s": 0.011040092999999297,
+        "calls": 3584
+      },
+      {
+        "symbol": "void rms_norm_f32<32, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)",
+        "device_s": 0.009840838000001437,
+        "calls": 2048
+      },
+      {
+        "symbol": "void flash_attn_stream_k_fixup<128, 1, 8>(float*, float2 const*, int, int, int, int)",
+        "device_s": 0.008243354999999286,
+        "calls": 1024
+      },
+      {
+        "symbol": "void (anonymous namespace)::w4f6<4, 4, 2, 0>(unsigned char const*, __half const*, float const*, float*, int, int, int, int, float*, int*)",
+        "device_s": 0.007743323999999833,
+        "calls": 16
+      },
+      {
+        "symbol": "ironmule_swiglu_f32(float const*, float const*, float*, __half*, long, long, long, long, int, int)",
+        "device_s": 0.007126778999999739,
+        "calls": 1024
+      },
+      {
+        "symbol": "void rope_neox<true, false, float>(float const*, float*, int, int, int, int, int, int const*, float, float, float, rope_corr_dims, float, float const*)",
+        "device_s": 0.0062861359999994045,
+        "calls": 2048
+      },
+      {
+        "symbol": "void k_set_rows<float, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+        "device_s": 0.006015904999998996,
+        "calls": 2048
+      },
+      {
+        "symbol": "Memcpy HtoD (Pinned -> Device)",
+        "device_s": 0.0041815790000000455,
+        "calls": 96
+      },
+      {
+        "symbol": "(anonymous namespace)::prep_x(float const*, __half*, float*, int, int, int)",
+        "device_s": 0.004075140999999794,
+        "calls": 1040
+      },
+      {
+        "symbol": "void flash_attn_mask_to_KV_max<1>(__half2 const*, int*, int, int, int)",
+        "device_s": 0.002130259999999107,
+        "calls": 1024
+      },
+      {
+        "symbol": "argmax_f32(float const*, int*, long)",
+        "device_s": 0.0013368910000001268,
+        "calls": 16
+      },
+      {
+        "symbol": "void cpy_flt<&(void _INTERNAL_8db1dfbb_6_cpy_cu_843ac19f::cpy_1_flt<float, __half>(char const*, char*))>(char const*, char*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, char**, int)",
+        "device_s": 0.00038105400000007646,
+        "calls": 16
+      },
+      {
+        "symbol": "void rms_norm_f32<1024, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)",
+        "device_s": 0.00012438399999998185,
+        "calls": 16
+      },
+      {
+        "symbol": "void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "device_s": 0.0001113289999998815,
+        "calls": 32
+      },
+      {
+        "symbol": "Memcpy DtoH (Device -> Pageable)",
+        "device_s": 3.487800000015705e-05,
+        "calls": 16
+      },
+      {
+        "symbol": "Memcpy HtoD (Pageable -> Device)",
+        "device_s": 1.6384000000102336e-05,
+        "calls": 16
+      }
+    ]
+  ],
+  "wall_seconds_per_window": [
+    0.4934541879920289,
+    0.5263386950828135
+  ]
+}

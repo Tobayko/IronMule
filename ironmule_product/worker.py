@@ -38,6 +38,9 @@ END_OF_TURN = ("<end_of_turn>", "<|eot_id|>", "<|im_end|>", "<|end|>")
 _PROTOCOL_OUT = sys.stdout
 
 
+_TRACE = bool(os.environ.get("IRONMULE_GGML_TRACE"))
+
+
 def _trace_note(label: str) -> None:
     """A marker in the engine's IRONMULE_GGML_TRACE file (diagnostics, off by default)."""
     if os.environ.get("IRONMULE_GGML_TRACE"):
@@ -412,6 +415,8 @@ def _receiver(
             return
         if command.get("type") == "join_batch":
             JOINS.put(command)  # SERVE8: taken by the running batch, not queued behind it
+            if _TRACE:  # ADM1 (trace only): when a join reached the worker
+                _trace_note(f"join read {len(command.get('requests') or ())}")
             continue
         if command.get("type") == "cancel":
             request_id = command.get("request_id")
@@ -733,6 +738,11 @@ def _render_rows(requests: list[Any], model_id: str, tokenizer: Any, batch_id: s
 _BATCH_RENDER: dict[int, bool] = {}  # SV4: per tokenizer, whether the batched rendering was checked equal
 
 
+def _sv5_on() -> bool:
+    """SV5 (2026-11-25): joins rendered as a batch; read at every join, so the lab switch can flip it."""
+    return os.environ.get("IRONMULE_SV5", "0") == "1"
+
+
 def _render_many(tokenizer: Any, requests: list[Any]) -> list[list[int]] | None:
     """SV4 (2026-11-23): every request's prompt ids in one chat-template call and one batched tokenization (32
     requests took about 105 ms one by one on an A100 pod's CPU, before the group's prefill). The first time per
@@ -824,14 +834,18 @@ class _DetokenizerPool:
                  else type(tokenizer))
         self._build = lambda: plain.detokenizer.fget(tokenizer)
         self._free: list[Any] = []
+        self._lock = threading.Lock()  # DH2: streams release on the engine's emitter thread, admissions acquire here
 
     def acquire(self) -> Any:
-        detokenizer = self._free.pop() if self._free else self._build()
+        with self._lock:
+            detokenizer = self._free.pop() if self._free else None
+        detokenizer = detokenizer if detokenizer is not None else self._build()
         detokenizer.reset()
         return detokenizer
 
     def release(self, detokenizer: Any) -> None:
-        self._free.append(detokenizer)
+        with self._lock:
+            self._free.append(detokenizer)
 
     def prepare(self, count: int) -> None:
         """GG2: build `count` detokenizers now, at the worker's start. Built on demand, the first block of eight
@@ -1001,9 +1015,14 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     continue  # it arrived after its own batch ended; the client hands such a request back
                 if not isinstance(join.get("requests"), list):
                     raise ValueError("invalid join")
-                for request in join["requests"]:
+                # SV5: a join of several requests rendered like the batch's first requests (SV4's one template call
+                # and batched tokenization, checked equal to one by one); in a 32-client burst most requests arrive
+                # as one join of 25-31 (A100 pod 36: 7-12 ms one by one, before the prefill)
+                rendered = _render_many(tokenizer, join["requests"]) if _sv5_on() else None
+                for index, request in enumerate(join["requests"]):
                     try:
-                        row = _render_engine_request(request, model_id, tokenizer, allow_stream=True, limit=limit)
+                        row = _render_engine_request(request, model_id, tokenizer, allow_stream=True, limit=limit,
+                                                     ids=rendered[index] if rendered else None)
                     except RequestTooLong as error:  # rejected alone; the run goes on
                         if error.request_id in all_ids:
                             raise ValueError("duplicate request id") from None
@@ -1024,6 +1043,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                         registered.append(row[0])
                     all_ids.append(row[0])
                     rows.append(row)
+                if _TRACE:  # ADM1 (trace only): rendered and handed to the engine
+                    _trace_note(f"join rendered {len(join['requests'])}")
 
         stop_ids = _stop_ids(engine_bridge, tokenizer)
 
@@ -1398,6 +1419,13 @@ def _run_generation(
 
 
 def main(argv: list[str] | None = None) -> int:
+    if os.environ.get("IRONMULE_LAB_SWITCH"):  # diagnostics: paired A/B switches (ironmule_product/lab_switch.py)
+        try:
+            from ironmule_product.lab_switch import start as lab_switch
+
+            lab_switch()
+        except ImportError:
+            pass
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--spec", required=True)
     parser.add_argument("--execution-variant", choices=sorted(WORKER_VARIANTS), default="reference")

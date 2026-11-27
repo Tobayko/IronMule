@@ -1,0 +1,139 @@
+--- a/ironmule/ggml_engine.py
++++ b/ironmule/ggml_engine.py
+@@ -1228,22 +1228,122 @@
+         return out
+ 
+     def measure_padding(self, repeats: int = 5) -> dict[int, int]:
+-        """PAD1: a verify step's seconds for 1 to `max_rows` tokens of one sequence (median of `repeats`), and for each
+-        token count the larger count to fill it to when that one is measured at least 5 % cheaper."""
++        """Price real verification widths, retaining full measurement on an unqualified or ambiguous start."""
++        started = time.perf_counter()
++        profile_pin = os.environ.get("IRONMULE_CALIBRATION_SAMPLING_SHA256")
++        widths = range(1, self.max_rows + 1)
+         bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+-        self._clear()
+-        self._decode([(bos, j, 0, j == 63) for j in range(64)])
+-        prices: dict[int, float] = {}
+-        for t in range(1, self.max_rows + 1):
+-            times = []
+-            for _ in range(repeats + 1):
+-                started = time.perf_counter()
+-                self._decode([(bos, 64 + j, 0, True) for j in range(t)])
+-                times.append(time.perf_counter() - started)
+-                self.L.llama_memory_seq_rm(self.memory, 0, 64, -1)
+-            prices[t] = sorted(times[1:])[len(times[1:]) // 2]
+-        self._clear()
++        counts = {w: [0, 0] for w in widths}
++
++        def read_pinned(path, pin):
++            if not path or not isinstance(pin, str) or len(pin) != 64:
++                raise ValueError("missing sampling input")
++            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
++            with os.fdopen(fd, "rb") as stream:
++                info = os.fstat(stream.fileno())
++                if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 131072:
++                    raise ValueError("invalid sampling input")
++                data = stream.read(131073)
++            if len(data) != info.st_size or hashlib.sha256(data).hexdigest() != pin:
++                raise ValueError("sampling input digest differs")
++            return json.loads(data)
++
++        def scope():
++            if repeats != 5 or not getattr(self, "kg", {}).get("restart_profile_reused"):
++                return "original calibration or kernel profile"
++            try:
++                profile = read_pinned(os.environ.get("IRONMULE_CALIBRATION_SAMPLING_PROFILE"), profile_pin)
++                cache_pin = os.environ.get("IRONMULE_KG_RESTART_SHA256")
++                if (profile["schema"] != "ironmule.qwen-sampling-profile.v1"
++                        or profile["order_id"] != "4e87c90dad8d9f21db28a69501613f44a98b9399b1b5838316f276978de288e7"
++                        or profile["source_sha256"] != "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd"
++                        or profile["method"] != "measure_padding"
++                        or profile["selected_plan"] != {"method": "measure_padding", "warmups": 2, "samples": 2,
++                                                        "reference_warmups": 1, "reference_samples": 5,
++                                                        "uncertainty_slack": 0.01}
++                        or cache_pin != "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89"
++                        or profile["parent_cache_sha256"] != cache_pin):
++                    return "different sampling order or parent"
++                cache = read_pinned(os.environ.get("IRONMULE_KG_RESTART_RECEIPT"), cache_pin)
++                binding = cache["binding"]
++                if (profile["runtime"] != binding or profile["created_s"] != cache["created_s"]
++                        or not profile["created_s"] <= time.time() <= profile["expires_s"] <= cache["created_s"] + 86400):
++                    return "expired or foreign sampling profile"
++                if self.shared or any(getattr(self, k) != binding[k] for k in
++                                      ("seqs", "seq_ctx", "threads", "max_rows", "settings", "speculate", "gpu_layers")):
++                    return "context or thread profile changed"
++                if sorted(os.sched_getaffinity(0)) != binding["affinity"]:
++                    return "affinity changed"
++                flags = binding["flags"]
++                if any(os.environ.get(k) != v for k, v in flags.items()):
++                    return "kernel flags changed"
++                allowed = {"IRONMULE_" + k for k in ("KG_LIB", "W4_TABLE", "KG_RESTART_RECEIPT", "KG_RESTART_SHA256",
++                                                      "GGML_GPU_LAYERS", "PILOT", "GGML_BINDINGS")}
++                if (os.environ.get("IRONMULE_PILOT") != "1" or os.environ.get("IRONMULE_GGML_GPU_LAYERS") != str(self.gpu_layers)
++                        or any(k.startswith("GGML_") for k in os.environ)
++                        or any(k not in allowed and k not in flags for k in os.environ
++                               if k.startswith("IRONMULE_") and not k.startswith("IRONMULE_CALIBRATION_SAMPLING_"))):
++                    return "unqualified runtime override"
++                if self.kg != {**cache["mask"], "restart_profile_reused": True}:
++                    return "kernel profile changed"
++                for key, get in (("tokens_served", self._kg_lib.ironmule_kg_get_mask),
++                                 ("q6k_tokens_served", self._kg_lib.ironmule_kg_get_mask6)):
++                    bits = sum(1 << (w - 1) for t in cache["mask"][key] for w in ((t,) if t <= 8 else range(t - 7, t + 1)))
++                    if get() != bits:
++                        return "live kernel masks changed"
++            except (AttributeError, KeyError, OSError, TypeError, ValueError, OverflowError):
++                return "unavailable or malformed sampling input"
++            return None
++
++        def measure(warmups, samples):
++            self._clear()
++            self._decode([(bos, j, 0, j == 63) for j in range(64)])
++            measured = {}
++            for width in widths:
++                times = []
++                for index in range(warmups + samples):
++                    begin = time.perf_counter()
++                    self._decode([(bos, 64 + j, 0, True) for j in range(width)])
++                    elapsed = time.perf_counter() - begin
++                    self.L.llama_memory_seq_rm(self.memory, 0, 64, -1)
++                    if index >= warmups:
++                        times.append(elapsed)
++                counts[width][0] += warmups
++                counts[width][1] += samples
++                measured[width] = times
++            self._clear()
++            return measured
++
++        def stable(prices, samples):
++            if not all(math.isfinite(x) and x > 0 for times in samples.values() for x in times):
++                return False
++            intervals = {w: (.99 * min(times), 1.01 * max(times)) for w, times in samples.items()}
++            dispatch = pad_table(prices)
++            for width, (low, high) in intervals.items():
++                best = dispatch.get(width)
++                if best is None:
++                    if any(lo < .95 * high for w, (lo, _) in intervals.items() if w > width):
++                        return False
++                else:
++                    upper = intervals[best][1]
++                    if (upper >= .95 * low or any((upper, best) > (lo, w)
++                                                  for w, (lo, _) in intervals.items() if w >= width and w != best)):
++                        return False
++            return True
++
++        reason = scope() if profile_pin else "no sampling profile"
++        if reason is None:
++            samples = measure(2, 2)
++            prices = {w: statistics.median(times) for w, times in samples.items()}
++            if not stable(prices, samples):
++                reason = "ambiguous fresh price intervals"
++        if reason is not None:
++            samples = measure(1, repeats)
++            prices = {w: sorted(times)[len(times) // 2] for w, times in samples.items()}
+         self.pad_prices = prices
++        self.calibration_sampling = {"mode": "full" if reason else "adaptive", "reason": reason or "stable fresh price intervals",
++                                     "profile_sha256": profile_pin, "counts": counts, "prices": dict(prices),
++                                     "price_source": "fresh local verification decode", "elapsed_s": time.perf_counter() - started}
+         return pad_table(prices)
+ 
+     def measure_costs(self) -> dict[str, float]:

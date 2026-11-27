@@ -1,0 +1,17 @@
+{
+  "cached_int8_first_seed": "http/native-final/J1/qualification-J1.json",
+  "confirmed_stdout_markers": [
+    "failed-W1",
+    "pruned-J2-numeric",
+    "failed-W2"
+  ],
+  "no_initial_process": [
+    "W1",
+    "W2",
+    "J2"
+  ],
+  "packed_retry_series": [
+    "http/packed-http-archive-replay/W1",
+    "http/packed-http-confirm/W2"
+  ]
+}

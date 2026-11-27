@@ -1,0 +1,114 @@
+# Bounded RunPod measurements
+
+Use one Linux control machine and the same private `RP_STATE` path throughout the campaign. The default is `~/.cache/ironmule/rp.json`. Keep this directory on persistent storage. It includes the job token. Use the control checkout for accounting and the evaluator, and give the candidate checkout only to the build and measurement job.
+
+```sh
+python lab/rp/rp.py account
+python lab/rp/rp.py spend
+python lab/rp/rp.py deploy --gpu 'NVIDIA A100-SXM4-80GB' --cloud SECURE --disk 80 --minutes 60 --max-hourly 2.50
+python lab/rp/rp.py wait
+# Submit the prepared experiment and fetch its results as each pair completes.
+python lab/rp/rp.py stop
+python lab/rp/rp.py account
+python lab/rp/rp.py spend
+```
+
+The initial campaign limit is USD 15 across all attempts. For a concrete need, the operator may run `python lab/rp/rp.py extend 'reason'` to raise the limit once to USD 20. Before a separately metered API call, use `reserve-external NAME MAX_USD` with its maximum charge. After billing arrives, use `settle-external NAME ACTUAL_USD`. Unsettled reservations continue to count. After the limit, local training and replay can continue.
+
+Deployment checks the account balance and quotes the specified cloud, GPU count and disk. The ledger reserves the maximum hourly rate for the entire lease plus ten minutes for cleanup and billing. For example, 60 minutes at a maximum USD 2.50 per hour requires USD 2.917 available. A local process starts before the create mutation and reconciles ambiguous creates by unique pod name. Duplicate creates are blocked while the reservation exists. A second process starts with the container and requests termination at the same UTC deadline using RunPod's pod-scoped credential. The control credential stays on the control machine. Neither process requires the model server. Both depend on the provider API being reachable. A failure of both control planes can delay cleanup.
+
+After restarting the control host, run `python lab/rp/rp.py resume` to restart its deadline watcher or clean up an expired lease. Run `stop` for immediate cleanup. If the provider has yet to confirm removal, retry `stop`. A create whose outcome cannot be resolved holds its reservation for operator reconciliation. The history records the observed account delta and the wall-time estimate including a ten-minute tail separately. Admission uses the higher value. Account deltas may include unrelated usage. Historical executions appear in the existing ledger if the same state path was used.
+
+Price basis for container disk is USD 0.10 per GB-month, conservatively spread over 28 days. Only ephemeral container disk is requested. [RunPod storage pricing](https://docs.runpod.io/pods/pricing) · [Pod-scoped credentials](https://docs.runpod.io/pods/references/environment-variables)
+
+## Running an isolated native candidate
+
+On a dedicated Linux pod, the root broker places the model, reference binary, bindings, evaluator and
+candidate sources in root-owned trees with read-only access for a dedicated worker uid. Copy bindings
+out of a private root home before starting the worker. The worker receives its own empty directory.
+The following checks the boundary without compiling or loading candidate code.
+
+```bash
+install -d -m 0755 /opt/ironmule-worker
+install -m 0444 lab/rp/restricted_worker.py /opt/ironmule-worker/restricted_worker.py
+install -d -m 0700 -o 60000 -g 60000 /opt/ironmule-worker/preflight-out
+python /opt/ironmule-worker/restricted_worker.py --preflight \
+  --output /opt/ironmule-worker/preflight-out --readonly /opt/ironmule-worker/restricted_worker.py
+```
+
+The launcher needs libseccomp and Landlock ABI 3 or newer. It drops supplementary groups and the
+entire capability bounding set, requires `no_new_privs`, denies external networking and applies a
+filesystem allowlist before every worker starts. On an NVIDIA host the driver can bind a local
+`AF_UNIX / SOCK_SEQPACKET | SOCK_CLOEXEC` handle and register its backlog of 128 for UVM. The preflight checks that connecting to
+an existing private Unix socket and accepting a peer both fail. Internet sockets and descriptor
+passing remain blocked. The parent sets a wall deadline and terminates
+the process group. Per-process CPU time, descriptors, process count, core files and output file size
+are limited. CUDA access uses the pod's device files. Check GPU execution separately on each host.
+[Recorded A100 preflight](results/restricted-worker-preflight.json)
+
+The A100 driver sets a newly created thread's name through `/proc/self/task/<tid>/comm`.
+The worker's Landlock rule grants write and truncate beneath the launcher's own task directory.
+This also grants those two operations on other entries in that directory if Linux permissions
+allow them. The preflight renames a new thread and checks that a write-only open fails on another
+same-UID process's thread and on the worker's top-level `oom_score_adj`.
+[A100 scope checks, CUDA arithmetic and GGML doctor](results/a100-restricted-worker-final-20261126/summary.json)
+
+## Four-core CPU trial during a GPU-idle window
+
+On a leased Linux host with an available five-minute interval, use a clean Git checkout and a working
+GGML installation. Export its binding/library paths and choose four allowed physical cores. This
+example uses logical CPUs 0–3 on the EPYC 7742 RunPod host with SMT off.
+
+```bash
+python lab/rp/cpu_pilot.py --cpus 0 1 2 3 --seconds 300 \
+  --gguf /models/SmolLM2-135M-Instruct-Q4_K_M.gguf --state /work/cpu-trial-first
+```
+
+The runner trains on complete pairs from context bands 1 and 4 and replays band 6 on holdout. The
+subsequent four-slot serving run starts fresh hardware qualification. The command uses CPU inference
+with GPU visibility disabled and lowers its scheduling priority. `campaign.json` records the source
+commit, affinity, phase timings and outcome. `trials.json` retains complete and interrupted series.
+An empty holdout, failed correctness check or lack of qualified model decisions leaves a failed phase.
+Send SIGTERM when GPU timing must resume. Preserve the state directory before terminating the pod.
+
+Request up to 90 additional minutes per renewal on the same owned pod. Start the handoff at least
+three minutes before the current deadline. An explicit stop terminates the lease early.
+
+```sh
+python -m lab.rp.rp renew --minutes 90 --reason 'finish paired tests on the same calibrated GPU' --request-id first-paired-run
+python -m lab.rp.rp spend
+```
+
+Reusing the same request ID and terms returns the recorded outcome, including after a restart or a later extension.
+A new extension verifies the provider's pod ID, owner-specific name, actual rate, remaining credit and shared reserve.
+Its new local watchdog acknowledges the current and proposed deadlines from the durable journal. On the pod a
+replacement enforces the previous cutoff before the broker retires the exact old monitor by process identity.
+This protocol also accepts the first-generation monitor's existing receipt. Missing acknowledgments leave the
+prior controller cutoff in force and keep the entire reservation held until explicit retry or cleanup.
+
+
+After verified teardown, export the redacted campaign journal. It contains the observed
+account delta, per-lease posted USD if billing has caught up, conservative charges including
+the retained cleanup tail, and external settlements. Pod IDs, account balances, job names,
+tokens and free-text reasons stay in the private control journal. Refresh the export after
+the provider posts delayed billing.
+
+```sh
+python -m lab.rp.rp report --output lab/rp/results/campaign-costs.json
+```
+
+The product subprocess can use `open_worker` from `lab.rp.restricted_worker` with the same read-only inputs and preflight as the batch evaluator. Its stdin and stdout carry the product protocol. Setup and preflight use separate file descriptors which close before exec. Use `text=False` for the product's binary pipes. Exiting the context terminates the worker process group. The broker also enforces an independent wall deadline while the service runs.
+
+On the recorded EPYC host, install the CPU build of MLX in a separate environment for this campaign.
+The system CUDA build failed at import with the GPU hidden. The completed trial used matching
+`mlx==0.32.5` and `mlx-cpu==0.32.5` and the existing GGML bindings. Reproduce the host planner
+on its saved observations with the repository CPU environment.
+
+```sh
+python -m training.experience_archive build --output /tmp/epyc-experience.jsonl
+python -m training.experiment_planner \
+  --observations lab/autonomous/results/runpod-epyc-pilot/waves \
+  --archive /tmp/epyc-experience.jsonl --require-headroom --output /tmp/epyc-plan.json
+```
+
+The [EPYC source campaign](cpu-campaign.md) connects measured prefill attribution, a correlated Codex proposal, isolated source and rule trials, scoped PR publication, target use and withdrawal on the four-core CPU lane.

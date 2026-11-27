@@ -1,0 +1,26 @@
+{
+  "comparison": {
+    "candidate_over_reference": {
+      "eighth": 0.47836684516770694,
+      "end_p95": 0.5785085233388504,
+      "first": 0.6054236418801527,
+      "first_p95": 0.5970201919513661,
+      "gap_p95": 0.498856163752168,
+      "tok_s": 1.7276625736267535,
+      "visible": 0.6054236556402407
+    },
+    "same_fixed_work": true,
+    "text_digests_match": [
+      false,
+      false,
+      false
+    ]
+  },
+  "controller_fit_launch_verify_s": 0.920078604016453,
+  "factual_correct": 32,
+  "net_fixed_work_speed_ratio": 1.6851652167039888,
+  "quality_gate": true,
+  "retained": true,
+  "trace_sha256": "11c18071086288110c32331b768eaf6d40f1a58f4577e0e403c9f48dc5462cee",
+  "verified_allocation": true
+}

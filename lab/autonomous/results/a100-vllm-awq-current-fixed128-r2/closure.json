@@ -1,0 +1,7 @@
+{
+  "status": "closed_incomplete",
+  "reason": "The two independent lease deadlines terminated the original device before any full warm HTTP response series reached durable control storage. The control process observed an active K1 numerical startup. The later outcome on the lost device is unknown.",
+  "complete_http_wave_files_archived": 0,
+  "vllm_head_to_head_claim": false,
+  "different_device_requires_new_registration": true
+}

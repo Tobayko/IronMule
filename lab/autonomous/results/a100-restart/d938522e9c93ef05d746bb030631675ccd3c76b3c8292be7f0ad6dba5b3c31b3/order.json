@@ -1,0 +1,330 @@
+{
+  "schema": "ironmule.qwen-restart.v1",
+  "evaluator": "ironmule.qwen-restart.v1",
+  "base_commit": "33dc7bf544954f6c79a8a15536c0d6f5724b26a2",
+  "target": {
+    "path": "ironmule/ggml_engine.py",
+    "class": "GgmlEngine",
+    "function": "__init__",
+    "line": 772
+  },
+  "allowed_paths": [
+    "ironmule/ggml_engine.py"
+  ],
+  "binding": {
+    "fp": {
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "devices": [
+        {
+          "uuid": "8bada50eb8f2d9615369a30d9e1eade6",
+          "name": "NVIDIA A100-SXM4-80GB",
+          "cc": "80"
+        }
+      ],
+      "cc": "80",
+      "driver": "NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  595.112.07  Release Build  (dvs-builder@U22-I3-AL23-31-2)  Tue Oct 20 09:16:38 UTC 2026\nGCC version:  gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04.1)",
+      "generator": "93907e004deb7f362e3f34541944d4d5648cb26524c38580275dbd310ab8eae7",
+      "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:23:50_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0",
+      "kg": 4
+    },
+    "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+    "v": 2,
+    "src": "34e713dcabe8ca63f8ed40ed593737c69d295e3f16f637976a101ea56d5fdab0",
+    "tuner": "b4e12d47e97da944cdefb9bca305850403586fddf7f16b3ed217dea1502c20d9",
+    "native": {
+      "sha256": {
+        "llama_backend_init": "fa4e32ee305956a2784f1d50a2aedac37e785b868c81aae582e03523ba2eb93d",
+        "ggml_init": "e303cd5fd8b5c91fe2cdee645d05c3eec68d62bb5543eccc3f991905231b9e25",
+        "ggml_backend_reg_count": "0b6d8b436d368354286ce838eb03a80cf79f083c9f48bae3fa3a7daa5dd286f8",
+        "backend/CUDA": "2f1596d5f86626ad5da5609ebb0348bb678d4ca12eff1c8613533d1a007c13b0",
+        "backend/CPU": "b4136cf90d82fb68811a8a5d22686063fcbc9273196e917d3dd247c4f08ef8da"
+      }
+    },
+    "serving_sources": {
+      "ironmule/ggml_engine.py": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+      "ironmule/gguf_tokenizer.py": "0952416ffdff0e965be1e60f88a74ec35bdd194bcb1646187dca98dccbfb3a11",
+      "ironmule/pilot.py": "0e9fd82788171d9080afe16f7aa3e406c4045ee6e9976d6e46aa5b76e26fbef3"
+    },
+    "tuning_receipt_sha256": "a644004af5371c1cc5e06e9168a3682543374a1e72c0a48cc4bede4f1b43a548",
+    "w4_sha256": "9d88c60855453860a53b1daa74b4c21e8b67e93c76ad53d8c6d1fa1b3516f1e1",
+    "table_sha256": "ecd29307bb073d364aadd8941596b249d0a87ecf26c1fc846a82832269fca79e",
+    "source_sha256": "670c958add42cd138472c76a431a64d2ceb9b4c583320f48bdb292f42e6e8a8b",
+    "engine": {
+      "flash_attn": true,
+      "kv_unified": false,
+      "kv_f32": false
+    },
+    "mask": {
+      "lib": "kernel.so",
+      "entries": 256,
+      "tokens_served": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "step_ms_on": {
+        "1": 26.53,
+        "2": 25.5,
+        "3": 26.05,
+        "4": 27.01,
+        "5": 29.01,
+        "6": 29.48,
+        "7": 30.77,
+        "8": 31.4,
+        "16": 31.87,
+        "24": 35.75,
+        "32": 38.81
+      },
+      "step_ms_off": {
+        "1": 28.76,
+        "2": 33.49,
+        "3": 39.77,
+        "4": 47.37,
+        "5": 54.05,
+        "6": 60.16,
+        "7": 65.93,
+        "8": 79.69,
+        "16": 50.16,
+        "24": 56.8,
+        "32": 61.68
+      },
+      "q6k_tokens_served": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16,
+        24,
+        32
+      ],
+      "step_ms_q6k": {
+        "1": 25.15,
+        "2": 24.35,
+        "3": 24.02,
+        "4": 24.04,
+        "5": 24.76,
+        "6": 24.8,
+        "7": 24.96,
+        "8": 25.33,
+        "16": 27.03,
+        "24": 31.88,
+        "32": 33.64
+      }
+    }
+  },
+  "source_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+  "evidence": {
+    "historical_artifact": "lab/pk1/results/pod37/pk6_all.tgz",
+    "historical_sha256": "8f9611b216daa8545be194df9fe98d67528c2d9ceb77415cef59eba3a605fe6c",
+    "historical_startup_seconds": {
+      "warm_up": [
+        2.027133999974467,
+        1.975014999974519
+      ],
+      "check_argmax": [
+        0.1696160000283271,
+        0.171678000013344
+      ],
+      "measure_kg": [
+        18.064150999998674,
+        18.087734999950044
+      ],
+      "measure_pk2": [
+        18.641887999954633,
+        18.631340999971144
+      ],
+      "measure_passes": [
+        3.6740140001056716,
+        3.6809940000530332
+      ],
+      "measure_padding": [
+        2.2406329999212176,
+        2.2495270000072196
+      ]
+    },
+    "archive_arms": [
+      "K1",
+      "K2"
+    ],
+    "local_profile_ids": [
+      "155f86e7d5a5127af1388fa376217e00f17f3653bb33564e9c08737d93af3f6e",
+      "f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b"
+    ],
+    "local_mask_measurements": [
+      {
+        "lib": "kernel.so",
+        "entries": 256,
+        "tokens_served": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          16,
+          24,
+          32
+        ],
+        "step_ms_on": {
+          "1": 26.52,
+          "2": 25.32,
+          "3": 26.08,
+          "4": 26.74,
+          "5": 28.83,
+          "6": 29.54,
+          "7": 30.3,
+          "8": 31.01,
+          "16": 31.67,
+          "24": 35.61,
+          "32": 38.85
+        },
+        "step_ms_off": {
+          "1": 28.69,
+          "2": 33.53,
+          "3": 40.02,
+          "4": 47.39,
+          "5": 53.93,
+          "6": 59.9,
+          "7": 65.82,
+          "8": 79.59,
+          "16": 49.97,
+          "24": 56.45,
+          "32": 61.49
+        },
+        "q6k_tokens_served": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          16,
+          24,
+          32
+        ],
+        "step_ms_q6k": {
+          "1": 25.09,
+          "2": 24.32,
+          "3": 24.04,
+          "4": 23.99,
+          "5": 24.7,
+          "6": 24.72,
+          "7": 24.92,
+          "8": 24.93,
+          "16": 26.79,
+          "24": 31.21,
+          "32": 33.17
+        }
+      },
+      {
+        "lib": "kernel.so",
+        "entries": 256,
+        "tokens_served": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          16,
+          24,
+          32
+        ],
+        "step_ms_on": {
+          "1": 26.53,
+          "2": 25.5,
+          "3": 26.05,
+          "4": 27.01,
+          "5": 29.01,
+          "6": 29.48,
+          "7": 30.77,
+          "8": 31.4,
+          "16": 31.87,
+          "24": 35.75,
+          "32": 38.81
+        },
+        "step_ms_off": {
+          "1": 28.76,
+          "2": 33.49,
+          "3": 39.77,
+          "4": 47.37,
+          "5": 54.05,
+          "6": 60.16,
+          "7": 65.93,
+          "8": 79.69,
+          "16": 50.16,
+          "24": 56.8,
+          "32": 61.68
+        },
+        "q6k_tokens_served": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          16,
+          24,
+          32
+        ],
+        "step_ms_q6k": {
+          "1": 25.15,
+          "2": 24.35,
+          "3": 24.02,
+          "4": 24.04,
+          "5": 24.76,
+          "6": 24.8,
+          "7": 24.96,
+          "8": 25.33,
+          "16": 27.03,
+          "24": 31.88,
+          "32": 33.64
+        }
+      }
+    ],
+    "resolved_source_phase": "measure_kg",
+    "manual_prefill_threshold": 128,
+    "eligible": {
+      "measure_kg": "two matching on-device mask profiles",
+      "measure_pk2": null
+    },
+    "provenance": "Historical timings are from two earlier A100s starts. These local mask summaries are fresh. Current cold-start and serving gains are unmeasured."
+  },
+  "hypothesis": "Reduce repeated measure_kg time on a cold engine restart of an already qualified exact GPU/model/profile, while keeping ordinary serving and every missing/stale receipt fallback intact.",
+  "contract": {
+    "cpu_source": "replace only the named GgmlEngine.__init__ definition; same signature and fallbacks",
+    "cold": "fresh restricted process to completion of first fixed 32-client, 32-token mixed wave",
+    "warm": "second mixed wave and 18 factual checks on the same engine",
+    "gate": "two A/A observations then six alternating pairs, matching outputs/work, all cold wins, median cold gain >=2% and exceeds observed A/A variation, warm median time and p95 TTFT ratios <=1.02, host and device memory <=1.05x; signed stale-profile negative must fall back",
+    "scope": "repeat verified deployment startup only; no claim of faster warm generation"
+  },
+  "receipt_protocol": {
+    "path_env": "IRONMULE_KG_RESTART_RECEIPT",
+    "sha256_env": "IRONMULE_KG_RESTART_SHA256",
+    "schema": "ironmule.w4-restart-qualified.v1",
+    "fields": "schema, binding, mask, created_s, quality. binding has model_sha256, model_stat (list of st_dev, st_ino, st_size, st_mtime_ns, st_ctime_ns from the verified mounted GGUF), native (ggml_binary.identity()), fp (kernel_gen.fingerprint()), w4_sha256, table_sha256, settings (self.settings), seqs, seq_ctx, threads, max_rows, speculate, gpu_layers, affinity (sorted list), flags (exact effective full native execution flag dict), and measure_kg_sha256 (sha256(inspect.getsource(GgmlEngine.measure_kg).encode())). Native flags bound by name in binding.flags: IRONMULE_PS1, IRONMULE_PS1_WARM, IRONMULE_PS1_CONCAT, IRONMULE_PK6, IRONMULE_GGML_DH2, IRONMULE_SV5, IRONMULE_GGML_PACK, IRONMULE_GGML_UBATCH, IRONMULE_CUBLAS_MIN_ROWS, IRONMULE_CUDA_GRAPHS_ROWS.",
+    "quality": "quality.completed == 32, quality.facts == 18, quality.output_sha256 is 64 hex. mask is the original complete GgmlEngine.measure_kg() dict including both admitted width lists. Both outputs are already qualified in an unmodified reference on this machine. Only accept age 0..86400 seconds, a bound external SHA, valid values, equal model stat or independently rehash the GGUF, identical CUDA/native/build/env/geometry and W4+table bytes. Binding is from reference, not from candidate. The trusted broker selects/pins the receipt. Never trust arbitrary caller files.",
+    "fallback": "On missing/malformed/stale/nonmatching receipt, width/mask setter/getter discrepancy, disabled kernel_mask, KG4 explicit scope, or any missing identity, retain normal upstream behavior. No partial mask installation: restore original registers before measuring if application failed. Successful replay must set/read back both mask registers and restore the runtime state the measured path normally leaves. Emit self.kg['restart_profile_reused']=True ONLY on positive replay; do not change other performance, quality, calibration or budget criteria. The worker has no writable store."
+  },
+  "order_id": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3"
+}

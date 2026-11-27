@@ -1,0 +1,175 @@
+== 08:00:36 candidate b901f27 lab/w4bw: A100 session with one tuning run and three derived tables, automatic opt-in decisions, baseline 255a58f lab/w4bw: stop at once on a GPU older than sm_80
+== 08:00:36 1. kernels
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=1, NT=2, PX=1, MT=1, FP=1]" at line 778
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=1, NT=2, PX=1, MT=1, FP=1]" at line 1838
+/work/IronMule/native/kernels/w4mma.cu(613): warning #128-D: loop is not reachable
+          for (int nt = 0; nt < NT; nt++) {
+          ^
+          detected during:
+            instantiation of "void <unnamed>::w4p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, int, int, int, int) [with WARPS=4, KS=2, NT=2, PX=0, MT=1, FP=1]" at line 778
+            instantiation of "int <unnamed>::launch_p<WARPS,KS,NT,PX,MT,FP>(const uint8_t *, const half *, const float *, float *, float *, int, int, int, int, cudaStream_t) [with WARPS=4, KS=2, NT=2, PX=0, MT=1, FP=1]" at line 1838
+{"gpu_sm": "80", "achievable_read_gb_s": 1733.2, "compile_s": 138}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 8192, "B": 8, "count": 64, "us": 27.03, "gb_s": 872.7, "pct_peak": 50.4, "variant": 134, "ksplit": 1, "rel_err": 0.000177, "cfg": {"warps": 2, "ks": 1102, "nt": 1, "pre": 0}, "best_plain_us": 27.03, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[27.6, 110, 1], [28.62, 126, 1], [29.13, 108, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 8192, "B": 16, "count": 64, "us": 31.44, "gb_s": 750.5, "pct_peak": 43.3, "variant": 232, "ksplit": 1, "rel_err": 0.000336, "cfg": {"warps": 4, "ks": 30104, "nt": 2, "pre": 0}, "best_plain_us": 31.44, "best_ps_us": 32.61, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[32.2, 262, 8], [32.61, 291, 2], [32.67, 284, 4]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 8192, "B": 24, "count": 64, "us": 36.76, "gb_s": 641.8, "pct_peak": 37.0, "variant": 182, "ksplit": 4, "rel_err": 0.000355, "cfg": {"warps": 4, "ks": 30101, "nt": 3, "pre": 0}, "best_plain_us": 36.76, "best_ps_us": 37.58, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[37.07, 182, 8], [37.58, 296, 1], [38.14, 182, 2]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 8192, "B": 32, "count": 64, "us": 39.58, "gb_s": 596.1, "pct_peak": 34.4, "variant": 231, "ksplit": 4, "rel_err": 0.000359, "cfg": {"warps": 4, "ks": 40202, "nt": 4, "pre": 0}, "best_plain_us": 39.58, "best_ps_us": 44.29, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[40.4, 256, 8], [40.55, 256, 4], [41.83, 251, 4]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 1024, "B": 8, "count": 96, "us": 11.42, "gb_s": 258.3, "pct_peak": 14.9, "variant": 126, "ksplit": 1, "rel_err": 0.000233, "cfg": {"warps": 4, "ks": 1204, "nt": 1, "pre": 0}, "best_plain_us": 11.42, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[11.88, 159, 8], [12.34, 153, 8], [12.44, 154, 8]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 1024, "B": 16, "count": 96, "us": 12.39, "gb_s": 238.0, "pct_peak": 13.7, "variant": 235, "ksplit": 1, "rel_err": 0.000397, "cfg": {"warps": 16, "ks": 30116, "nt": 2, "pre": 0}, "best_plain_us": 12.39, "best_ps_us": 14.64, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[12.85, 233, 1], [14.03, 232, 1], [14.03, 234, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 1024, "B": 24, "count": 96, "us": 16.03, "gb_s": 184.0, "pct_peak": 10.6, "variant": 182, "ksplit": 8, "rel_err": 0.000395, "cfg": {"warps": 4, "ks": 30101, "nt": 3, "pre": 0}, "best_plain_us": 16.03, "best_ps_us": 16.33, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[16.18, 183, 8], [16.28, 179, 8], [16.33, 183, 4]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 1024, "B": 32, "count": 96, "us": 18.84, "gb_s": 156.5, "pct_peak": 9.0, "variant": 239, "ksplit": 1, "rel_err": 0.000397, "cfg": {"warps": 16, "ks": 30116, "nt": 4, "pre": 0}, "best_plain_us": 18.84, "best_ps_us": 21.91, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[18.89, 237, 1], [20.17, 236, 1], [20.28, 191, 8]]}
+{"l2": false, "kind": "Q4_K", "K": 8192, "N": 5120, "B": 8, "count": 64, "us": 25.7, "gb_s": 917.9, "pct_peak": 53.0, "variant": 128, "ksplit": 1, "rel_err": 0.000227, "cfg": {"warps": 4, "ks": 1104, "nt": 1, "pre": 0}, "best_plain_us": 25.7, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[27.29, 132, 1], [27.9, 108, 1], [28.11, 130, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 8192, "N": 5120, "B": 16, "count": 64, "us": 28.52, "gb_s": 827.3, "pct_peak": 47.7, "variant": 232, "ksplit": 1, "rel_err": 0.000379, "cfg": {"warps": 4, "ks": 30104, "nt": 2, "pre": 0}, "best_plain_us": 28.52, "best_ps_us": 30.11, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[30.11, 291, 4], [30.16, 284, 4], [30.21, 174, 4]]}
+{"l2": false, "kind": "Q4_K", "K": 8192, "N": 5120, "B": 24, "count": 64, "us": 34.3, "gb_s": 687.8, "pct_peak": 39.7, "variant": 182, "ksplit": 4, "rel_err": 0.000383, "cfg": {"warps": 4, "ks": 30101, "nt": 3, "pre": 0}, "best_plain_us": 34.3, "best_ps_us": 36.76, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[35.89, 182, 8], [36.51, 181, 1], [36.76, 298, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 8192, "N": 5120, "B": 32, "count": 64, "us": 38.76, "gb_s": 608.7, "pct_peak": 35.1, "variant": 256, "ksplit": 4, "rel_err": 0.000392, "cfg": {"warps": 4, "ks": 50100, "nt": 4, "pre": 0}, "best_plain_us": 38.76, "best_ps_us": 41.83, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[39.01, 257, 8], [39.99, 231, 8], [40.14, 256, 8]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 25600, "B": 8, "count": 128, "us": 55.6, "gb_s": 1326.0, "pct_peak": 76.5, "variant": 104, "ksplit": 1, "rel_err": 0.000229, "cfg": {"warps": 4, "ks": 1101, "nt": 1, "pre": 0}, "best_plain_us": 55.6, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[55.65, 98, 1], [57.29, 128, 1], [57.29, 140, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 25600, "B": 16, "count": 128, "us": 57.19, "gb_s": 1289.2, "pct_peak": 74.4, "variant": 284, "ksplit": 1, "rel_err": 0.0004, "cfg": {"warps": 4, "ks": 70141, "nt": 2, "pre": 0}, "best_plain_us": 57.19, "best_ps_us": 59.8, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[59.8, 316, 1], [60.11, 285, 1], [60.93, 286, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 25600, "B": 24, "count": 128, "us": 65.95, "gb_s": 1118.0, "pct_peak": 64.5, "variant": 293, "ksplit": 1, "rel_err": 0.000385, "cfg": {"warps": 2, "ks": 80201, "nt": 3, "pre": 1}, "best_plain_us": 68.1, "best_ps_us": 65.95, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[67.43, 294, 1], [68.1, 176, 1], [69.68, 295, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 5120, "N": 25600, "B": 32, "count": 128, "us": 75.32, "gb_s": 978.9, "pct_peak": 56.5, "variant": 184, "ksplit": 1, "rel_err": 0.000377, "cfg": {"warps": 2, "ks": 30201, "nt": 4, "pre": 0}, "best_plain_us": 75.32, "best_ps_us": 75.67, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[75.67, 302, 1], [77.06, 185, 1], [78.08, 303, 1]]}
+{"l2": false, "kind": "Q4_K", "K": 25600, "N": 5120, "B": 8, "count": 32, "us": 60.47, "gb_s": 1219.3, "pct_peak": 70.4, "variant": 128, "ksplit": 1, "rel_err": 0.000223, "cfg": {"warps": 4, "ks": 1104, "nt": 1, "pre": 0}, "best_plain_us": 60.47, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[62.62, 110, 8], [63.44, 96, 8], [63.44, 134, 8]]}
+{"l2": false, "kind": "Q4_K", "K": 25600, "N": 5120, "B": 16, "count": 32, "us": 65.48, "gb_s": 1125.9, "pct_peak": 65.0, "variant": 232, "ksplit": 1, "rel_err": 0.000374, "cfg": {"warps": 4, "ks": 30104, "nt": 2, "pre": 0}, "best_plain_us": 65.48, "best_ps_us": 68.86, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[68.51, 284, 4], [68.56, 174, 4], [68.86, 291, 4]]}
+{"l2": false, "kind": "Q4_K", "K": 25600, "N": 5120, "B": 24, "count": 32, "us": 79.67, "gb_s": 925.4, "pct_peak": 53.4, "variant": 182, "ksplit": 4, "rel_err": 0.000359, "cfg": {"warps": 4, "ks": 30101, "nt": 3, "pre": 0}, "best_plain_us": 79.67, "best_ps_us": 83.51, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[81.25, 182, 8], [81.46, 179, 8], [83.51, 296, 8]]}
+{"l2": false, "kind": "Q4_K", "K": 25600, "N": 5120, "B": 32, "count": 32, "us": 91.8, "gb_s": 803.1, "pct_peak": 46.3, "variant": 256, "ksplit": 4, "rel_err": 0.000356, "cfg": {"warps": 4, "ks": 50100, "nt": 4, "pre": 0}, "best_plain_us": 91.8, "best_ps_us": 99.94, "ps_bit_identical_to_v9": true, "ps_pairs": 8, "next": [[92.16, 256, 8], [92.26, 251, 8], [92.77, 231, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 25600, "N": 5120, "B": 8, "count": 32, "us": 84.53, "gb_s": 1272.0, "pct_peak": 73.4, "variant": 80, "ksplit": 4, "rel_err": 0.000354, "cfg": {"warps": 4, "ks": 11, "nt": 1, "pre": 0}, "best_plain_us": 84.53, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[85.2, 92, 8], [86.68, 92, 2], [86.89, 40, 2]]}
+{"l2": false, "kind": "Q6_K", "K": 25600, "N": 5120, "B": 16, "count": 32, "us": 86.17, "gb_s": 1247.8, "pct_peak": 72.0, "variant": 241, "ksplit": 1, "rel_err": 0.000356, "cfg": {"warps": 4, "ks": 30104, "nt": 2, "pre": 0}, "best_plain_us": 86.17, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[86.58, 270, 4], [90.88, 270, 8], [92.67, 192, 4]]}
+{"l2": false, "kind": "Q6_K", "K": 25600, "N": 5120, "B": 24, "count": 32, "us": 106.09, "gb_s": 1013.5, "pct_peak": 58.5, "variant": 206, "ksplit": 8, "rel_err": 0.000357, "cfg": {"warps": 4, "ks": 30202, "nt": 3, "pre": 0}, "best_plain_us": 106.09, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[108.08, 82, 4], [112.03, 207, 4], [113.25, 82, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 25600, "N": 5120, "B": 32, "count": 32, "us": 111.62, "gb_s": 963.3, "pct_peak": 55.6, "variant": 266, "ksplit": 4, "rel_err": 0.000356, "cfg": {"warps": 4, "ks": 50100, "nt": 4, "pre": 0}, "best_plain_us": 111.62, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[117.2, 266, 8], [117.4, 267, 8], [118.99, 269, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 1024, "B": 8, "count": 32, "us": 15.31, "gb_s": 280.9, "pct_peak": 16.2, "variant": 40, "ksplit": 8, "rel_err": 0.000209, "cfg": {"warps": 4, "ks": 2, "nt": 1, "pre": 0}, "best_plain_us": 15.31, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[15.31, 92, 8], [15.46, 44, 8], [15.46, 88, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 1024, "B": 16, "count": 32, "us": 16.03, "gb_s": 268.4, "pct_peak": 15.5, "variant": 270, "ksplit": 8, "rel_err": 0.000363, "cfg": {"warps": 4, "ks": 50100, "nt": 2, "pre": 0}, "best_plain_us": 16.03, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[16.44, 192, 8], [16.49, 93, 8], [16.49, 198, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 1024, "B": 24, "count": 32, "us": 18.18, "gb_s": 236.6, "pct_peak": 13.7, "variant": 90, "ksplit": 8, "rel_err": 0.000362, "cfg": {"warps": 8, "ks": 12, "nt": 3, "pre": 0}, "best_plain_us": 18.18, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[18.18, 206, 8], [18.38, 200, 8], [18.64, 94, 8]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 1024, "B": 32, "count": 32, "us": 19.76, "gb_s": 217.6, "pct_peak": 12.6, "variant": 214, "ksplit": 8, "rel_err": 0.000361, "cfg": {"warps": 4, "ks": 30202, "nt": 4, "pre": 0}, "best_plain_us": 19.76, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[20.02, 91, 8], [20.43, 83, 8], [20.79, 215, 4]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 151936, "B": 8, "count": 1, "us": 433.1, "gb_s": 1473.4, "pct_peak": 85.0, "variant": 80, "ksplit": 1, "rel_err": 0.000357, "cfg": {"warps": 4, "ks": 11, "nt": 1, "pre": 0}, "best_plain_us": 433.1, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[437.71, 84, 1], [438.22, 36, 1], [439.5, 92, 1]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 151936, "B": 16, "count": 1, "us": 442.52, "gb_s": 1442.0, "pct_peak": 83.2, "variant": 270, "ksplit": 1, "rel_err": 0.000353, "cfg": {"warps": 4, "ks": 50100, "nt": 2, "pre": 0}, "best_plain_us": 442.52, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[446.41, 271, 1], [453.99, 81, 1], [460.19, 198, 1]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 151936, "B": 24, "count": 1, "us": 484.56, "gb_s": 1316.9, "pct_peak": 76.0, "variant": 206, "ksplit": 1, "rel_err": 0.000355, "cfg": {"warps": 4, "ks": 30202, "nt": 3, "pre": 0}, "best_plain_us": 484.56, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[503.76, 82, 1], [522.29, 86, 1], [529.25, 207, 1]]}
+{"l2": false, "kind": "Q6_K", "K": 5120, "N": 151936, "B": 32, "count": 1, "us": 485.48, "gb_s": 1314.4, "pct_peak": 75.8, "variant": 269, "ksplit": 1, "rel_err": 0.000356, "cfg": {"warps": 4, "ks": 50200, "nt": 4, "pre": 0}, "best_plain_us": 485.48, "best_ps_us": null, "ps_bit_identical_to_v9": null, "ps_pairs": 0, "next": [[513.18, 267, 1], [516.97, 266, 1], [534.89, 269, 2]]}
+{"step_B": 8, "matmul_ms": 17.151, "gb": 19.315, "effective_gb_s": 1126.2, "pct_peak": 65.0}
+{"step_B": 16, "matmul_ms": 18.155, "gb": 19.316, "effective_gb_s": 1063.9, "pct_peak": 61.4}
+{"step_B": 24, "matmul_ms": 21.539, "gb": 19.316, "effective_gb_s": 896.8, "pct_peak": 51.7}
+{"step_B": 32, "matmul_ms": 24.091, "gb": 19.316, "effective_gb_s": 801.8, "pct_peak": 46.3}
+== 08:06:54 2. one tuning run with PS, three tables
+{"table": "base", "entries": 32, "ps_entries": 0, "w24_entries": 0}
+{"table": "cand", "entries": 40, "ps_entries": 0, "w24_entries": 8}
+{"table": "ps", "entries": 40, "ps_entries": 1, "w24_entries": 8}
+== 08:13:59 2a/2b. width 24 and PS
+PROBE {"label": "e_base", "pk2": {"min_rows": 256, "reason": "2.49x a packed burst, likelihood ratio 1.00073", "rows": 3552, "calibration": "equal", "burst_ms": {"0": 2820.8, "256": 1132.2, "512": 1132.3, "1024": 1132.4}}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 192, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 32], "step_ms_on": {"1": 27.1, "2": 26.9, "3": 26.28, "4": 26.85, "5": 29.04, "6": 29.9,
+WAVE {"width": 8, "seed": 0, "wall_s": 1.3995, "ttft_p50_ms": 751.1, "ttft_max_ms": 751.2, "tok_s": 182.9, "prefill": [[1908, 8, 0.7505]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 1.4206, "ttft_p50_ms": 774.1, "ttft_max_ms": 774.2, "tok_s": 180.2, "prefill": [[1844, 8, 0.7732]]}
+WAVE {"width": 8, "seed": 2, "wall_s": 1.4653, "ttft_p50_ms": 820.6, "ttft_max_ms": 820.6, "tok_s": 174.7, "prefill": [[1843, 8, 0.8197]]}
+WAVE {"width": 20, "seed": 0, "wall_s": 3.2033, "ttft_p50_ms": 1661.6, "ttft_max_ms": 1661.6, "tok_s": 199.8, "prefill": [[4738, 20, 1.6599]]}
+WAVE {"width": 20, "seed": 1, "wall_s": 3.1899, "ttft_p50_ms": 1653.4, "ttft_max_ms": 1653.5, "tok_s": 200.6, "prefill": [[4604, 20, 1.6513]]}
+WAVE {"width": 20, "seed": 2, "wall_s": 3.1388, "ttft_p50_ms": 1603.0, "ttft_max_ms": 1603.0, "tok_s": 203.9, "prefill": [[4607, 20, 1.6007]]}
+WAVE {"width": 24, "seed": 0, "wall_s": 3.5453, "ttft_p50_ms": 1970.4, "ttft_max_ms": 1970.4, "tok_s": 216.6, "prefill": [[5579, 24, 1.968]]}
+WAVE {"width": 24, "seed": 1, "wall_s": 3.5805, "ttft_p50_ms": 2006.9, "ttft_max_ms": 2006.9, "tok_s": 214.5, "prefill": [[5524, 24, 2.0043]]}
+WAVE {"width": 24, "seed": 2, "wall_s": 3.6018, "ttft_p50_ms": 2024.9, "ttft_max_ms": 2024.9, "tok_s": 213.2, "prefill": [[5524, 24, 2.0225]]}
+WAVE {"width": 32, "seed": 0, "wall_s": 3.5746, "ttft_p50_ms": 2615.0, "ttft_max_ms": 2615.0, "tok_s": 286.5, "prefill": [[7470, 32, 2.6118]]}
+WAVE {"width": 32, "seed": 1, "wall_s": 3.5535, "ttft_p50_ms": 2601.2, "ttft_max_ms": 2601.2, "tok_s": 288.2, "prefill": [[7369, 32, 2.5978]]}
+WAVE {"width": 32, "seed": 2, "wall_s": 3.3987, "ttft_p50_ms": 2445.8, "ttft_max_ms": 2445.8, "tok_s": 301.3, "prefill": [[7372, 32, 2.4424]]}
+STEPS {"label": "e_base", "decode_ms_by_rows": {"8": 20.434, "20": 49.035, "24": 50.316, "32": 30.223}}
+PROBE {"label": "e_cand", "pk2": {"min_rows": 256, "reason": "2.49x a packed burst, likelihood ratio 1.00073", "rows": 3552, "calibration": "equal", "burst_ms": {"0": 2819.2, "256": 1130.6, "512": 1130.6, "1024": 1131.7}}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 256, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32], "step_ms_on": {"1": 26.92, "2": 26.59, "3": 26.22, "4": 26.61, "5": 28.44, "6":
+WAVE {"width": 8, "seed": 0, "wall_s": 1.3941, "ttft_p50_ms": 747.1, "ttft_max_ms": 747.1, "tok_s": 183.6, "prefill": [[1908, 8, 0.7463]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 1.4196, "ttft_p50_ms": 772.1, "ttft_max_ms": 772.1, "tok_s": 180.3, "prefill": [[1844, 8, 0.7711]]}
+WAVE {"width": 8, "seed": 2, "wall_s": 1.4635, "ttft_p50_ms": 819.9, "ttft_max_ms": 819.9, "tok_s": 174.9, "prefill": [[1843, 8, 0.819]]}
+WAVE {"width": 20, "seed": 0, "wall_s": 2.4863, "ttft_p50_ms": 1663.3, "ttft_max_ms": 1663.3, "tok_s": 257.4, "prefill": [[4738, 20, 1.6616]]}
+WAVE {"width": 20, "seed": 1, "wall_s": 2.472, "ttft_p50_ms": 1655.0, "ttft_max_ms": 1655.0, "tok_s": 258.9, "prefill": [[4604, 20, 1.6529]]}
+WAVE {"width": 20, "seed": 2, "wall_s": 2.4243, "ttft_p50_ms": 1606.6, "ttft_max_ms": 1606.6, "tok_s": 264.0, "prefill": [[4607, 20, 1.6045]]}
+WAVE {"width": 24, "seed": 0, "wall_s": 2.8266, "ttft_p50_ms": 1970.7, "ttft_max_ms": 1970.7, "tok_s": 271.7, "prefill": [[5579, 24, 1.9681]]}
+WAVE {"width": 24, "seed": 1, "wall_s": 2.8599, "ttft_p50_ms": 2004.9, "ttft_max_ms": 2005.0, "tok_s": 268.5, "prefill": [[5524, 24, 2.0024]]}
+WAVE {"width": 24, "seed": 2, "wall_s": 2.8531, "ttft_p50_ms": 1998.1, "ttft_max_ms": 1998.1, "tok_s": 269.2, "prefill": [[5524, 24, 1.9955]]}
+WAVE {"width": 32, "seed": 0, "wall_s": 3.5662, "ttft_p50_ms": 2613.3, "ttft_max_ms": 2613.3, "tok_s": 287.1, "prefill": [[7470, 32, 2.6104]]}
+WAVE {"width": 32, "seed": 1, "wall_s": 3.508, "ttft_p50_ms": 2557.3, "ttft_max_ms": 2557.3, "tok_s": 291.9, "prefill": [[7369, 32, 2.5541]]}
+WAVE {"width": 32, "seed": 2, "wall_s": 3.3796, "ttft_p50_ms": 2421.6, "ttft_max_ms": 2421.7, "tok_s": 303.0, "prefill": [[7372, 32, 2.4184]]}
+STEPS {"label": "e_cand", "decode_ms_by_rows": {"8": 20.415, "20": 25.899, "24": 27.146, "32": 30.142}}
+PROBE {"label": "e_ps", "pk2": {"min_rows": 256, "reason": "2.49x a packed burst, likelihood ratio 1.00073", "rows": 3552, "calibration": "equal", "burst_ms": {"0": 2820.4, "256": 1131.6, "512": 1131.7, "1024": 1132.3}}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 256, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32], "step_ms_on": {"1": 26.89, "2": 26.68, "3": 26.18, "4": 26.61, "5": 28.46, "6": 2
+WAVE {"width": 24, "seed": 0, "wall_s": 2.7169, "ttft_p50_ms": 1877.2, "ttft_max_ms": 1877.2, "tok_s": 282.7, "prefill": [[5724, 24, 1.8752]]}
+WAVE {"width": 24, "seed": 1, "wall_s": 2.8392, "ttft_p50_ms": 2006.5, "ttft_max_ms": 2006.5, "tok_s": 270.5, "prefill": [[5524, 24, 2.004]]}
+WAVE {"width": 24, "seed": 2, "wall_s": 2.8285, "ttft_p50_ms": 1997.2, "ttft_max_ms": 1997.2, "tok_s": 271.5, "prefill": [[5524, 24, 1.9946]]}
+WAVE {"width": 32, "seed": 0, "wall_s": 3.5666, "ttft_p50_ms": 2615.7, "ttft_max_ms": 2615.8, "tok_s": 287.1, "prefill": [[7470, 32, 2.6128]]}
+WAVE {"width": 32, "seed": 1, "wall_s": 3.5043, "ttft_p50_ms": 2556.9, "ttft_max_ms": 2556.9, "tok_s": 292.2, "prefill": [[7369, 32, 2.5537]]}
+WAVE {"width": 32, "seed": 2, "wall_s": 3.3706, "ttft_p50_ms": 2421.4, "ttft_max_ms": 2421.4, "tok_s": 303.8, "prefill": [[7372, 32, 2.4181]]}
+STEPS {"label": "e_ps", "decode_ms_by_rows": {"24": 26.378, "32": 30.07}}
+== 08:18:09 2c. prompt-matmul path on the 8-client mix
+PROBE {"label": "e_pk_0", "pk2": {}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 256, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32], "step_ms_on": {"1": 26.65, "2": 26.51, "3": 26.12, "4": 26.56, "5": 28.44, "6": 29.22, "7": 30.21, "8": 30.8, "16": 32.04, "24": 36.67, "32": 39.75}, "step_ms_off": {"1": 28.95, "2": 33.27, "3": 39.52, "4": 47.13, "5": 53.92, "6": 59.67, "7": 65.45, "8": 79.35, "16
+WAVE {"width": 8, "seed": 0, "wall_s": 2.2289, "ttft_p50_ms": 1585.0, "ttft_max_ms": 1585.0, "tok_s": 114.9, "prefill": [[1908, 8, 1.5841]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 2.1735, "ttft_p50_ms": 1524.9, "ttft_max_ms": 1524.9, "tok_s": 117.8, "prefill": [[1844, 8, 1.5239]]}
+WAVE {"width": 8, "seed": 2, "wall_s": 2.2087, "ttft_p50_ms": 1565.9, "ttft_max_ms": 1565.9, "tok_s": 115.9, "prefill": [[1843, 8, 1.565]]}
+WAVE {"width": 8, "seed": 3, "wall_s": 2.2121, "ttft_p50_ms": 1568.0, "ttft_max_ms": 1568.0, "tok_s": 115.7, "prefill": [[1843, 8, 1.567]]}
+WAVE {"width": 8, "seed": 4, "wall_s": 2.187, "ttft_p50_ms": 1544.1, "ttft_max_ms": 1544.1, "tok_s": 117.1, "prefill": [[1843, 8, 1.5432]]}
+STEPS {"label": "e_pk_0", "decode_ms_by_rows": {"8": 20.425}}
+PROBE {"label": "e_pk_128", "pk2": {}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 256, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32], "step_ms_on": {"1": 26.87, "2": 26.67, "3": 26.2, "4": 26.62, "5": 28.48, "6": 29.27, "7": 30.16, "8": 30.85, "16": 32.1, "24": 36.64, "32": 39.89}, "step_ms_off": {"1": 29.09, "2": 33.4, "3": 39.69, "4": 47.32, "5": 54.06, "6": 59.86, "7": 65.51, "8": 79.48, "16
+WAVE {"width": 8, "seed": 0, "wall_s": 1.4057, "ttft_p50_ms": 752.5, "ttft_max_ms": 752.5, "tok_s": 182.1, "prefill": [[1908, 8, 0.7517]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 1.3647, "ttft_p50_ms": 718.6, "ttft_max_ms": 718.6, "tok_s": 187.6, "prefill": [[1844, 8, 0.7176]]}
+WAVE {"width": 8, "seed": 2, "wall_s": 1.4072, "ttft_p50_ms": 764.0, "ttft_max_ms": 764.0, "tok_s": 181.9, "prefill": [[1843, 8, 0.7631]]}
+WAVE {"width": 8, "seed": 3, "wall_s": 1.4096, "ttft_p50_ms": 763.0, "ttft_max_ms": 763.0, "tok_s": 181.6, "prefill": [[1843, 8, 0.7621]]}
+WAVE {"width": 8, "seed": 4, "wall_s": 1.3865, "ttft_p50_ms": 741.4, "ttft_max_ms": 741.4, "tok_s": 184.6, "prefill": [[1843, 8, 0.7404]]}
+STEPS {"label": "e_pk_128", "decode_ms_by_rows": {"8": 20.421}}
+PROBE {"label": "e_pk_1024", "pk2": {}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 256, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32], "step_ms_on": {"1": 26.74, "2": 26.53, "3": 26.16, "4": 26.6, "5": 28.5, "6": 29.22, "7": 30.18, "8": 30.88, "16": 32.31, "24": 37.0, "32": 40.21}, "step_ms_off": {"1": 29.39, "2": 33.36, "3": 39.65, "4": 47.25, "5": 53.97, "6": 59.74, "7": 65.5, "8": 79.6, "16"
+WAVE {"width": 8, "seed": 0, "wall_s": 1.4907, "ttft_p50_ms": 838.7, "ttft_max_ms": 838.8, "tok_s": 171.7, "prefill": [[1908, 8, 0.8375]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 1.425, "ttft_p50_ms": 778.2, "ttft_max_ms": 778.2, "tok_s": 179.6, "prefill": [[1844, 8, 0.7771]]}
+WAVE {"width": 8, "seed": 2, "wall_s": 1.4679, "ttft_p50_ms": 823.6, "ttft_max_ms": 823.6, "tok_s": 174.4, "prefill": [[1843, 8, 0.8226]]}
+WAVE {"width": 8, "seed": 3, "wall_s": 1.4635, "ttft_p50_ms": 817.1, "ttft_max_ms": 817.1, "tok_s": 174.9, "prefill": [[1843, 8, 0.8161]]}
+WAVE {"width": 8, "seed": 4, "wall_s": 1.4424, "ttft_p50_ms": 798.1, "ttft_max_ms": 798.1, "tok_s": 177.5, "prefill": [[1843, 8, 0.7972]]}
+STEPS {"label": "e_pk_1024", "decode_ms_by_rows": {"8": 20.417}}
+PROBE {"label": "e_pk_equal", "pk2": {"min_rows": 256, "reason": "2.49x a packed burst, likelihood ratio 1.00073", "rows": 3552, "calibration": "equal", "burst_ms": {"0": 2821.0, "256": 1133.0, "512": 1133.7, "1024": 1134.4}}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 256, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32], "step_ms_on": {"1": 26.74, "2": 26.57, "3": 26.11, "4": 26.51, "5": 28.35, 
+WAVE {"width": 8, "seed": 0, "wall_s": 1.3971, "ttft_p50_ms": 750.5, "ttft_max_ms": 750.5, "tok_s": 183.2, "prefill": [[1908, 8, 0.7497]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 1.4195, "ttft_p50_ms": 774.2, "ttft_max_ms": 774.2, "tok_s": 180.3, "prefill": [[1844, 8, 0.7733]]}
+WAVE {"width": 8, "seed": 2, "wall_s": 1.4642, "ttft_p50_ms": 820.4, "ttft_max_ms": 820.4, "tok_s": 174.8, "prefill": [[1843, 8, 0.8195]]}
+WAVE {"width": 8, "seed": 3, "wall_s": 1.4714, "ttft_p50_ms": 819.5, "ttft_max_ms": 819.5, "tok_s": 174.0, "prefill": [[1843, 8, 0.8186]]}
+WAVE {"width": 8, "seed": 4, "wall_s": 1.4432, "ttft_p50_ms": 797.5, "ttft_max_ms": 797.5, "tok_s": 177.4, "prefill": [[1843, 8, 0.7965]]}
+STEPS {"label": "e_pk_equal", "decode_ms_by_rows": {"8": 20.423}}
+PROBE {"label": "e_pk_mix", "pk2": {"min_rows": 128, "reason": "2.12x a packed burst, likelihood ratio 1.00073", "rows": 1908, "calibration": "mix", "burst_ms": {"0": 1587.3, "128": 748.9, "256": 751.0, "512": 840.0, "1024": 836.5}}, "kg": {"lib": "w4mma_sm80_v2_116d456ec925.so", "entries": 256, "tokens_served": [1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32], "step_ms_on": {"1": 26.79, "2": 26.69, "3": 26.2, "4": 26.65, "5": 2
+WAVE {"width": 8, "seed": 0, "wall_s": 1.3948, "ttft_p50_ms": 748.4, "ttft_max_ms": 748.4, "tok_s": 183.5, "prefill": [[1908, 8, 0.7476]]}
+WAVE {"width": 8, "seed": 1, "wall_s": 1.3631, "ttft_p50_ms": 716.8, "ttft_max_ms": 716.8, "tok_s": 187.8, "prefill": [[1844, 8, 0.7159]]}
+WAVE {"width": 8, "seed": 2, "wall_s": 1.4062, "ttft_p50_ms": 762.5, "ttft_max_ms": 762.5, "tok_s": 182.0, "prefill": [[1843, 8, 0.7616]]}
+WAVE {"width": 8, "seed": 3, "wall_s": 1.4083, "ttft_p50_ms": 761.5, "ttft_max_ms": 761.5, "tok_s": 181.8, "prefill": [[1843, 8, 0.7606]]}
+WAVE {"width": 8, "seed": 4, "wall_s": 1.3861, "ttft_p50_ms": 742.7, "ttft_max_ms": 742.7, "tok_s": 184.7, "prefill": [[1843, 8, 0.7417]]}
+STEPS {"label": "e_pk_mix", "decode_ms_by_rows": {"8": 20.399}}
+SUMMARY width24 steps base {'8': 20.434, '20': 49.035, '24': 50.316, '32': 30.223}
+SUMMARY width24 steps cand {'8': 20.415, '20': 25.899, '24': 27.146, '32': 30.142}
+SUMMARY ps steps {'24': 26.378, '32': 30.07} answers equal 167 of 168
+SUMMARY pk2 0 wall_s 2.2020 ttft_p50 1557.6 ttft_max 1557.6 calibration {}
+SUMMARY pk2 128 wall_s 1.3947 ttft_p50 747.9 ttft_max 747.9 calibration {}
+SUMMARY pk2 1024 wall_s 1.4579 ttft_p50 811.1 ttft_max 811.2 calibration {}
+SUMMARY pk2 equal wall_s 1.4391 ttft_p50 792.4 ttft_max 792.4 calibration {'min_rows': 256, 'reason': '2.49x a packed burst, likelihood ratio 1.00073', 'rows': 3552, 'calibration': 'equal', 'burst_ms': {'0': 2821.0, '256': 1133.0, '512': 1133.7, '1024': 1134.4}}
+SUMMARY pk2 mix wall_s 1.3917 ttft_p50 746.4 ttft_max 746.4 calibration {'min_rows': 128, 'reason': '2.12x a packed burst, likelihood ratio 1.00073', 'rows': 1908, 'calibration': 'mix', 'burst_ms': {'0': 1587.3, '128': 748.9, '256': 751.0, '512': 840.0, '1024': 836.5}}
+CAND_PS=
+CAND_PK2=mix
+== 08:21:55 3. HTTP: baseline, candidate, vLLM on this pod
+== 08:41:40 base startup 1182 s
+base 0 1 48.52 137.5 233.5 18/18 []
+base 0 8 164.31 852.2 855.3 18/18 []
+base 0 24 207.5 2076.0 2083.1 18/18 []
+base 0 32 273.11 2723.1 2730.4 18/18 []
+base 1 1 95.5 149.2 232.0 18/18 []
+base 1 8 172.06 871.3 873.3 18/18 []
+base 1 24 207.11 2073.8 2081.4 18/18 []
+base 1 32 266.35 2796.8 2808.1 18/18 []
+base 2 1 100.22 138.5 233.6 18/18 []
+base 2 8 163.54 884.5 888.5 18/18 []
+base 2 24 202.78 2138.7 2147.0 18/18 []
+base 2 32 279.88 2600.1 2609.3 17/18 [{'key': '20263169:arithmetic-2', 'expected': '198', 'answer': '200 - 2 = 198  \nSo, 33 * 6 = **198**'}]
+== 08:42:48 candidate extras: IRONMULE_GGML_SEQ_CTX=2048 IRONMULE_PK2_CALIBRATION=mix
+== 09:02:13 cand startup 1162 s
+cand 0 1 56.0 137.4 232.4 18/18 []
+cand 0 8 171.86 831.2 833.4 18/18 []
+cand 0 24 256.83 2044.0 2052.1 18/18 []
+cand 0 32 269.41 2732.1 2743.2 18/18 []
+cand 1 1 100.93 138.1 235.6 18/18 []
+cand 1 8 166.1 843.1 845.1 18/18 []
+cand 1 24 254.47 2104.3 2111.2 18/18 []
+cand 1 32 269.3 2720.6 2733.0 18/18 []
+cand 2 1 102.75 149.5 232.8 18/18 []
+cand 2 8 174.15 796.6 798.6 18/18 []
+cand 2 24 256.02 2085.2 2093.3 18/18 []
+cand 2 32 271.54 2714.1 2725.2 18/18 []
+vllm 0 1 51.86 127.7 206.4 18/18 []
+vllm 0 8 185.88 843.9 845.9 18/18 []
+vllm 0 24 254.8 1873.6 2319.6 18/18 []
+vllm 0 32 274.8 2036.6 3011.7 18/18 []
+vllm 1 1 52.03 133.4 203.9 18/18 []
+vllm 1 8 184.94 853.1 855.5 18/18 []
+vllm 1 24 259.77 1614.6 2263.6 18/18 []
+vllm 1 32 277.29 1616.8 2977.2 18/18 []
+vllm 2 1 52.14 130.1 203.2 18/18 []
+vllm 2 8 185.07 853.6 854.9 18/18 []
+vllm 2 24 254.6 1314.4 2325.0 18/18 []
+vllm 2 32 273.6 1689.7 3025.6 18/18 []
+== 09:06:28 A100-20261124-DONE

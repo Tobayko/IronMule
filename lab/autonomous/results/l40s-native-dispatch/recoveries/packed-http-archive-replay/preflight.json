@@ -1,0 +1,6 @@
+{
+  "attempted_work": 0,
+  "prior": "native-final/W1",
+  "reason": "Detached evaluator lacked its historical reference module and exited before allocating a model. The original packed program and workload are unchanged.",
+  "verified_archived_target_tok_s": 266.5495223670416
+}

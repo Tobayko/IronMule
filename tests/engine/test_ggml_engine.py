@@ -103,6 +103,8 @@ def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
     class Backend:
         device, ready, engine_configuration, execution_variant = "cpu", True, "ggml", "current_engine"
         ggml_gate = {"ratio": 1.003, "interval": [1.001, 1.0048], "passes": True, "seconds": 70,
+                     "kernel_profile": {"profile": "conservative", "flags": {}, "gguf_sha256": "bound",
+                                        "fallback_reason": "candidate failed"},
                      "streams": {"passes": False, "prefill_batch": {"matches": False, "calls": 2, "private": "text"},
                                  "diagnostic": {**diag.make("acceptance", "quality_rejected"), "log": "private"}},
                      "diagnostic": {**diag.make("acceptance", "quality_rejected"), "private_log": "private"},
@@ -125,6 +127,8 @@ def test_health_says_ggml_answers_may_differ_and_shows_its_gate(tmp_path):
         "passes": False, "grouped_greedy_match": False, "grouped_calls": 2,
         "diagnostic": diag.make("acceptance", "quality_rejected")}
     assert health["ggml"]["kernel_generation"] == Backend.ggml_gate["kernel_generation"]
+    assert health["ggml"]["kernel_profile"] == {"profile": "conservative", "flags": {},
+                                                "gguf_sha256": "bound", "fallback": True}
     assert health["ggml"]["gate"]["diagnostic"] == diag.make("acceptance", "quality_rejected")
     assert health["speculation"]["serving"] == "context" and health["speculation"]["learned"]["policy_version"] == 3
 
@@ -235,7 +239,8 @@ def _fake_gate_children(monkeypatch, option_nll, *, factual_regression=False):
                 assert kwargs["env"]["IRONMULE_PILOT"] == "0"
             if _json.loads(input)["reference"]:
                 assert kwargs["env"]["IRONMULE_KG_LIB"] == "" and kwargs["env"]["IRONMULE_KG5"] == "0"
-            if factual_regression and (settings != ggml_engine.DEFAULT_SETTINGS or kwargs["env"].get("IRONMULE_KG_LIB")):
+            if factual_regression and (settings != ggml_engine.DEFAULT_SETTINGS or kwargs["env"].get("IRONMULE_KG_LIB")
+                                       or kwargs["env"].get("IRONMULE_CUBLAS_MIN_ROWS", "0") != "0"):
                 facts[protocol[0].key] = False
             out = {"nll": [2.0] * 16 if settings == ggml_engine.DEFAULT_SETTINGS else option_nll,
                    "facts": facts, "repeat": facts if _json.loads(input)["reference"] else None}
@@ -288,6 +293,22 @@ def test_qg1_kg5_requires_actual_candidate_dispatch(monkeypatch, tmp_path):
     assert not result["streams"]["passes"]
     assert result["tried"][0]["factual"]["total"] == 32
     assert result["tried"][0]["factual"]["shape"] == "1024,32,8"
+
+
+def test_cublas_threshold_requalifies_default_settings_and_separates_cached_results(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.] * 16, factual_regression=True)
+    monkeypatch.setattr(ggml_engine, "gpu_layers", lambda: 999)
+    args = str(tmp_path), str(tmp_path / "m.gguf")
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("IRONMULE_CUBLAS_MIN_ROWS", "0")
+    stock = ggml_engine.gate(*args, cache=cache)
+    assert stock["passes"] and stock["tried"][-1]["basis"] == "identical_reference"
+    monkeypatch.setenv("IRONMULE_CUBLAS_MIN_ROWS", "128")
+    assert ggml_engine.gate_key(*args) != stock["key"]
+    altered = ggml_engine.gate(*args, cache=cache)
+    assert not altered["passes"] and not altered["tried"][-1]["factual"]["passes"]
 
 
 def test_qg1_cannot_choose_uncertified_generated_weights_at_default_settings(monkeypatch, tmp_path):
@@ -1141,7 +1162,8 @@ def test_serve_wires_cpu_pilot_learning_with_default_speculation(tmp_path, monke
     import types
 
     from ironmule import ggml_engine as ge
-    from ironmule_product import backend, cli
+    from ironmule.ggml_profiles import FLAGS
+    from ironmule_product import backend, cli, pinned_ggml
     from ironmule_product.ggml_bridge import GgmlBridge
     from ironmule_product.state import ProductStore
 
@@ -1157,6 +1179,14 @@ def test_serve_wires_cpu_pilot_learning_with_default_speculation(tmp_path, monke
     monkeypatch.setattr(ge, "available", lambda: None)
     monkeypatch.setattr(ge, "gpu_layers", lambda: 0)
     monkeypatch.setattr(ge, "gate", lambda *args, **kwargs: {"passes": True})
+    def qualify_in_test(device, args, spec, store):
+        # Execute the worker qualification under this test's GGUF and gate doubles.
+        assert device == "local"
+        with monkeypatch.context() as child:
+            for key in (*FLAGS, "IRONMULE_KG_LIB"):
+                child.delenv(key, raising=False)
+            return pinned_ggml.qualify(args, spec, store, False, {})
+    monkeypatch.setattr(cli, "_pinned_ggml_options", qualify_in_test)
     class Captured(Exception):
         pass
 
@@ -1302,3 +1332,325 @@ def test_receipted_long_group_cannot_jump_a_preceding_short_prompt():
     stock, grouped = schedule(False), schedule(True)
     assert [2, 3] in grouped
     assert [seq for call in stock for seq in call] == [seq for call in grouped for seq in call]
+
+
+def test_gb1_after_a_burst_a_lone_arrival_waits_for_the_rest_of_the_next_one(monkeypatch):
+    import time
+
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "GATHER_S", 0.02)
+    monkeypatch.setattr(ge, "GATHER_QUIET_S", 0.004)
+    monkeypatch.setattr(ge, "GATHER_BURST_S", 0.3)
+    monkeypatch.setattr(ge, "GATHER_BURST_QUIET_S", 0.06)
+
+    def first_call_seqs(recent_burst: bool) -> set[int]:
+        engine, fed, _ = _stub_engine()
+        engine.pack, engine.settings, engine.batch_cap = True, {"kv_unified": False}, 256
+        if recent_burst:
+            engine._burst_at = time.monotonic()
+        started = time.monotonic()
+        late = [Job([5, 6, 7], 2)]
+
+        def admit(room):  # the burst's second request reaches the server 15 ms after the first
+            return [late.pop()] if late and time.monotonic() - started > 0.015 else []
+
+        engine.run([Job([1, 2, 3], 2)], admit=admit)
+        if recent_burst:  # a group of two renews the memory; a lone request that waited in vain clears it
+            assert engine._burst_at > started
+            alone, _, _ = _stub_engine()
+            alone.pack, alone.settings, alone.batch_cap, alone._burst_at = True, {"kv_unified": False}, 256, time.monotonic()
+            alone.run([Job([1, 2, 3], 2)], admit=lambda room: [])
+            assert alone._burst_at == float("-inf")
+        return {s for _, _, s in fed[0]}
+
+    assert len(first_call_seqs(False)) == 1  # 4 ms without an arrival: the lone request starts at once
+    assert len(first_call_seqs(True)) == 2  # after a burst it waits with the burst's window and both start together
+
+
+def test_pk1c_the_window_expects_the_last_waves_size_and_ends_when_it_is_there(monkeypatch):
+    import time
+
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "GATHER_S", 0.02)
+    monkeypatch.setattr(ge, "GATHER_QUIET_S", 0.004)
+    monkeypatch.setattr(ge, "GATHER_BURST_S", 0.3)
+    monkeypatch.setattr(ge, "GATHER_BURST_QUIET_S", 0.025)
+    monkeypatch.setattr(ge, "GATHER_EXPECT_QUIET_S", 0.08)
+
+    def wave(on: bool):
+        monkeypatch.setattr(ge, "PK1C", on)
+        engine, fed, _ = _stub_engine()
+        engine.pack, engine.settings, engine.batch_cap = True, {"kv_unified": False}, 256
+        engine.run([Job([1, 2, 3], 2), Job([4, 5, 6], 2), Job([7, 8, 9], 2)], admit=lambda room: [])  # the last wave
+        assert engine._burst_peak == 3
+        fed.clear()
+        started = time.monotonic()
+        late = [Job([5, 6, 7], 2), Job([6, 7, 8], 2)]
+        given = []
+
+        def admit(room):  # as the service: one request first, the other two 40 ms later as joins
+            if late and time.monotonic() - started > 0.04:
+                given.append(time.monotonic())
+                out, late[:] = list(late), []
+                return out
+            return []
+
+        engine.run([Job([1, 2, 3], 2)], admit=admit)
+        return {s for _, _, s in fed[0]}, given
+
+    seqs, given = wave(True)
+    assert len(seqs) == 3  # 40 ms is longer than the 25 ms quiet gap, within the 80 ms it now waits for
+
+    # a wave whose window caught only its first request still renews the burst memory once the rest joined
+    monkeypatch.setattr(ge, "PK1C", True)
+    engine, fed, _ = _stub_engine()
+    engine.pack, engine.settings, engine.batch_cap = True, {"kv_unified": False}, 256
+    started = time.monotonic()
+    late = [Job([5, 6, 7], 2), Job([6, 7, 8], 2)]
+    # the window (no memory yet) starts the first request alone; the other two join after its prefill call
+    engine.run([Job([1, 2, 3], 2)], admit=lambda room: [late.pop() for _ in range(len(late))] if fed else [])
+    assert len({s for _, _, s in fed[0]}) == 1
+    assert engine._burst_peak == 3 and engine._burst_at > started
+    seqs, _ = wave(False)
+    assert len(seqs) == 1  # PK1-C off: the window closed before the joins came
+
+
+def test_px1_a_packed_group_keeps_the_same_prefix_when_that_saves_passes(monkeypatch):
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job, split_passes
+
+    monkeypatch.setenv("IRONMULE_PS1", "0")  # PX1 decides only where the passes stay separate
+
+    # llama.cpp's sequential split: equal lengths in consecutive streams make one pass, unequal ones several
+    assert split_passes({0: 30, 1: 30, 2: 30}, 8192) == 1
+    assert split_passes({0: 30, 1: 22, 2: 30}, 8192) == 3  # after 22, streams 0 and 2 are no longer consecutive
+    assert split_passes({0: 33, 1: 25, 2: 33, 3: 444, 4: 436}, 8192) == 5
+
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.batch_cap = 8192
+    engine.px1 = True
+    monkeypatch.setattr(ge, "UBATCH", 8192)
+    group = [(0, Job(list(range(33)), 2), 3), (1, Job(list(range(33)), 2), 11), (2, Job(list(range(444)), 2), 3),
+             (3, Job(list(range(444)), 2), 11)]
+    engine.reused_tokens = 28
+    evened = engine._even_reuse(group)
+    assert [keep for _, _, keep in evened] == [3, 3, 3, 3]  # 2 passes instead of 4 for 16 rows recomputed
+    assert sorted(removed) == [(1, 3, -1), (3, 3, -1)] and engine.reused_tokens == 12
+    assert [job.reused for _, job, _ in evened] == [0, 3, 0, 3]  # only the cut streams' records change
+
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.batch_cap = 8192
+    engine.px1 = True
+    far = [(0, Job(list(range(300)), 2), 0), (1, Job(list(range(300)), 2), 200)]
+    assert engine._even_reuse(far) == far and removed == []  # 200 rows for one pass saved: not worth it
+
+    engine.px1 = False
+    assert engine._even_reuse(group) == group
+
+
+def test_pk2_m_mix_calibration_times_half_short_half_long_prompts(monkeypatch):
+    import types
+
+    from ironmule import ggml_engine as ge
+
+    def calibrate(mode):
+        monkeypatch.setattr(ge, "PK2_CALIBRATION", mode)
+        thresholds = []
+        monkeypatch.setattr(ge, "pk2_set_min_rows", lambda rows: thresholds.append(rows) or 0)
+        engine = ge.GgmlEngine.__new__(ge.GgmlEngine)
+        engine.gpu_layers, engine.pack, engine.seqs, engine.seq_ctx, engine.vocab = 999, True, 32, 2048, None
+        engine.L = types.SimpleNamespace(llama_vocab_bos=lambda vocab: 1)
+        engine.tokenize = lambda text: list(range(5000))
+        engine._clear = lambda: None
+        seen = []
+        engine._pack_prefill = lambda group: seen.append(sorted(len(job.ids) for _, job, _ in group))
+        engine.chunk_nll = lambda chunk, prefix: 1.0
+        out = engine.measure_pk2(repeats=1)
+        return out, seen[-1], set(thresholds)
+
+    out, lengths, tried = calibrate("equal")
+    assert lengths == [444] * 8 and out["calibration"] == "equal" and 128 not in tried
+    out, lengths, tried = calibrate("mix")
+    assert lengths == [33] * 4 + [444] * 4 and out["rows"] == 4 * 33 + 4 * 444
+    assert out["calibration"] == "mix" and 128 in tried
+
+
+def _pod_pass_costs():
+    """PX2: pass costs shaped as pods 32/33's 186 packed calls fit (16.5 ms + 0.98 ms a row under PK2's 128-row cuBLAS
+    threshold, 91 ms + 0.287 ms a row from it on), at the sizes the engine measures."""
+    from ironmule.ggml_engine import PassCosts
+
+    small = lambda r: (16.45 + 0.978 * r) / 1000  # noqa: E731
+    big = lambda r: (91.15 + 0.2869 * r) / 1000  # noqa: E731
+    return PassCosts({1: small(1), 8: small(8), 16: small(16), 32: small(32), 127: small(127), 128: big(128),
+                      256: big(256), 1024: big(1024)})
+
+
+def test_px2_prices_the_passes_each_kept_prefix_level_would_make(monkeypatch):
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job, split_shapes
+
+    monkeypatch.setenv("IRONMULE_PS1", "0")
+
+    monkeypatch.setattr(ge, "UBATCH", 8192)
+    assert split_shapes({0: 33, 1: 25, 2: 33, 3: 444, 4: 436}, 8192) == [125, 8, 24, 806, 8]
+    costs = _pod_pass_costs()
+    assert abs(costs(6576) - (91.15 + 0.2869 * 6576) / 1000) < 1e-6  # beyond the largest size: its slope
+
+    def engine_with_costs():
+        engine, fed, removed = _stub_engine(seqs=32)
+        engine.batch_cap, engine.px1, engine.pass_costs = 16384, True, costs
+        return engine, removed
+
+    # the benchmark's later waves: 16 short and 16 long prompts, template prefixes of 0-12 tokens per stream; every
+    # stream is cut to the lowest level, 0 here, so that the group runs as 2 passes
+    keeps = [3, 11, 12, 3, 11, 12, 0, 12, 3, 11, 12, 3, 11, 12, 3, 11] * 2
+    group = [(i, Job(list(range(33 if i < 16 else 444)), 2), keeps[i]) for i in range(32)]
+    engine, removed = engine_with_costs()
+    assert ge.split_passes({s: len(j.ids) - k for s, j, k in group}, 8192) > 2
+    evened = engine._even_reuse(group)
+    assert {keep for _, _, keep in evened} == {0} and len({s for s, _, _ in removed}) == 30
+    assert ge.split_passes({s: len(j.ids) - k for s, j, k in evened}, 8192) == 2
+
+    # 80 rows for 2 passes saved: the fixed limit (64) refuses them, the measured costs take them (3 passes of 60-80
+    # rows cost about 264 ms, one of 300 rows about 177 ms)
+    three = [(0, Job(list(range(100)), 2), 0), (1, Job(list(range(100)), 2), 80), (2, Job(list(range(100)), 2), 0)]
+    engine, removed = engine_with_costs()
+    assert split_shapes({s: len(j.ids) - k for s, j, k in three}, 8192) == [60, 80, 80]
+    assert [keep for _, _, keep in engine._even_reuse(three)] == [0, 0, 0] and removed == [(1, -1, -1)]
+    engine, removed = engine_with_costs()
+    engine.pass_costs = None  # the safe fallback: the fixed limit decides, and refuses
+    assert engine._even_reuse(three) == three and removed == []
+
+    # a large reusable prefix (a shared 1,000-token system prompt): the level that keeps it is chosen, not the lowest
+    big = [(0, Job(list(range(1100)), 2), 1000), (1, Job(list(range(1100)), 2), 1012),
+           (2, Job(list(range(1100)), 2), 1000), (3, Job(list(range(1100)), 2), 0)]
+    engine, removed = engine_with_costs()
+    evened = engine._even_reuse(big)
+    assert [keep for _, _, keep in evened] == [1000, 1000, 1000, 0] and removed == [(1, 1000, -1)]
+
+    # unequal prompt lengths whose split cutting cannot shorten: nothing is recomputed
+    uneven = [(0, Job(list(range(40)), 2), 5), (1, Job(list(range(400)), 2), 0)]
+    engine, removed = engine_with_costs()
+    assert engine._even_reuse(uneven) == uneven and removed == []
+
+    # 200 rows for one large pass saved: by the measured costs worth it (91 ms against 57 ms), by the fixed limit not
+    far = [(0, Job(list(range(300)), 2), 0), (1, Job(list(range(300)), 2), 200)]
+    engine, removed = engine_with_costs()
+    assert [keep for _, _, keep in engine._even_reuse(far)] == [0, 0]
+    engine, removed = engine_with_costs()
+    engine.pass_costs = ge.PassCosts({1: 0.020, 8: 0.021, 256: 0.020 + 0.5, 1024: 0.020 + 2.0})  # rows are dear here
+    assert engine._even_reuse(far) == far and removed == []
+
+
+def test_px2_measures_passes_of_its_own_sizes_with_logits_on_the_last_row(monkeypatch):
+    import types
+
+
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.seq_ctx = engine.batch_cap = 2048
+    engine.batch = types.SimpleNamespace(token=[0] * 2048, pos=[0] * 2048, n_seq_id=[0] * 2048, logits=[0] * 2048,
+                                         seq_id=[[0] for _ in range(2048)], n_tokens=0)
+    engine.L.llama_vocab_bos = lambda vocab: 1
+    one = engine.L.llama_get_logits_ith
+    engine.L.llama_get_logits_ith = lambda ctx, i: one(ctx, 0)  # the stub holds 64 logit rows
+    asked: list[list[int]] = []
+    real = engine._decode
+
+    def decode(rows, **kw):
+        asked.append([i for i, row in enumerate(rows) if row[3]])
+        return real(rows, **kw)
+    engine._decode = decode
+    engine.pk2 = {"min_rows": 128}
+    costs = engine.measure_pass_costs(repeats=1)
+    sizes = [r for r, _ in costs.points]
+    assert sizes == [1, 8, 16, 32, 127, 128, 256, 1024]  # small, both sides of the cuBLAS threshold, two large
+    measured = [rows for rows in asked if len(fed[asked.index(rows)]) in sizes]
+    assert all(rows == [len(fed[asked.index(rows)]) - 1] for rows in measured)  # logits on the last row only
+    engine.seq_ctx = engine.batch_cap = 64  # no room for the sizes: PX1's fixed limit decides
+    assert engine.measure_pass_costs(repeats=1) is None
+
+
+def test_ps1_keeps_every_kept_prefix_since_the_passes_share_one_call(monkeypatch):
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setenv("IRONMULE_PS1", "1")
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.batch_cap, engine.px1, engine.pass_costs = 8192, True, _pod_pass_costs()
+    group = [(0, Job(list(range(33)), 2), 3), (1, Job(list(range(33)), 2), 11), (2, Job(list(range(444)), 2), 3),
+             (3, Job(list(range(444)), 2), 11)]
+    assert engine._even_reuse(group) == group and removed == []  # nothing recomputed
+    monkeypatch.setenv("IRONMULE_PS1", "0")
+    assert [keep for _, _, keep in engine._even_reuse(group)] == [3, 3, 3, 3]  # separate passes: PX2 evens them
+
+
+def test_ps1_and_pk6_are_on_by_default_without_warm_up_dh2_and_sv5():
+    import subprocess
+    import sys
+
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("IRONMULE_PS1", "IRONMULE_PS1_WARM", "IRONMULE_GGML_DH2", "IRONMULE_PK6", "IRONMULE_SV5")}
+    code = ("import os; from ironmule import ggml_engine as g; from ironmule_product import worker as w; "
+            "print(g.PS1, g.PS1_WARM, g.DH2, os.environ['IRONMULE_PS1'], g.PK6, os.environ['IRONMULE_PK6'], w._sv5_on())")
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True).stdout.split()
+    assert out == ["True", "0", "False", "1", "True", "1", "False"]  # the configuration pod 37 measured (K = PK6)
+
+
+def test_dh2_delivers_every_token_in_order_and_the_last_from_the_engine_thread(monkeypatch):
+    import threading
+
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "DH2", True)
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.gpu_layers = 1
+    seen: dict[int, list[tuple[int, bool]]] = {0: [], 1: []}
+    main = threading.get_ident()
+    jobs = []
+    for k in range(2):
+        job = Job([1, 2, 3 + k], 5)
+        job.emit = (lambda k: lambda token: seen[k].append((token, threading.get_ident() == main)))(k)
+        jobs.append(job)
+    out = engine.run(jobs)
+    assert [j.tokens for j in out] == [[7] * 5, [7] * 5]
+    assert [t for t, _ in seen[0]] == [7] * 5 and [t for t, _ in seen[1]] == [7] * 5  # all delivered, in order
+    assert seen[0][-1][1] and seen[1][-1][1]  # the last token (and its done frame) on the engine thread
+    assert not all(on_main for on_main, in [(m,) for _, m in seen[0][:-1]])  # the others on the emitter
+
+    broken = ge._Emitter()
+    broken.put(lambda token: 1 / 0, 7)
+    try:
+        broken.close()
+    except ZeroDivisionError:
+        pass
+    else:
+        raise AssertionError("a delivery error is raised by close()")
+
+
+def test_dh2_a_failed_token_delivery_fails_the_run(monkeypatch):
+    """Codex review on #57: the emitter's error was swallowed (the check of sys.exc_info() ran inside its own
+    except); a run whose intermediate token delivery failed now raises it."""
+    import pytest
+
+    from ironmule import ggml_engine as ge
+    from ironmule.ggml_engine import Job
+
+    monkeypatch.setattr(ge, "DH2", True)
+    engine, fed, removed = _stub_engine(seqs=4)
+    engine.gpu_layers = 1
+    calls = []
+
+    def emit(token):
+        calls.append(token)
+        if len(calls) == 2:  # an intermediate token, delivered on the emitter thread
+            raise ZeroDivisionError("delivery failed")
+
+    job = Job([1, 2, 3], 5)
+    job.emit = emit
+    with pytest.raises(ZeroDivisionError):
+        engine.run([job])

@@ -1,0 +1,1 @@
+{"passed": false, "exit_code": 1, "automatic_withdrawal": {"arm": "reference", "reason": "startup workload failed: qualified startup receipt changed or expired", "withdrawn": true}, "incumbent_returned_work": false, "observed_error": "restart binding differs from calibrated target", "original_order": "d938522e9c93ef05d746bb030631675ccd3c76b3c8292be7f0ad6dba5b3c31b3"}

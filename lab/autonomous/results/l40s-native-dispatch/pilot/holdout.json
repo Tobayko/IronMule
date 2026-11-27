@@ -1,0 +1,36 @@
+{
+  "median_cpu_decision_us": 16.259999999999998,
+  "scope": "Each held-out geometry/width is weighted once. The comparison is of operators before system qualification.",
+  "strategies": {
+    "cpu_pilot": {
+      "choices": 24,
+      "fastest_choices": 7,
+      "relative_to_best_measured": 1.0764682231050215,
+      "sum_best_observed_us": 6441.63,
+      "sum_operator_us": 6934.21
+    },
+    "fp8": {
+      "choices": 24,
+      "fastest_choices": 17,
+      "relative_to_best_measured": 1.2629885603488558,
+      "sum_best_observed_us": 6441.63,
+      "sum_operator_us": 8135.705
+    },
+    "random_initialization": {
+      "choices": 24,
+      "fastest_choices": 7,
+      "relative_to_best_measured": 1.0764682231050215,
+      "sum_best_observed_us": 6441.63,
+      "sum_operator_us": 6934.21
+    },
+    "stock": {
+      "choices": 24,
+      "fastest_choices": 7,
+      "relative_to_best_measured": 1.0764682231050215,
+      "sum_best_observed_us": 6441.63,
+      "sum_operator_us": 6934.21
+    }
+  },
+  "switched_after_training": 0,
+  "weights": "f0d645647583d9bb54cb75d7d9979ace5931026116daffcf4718ad394e8b9080"
+}

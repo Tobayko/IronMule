@@ -90,6 +90,55 @@ def test_the_load_rereads_open_files_and_close_releases_them():
     load.close()  # twice is fine
 
 
+def test_scoped_linux_load_excludes_foreign_cpus_and_double_counted_guest_ticks(monkeypatch):
+    monkeypatch.setattr(pl.os, "sched_getaffinity", lambda _: {0, 2})
+    load = pl.CpuLoad("affinity")
+    system, _ = load._fds
+    values = b"cpu 800 0 0 0 0 0 0 0\ncpu0 80 1 2 3 4 5 6 7 8 9\ncpu1 99 0 0 0 0 0 0 0\ncpu2 10 0 0 0 0 0 0 0\n"
+    proc = b"123 (runtime thread) " + b"0 " * 11 + b"11 12 0"
+    monkeypatch.setattr(pl.os, "pread", lambda fd, n, off: values if fd == system else proc)
+    try:
+        assert load._read()[1:] == (111, 23)
+        monkeypatch.setattr(pl.os, "sched_getaffinity", lambda _: {1, 3})
+        assert np.isnan(load.update()) and load._last is None
+    finally:
+        load.close()
+
+
+def test_scoped_thread_learning_separates_equal_width_cpu_sets(tmp_path):
+    from ironmule.pilot_learning import ThreadLearning
+
+    fake = types.SimpleNamespace(cores=2)
+    engine = types.SimpleNamespace(pilot=fake, settings={}, seqs=4, seq_ctx=512, shared=False, cap=4)
+    host = ThreadLearning(engine, tmp_path, "model", "weights")
+    fake.load = types.SimpleNamespace(scope_binding={"reader": "linux-affinity-v1", "cpus": [0, 1]})
+    left = ThreadLearning(engine, tmp_path, "model", "weights")
+    fake.load.scope_binding = {"reader": "linux-affinity-v1", "cpus": [2, 3]}
+    right = ThreadLearning(engine, tmp_path, "model", "weights")
+    assert len({p.binding for p in (host, left, right)}) == 3
+    assert len({p.policy.path for p in (host, left, right)}) == 3
+
+
+def test_shipped_head_keeps_host_feature_during_a_scoped_trial(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRONMULE_PILOT_CPU_LOAD", "affinity")
+    pilot = pl.Pilot(engine(), COSTS, max_cap=4, weights=weights(tmp_path))
+    monkeypatch.setattr(pilot.load, "update", lambda: 0.)
+    monkeypatch.setattr(pilot.base_load, "update", lambda: pilot.cores)
+    original = pl.predict
+    inputs = []
+
+    def capture(weights, features):
+        inputs.append(features[7])
+        return original(weights, features)
+
+    try:
+        monkeypatch.setattr(pl, "predict", capture)
+        pilot.decide(1, 0, 0, 97)
+        assert inputs == [1.] and pilot.features(1, 0, 0, 97)[7] == 0.
+    finally:
+        pilot.close()
+
+
 def test_weights_for_the_four_budgets_of_version_1_are_refused(tmp_path):
     path = weights(tmp_path)
     z = dict(np.load(path))
@@ -211,3 +260,73 @@ def test_qualified_concurrent_thread_weights_are_local_to_load_and_width(tmp_pat
     assert learner.choose(96, 1.1, 3, 1) == 3
     assert learner.choose(96, 1.1, 3, 5) == 3
     assert learner.status()["model"]["observations"] == 3
+
+
+def test_scratch_thread_candidate_requires_local_replay_and_survives_foreign_checkpoint(tmp_path, monkeypatch):
+    from ironmule.pilot_learning import MIN_STEPS, ThreadLearning
+
+    monkeypatch.setattr(pl, "usable_cores", lambda: 4)
+    pilot = pl.Pilot(engine(), COSTS, max_cap=2, weights=weights(tmp_path))
+    e = types.SimpleNamespace(settings={}, seqs=2, seq_ctx=512, shared=False, cap=2, pilot=pilot)
+    try:
+        policy = ThreadLearning(e, tmp_path, "model", "base")
+        scratch = tmp_path / "candidate.npz"
+        # The only high logit selects three threads. The base has one.
+        with np.load(pilot.weights_path) as z:
+            np.savez(scratch, binding=policy.binding, version=1,
+                     **{k: z[k] for k in ("w1", "b1", "w2", "b2")},
+                     w3=np.zeros((8, 128), np.float32), b3=np.array([0, 0, 0, 0, 0, 8, 0, 0], np.float32))
+        monkeypatch.setenv("IRONMULE_PILOT_THREAD_CANDIDATE", str(scratch))
+        learner = ThreadLearning(e, tmp_path, "model", "base")
+        assert learner.thread_candidate is not None
+        monkeypatch.setattr(learner, "_probe", lambda ctx, base, n, seed, cancel: (0.7 if n == 3 else 1.0, (3, 1)))
+        for _ in range(MIN_STEPS):
+            assert learner.choose(90, 0, 1) == 1
+        learner.idle(lambda: False)
+        assert learner.candidate_status["threads"] == learner.choose(90, 0, 1) == 3
+        report = learner.status()["thread_decision"]
+        assert report["reason"] == "locally qualified" and report["eligible_threads"] == [1, 3]
+        assert report["profile"]["threads"] == 3 and report["profile"]["sequence_rows"] == 1
+        assert report["qualification"]["windows"] == 4 and report["profile"]["binding"] == learner.binding
+        # A qualified offset can still cost more than its most conservative timed saving.
+        learner.margins["1:1:1:0"]["min_gain_after_noise_us_per_step"] = 1e-12
+        assert learner.choose(90, 0, 1) == 1
+        assert learner.status()["thread_decision"]["reason"] == "decision cost exceeds measured headroom"
+        learner.margins["1:1:1:0"]["min_gain_after_noise_us_per_step"] = 0.0
+        assert learner.choose(90, 0, 1) == 1
+        assert learner.status()["thread_decision"]["reason"] == "gain within observed timing noise"
+        assert learner.choose(90, 1, 1) == 1
+        assert learner.status()["thread_decision"]["uncertainty"] == "unknown"
+        assert ThreadLearning(e, tmp_path, "model", "base").choose(90, 0, 1) == 1
+        other = ThreadLearning(e, tmp_path, "other-model", "base")
+        assert other.thread_candidate is None and not other.proposals
+        learner._load_candidate(tmp_path / "missing.npz")
+        assert learner.thread_decision() is None and not learner.weights and not learner.margins
+        assert learner.choose(90, 0, 1) == 1
+    finally:
+        pilot.close()
+
+
+def test_bound_archive_checkpoint_loads_only_at_idle_and_is_not_an_activation(tmp_path, monkeypatch):
+    from ironmule.pilot_learning import ThreadLearning
+
+    monkeypatch.delenv("IRONMULE_PILOT_THREAD_CANDIDATE", raising=False)
+    p = pl.Pilot(engine(), COSTS, max_cap=2, weights=weights(tmp_path))
+    e = types.SimpleNamespace(settings={}, seqs=2, seq_ctx=512, shared=False, cap=2, pilot=p)
+    try:
+        learning = ThreadLearning(e, tmp_path, "model", "base")
+        path = learning.path.with_suffix(".candidate.npz")
+        path.parent.mkdir(exist_ok=True)
+        with np.load(p.weights_path) as base:
+            np.savez(path, binding=learning.binding, version=1, **{k: base[k] for k in ("w1", "b1", "w2", "b2")},
+                     w3=np.zeros((8, 128), np.float32), b3=np.ones(8, np.float32))
+        learning.idle(lambda: True)
+        assert learning.thread_candidate is None
+        learning.idle(lambda: False)
+        assert learning.thread_candidate is not None and not learning.weights
+        # Removing the source returns serving to the base and clears all old qualifications.
+        path.unlink()
+        learning.idle(lambda: False)
+        assert learning.thread_candidate is None and not learning.weights and not learning.margins
+    finally:
+        p.close()

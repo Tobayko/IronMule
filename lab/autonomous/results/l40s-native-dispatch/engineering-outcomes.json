@@ -1,0 +1,23 @@
+[
+  {
+    "exit_code": 1,
+    "job": "w4-bounded-retry",
+    "label_eligible": false,
+    "reason": "calibration logger did not accept flush",
+    "retry": "native-w4-retry-2"
+  },
+  {
+    "exit_code": 1,
+    "job": "run-draft-mix",
+    "label_eligible": false,
+    "reason": "instrumentation matched multiple source locations before any model load",
+    "retry": "run-draft-mix-v2"
+  },
+  {
+    "exit_code": -15,
+    "job": "matched-native-grid",
+    "label_eligible": false,
+    "reason": "stopped before GPU measurement to specialize the native XY device branch",
+    "retry": "matched-native-grid-v2"
+  }
+]

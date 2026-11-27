@@ -1,0 +1,22 @@
+{
+  "reason": "yield exclusive device at qualification to pending EPYC work before target activation",
+  "remote_job": "restart-d938522e9c93ef05d7",
+  "remote_running": true,
+  "at_s": 1795658784.1119742,
+  "receipts": {
+    "aa-0.json": "257ab20d38e0fe29b6900edfaaeb6cbbbb696501d58c22553962a88995de3517",
+    "aa-1.json": "2789e82c8ca05fb8b7d7823b8a98a640f09e33d3276af931ea5709e8ddbf1d93",
+    "cand-0.json": "f82a05389d820e8fdaa7eb0f9eb047cfc07e9b7db155da262aa514900490623e",
+    "cand-1.json": "c6be7b1e129dd0c0321cb66bc81e5bbf9b1417bec543b3b59d61815402cef628",
+    "cand-2.json": "7ddff8c679dd15650261e7a67b3159a65d1c7ba9d71cba8ad1b2ed4b539b8813",
+    "cand-3.json": "26aeb1334971b22376bc2368bb36a56ff9653524ee64f6bb7b25f7171d87be69",
+    "context.json": "fa5e0b3d2ffa1464389490256511dbad43fec4c18205e3d24ba2f867dde38858",
+    "missing.json": "67eed5ea6441d33634f057d5ebb90eef925769bd57a6987b299e57f74f9d88f4",
+    "receipt.json": "bbe75ab8a47eede258e993c408f3bce96a0b93c96fab19498754ba5a0e638d89",
+    "ref-0.json": "a707fe4958eda43fa182bdac530d5bfceb15d4fc2d479e0ec270eda5dd21b0b7",
+    "ref-1.json": "56798150dd3719bfdde4db9e6676dec7a3706543ba239f697ba2e0426f1fe904",
+    "ref-2.json": "7386747076ce7845cc6743950f38ce36a34b3231c8a101e11b067ecadf1083ad",
+    "stale-receipt.json": "b9b63e7544ddab4d1acd9707d61697a5c348a268cd070a6ae29c5821b203ad98",
+    "stale.json": "79f60000cdd992b0892683e8398d74832f8efa2678507c60d26f7f553fcd9d0e"
+  }
+}

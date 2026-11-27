@@ -1,0 +1,14 @@
+{
+  "comparator": "vLLM 0.34.0 official Qwen3-32B AWQ-Marlin",
+  "disposition": {
+    "late-vllm": {
+      "reason": "Existing AWQ-Marlin receipts already establish the throughput target. Optional same-weight comparison and late restart are deferred.",
+      "server_start": "not-started"
+    },
+    "same-gguf": {
+      "reason": "Existing AWQ-Marlin receipts already establish the throughput target. Optional same-weight comparison and late restart are deferred.",
+      "server_start": "not-started"
+    }
+  },
+  "source": "http/primary"
+}

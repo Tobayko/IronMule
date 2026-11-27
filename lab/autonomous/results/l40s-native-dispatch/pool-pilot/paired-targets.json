@@ -1,0 +1,127 @@
+{
+  "alternative_weights": "114627490aa7cbb6d92f5fe18e9772b5698db719430177163bd2c9e6474ca0fd",
+  "cells": [
+    {
+      "cohort_fit": "stock",
+      "cohort_ratio": 0.8815191186520819,
+      "paired_fit": "stock",
+      "paired_ratio": 1.0066430920109222,
+      "server_seed_index": 2,
+      "split": "fit",
+      "width": 1,
+      "workload": "mixed"
+    },
+    {
+      "cohort_fit": "stock",
+      "cohort_ratio": 1.0090869760575853,
+      "paired_fit": "stock",
+      "paired_ratio": 0.9692805696071051,
+      "server_seed_index": 2,
+      "split": "fit",
+      "width": 8,
+      "workload": "mixed"
+    },
+    {
+      "cohort_fit": "stock",
+      "cohort_ratio": 1.0234515297702207,
+      "paired_fit": "stock",
+      "paired_ratio": 1.0146052052054846,
+      "server_seed_index": 2,
+      "split": "fit",
+      "width": 32,
+      "workload": "mixed"
+    },
+    {
+      "cohort_fit": "stock",
+      "cohort_ratio": 1.0271600547690092,
+      "paired_fit": "stock",
+      "paired_ratio": 1.0163213411254108,
+      "server_seed_index": 1,
+      "split": "heldout",
+      "width": 1,
+      "workload": "mixed"
+    },
+    {
+      "cohort_fit": "stock",
+      "cohort_ratio": 1.0244038317269346,
+      "paired_fit": "stock",
+      "paired_ratio": 1.0244038317269346,
+      "server_seed_index": 1,
+      "split": "heldout",
+      "width": 8,
+      "workload": "mixed"
+    },
+    {
+      "cohort_fit": "stock",
+      "cohort_ratio": 1.0273183476101253,
+      "paired_fit": "stock",
+      "paired_ratio": 1.0228006780432752,
+      "server_seed_index": 1,
+      "split": "heldout",
+      "width": 32,
+      "workload": "mixed"
+    },
+    {
+      "cohort_fit": "compact",
+      "cohort_ratio": 1.6625630469571588,
+      "paired_fit": "compact",
+      "paired_ratio": 1.6818098400035175,
+      "server_seed_index": 2,
+      "split": "fit",
+      "width": 1,
+      "workload": "documents"
+    },
+    {
+      "cohort_fit": "compact",
+      "cohort_ratio": 1.6660416071441537,
+      "paired_fit": "compact",
+      "paired_ratio": 1.5909290829968814,
+      "server_seed_index": 2,
+      "split": "fit",
+      "width": 8,
+      "workload": "documents"
+    },
+    {
+      "cohort_fit": "compact",
+      "cohort_ratio": 1.9276420307274496,
+      "paired_fit": "compact",
+      "paired_ratio": 1.927642030727449,
+      "server_seed_index": 2,
+      "split": "fit",
+      "width": 32,
+      "workload": "documents"
+    },
+    {
+      "cohort_fit": "compact",
+      "cohort_ratio": 1.622620609309518,
+      "paired_fit": "compact",
+      "paired_ratio": 1.549117094135687,
+      "server_seed_index": 1,
+      "split": "heldout",
+      "width": 1,
+      "workload": "documents"
+    },
+    {
+      "cohort_fit": "compact",
+      "cohort_ratio": 1.5551848293192165,
+      "paired_fit": "compact",
+      "paired_ratio": 1.555184829319216,
+      "server_seed_index": 1,
+      "split": "heldout",
+      "width": 8,
+      "workload": "documents"
+    },
+    {
+      "cohort_fit": "compact",
+      "cohort_ratio": 1.7297991914967854,
+      "paired_fit": "compact",
+      "paired_ratio": 1.7297991914967854,
+      "server_seed_index": 1,
+      "split": "heldout",
+      "width": 32,
+      "workload": "documents"
+    }
+  ],
+  "online_weights": "9d6a12238716dc44fadb9dd00c938c0234f574e6feda30cc5df8fcd3e506616b",
+  "scope": "CPU ablation on the same grouped split. The live restart used the cohort-median fit."
+}

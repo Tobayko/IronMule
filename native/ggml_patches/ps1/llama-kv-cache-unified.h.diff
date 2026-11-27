@@ -1,0 +1,13 @@
+60a61,63
+>         // PS1: the slot of every segment of a merged ubatch (empty otherwise)
+>         std::vector<slot_info> ps1_segs;
+> 
+161a165,167
+> 
+>     // PS1: merge consecutive ubatches of one call (and their slots) while their tokens fit n_ubatch
+>     static void ps1_merge(std::vector<llama_ubatch> & ubatches, slot_info_vec_t & sinfos, uint32_t n_ubatch);
+349a356,359
+> 
+>     // PS1: the K / V view of segment g of a merged ubatch
+>     ggml_tensor * get_k_seg(ggml_context * ctx, int32_t il, size_t g) const;
+>     ggml_tensor * get_v_seg(ggml_context * ctx, int32_t il, size_t g) const;

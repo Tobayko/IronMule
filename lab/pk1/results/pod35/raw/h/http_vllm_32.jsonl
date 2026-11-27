@@ -1,0 +1,4 @@
+{"label": "vllm", "engine": "vllm", "warmup_s": 0.581}
+{"label": "vllm", "engine": "vllm", "repeat": 0, "width": 32, "tok_s": 279.34, "wall_s": 3.666, "ttft_p50_ms": 1597.5, "ttft_p95_ms": 2943.0, "ttft_max_ms": 2944.2, "tokens": 1024, "prompt_tokens": 7632, "texts": "f2f65948596d23b5"}
+{"label": "vllm", "engine": "vllm", "repeat": 1, "width": 32, "tok_s": 278.81, "wall_s": 3.673, "ttft_p50_ms": 1606.9, "ttft_p95_ms": 2956.9, "ttft_max_ms": 2957.2, "tokens": 1024, "prompt_tokens": 7632, "texts": "f82cba22e31b04a5"}
+{"label": "vllm", "engine": "vllm", "repeat": 2, "width": 32, "tok_s": 274.4, "wall_s": 3.732, "ttft_p50_ms": 1684.8, "ttft_p95_ms": 3018.8, "ttft_max_ms": 3019.8, "tokens": 1024, "prompt_tokens": 7632, "texts": "ee884de34492f845"}

@@ -1,0 +1,9 @@
+{
+  "candidate": "98e03a71e703eb69d870c6583a012b7b85531a3bd146beaabc5177c30e894f2f",
+  "context_sha256": "8654cc9e422f3ca757cb3aaa18e2c0b3e65663f4a6b1b480bdaffc3516639d48",
+  "interruption_s": 11.461494207382202,
+  "method": "Terminate only the polling process with SIGTERM, then check the original running target job and resume the same journal.",
+  "order": "f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b",
+  "same_remote_job_running": true,
+  "stopped_local_consumer": true
+}

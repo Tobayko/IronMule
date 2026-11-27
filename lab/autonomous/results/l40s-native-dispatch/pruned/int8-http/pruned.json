@@ -1,0 +1,16 @@
+{
+  "bounds": [
+    1.116452333226342,
+    1.1106047804269177,
+    1.1245223153405213,
+    1.1245687542878864,
+    1.205132464267006,
+    1.20530993037003,
+    1.1106047804269177,
+    1.116452333226342
+  ],
+  "experiment": "int8-http",
+  "pruned": "I2",
+  "reason": "The immutable numeric profile failed target quality qualification before serving and the next seed would only repeat its stock fallback.",
+  "rejected": "I1"
+}

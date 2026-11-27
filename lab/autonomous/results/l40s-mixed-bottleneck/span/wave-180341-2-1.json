@@ -1,0 +1,207 @@
+{
+  "calls": [
+    {
+      "decode_rows": 0,
+      "kv": 13312,
+      "prompt_rows": 27,
+      "seconds": 0.05395208008121699
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03787779703270644
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.04213929001707584
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03615643596276641
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036125638987869024
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036123236059211195
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03611302992794663
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03613006602972746
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03610671102069318
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036136306007392704
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036129886051639915
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03612415702082217
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03613630495965481
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03611263993661851
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03613041609060019
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03611058706883341
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036139991017989814
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036129775922745466
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03612606006208807
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03612336597871035
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03610720206052065
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03612072195392102
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.0360969960456714
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036121924058534205
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036110666929744184
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036126921069808304
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03612670104485005
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03609290102031082
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036113010020926595
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.036124107893556356
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03608706092927605
+    },
+    {
+      "decode_rows": 1,
+      "kv": 13312,
+      "prompt_rows": 0,
+      "seconds": 0.03622987610287964
+    }
+  ],
+  "input_digest": "d2f7f008eb6560c455d6a57754d4c889be37b74cf49edfce690e9055d7919e58",
+  "output_counts": [
+    32
+  ],
+  "output_digests": [
+    "049b8387db4c920cce050f292cddaeb0c58b8812c00d225ab2846c64e3d9aaad"
+  ],
+  "repeat": 2,
+  "seconds": 1.1832466010237113,
+  "seed": 180341,
+  "width": 1
+}

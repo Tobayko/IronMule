@@ -1,0 +1,5 @@
+286a287,290
+>     // PS1: a merged ubatch's masks, one per segment ([n_kv, its tokens per stream, 1, its streams])
+>     std::vector<ggml_tensor *> ps1_masks;
+>     std::vector<ggml_tensor *> ps1_masks_cnv;
+> 

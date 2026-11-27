@@ -1,0 +1,12 @@
+--- original
++++ actual
+@@ -32,0 +33,6 @@
++def cublas_override():
++    """The native default is zero. Unrecognized explicit values also require qualification."""
++    value = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS", "")
++    return value if value not in ("", "0") else None
++
++
+@@ -37,0 +44,2 @@
++    if cublas_override() is not None:
++        key.extend(["explicit-cublas-quality-v1", cublas_override()])

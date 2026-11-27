@@ -1,0 +1,204 @@
+{
+  "assumption": "Fixed completed work, with every cost outside native mixed prompt/decode calls unchanged. A null ratio means reducing mixed time alone cannot attain the throughput goal.",
+  "comparator_waves_sha256": "105d9197fe09e491a5a0eb94fbda5034cc4cda4eb73d961623ef2b08a2861610",
+  "observations": [
+    {
+      "arm": "R1",
+      "mixed_native_s": 0.0,
+      "mixed_only_speed_ratio_required": null,
+      "native_elapsed_s": 1.040344314998947,
+      "repeat": 0,
+      "required_saved_s": 0.26214534093818365,
+      "target_elapsed_s": 0.7781989740607634,
+      "target_tok_s": 41.12058877823883,
+      "width": 1
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 0.862757,
+      "mixed_only_speed_ratio_required": null,
+      "native_elapsed_s": 2.2939230130286887,
+      "repeat": 0,
+      "required_saved_s": 0.8752660153724898,
+      "target_elapsed_s": 1.418656997656199,
+      "target_tok_s": 180.45235770376098,
+      "width": 8
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 4.240562,
+      "mixed_only_speed_ratio_required": 2.447284400210568,
+      "native_elapsed_s": 6.00024304992985,
+      "repeat": 0,
+      "required_saved_s": 2.5077997596836985,
+      "target_elapsed_s": 3.4924432902461513,
+      "target_tok_s": 293.2044746037458,
+      "width": 32
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 0.0,
+      "mixed_only_speed_ratio_required": null,
+      "native_elapsed_s": 0.859964685048908,
+      "repeat": 1,
+      "required_saved_s": 0.08176571098814456,
+      "target_elapsed_s": 0.7781989740607634,
+      "target_tok_s": 41.12058877823883,
+      "width": 1
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 1.015053,
+      "mixed_only_speed_ratio_required": 6.433953825123671,
+      "native_elapsed_s": 2.2759449549485,
+      "repeat": 1,
+      "required_saved_s": 0.8572879572923009,
+      "target_elapsed_s": 1.418656997656199,
+      "target_tok_s": 180.45235770376098,
+      "width": 8
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 4.892515,
+      "mixed_only_speed_ratio_required": 2.736501232835965,
+      "native_elapsed_s": 6.597085900022648,
+      "repeat": 1,
+      "required_saved_s": 3.104642609776497,
+      "target_elapsed_s": 3.4924432902461513,
+      "target_tok_s": 293.2044746037458,
+      "width": 32
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 0.0,
+      "mixed_only_speed_ratio_required": 1.0,
+      "native_elapsed_s": 0.3338081670226529,
+      "repeat": 2,
+      "required_saved_s": 0,
+      "target_elapsed_s": 0.7781989740607634,
+      "target_tok_s": 41.12058877823883,
+      "width": 1
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 1.190251,
+      "mixed_only_speed_ratio_required": 4.567645732508278,
+      "native_elapsed_s": 2.3483249599812552,
+      "repeat": 2,
+      "required_saved_s": 0.9296679623250563,
+      "target_elapsed_s": 1.418656997656199,
+      "target_tok_s": 180.45235770376098,
+      "width": 8
+    },
+    {
+      "arm": "R1",
+      "mixed_native_s": 5.29365,
+      "mixed_only_speed_ratio_required": 3.0532993890784574,
+      "native_elapsed_s": 7.0523458500392735,
+      "repeat": 2,
+      "required_saved_s": 3.559902559793122,
+      "target_elapsed_s": 3.4924432902461513,
+      "target_tok_s": 293.2044746037458,
+      "width": 32
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 0.0,
+      "mixed_only_speed_ratio_required": null,
+      "native_elapsed_s": 1.0609954230021685,
+      "repeat": 0,
+      "required_saved_s": 0.2827964489414051,
+      "target_elapsed_s": 0.7781989740607634,
+      "target_tok_s": 41.12058877823883,
+      "width": 1
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 0.834265,
+      "mixed_only_speed_ratio_required": null,
+      "native_elapsed_s": 2.298465323052369,
+      "repeat": 0,
+      "required_saved_s": 0.8798083253961702,
+      "target_elapsed_s": 1.418656997656199,
+      "target_tok_s": 180.45235770376098,
+      "width": 8
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 4.193911,
+      "mixed_only_speed_ratio_required": 2.229083737084012,
+      "native_elapsed_s": 5.804903660900891,
+      "repeat": 0,
+      "required_saved_s": 2.3124603706547395,
+      "target_elapsed_s": 3.4924432902461513,
+      "target_tok_s": 293.2044746037458,
+      "width": 32
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 0.0,
+      "mixed_only_speed_ratio_required": 1.0,
+      "native_elapsed_s": 0.7180686299689114,
+      "repeat": 1,
+      "required_saved_s": 0,
+      "target_elapsed_s": 0.7781989740607634,
+      "target_tok_s": 41.12058877823883,
+      "width": 1
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 1.124384,
+      "mixed_only_speed_ratio_required": 3.0656215774944076,
+      "native_elapsed_s": 2.1762690489413217,
+      "repeat": 1,
+      "required_saved_s": 0.7576120512851228,
+      "target_elapsed_s": 1.418656997656199,
+      "target_tok_s": 180.45235770376098,
+      "width": 8
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 4.862063,
+      "mixed_only_speed_ratio_required": 2.86213817093045,
+      "native_elapsed_s": 6.655754270032048,
+      "repeat": 1,
+      "required_saved_s": 3.163310979785897,
+      "target_elapsed_s": 3.4924432902461513,
+      "target_tok_s": 293.2044746037458,
+      "width": 32
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 0.0,
+      "mixed_only_speed_ratio_required": 1.0,
+      "native_elapsed_s": 0.33228808804415166,
+      "repeat": 2,
+      "required_saved_s": 0,
+      "target_elapsed_s": 0.7781989740607634,
+      "target_tok_s": 41.12058877823883,
+      "width": 1
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 1.2037330000000002,
+      "mixed_only_speed_ratio_required": 6.415297140871417,
+      "native_elapsed_s": 2.434755197027698,
+      "repeat": 2,
+      "required_saved_s": 1.0160981993714993,
+      "target_elapsed_s": 1.418656997656199,
+      "target_tok_s": 180.45235770376098,
+      "width": 8
+    },
+    {
+      "arm": "R2",
+      "mixed_native_s": 5.352136999999999,
+      "mixed_only_speed_ratio_required": 3.1085669597087615,
+      "native_elapsed_s": 7.122842566925101,
+      "repeat": 2,
+      "required_saved_s": 3.6303992766789497,
+      "target_elapsed_s": 3.4924432902461513,
+      "target_tok_s": 293.2044746037458,
+      "width": 32
+    }
+  ]
+}

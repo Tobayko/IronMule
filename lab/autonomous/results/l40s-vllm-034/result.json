@@ -1,0 +1,282 @@
+{
+  "target": {
+    "awq_manifest_sha256": "00fd219734c5f6ff13b31c0038317ed7d6631e626619c8abf76c87412ea1395b",
+    "awq_revision": "0499c3ac83fdef8810b907a23894ba91e95eddd8",
+    "engine_sha256": "a1985d5af074571d1cafd59e918f95f22f1bd16754d2229488da49d2d69288fd",
+    "external_waves_sha256": "5543ab721ff0579d88319d9d249cb35f5b22b5c5a899115583a765845f818e43",
+    "gguf_sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+    "hardware": {
+      "device_sha256": "7a2f320d896258b67549ecebcae06a0c38e93f46c405d111e32888eeff161b02",
+      "driver": "595.112.07",
+      "memory_mib": 46068,
+      "name": "NVIDIA L40S"
+    },
+    "rows": 2048,
+    "source": "7fa0e4d8974c190192f056f6bc5b30dc72b82571",
+    "stock_retry_revision": "f97a05f74561a9b5bf4dbebcc727d900c108df29",
+    "stock_retry_sources": {
+      "ironmule/ggml_profiles.py": "17d71f1b480cda75540906e3f3fd803db6a60e4d239040e549c7ae1003718c4f",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955"
+    },
+    "versions": {
+      "torch": "2.14.0",
+      "transformers": "5.22.2",
+      "vllm": "0.34.0"
+    },
+    "vllm_version": "0.34.0"
+  },
+  "primary_decision": "retain_reference",
+  "startup_s": 192.1235702460399,
+  "median_by_width": {
+    "1": {
+      "tok_s": 37.61642831947702,
+      "first": 0.04236398154171184,
+      "visible": 0.04236515803495422,
+      "first_p95": 0.04236398154171184,
+      "eighth": 0.22457897651474923,
+      "gap_p95": 0.026689450489357114,
+      "end_p95": 0.8494143990101293
+    },
+    "8": {
+      "tok_s": 163.73675185728538,
+      "first": 0.7198824567603879,
+      "visible": 0.7198828800173942,
+      "first_p95": 0.7218405504827388,
+      "eighth": 0.9081825327593833,
+      "gap_p95": 0.568960057455115,
+      "end_p95": 1.5594431049539708
+    },
+    "32": {
+      "tok_s": 264.2047616661994,
+      "first": 1.8791199429833796,
+      "visible": 1.8791204364679288,
+      "first_p95": 2.858342271472793,
+      "eighth": 3.0698220479825977,
+      "gap_p95": 0.776910301996395,
+      "end_p95": 3.834867266996298
+    }
+  },
+  "resources": {
+    "samples": 21,
+    "peak_gpu_mib": 39661.0,
+    "mean_sampled_watts": 328.8642857142857
+  },
+  "quality": {
+    "761401": [
+      32,
+      32
+    ],
+    "961507": [
+      32,
+      32
+    ]
+  },
+  "native_over_current_vllm": {
+    "R1/vllm/1": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 1.3438450533731678,
+        "first": 1.413818089143868,
+        "visible": 1.4138118460020186,
+        "first_p95": 1.413818089143868,
+        "eighth": 1.0577932359840891,
+        "gap_p95": 2.2619609412970654,
+        "end_p95": 0.7441394952715358
+      }
+    },
+    "R1/vllm/8": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.6687136232910802,
+        "first": 0.3102125475238909,
+        "visible": 0.3102133645895645,
+        "first_p95": 1.5749725614646348,
+        "eighth": 1.3455381264551236,
+        "gap_p95": 0.5030063082817344,
+        "end_p95": 1.4954314847162686
+      }
+    },
+    "R1/vllm/32": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.5801949967794825,
+        "first": 0.32423983895391595,
+        "visible": 0.3242401333590688,
+        "first_p95": 1.6790805806304216,
+        "eighth": 0.8318269967180701,
+        "gap_p95": 0.40075968985773336,
+        "end_p95": 1.7165340449104827
+      }
+    },
+    "C1/vllm/1": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 1.375797430884846,
+        "first": 1.439887105662417,
+        "visible": 1.439878543720007,
+        "first_p95": 1.439887105662417,
+        "eighth": 1.091249148099629,
+        "gap_p95": 2.2723216174606726,
+        "end_p95": 0.7268518548020952
+      }
+    },
+    "C1/vllm/8": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.6733027816336882,
+        "first": 0.35947685855734923,
+        "visible": 0.35947752610390193,
+        "first_p95": 1.6283628754900668,
+        "eighth": 1.3864476990854384,
+        "gap_p95": 0.49899816069696046,
+        "end_p95": 1.4860940791367594
+      }
+    },
+    "C1/vllm/32": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.5849340750350386,
+        "first": 0.3673816121053954,
+        "visible": 0.367382046777412,
+        "first_p95": 1.654096996296294,
+        "eighth": 0.8566927349900881,
+        "gap_p95": 0.3992538450458862,
+        "end_p95": 1.7016768677674325
+      }
+    },
+    "C2/vllm/1": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 1.4652095685891928,
+        "first": 1.4021996301297273,
+        "visible": 1.4021909719056462,
+        "first_p95": 1.4021996301297273,
+        "eighth": 1.0678417684936032,
+        "gap_p95": 2.058259645938153,
+        "end_p95": 0.6822786478743824
+      }
+    },
+    "C2/vllm/8": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.6838303847072531,
+        "first": 0.3596718365707834,
+        "visible": 0.3596725165712574,
+        "first_p95": 1.5792923534534997,
+        "eighth": 1.183118451570383,
+        "gap_p95": 0.4682894525527669,
+        "end_p95": 1.4624753401190027
+      }
+    },
+    "C2/vllm/32": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.6020986424319833,
+        "first": 0.268649513797401,
+        "visible": 0.26864967685430674,
+        "first_p95": 1.5658773493792104,
+        "eighth": 0.79807302518647,
+        "gap_p95": 0.34605256455162625,
+        "end_p95": 1.6373112706750965
+      }
+    },
+    "R2/vllm/1": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 1.1751864271735486,
+        "first": 1.4042841599805815,
+        "visible": 1.404276327346686,
+        "first_p95": 1.4042841599805815,
+        "eighth": 1.1706500341564166,
+        "gap_p95": 2.102931738524805,
+        "end_p95": 0.8511555044111919
+      }
+    },
+    "R2/vllm/8": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.6940066482481388,
+        "first": 0.3577803457775,
+        "visible": 0.3577808335375416,
+        "first_p95": 1.5480947175594642,
+        "eighth": 1.365411567483043,
+        "gap_p95": 0.44034357594511503,
+        "end_p95": 1.4413134204548073
+      }
+    },
+    "R2/vllm/32": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.6031284605072319,
+        "first": 0.2681386279649317,
+        "visible": 0.26813881234654247,
+        "first_p95": 1.5664132607216172,
+        "eighth": 0.7938640246040164,
+        "gap_p95": 0.3467535251191588,
+        "end_p95": 1.6626779315447695
+      }
+    }
+  },
+  "waves_sha256": "f212a293cc050cb3c7b2d2ade5fbd5f936d4264a0359a43896d736e40e61a2bb",
+  "scope": "One subsequent current-version start. Different quantizations. The primary decision is frozen."
+}

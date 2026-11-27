@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from ironmule_devices import bindings, ggml_devices
+from . import ggml_profiles
 
 SEQS, SEQ_CTX, MAX_ROWS = 8, 2048, 16
 
@@ -46,7 +47,9 @@ THREADS = int(os.environ.get("IRONMULE_GGML_THREADS") or _usable_cores())
 # ROW1 (2026-11-12): sequences and per-sequence context can be raised for a run, e.g. 32 requests in one batch
 SEQS = int(os.environ.get("IRONMULE_GGML_SEQS", SEQS))
 SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
-POLL = 50  # llama-server's default busy-wait level
+# llama-server's default busy-wait level; IRONMULE_GGML_POLL sets another (HC1, 2026-11-23: with every layer on the GPU the
+# CPU threads only run the small input split of each step and then spin, competing with the server's Python threads)
+POLL = int(os.environ.get("IRONMULE_GGML_POLL", 50))
 ENGINE_VERSION = 5  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005;
 # 5 (ST1): a float32 KV cache ranks first in the autotune only 8 % ahead (rank_settings)
 OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default
@@ -113,10 +116,187 @@ GATHER_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_QUIET_MS", 4)) / 100
 # burst's wall time). A single request still starts after the short gap.
 GATHER_BURST_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MS", 150)) / 1000
 GATHER_BURST_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_QUIET_MS", 25)) / 1000
+# GB1 (2026-11-23): after a burst, the next lone arrival is likely the first of another one. A100 pods 20 and 22: a
+# 32-client burst that reached the server over about 50 ms started its first request alone after the 4 ms gap (a 441-row
+# prefill of 217 ms) and the other 31 behind it, 2 of 3 waves on pod 22. For GATHER_BURST_MEMORY_S after a group of
+# several prompts, a lone arrival waits with the burst's window, once: if no other arrives, the memory is cleared.
+GATHER_BURST_MEMORY_S = float(os.environ.get("IRONMULE_GGML_GATHER_BURST_MEMORY_S", 30))
+# PK1-C (2026-11-24, opt-in IRONMULE_GGML_PK1C=1): the service hands a burst over in two parts, the first one to
+# three requests as a new group and the rest as joins 3 to over 60 ms later (A100 pod 32: its 32 HTTP requests admitted
+# over about 100 ms); with the 25 ms quiet gap the window closed between them in about half the 32-client waves and
+# the rest waited for a second prefill. Within GB1's memory the window then expects as many requests as the last run
+# held at its peak: while fewer have come it waits for GATHER_EXPECT_QUIET_S of quiet (within the burst limit), and it
+# ends at once when they are all there. Measured: one prefill call in 10 of 10 later 32-client waves against 6 of 10
+# without it, but no wave-time gain resolved against the packed call's own spread, and a lone request within the
+# memory waits up to the burst limit; so it stays off by default.
+PK1C = os.environ.get("IRONMULE_GGML_PK1C", "0") == "1"
+GATHER_EXPECT_QUIET_S = float(os.environ.get("IRONMULE_GGML_GATHER_EXPECT_QUIET_MS", 120)) / 1000
 UBATCH = int(os.environ.get("IRONMULE_GGML_UBATCH", 0) or 0)
+# PX1 (2026-11-24): with one KV stream per sequence llama.cpp splits a packed call sequentially: a pass takes the run of
+# consecutive sequence ids that all still have tokens and advances each by the fewest any of them has left. Prefix
+# reuse keeps a different number of template tokens in each stream (0-12 in the benchmark's later waves), so prompts of
+# the same length become unequal and a 32-request prefill ran as 8-14 passes instead of 2, each a full trip through
+# the model (A100 pod 32: 21.5 ms a pass, 0.335 ms a row, fitted over 60 calls). A packed group then keeps the same
+# prefix in every stream (the smallest), when that saves passes for at most PX1_ROWS rows recomputed per pass saved.
+# The recomputed tokens are computed as in any prefill. A100 pod 33 (one process, 12 ABBA pairs): 7 passes to 2 for 99
+# rows, prefill -95 ms in every pair; HTTP over two starts per arm: 32-client wave median -96 ms, first token p50 -105
+# ms, facts 18/18. On by default; IRONMULE_GGML_PX1=0 turns it off.
+# PX2 (2026-11-25): the fixed row limit becomes a cost decision. A packed engine on one KV stream per sequence times
+# native passes of its own sizes at its start (one sequence, logits on the last row only: 1, 8, 16, 32 rows, both sides
+# of PK2's cuBLAS threshold and two large sizes), and prices a split as the sum of its passes' interpolated times. Every
+# kept-prefix level of the group (cut every longer prefix to it) is priced with the passes it would really make, and
+# the cheapest is taken when it saves at least PX2_MARGIN_MS. Pods 32/33's calls fit 16.5 ms + 0.98 ms a row for passes
+# under 128 rows and 91 ms + 0.287 ms a row above (186 calls): repeat 1's 99 rows for 3 passes saved were refused by
+# the fixed limit and are worth about 45 ms. Without the measurement (or IRONMULE_GGML_PX2=0) the fixed limit decides.
+# A100 pod 34, paired 32-client waves on top of ADM1/ADM2/BF1: -9.2 ms (11 of 12 rounds); on by default.
+PX1 = os.environ.get("IRONMULE_GGML_PX1", "1") != "0"
+PX1_ROWS = int(os.environ.get("IRONMULE_GGML_PX1_ROWS", 32))
+PX2 = os.environ.get("IRONMULE_GGML_PX2", "1") != "0"
+PX2_MARGIN_S = float(os.environ.get("IRONMULE_GGML_PX2_MARGIN_MS", 2)) / 1000
+
+
+class _Emitter:
+    """DH2: calls each `emit(token)` in the order given, on one thread, while the engine thread runs native calls."""
+
+    def __init__(self) -> None:
+        import queue
+
+        self._queue: "queue.SimpleQueue[Any]" = queue.SimpleQueue()
+        self.error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, name="ironmule-emitter", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            if isinstance(item, threading.Event):  # drain(): everything before it is delivered
+                item.set()
+                continue
+            emit, token = item
+            try:
+                emit(token)
+            except BaseException as exc:  # noqa: BLE001 - raised by close() on the engine thread
+                if self.error is None:
+                    self.error = exc
+
+    def put(self, emit: Callable[[int], Any], token: int) -> None:
+        self._queue.put((emit, token))
+
+    def drain(self) -> None:
+        """Return once every token handed over so far is delivered."""
+        done = threading.Event()
+        self._queue.put(done)
+        done.wait()
+
+    def close(self) -> None:
+        """Every token handed over is delivered once this returns; the first delivery error is raised here."""
+        self._queue.put(None)
+        self._thread.join()
+        if self.error is not None:
+            raise self.error
+
+
+def split_shapes(seq_rows: dict[int, int], n_ubatch: int) -> list[int]:
+    """PX1: the rows of every pass llama.cpp's sequential split_equal makes of a packed call ({sequence id: rows})."""
+    left = {s: r for s, r in seq_rows.items() if r > 0}
+    shapes = []
+    while left:
+        ids = sorted(left)
+        run = [ids[0]]
+        for s in ids[1:]:
+            if s != run[-1] + 1:
+                break
+            run.append(s)
+        step = max(1, min(min(left[s] for s in run), max(1, n_ubatch // len(run))))
+        for s in run:
+            left[s] -= step
+            if left[s] <= 0:
+                del left[s]
+        shapes.append(step * len(run))
+    return shapes
+
+
+def split_passes(seq_rows: dict[int, int], n_ubatch: int) -> int:
+    """PX1: how many passes llama.cpp's sequential split_equal makes of a packed call ({sequence id: rows})."""
+    return len(split_shapes(seq_rows, n_ubatch))
+
+
+class PassCosts:
+    """PX2: seconds of one native pass of `rows` rows on this machine, interpolated between measured sizes ({rows:
+    seconds}); beyond the largest one, extended with the slope of the last two."""
+
+    def __init__(self, points: dict[int, float]):
+        self.points = sorted((int(r), float(t)) for r, t in points.items() if r > 0 and t > 0)
+        if len(self.points) < 2:
+            raise ValueError("pass costs need at least two measured sizes")
+
+    def __call__(self, rows: int) -> float:
+        pts = self.points
+        if rows <= pts[0][0]:
+            return pts[0][1]
+        for (r0, t0), (r1, t1) in zip(pts, pts[1:]):
+            if rows <= r1:
+                return t0 + (t1 - t0) * (rows - r0) / (r1 - r0)
+        (r0, t0), (r1, t1) = pts[-2], pts[-1]
+        return t1 + max(0.0, (t1 - t0) / (r1 - r0)) * (rows - r1)
+
+    def split(self, shapes: Sequence[int]) -> float:
+        return sum(self(r) for r in shapes)
+
+
+# BF1 (2026-11-25): a native call of BF1_ROWS rows or more fills llama.cpp's batch with numpy array copies instead of a
+# Python loop over its ctypes arrays (A100 pods 32/33: 13-16 ms of host batch build before every 32-client prefill of
+# about 7,500 rows); the rows point into one contiguous sequence-id array of the engine's own (kept with ADM2 on A100 pod
+# 34: -33.1 ms a 32-client wave together). "0" keeps the loop.
+BF1 = os.environ.get("IRONMULE_GGML_BF1", "1") != "0"
+BF1_ROWS = 64
+# PS1 (2026-11-25): with one KV stream per sequence, llama.cpp (patch ps1) merges the rectangular ubatches of one packed
+# call into one: every projection and row-wise operation runs once over all prompt rows, attention per rectangle with
+# its own mask and streams. The second large pass of a 32-client wave (about 68 ms of fixed cost a cuBLAS pass on A100
+# pod 34) goes, and so does the reason to cut kept prefixes: PX1/PX2 keep every stream's own prefix while it is on.
+# The native library reads IRONMULE_PS1 on every call. A100 pod 35: one process with fixed shapes -89.9 ms a 32-client
+# wave (10 of 10), 8 clients -50 ms; but in paired HTTP waves 3 of 16 merged prefills took about 0.45 s more (the
+# compute buffer regrown at a new maximum, the start's warm-up did not cover every shape), so the rule kept it out
+# (-82.5 ms median, 5 of 8 rounds). On by default since pod 36 (with ps1a below): paired 32-client waves -80.8 ms (8 of
+# 8 rounds), 8 clients -53 ms, facts 18/18, fresh starts 300.0 against 290.3 tok/s; "0" turns it off.
+# Embedded standalone users keep the legacy native defaults. A new product qualification
+# child receives the original caller's overrides separately from these import-installed values.
+_IMPLICIT_KERNEL_FLAGS = {key: "1" for key in ("IRONMULE_PS1", "IRONMULE_PK6") if key not in os.environ}
+PS1 = os.environ.get("IRONMULE_PS1", "1") == "1"
+# Pod 36 attributed the 0.45 s: ggml-alloc placed every layer's merged attention output with the graph's leafs, so all
+# 64 were live at once (2.1 MB a row), and each new largest call reallocated the compute buffer (14.0 -> 18.7 GB, 0.38 s
+# of host time in the free and the allocation). Patch set ps1a allocates it at its first reader; the buffer then stays
+# at its start-up size and no warm-up is needed.
+# PS1's start-up prefill (ps1_warm_up): "2" one merged call of the full micro-batch, "1" the pod 35 run 3 form, "0" none
+PS1_WARM = os.environ.get("IRONMULE_PS1_WARM", "0")
+os.environ["IRONMULE_PS1"] = "1" if PS1 else "0"
+# PK6 (2026-11-25): in a prompt step on the cuBLAS path the native library skips the f32 writes of SwiGLU and of the
+# fused add + RMS norm whose only readers are matmuls taking the fp16 copy the producer writes anyway (PK4), so about
+# 4 of 14 and 4 of 18 bytes an element of two bandwidth-bound kernels go (A100 pod 36 profile: 78 + 42 ms at 5,724
+# rows). Values unchanged: the skipped floats are not read. Read by the native library at every graph. On by default
+# since A100 pod 37: logits equal (max |difference| 0.0), 189 writes skipped a prefill graph, 7,632-row prefill
+# -28 ms (8 of 8 pairs); paired 32-client waves -38.8 ms (7 of 8); fresh starts 304.6 against vLLM's 276.9 tok/s.
+# "0" turns it off.
+PK6 = os.environ.get("IRONMULE_PK6", "1") == "1"
+os.environ["IRONMULE_PK6"] = "1" if PK6 else "0"
+# DH2 (2026-11-25): during decoding, the tokens' delivery (the worker's detokenizer and stream frames, about 0.6 ms for
+# 32 requests a step on A100 pod 34) runs on an emitter thread while the next native call runs (ctypes releases the
+# GIL there), instead of between two calls. Order per request is kept; the run waits for the emitter before it
+# returns. A100 pod 35, paired 32-client waves: no gain (+13.8 and -0.6 ms medians), so off by default; "1" turns it on.
+DH2 = os.environ.get("IRONMULE_GGML_DH2", "0") == "1"
+# DH1 (diagnostics, with the trace only): IRONMULE_GGML_STEPPROF=1 notes the median host time of each part of a run's
+# full-width decode steps (pilot and admission, selection, drafts and rows, the native call, observers, accepting and
+# streaming the tokens, the rest) as one "# stepprof" line per run
+STEPPROF = os.environ.get("IRONMULE_GGML_STEPPROF") == "1"
 # Diagnostics: IRONMULE_GGML_TRACE names a file that gets one line per native decode call (monotonic start, seconds,
 # rows, sequences, output rows); off by default
 TRACE = os.environ.get("IRONMULE_GGML_TRACE", "")
+# PF3 (diagnostics, with the trace only): IRONMULE_GGML_PAUSE names a file for ironmule.ggml_pause's samples of native
+# calls of IRONMULE_GGML_PAUSE_MIN_MS (1000) or more (a py-spy dump once a call passes IRONMULE_GGML_PAUSE_SPY_MS), and
+# adds per-call CPU, fault, run-delay and throttle deltas to every trace line
+PAUSE = os.environ.get("IRONMULE_GGML_PAUSE", "") if TRACE else ""
 
 
 def trace_note(label: str) -> None:
@@ -128,6 +308,13 @@ def trace_note(label: str) -> None:
 # matmuls run faster through dequantization + cuBLAS than through llama.cpp's MMQ kernels, and from which row count;
 # IRONMULE_CUBLAS_MIN_ROWS fixes the threshold instead (0 = never), IRONMULE_PK2=0 skips the measurement.
 PK2_AUTO = os.environ.get("IRONMULE_CUBLAS_MIN_ROWS") is None and os.environ.get("IRONMULE_PK2", "1") != "0"
+# PK2-M (2026-11-24, default): "mix" times the thresholds on a burst of half short (33-token) and half long prompts, as
+# the benchmark's eight clients send, and chooses by it. On one KV stream per sequence such a burst runs as two passes
+# (llama.cpp's split_equal), the short one of about 130 rows below every threshold "equal" measured. A100 pod 26,
+# Qwen3-32B, 8 clients: "mix" chose 128 rows ("equal" 256); engine waves 1.392 against 1.439 s, first token 746 against
+# 792 ms; over HTTP the first token came earlier in 3 of 3 repeats (median 824 against 869 ms), 170.7 against
+# 166.6 tok/s (ranges overlap), facts 18/18. "equal": the earlier calibration on eight equal prompts.
+PK2_CALIBRATION = os.environ.get("IRONMULE_PK2_CALIBRATION", "mix")
 # W4 (2026-11-19): on a CUDA GPU of compute capability 8.0 or newer, packed engines generate and tune IronMule's W4R
 # kernels for this GPU and GGUF (ironmule/w4_kernels.py, cached under IRONMULE_W4_CACHE) and hand them to the kg1 hook,
 # unless IRONMULE_KG_LIB names a library; measure_kg then keeps them only for the token counts where the step got
@@ -165,6 +352,62 @@ def am1_function(L: Any) -> Any:
         return None
     fn.argtypes, fn.restype = [ctypes.c_int], None
     return fn
+
+
+# EM1 (2026-11-23): llama.cpp keeps a model's token embedding on the CPU ("very little benefit to offloading the input
+# layer"), so with every layer on the GPU a decode step still wakes the CPU threadpool for the rows of its tokens
+# (dequantized there and copied to the GPU), and the threads spin afterwards beside the server's Python threads. Builds
+# with the em1 patch take Q4_K / Q6_K rows on the GPU; the engine then places the embedding there and a step needs no
+# CPU work. Opt-in (IRONMULE_GGML_EM1=1): on an A100 with Qwen3-32B it gave the same tokens and saved only 10-15 ms of a
+# 2.4 s 32-prompt prefill (decode steps unchanged), and its extra GPU memory (the table, the step's input rows) made the
+# quality gate's KV-setting tuning run out of memory (2026-11-23, pod 22).
+EM1 = os.environ.get("IRONMULE_GGML_EM1", "0") == "1"
+EM1_TYPES = frozenset({"F32", "F16", "BF16", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q8_0", "Q4_K", "Q6_K"})
+
+
+def _gguf_tensor_type(gguf: str, name: str) -> str | None:
+    """The type name of one tensor in a GGUF (llama.cpp's own reader), or None."""
+    root = Path(os.environ.get("IRONMULE_GGML_BINDINGS", "")) / "vendor" / "llama.cpp" / "gguf-py"
+    if root.exists() and str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    import gguf as gguf_py
+
+    for tensor in gguf_py.GGUFReader(gguf).tensors:
+        if tensor.name == name:
+            return tensor.tensor_type.name
+    return None
+
+
+def em1_overrides(L: Any, gguf: str) -> Any:
+    """EM1: a NULL-terminated `llama_model_tensor_buft_override` array that puts `token_embd.weight` in the CUDA
+    device's buffer, or None (switched off, no em1 patch in the build, not exactly one CUDA device, or an embedding
+    type whose rows the build cannot take on the GPU)."""
+    import ctypes
+
+    if not EM1:
+        return None
+    try:
+        folder = Path(L.llama_cpp._lib._name).parent if hasattr(L, "llama_cpp") else Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+        cuda = ctypes.CDLL(str(next(folder.glob("libggml-cuda.so*"))))
+        cuda.ironmule_em1.restype = ctypes.c_int
+        if cuda.ironmule_em1() != 1 or not cuda_kernel_device(L):
+            return None
+        if _gguf_tensor_type(gguf, "token_embd.weight") not in EM1_TYPES:
+            return None
+        cuda.ggml_backend_cuda_buffer_type.argtypes, cuda.ggml_backend_cuda_buffer_type.restype = [ctypes.c_int], ctypes.c_void_p
+        buft = cuda.ggml_backend_cuda_buffer_type(0)
+    except Exception:  # noqa: BLE001 - no CUDA library, a build without EM1, an unreadable header: llama.cpp's placement
+        return None
+    if not buft:
+        return None
+
+    class Override(ctypes.Structure):
+        _fields_ = [("pattern", ctypes.c_char_p), ("buft", ctypes.c_void_p)]
+
+    overrides = (Override * 2)()
+    overrides[0].pattern, overrides[0].buft = b"^token_embd\\.weight$", buft
+    overrides[1].pattern, overrides[1].buft = None, None
+    return overrides
 
 
 def pk2_set_min_rows(rows: int) -> int | None:
@@ -276,6 +519,10 @@ class Job:
     finished_ns: int = 0
     passed_over: int = 0
     context: Any = None  # speculation.NgramIndex over ids + tokens, kept up to date by the engine
+    tag: str | None = None  # PF1: the serving request's id, for the trace only
+    prefill_start_ns: int = 0  # PF1 (trace only): the start of the first native call with this prompt's rows
+    prefill_end_ns: int = 0  # PF1 (trace only): the end of the call with its last prompt row
+    seen_ns: int = field(default_factory=time.monotonic_ns)  # PF2: when the engine side made the job
 
     hardware_probe: bool = False  # measured device work, excluded from foreground arrival and admission histories
 
@@ -522,6 +769,9 @@ class GgmlEngine:
     collective: Any = None
     drafter: Any = None
     draft_refused: str | None = None
+    _burst_at = float("-inf")  # GB1: when the engine last gathered several prompts at once
+    _burst_peak = 0  # PK1-C: how many requests the last run held at once at most
+    _em1: Any = None  # EM1: the override array the model was loaded with (None: llama.cpp's own placement)
 
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
@@ -547,6 +797,20 @@ class GgmlEngine:
             mparams.n_gpu_layers = self.gpu_layers
             if self.gpu_layers:
                 mparams.split_mode = SPLIT_MODES.get(SPLIT, 1)
+            # EM1: with every layer on the GPU, the token embedding too (kept referenced while llama.cpp loads)
+            self._em1 = em1_overrides(L, gguf) if self.gpu_layers >= 999 else None
+            if self._em1 is not None:
+                import ctypes
+
+                mparams.tensor_buft_overrides = ctypes.cast(self._em1, ctypes.c_void_p)
+        restart_path = os.environ.get("IRONMULE_KG_RESTART_RECEIPT")
+        restart_pin = os.environ.get("IRONMULE_KG_RESTART_SHA256")
+        model_identity_before_load = None
+        if restart_path and restart_pin and model is None and self.gpu_layers and kernel_mask:
+            try:
+                model_identity_before_load = list(_file_identity(os.stat(gguf)))
+            except OSError:
+                pass  # ordinary model loading and calibration still report their own errors
         self.model = model or L.llama_model_load_from_file(str(gguf).encode(), mparams)
         if not self.model:
             raise ValueError(f"llama.cpp could not load {gguf}")
@@ -560,7 +824,9 @@ class GgmlEngine:
         self._open(seqs, seq_ctx, flash_attn=flash_attn, kv_unified=kv_unified or self.shared, kv_f32=kv_f32,
                    kv_q8=kv_q8)
         self.steps = 0
+        trace_note("init warm_up begin")  # PF2: what the start runs before serving, with times
         self._warm_up()
+        trace_note("init check_argmax begin")
         self._argmax_only = self._check_argmax() if self.gpu_layers else None
         self.context_build_s = time.perf_counter() - context_started
         self.kg: dict[str, Any] = {}
@@ -575,8 +841,131 @@ class GgmlEngine:
         elif KG_LIB and self.gpu_layers and kernel_mask:
             # SD1 (2026-11-23): the library's token-count mask is one per process; a second engine in the same process
             # (a draft model, kernel_mask=False) must not measure and overwrite the served model's mask
-            self.kg = self.measure_kg(KG_LIB)
+            trace_note("init measure_kg begin")
+            def replay_qualified_masks():
+                """Install a broker-pinned, locally verified pair of W4 masks on a fresh engine."""
+                import ctypes
+                import inspect
+
+                from .ggml_binary import identity
+                from .kernel_gen import fingerprint
+
+                def is_digest(value):
+                    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+                if (not is_digest(restart_pin) or model_identity_before_load is None or self.shared or draft_gguf
+                        or os.environ.get("IRONMULE_KG4_SCOPE") or type(self).measure_kg is not GgmlEngine.measure_kg):
+                    return None
+                try:
+                    # A read-only broker mount supplies the file; its separately supplied digest binds the exact bytes.
+                    fd = os.open(restart_path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+                    with os.fdopen(fd, "rb") as stream:
+                        info = os.fstat(stream.fileno())
+                        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 131072:
+                            return None
+                        data = stream.read(131073)
+                    if len(data) != info.st_size or hashlib.sha256(data).hexdigest() != restart_pin:
+                        return None
+                    receipt = json.loads(data)
+                    created = receipt["created_s"]
+                    quality = receipt["quality"]
+                    if (receipt["schema"] != "ironmule.w4-restart-qualified.v1" or type(created) not in (int, float)
+                            or not 0 <= time.time() - created <= 86400 or type(quality["completed"]) is not int
+                            or quality["completed"] != 32 or type(quality["facts"]) is not int or quality["facts"] != 18
+                            or not is_digest(quality["output_sha256"])):
+                        return None
+                    bound = receipt["binding"]
+                    expected_model = bound["model_sha256"]
+                    saved_stat = bound["model_stat"]
+                    if (not is_digest(expected_model) or not isinstance(saved_stat, list) or len(saved_stat) != 5
+                            or any(type(v) is not int for v in saved_stat) or saved_stat[2] <= 0):
+                        return None
+                    now = list(_file_identity(os.stat(gguf)))
+                    if now != model_identity_before_load:
+                        return None
+                    if now != saved_stat and file_sha256(str(gguf)) != expected_model:
+                        return None
+                    flags = ("PS1", "PS1_WARM", "PS1_CONCAT", "PK6", "GGML_DH2", "SV5", "GGML_PACK",
+                             "GGML_UBATCH", "CUBLAS_MIN_ROWS", "CUDA_GRAPHS_ROWS")
+                    current_flags = {"IRONMULE_" + k: os.environ["IRONMULE_" + k] for k in flags}
+                    fp, native = fingerprint(), identity()
+                    if (not fp["driver"] or not fp["nvcc"] or not fp["cc"] or not is_digest(fp["generator"])
+                            or len(fp["devices"]) != 1 or not fp["devices"][0].get("uuid")
+                            or not all(is_digest(native["sha256"][key]) for key in
+                                       ("llama_backend_init", "ggml_init", "ggml_backend_reg_count", "backend/CUDA"))):
+                        return None
+                    current = {"model_sha256": expected_model, "model_stat": saved_stat, "native": native, "fp": fp,
+                               "w4_sha256": file_sha256(KG_LIB), "table_sha256": file_sha256(os.environ["IRONMULE_W4_TABLE"]),
+                               "settings": self.settings, "seqs": self.seqs, "seq_ctx": self.seq_ctx, "threads": self.threads,
+                               "max_rows": self.max_rows, "speculate": self.speculate, "gpu_layers": self.gpu_layers,
+                               "affinity": sorted(os.sched_getaffinity(0)), "flags": current_flags,
+                               "measure_kg_sha256": hashlib.sha256(inspect.getsource(GgmlEngine.measure_kg).encode()).hexdigest()}
+                    if json.dumps(current, sort_keys=True, allow_nan=False) != json.dumps(bound, sort_keys=True, allow_nan=False):
+                        return None
+                    mask = receipt["mask"]
+                    widths = (*range(1, 9), 16, 24, 32)
+                    tables = ("step_ms_off", "step_ms_on", "step_ms_q6k")
+                    if set(mask) != {"lib", "entries", "tokens_served", "q6k_tokens_served", *tables}:
+                        return None
+                    for name in tables:
+                        timings = mask[name]
+                        if (not isinstance(timings, dict) or set(timings) != {str(w) for w in widths}
+                                or any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in timings.values())):
+                            return None
+                    bits = []
+                    for key in ("tokens_served", "q6k_tokens_served"):
+                        selected = mask[key]
+                        if (not isinstance(selected, list) or any(type(w) is not int or w not in widths for w in selected)
+                                or selected != sorted(set(selected))):
+                            return None
+                        bits.append(sum(1 << (w - 1) for t in selected for w in ((t,) if t <= 8 else range(t - 7, t + 1))))
+                    if mask["lib"] != os.path.basename(KG_LIB) or type(mask["entries"]) is not int or mask["entries"] < 1:
+                        return None
+                    lib = ctypes.CDLL(KG_LIB)
+                    lib.ironmule_kg_table.restype = ctypes.c_char_p
+                    if len(json.loads(lib.ironmule_kg_table())["entries"]) != mask["entries"]:
+                        return None
+                    setters = (lib.ironmule_kg_set_mask, lib.ironmule_kg_set_mask6)
+                    getters = (lib.ironmule_kg_get_mask, lib.ironmule_kg_get_mask6)
+                    for put, get in zip(setters, getters):
+                        put.argtypes, put.restype = [ctypes.c_uint32], None
+                        get.argtypes, get.restype = [], ctypes.c_uint32
+                    original = [get() for get in getters]
+                except Exception:  # noqa: BLE001 - an unavailable or incompatible receipt merely requests fresh measurement
+                    return None
+
+                try:
+                    for put, value in zip(setters, bits):
+                        put(value)
+                    if [get() for get in getters] != bits:
+                        raise ValueError("W4 mask readback differs")
+                    # Warm each real admitted graph shape once. _step_prices clears synthetic rows, retained prefixes
+                    # and pooled KV state at the end, just as the ordinary calibration does.
+                    self._step_prices(widths, repeats=1)
+                    if [get() for get in getters] != bits:
+                        raise ValueError("W4 mask changed during restart warm-up")
+                except Exception:
+                    for put, value in zip(setters, original):
+                        put(value)
+                    if [get() for get in getters] != original:
+                        raise RuntimeError("cannot restore the original W4 masks")
+                    self._clear()
+                    return None
+                self._kg_lib = lib
+                return {**mask, "restart_profile_reused": True}
+
+            restored = replay_qualified_masks() if restart_path and restart_pin else None
+            self.kg = restored if restored is not None else self.measure_kg(KG_LIB)
+        trace_note("init measure_pk2 begin")
         self.pk2: dict[str, Any] = self.measure_pk2() if PK2_AUTO and getattr(self, "pack", False) else {}
+        self.pass_costs: PassCosts | None = None
+        if (PX1 and PX2 and getattr(self, "pack", False) and self.gpu_layers and model is None
+                and not getattr(self, "settings", {}).get("kv_unified", True)):
+            trace_note("init measure_passes begin")
+            self.pass_costs = self.measure_pass_costs()
+            if os.environ.get("IRONMULE_PS1") == "1" and PS1_WARM != "0":
+                self.ps1_warm_up()
+        trace_note("init measure_padding begin")
         self.pad_to: dict[int, int] = {}
         self.pad_prices: dict[int, float] = {}
         self.padded = 0
@@ -589,6 +978,7 @@ class GgmlEngine:
         self.pilot = None
         # PI1: the decision network, with this machine's measured step costs; its cost measurement decodes past 256
         # tokens of one sequence, so a context too small for that (SEQ1's KV-size probe opens 256 cells) runs without it
+        trace_note("init pilot begin")
         if PILOT and model is None and seq_ctx >= 512:
             from .pilot import Pilot
 
@@ -596,6 +986,15 @@ class GgmlEngine:
                           gpu=bool(self.gpu_layers))
             self.pilot = pilot if pilot.active else None
             self.pilot_refused = None if pilot.active else pilot.reason
+        if TRACE:  # PF2: the start's choices that steer later calls
+            trace_note("init end")
+            import json as _json
+
+            with open(TRACE, "a") as fh:
+                fh.write("# init result " + _json.dumps({
+                    "pk2": self.pk2, "kg_tokens": (self.kg or {}).get("tokens_served"), "pad_to": self.pad_to,
+                    "pilot": self.pilot is not None, "argmax_only": self._argmax_only is not None,
+                    "context_build_s": round(self.context_build_s, 3)}, default=str) + "\n")
 
     def _step_prices(self, counts: Any, repeats: int = 5) -> dict[int, float]:
         """Seconds of a step of t tokens of one sequence at positions 64+ (median of `repeats`), for each t in `counts`."""
@@ -666,6 +1065,18 @@ class GgmlEngine:
         width = min(8, self.seqs)
         length = min(444, self.seq_ctx - 8, max(64, (len(ids) - 1) // width))
         group = [(seq, Job([bos] + ids[seq * length:(seq + 1) * length - 1], 1), 0) for seq in range(width)]
+        mix = PK2_CALIBRATION == "mix"
+        use_local_trial = (
+            os.environ.get("IRONMULE_TRIAL_LOCAL_CALIBRATION") == "1"
+            and mix and width == 8 and length == 444
+            and type(thresholds) is tuple and thresholds == (256, 512, 1024)
+            and type(repeats) is int and repeats == 3
+        )
+        if mix:  # PK2-M: half short prompts (the lowest sequence ids, as the server sorts them), half long
+            short = min(33, length)
+            group = [(seq, Job([bos] + ids[seq * length:seq * length + (short if seq < width // 2 else length) - 1], 1), 0)
+                     for seq in range(width)]
+            thresholds = tuple(sorted({128, *thresholds}))
 
         def burst() -> float:
             self._clear()
@@ -679,10 +1090,22 @@ class GgmlEngine:
             for t in arms:  # warm each path once (cuBLAS handles, dequantization buffers)
                 pk2_set_min_rows(t)
                 burst()
-            for _ in range(repeats):
+            for repeat in range(repeats):
                 for t in arms:
                     pk2_set_min_rows(t)
                     times[t].append(burst())
+                if use_local_trial and repeat == 1:
+                    bounds = {t: sorted(times[t]) for t in arms}
+                    if all(0 < low <= high <= 1.02 * low < math.inf for low, high in bounds.values()):
+                        # Allow additional drift beyond both observations before testing the original rules.
+                        lower = {t: 0.9975 * bounds[t][0] for t in arms}
+                        upper = {t: 1.0025 * bounds[t][1] for t in arms}
+                        fastest_lower = min(lower[t] for t in thresholds)
+                        fastest_upper = min(upper[t] for t in thresholds)
+                        # If the first threshold that could qualify must qualify, its choice is stable.
+                        first_possible = next(t for t in thresholds if lower[t] <= 1.02 * fastest_upper)
+                        if upper[first_possible] <= min(1.02 * fastest_lower, 0.95 * lower[0]):
+                            break
             med = {t: sorted(v)[len(v) // 2] for t, v in times.items()}
             # the smallest threshold within 2 % of the fastest: a single prompt of a few hundred rows gains too
             fastest = min(med[t] for t in thresholds)
@@ -702,8 +1125,80 @@ class GgmlEngine:
         finally:
             self._clear()
         pk2_set_min_rows(chosen)
-        return {"min_rows": chosen, "reason": reason, "rows": width * length,
+        return {"min_rows": chosen, "reason": reason, "rows": sum(len(job.ids) for _, job, _ in group),
+                "calibration": "mix" if mix else "equal",
                 "burst_ms": {str(t): round(1000 * v, 1) for t, v in med.items()}}
+
+    def measure_pass_costs(self, repeats: int = 3) -> PassCosts | None:
+        """PX2: the seconds of one native pass of t prompt rows (one sequence after a 64-token prefix, logits on its
+        last row only, as a prefill pass asks), median of `repeats` after one warm call, for small passes (1-32 rows),
+        both sides of PK2's cuBLAS threshold and two large passes. None where it cannot be measured; PX1's fixed limit
+        then decides."""
+        threshold = int((getattr(self, "pk2", None) or {}).get("min_rows") or 0)
+        room = min(self.seq_ctx, getattr(self, "batch_cap", self.seq_ctx)) - 64 - 8
+        large = max(256, 2 * threshold)
+        counts = {1, 8, 16, 32, large, 4 * large}
+        if threshold > 33:
+            counts |= {threshold - 1, threshold}
+        counts = sorted(t for t in counts if t <= room)
+        if len(counts) < 4:
+            return None
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        points: dict[int, float] = {}
+        try:
+            self._clear()
+            self._decode([(bos, j, 0, j == 63) for j in range(64)])
+            for t in counts:
+                times = []
+                for _ in range(repeats + 1):
+                    started = time.perf_counter()
+                    self._decode([(bos, 64 + j, 0, j == t - 1) for j in range(t)])
+                    times.append(time.perf_counter() - started)
+                    self.L.llama_memory_seq_rm(self.memory, 0, 64, -1)
+                points[t] = sorted(times[1:])[len(times[1:]) // 2]
+            costs = PassCosts(points)
+        except Exception:  # noqa: BLE001 - PX1's fixed limit decides without it
+            return None
+        finally:
+            self._clear()
+        if TRACE:
+            trace_note("pass_costs " + json.dumps({str(r): round(1000 * t, 2) for r, t in points.items()}))
+        return costs
+
+    def ps1_warm_up(self) -> None:
+        """PS1: one packed prefill of the most rectangles a call merges (every stream a different length), so that the
+        compute buffer reaches its size for merged calls at the start. A100 pod 35: merged prefills whose rectangles
+        changed from call to call regrew the buffer at every new maximum (about 0.45 s each, 5 of 13 32-client waves).
+        Nothing of it stays in the cache."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        cap = min(getattr(self, "batch_cap", self.seq_ctx), UBATCH or 512)
+        n = self.seqs
+        if PS1_WARM == "1":  # the pod 35 run 3 form: 32 lengths, two merged calls of 16 rectangles
+            step = max(1, (2 * cap // max(1, n) - 40) // max(1, n - 1))
+            lengths = [min(self.seq_ctx - 8, 40 + step * s) for s in range(n)]
+            while sum(lengths) > cap and lengths[-1] > 41:
+                lengths = [max(1, x - 1) if x > 40 else x for x in lengths]
+        else:  # PS1_WARM "2": one merged call of n_ubatch rows in at most 16 rectangles (pairs of streams alike)
+            pairs = max(1, min(16, n // 2))
+            per = [1 + k for k in range(pairs)]  # rising lengths, scaled to fill the call
+            scale = cap / (2 * sum(per))
+            lengths = []
+            for s in range(n):
+                k = min(s // 2, pairs - 1)
+                lengths.append(max(1, min(self.seq_ctx - 8, int(per[k] * scale))))
+            short = cap - sum(lengths)  # the rest to the last pair, alike, so it stays one rectangle
+            lengths[-2] = max(1, min(self.seq_ctx - 8, lengths[-2] + short // 2))
+            lengths[-1] = max(1, min(self.seq_ctx - 8, lengths[-1] + short - short // 2))
+        rows = [(bos, j, s, j == lengths[s] - 1) for s in range(n) for j in range(lengths[s])]
+        try:
+            self._clear()
+            started = time.perf_counter()
+            self._decode(rows)
+            trace_note(f"ps1 warm_up rows {len(rows)} ms {1000 * (time.perf_counter() - started):.1f}")
+        except Exception:  # noqa: BLE001 - only the buffer's first growth moves into serving
+            pass
+        finally:
+            self._clear()
 
     def measure_kg(self, path: str, repeats: int = 7) -> dict[str, Any]:
         """KG1: the step for 1-8 tokens (KG4: and 16, 24, 32) with the generated kernels on and off (alternating, median
@@ -903,6 +1398,7 @@ class GgmlEngine:
         self.seqs, self.seq_ctx = seqs, seq_ctx
         self.batch_cap = max(logical, self.max_rows)
         self.batch = L.llama_batch_init(self.batch_cap, 0, seqs)
+        self._bf1 = self._bf1_views(self.batch, self.batch_cap)
         self.policy = StepPolicy(self.max_rows) if self.speculate else None
         if self.speculate and COLLECTIVE and getattr(self, "collective", None) is None:
             from .speculation import CollectiveIndex
@@ -1013,19 +1509,84 @@ class GgmlEngine:
     # --- decode calls -------------------------------------------------------------------------------------------------
     def _decode(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         if TRACE:
-            started = time.monotonic()
-            out = self._decode_once(rows, evict=evict)
+            probe = getattr(self, "_pause_probe", None)
+            if PAUSE and probe is None:
+                from ironmule.ggml_pause import PauseProbe
+
+                probe = self._pause_probe = PauseProbe(
+                    PAUSE, float(os.environ.get("IRONMULE_GGML_PAUSE_MIN_MS", 1000)),
+                    spy_ms=float(os.environ.get("IRONMULE_GGML_PAUSE_SPY_MS", 0)))
+            if probe is not None:
+                probe.begin()
+            started_ns = time.monotonic_ns()
+            try:
+                out = self._decode_once(rows, evict=evict)
+            finally:
+                ended_ns = time.monotonic_ns()
+                pause_fields = probe.end(f"rows={len(rows)}") if probe is not None else ""
+            # PF1: a row inside its request's prompt is a prompt row, one past it decodes, one of a sequence without a
+            # request is a KG3 placeholder. Times around the call are taken where llama.cpp returns anyway: no added
+            # synchronisation.
+            jobs = getattr(self, "_tl_jobs", None) or {}
+            seqs = sorted({r[2] for r in rows})
+            prompt_rows = filler_rows = 0
+            for r in rows:
+                job = jobs.get(r[2])
+                if job is None:
+                    filler_rows += 1
+                elif r[1] < len(job.ids):
+                    prompt_rows += 1
+            for seq in seqs:
+                job = jobs.get(seq)
+                if job is not None and not job.prefill_end_ns and any(r[2] == seq and r[1] < len(job.ids) for r in rows):
+                    job.prefill_start_ns = job.prefill_start_ns or started_ns
+                    if any(r[2] == seq and r[1] + 1 == len(job.ids) for r in rows):
+                        job.prefill_end_ns = ended_ns
             with open(TRACE, "a") as fh:
-                fh.write(f"{started:.6f} {time.monotonic() - started:.6f} {len(rows)} "
-                         f"{len({r[2] for r in rows})} {sum(1 for r in rows if r[3])}\n")
+                # PF2: the batch built on the host, llama_decode, then the readback of the sampled rows (ms)
+                built, decoded = getattr(self, "_tl_marks", (started_ns, ended_ns))
+                fh.write(f"{started_ns / 1e9:.6f} {(ended_ns - started_ns) / 1e9:.6f} {len(rows)} {len(seqs)} "
+                         f"{sum(1 for r in rows if r[3])} {prompt_rows} {len(rows) - prompt_rows - filler_rows} "
+                         f"{filler_rows} seqs={','.join(map(str, seqs))} b={(built - started_ns) / 1e6:.3f} "
+                         f"l={(decoded - built) / 1e6:.3f} r={(ended_ns - decoded) / 1e6:.3f}{pause_fields}\n")
             return out
         return self._decode_once(rows, evict=evict)
 
+    def _bf1_views(self, batch: Any, cap: int) -> dict[str, Any] | None:
+        """BF1: numpy views of the batch's arrays, and one contiguous sequence-id array the rows point into."""
+        import ctypes
+
+        np = self.np
+        try:
+            # llama.cpp's own per-row arrays (their addresses: an indexed pointer is a view of its slot), given back
+            # before its free
+            own = [ctypes.cast(batch.seq_id[i], ctypes.c_void_p).value for i in range(cap)]
+            seq = np.zeros(cap, dtype=np.int32)
+            base = seq.ctypes.data
+            kind = type(batch.seq_id[0])
+            for i in range(cap):
+                batch.seq_id[i] = ctypes.cast(base + 4 * i, kind)
+            return {"own": own, "seq": seq,
+                    "token": np.ctypeslib.as_array(batch.token, shape=(cap,)),
+                    "pos": np.ctypeslib.as_array(batch.pos, shape=(cap,)),
+                    "n_seq": np.ctypeslib.as_array(batch.n_seq_id, shape=(cap,)),
+                    "logits": np.ctypeslib.as_array(batch.logits, shape=(cap,))}
+        except Exception:  # noqa: BLE001 - the per-row loop fills it
+            return None
+
     def _decode_once(self, rows: list[tuple[int, int, int, bool]], *, evict: bool = True) -> list[int]:
         b = self._batch_for(len(rows))
-        for i, (token, pos, seq, logits) in enumerate(rows):
-            b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
-            b.seq_id[i][0] = seq
+        views = getattr(self, "_bf1", None)
+        if views is not None and BF1 and len(rows) >= BF1_ROWS:  # BF1: a large call's rows in four array copies
+            n = len(rows)
+            table = self.np.array(rows, dtype=self.np.int64).reshape(n, 4)
+            views["token"][:n], views["pos"][:n], views["seq"][:n] = table[:, 0], table[:, 1], table[:, 2]
+            views["n_seq"][:n], views["logits"][:n] = 1, table[:, 3]
+        else:
+            for i, (token, pos, seq, logits) in enumerate(rows):
+                b.token[i], b.pos[i], b.n_seq_id[i], b.logits[i] = token, pos, 1, int(logits)
+                b.seq_id[i][0] = seq
+        built = time.monotonic_ns() if TRACE else 0  # PF2 (trace only)
         am = getattr(self, "_argmax_only", None)
         if am is not None:  # AM1: only each output row's argmax leaves the GPU
             am(1)
@@ -1038,6 +1599,8 @@ class GgmlEngine:
                     status = self.L.llama_decode(self.ctx, b)
             finally:
                 am(0)
+            if TRACE:
+                self._tl_marks = (built, time.monotonic_ns())
             if status != 0:
                 raise RuntimeError("llama_decode failed")
             out = []
@@ -1058,6 +1621,8 @@ class GgmlEngine:
                 while self.pool._evict(None):
                     pass
             status = self.L.llama_decode(self.ctx, b)
+        if TRACE:
+            self._tl_marks = (built, time.monotonic_ns())
         if status != 0:
             raise RuntimeError("llama_decode failed")
         out = []
@@ -1182,6 +1747,66 @@ class GgmlEngine:
         self.prefill_batch_rows += len(rows)
         return picks
 
+    def _even_reuse(self, group: list[tuple[int, Job, int]]) -> list[tuple[int, Job, int]]:
+        """PX1: cut the kept prefixes of a packed group to one level, when that saves llama.cpp passes; PX2: the level
+        whose passes the measured pass costs price lowest (recomputed rows included)."""
+        on = getattr(self, "px1", PX1)
+        if (not on and not TRACE) or len(group) < 2:
+            return group
+        if os.environ.get("IRONMULE_PS1") == "1":  # PS1: one pass whatever the prefixes; keep them all
+            if TRACE:
+                keeps = [keep for _, _, keep in group]
+                trace_note(f"px1 ps1 keep {sum(keeps)} rows {sum(len(job.ids) - k for _, job, k in group)} "
+                           f"passes {split_passes({seq: len(job.ids) - k for seq, job, k in group}, UBATCH or 512)}")
+            return group
+        keeps = [keep for _, _, keep in group]
+        low = min(keeps)
+        if low == max(keeps) or sum(len(job.ids) - keep for _, job, keep in group) > self.batch_cap:
+            return group  # nothing to even out, or the group spans several calls (each split on its own)
+        ubatch = UBATCH or 512
+
+        def shapes_at(level: int) -> list[int]:
+            return split_shapes({seq: len(job.ids) - min(keep, level) for seq, job, keep in group}, ubatch)
+
+        now_shapes = shapes_at(max(keeps))
+        now = len(now_shapes)
+        costs = getattr(self, "pass_costs", None)
+        if costs is not None and getattr(self, "px2", PX2):
+            now_s = costs.split(now_shapes)
+            level, best_s = max(keeps), now_s
+            for candidate in sorted(set(keeps))[:-1]:  # every lower level the group's own prefixes offer
+                cost = costs.split(shapes_at(candidate))
+                if cost < best_s:
+                    level, best_s = candidate, cost
+            even = len(shapes_at(level))
+            extra = sum(max(0, keep - level) for keep in keeps)
+            take = level < max(keeps) and now_s - best_s >= PX2_MARGIN_S
+            trace_note(f"px1 passes {now} even {even} extra {extra} on {int(bool(on))} level {level} "
+                       f"cost_ms {1000 * now_s:.1f} {1000 * best_s:.1f} model px2")
+        else:
+            level = low
+            even = split_passes({seq: len(job.ids) - low for seq, job, _ in group}, ubatch)
+            extra = sum(keep - low for keep in keeps)
+            take = even < now and extra <= PX1_ROWS * (now - even)
+            trace_note(f"px1 passes {now} even {even} extra {extra} on {int(bool(on))}")
+        if not on or not take:
+            return group
+        out = []
+        for seq, job, keep in group:
+            if keep > level:
+                if level == 0 or not self.L.llama_memory_seq_rm(self.memory, seq, level, -1):
+                    self.L.llama_memory_seq_rm(self.memory, seq, -1, -1)
+                    if level > 0:  # the stream could not be cut at `level`: it starts empty, the rest stay even
+                        self.reused_tokens -= keep
+                        job.reused = 0
+                        out.append((seq, job, 0))
+                        continue
+                self.reused_tokens -= keep - level
+                job.reused = level
+            out.append((seq, job, min(keep, level)))
+        self.px1_evened = getattr(self, "px1_evened", 0) + 1
+        return out
+
     def _pack_prefill(self, group: list[tuple[int, Job, int]]) -> list[int]:
         """PK1: the prompts of `group` (ascending sequence ids) in as few native calls as the logical batch allows."""
         picks: list[int] = []
@@ -1250,9 +1875,18 @@ class GgmlEngine:
         admission_observer = getattr(self, "admission_observer", None)
         cohort = None
         active: dict[int, Job] = {}
+        emitter = _Emitter() if DH2 and self.gpu_layers else None  # DH2
 
         def finish(seq: int, job: Job, reason: str, keep: bool = True) -> None:
             job.reason, job.finished_ns = reason, time.monotonic_ns()
+            if TRACE:  # PF1: the request's own timeline, monotonic seconds (0: not reached)
+                self._tl_jobs.pop(seq, None)
+                with open(TRACE, "a") as fh:
+                    fh.write(f"# job seq={seq} tag={job.tag} prompt={len(job.ids)} reused={job.reused} "
+                             f"tokens={len(job.tokens)} reason={reason} seen={job.seen_ns / 1e9:.6f} "
+                             f"prefill_start={job.prefill_start_ns / 1e9:.6f} "
+                             f"prefill_end={job.prefill_end_ns / 1e9:.6f} first={job.first_ns / 1e9:.6f} "
+                             f"end={job.finished_ns / 1e9:.6f}\n")
             if self.collective is not None and reason in ("eos", "length") and job.tokens:
                 self.collective.add(job.tokens)  # SP4: this answer becomes a draft source for later requests
             if self.drafter is not None:
@@ -1287,7 +1921,12 @@ class GgmlEngine:
             if job.first_ns == 0:
                 job.first_ns = time.monotonic_ns()
             if job.emit is not None:
-                job.emit(token)
+                if emitter is not None and not self.eog(token) and len(job.tokens) < job.limit:
+                    emitter.put(job.emit, token)  # DH2: delivered while the next native call runs
+                else:
+                    if emitter is not None:  # a request's last token (its done frame reads the engine) goes from
+                        emitter.drain()  # this thread, after every earlier token
+                    job.emit(token)
             if self.eog(token):
                 finish(seq, job, "eos")
                 return True
@@ -1297,14 +1936,31 @@ class GgmlEngine:
             return False
 
         trace_note("run")
+        if TRACE:
+            self._tl_jobs: dict[int, Job] = getattr(self, "_tl_jobs", {})
         learning = getattr(self.pilot, "learning", None)
         decision = {"cap": 1 << 30, "budget": 1 << 30, "draft": True}
         arrived = 0
         scope = self.kg4_scope
         if scope is not None:
             scope.begin()
+        peak = 0  # PK1-C
+        prof = {} if STEPPROF and TRACE else None  # DH1 (trace only): host time of each part of a step
+        marks = [time.perf_counter()]
+        steps_prof: list[dict[str, float]] = []
+
+        def mark(name: str) -> None:
+            if prof is not None:
+                now = time.perf_counter()
+                prof[name] = prof.get(name, 0.0) + now - marks[0]
+                marks[0] = now
         try:
             while True:
+                if prof is not None:  # DH1: the step that ended here (decode-only steps of full width are kept)
+                    mark("tail")
+                    if prof.pop("_keep", 0):
+                        steps_prof.append(dict(prof))
+                    prof.clear()
                 if self.pilot is not None:  # PI1: threads, running cap, prompt budget and drafting for this step
                     ctx = (sum(len(j.ids) + len(j.tokens) for j in active.values()) / len(active)) if active else 0.0
                     decision = self.pilot.decide(len(active), len(pending), sum(len(j.ids) for j in pending), ctx)
@@ -1321,11 +1977,17 @@ class GgmlEngine:
                             and (more or arrived == 0)):
                         # PK1: gather the rest of a burst before the first packed prefill
                         started_wait = last = time.monotonic()
+                        trace_note(f"gather start {len(pending)}")  # PF2
                         limit, quiet = GATHER_S, GATHER_QUIET_S
-                        if len(pending) > 1:  # PK1-B: the window opened on a burst
+                        # PK1-B: the window opened on a burst; GB1: or a burst ended recently
+                        if len(pending) > 1 or started_wait - self._burst_at < GATHER_BURST_MEMORY_S:
                             limit, quiet = max(limit, GATHER_BURST_S), max(quiet, GATHER_BURST_QUIET_S)
+                        # PK1-C: within GB1's memory, the size the last wave reached
+                        expect = (min(self._burst_peak, self._slots())
+                                  if PK1C and started_wait - self._burst_at < GATHER_BURST_MEMORY_S else 0)
                         # SV2 (2026-11-23): a burst that already fills every free sequence has nothing to wait for
-                        while time.monotonic() - started_wait < limit and room() and len(pending) < self._slots():
+                        while (time.monotonic() - started_wait < limit and room() and len(pending) < self._slots()
+                               and not (expect and len(pending) >= expect)):
                             got = admit(room())
                             now = time.monotonic()
                             if got:
@@ -1335,11 +1997,15 @@ class GgmlEngine:
                                 last = now
                                 if len(pending) > 1:  # PK1-B: a burst; wait for the rest of it
                                     limit, quiet = max(limit, GATHER_BURST_S), max(quiet, GATHER_BURST_QUIET_S)
-                            elif now - last >= quiet:
+                            elif now - last >= (max(quiet, GATHER_EXPECT_QUIET_S) if expect else quiet):
                                 break
                             else:
                                 time.sleep(0.0005)
-                        trace_note(f"gathered {len(pending)}")
+                        trace_note(f"gathered {len(pending)} expect {expect}")
+                        # GB1: a group of several renews the memory; a lone arrival that waited in vain clears it, so
+                        # a single user pays the burst's gap once
+                        self._burst_at = time.monotonic() if len(pending) > 1 else float("-inf")
+                peak = max(peak, len(active) + len(pending))  # PK1-C
                 if scope is not None:
                     scope.update(len(active) + len(pending))
                 if self.pilot is not None and learning is None and decision["threads"] != self.threads:
@@ -1370,6 +2036,7 @@ class GgmlEngine:
                         if local is not None and local < budget and sum(len(j.ids) for j in pending) > local:
                             budget = local
                             self.admission_budget_hits += 1
+                mark("pilot_admit")
                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
@@ -1410,6 +2077,8 @@ class GgmlEngine:
                     self.prompt_tokens += len(job.ids)
                     self.reused_tokens += keep
                     fresh.append((seq, job, keep))
+                    if TRACE:  # PF1
+                        self._tl_jobs[seq] = job
                 if fresh and learning is not None and decision["threads"] != self.threads:
                     self.set_threads(decision["threads"])  # includes separate prefills issued before the main decode
                 if not active and not fresh:
@@ -1424,6 +2093,7 @@ class GgmlEngine:
                     break
                 # One call per step, as llama-server batches: every active request's last token and its drafts, and
                 # the prompts of the requests that start now (beyond one call's tokens, the rest go first on their own).
+                mark("select")
                 order = sorted(active)
                 offers = []
                 modelled: dict[int, list[int]] = {}
@@ -1521,7 +2191,7 @@ class GgmlEngine:
                 singles = fresh
                 delayed_groups = None
                 if getattr(self, "pack", False) and streams and fresh:
-                    group = sorted(fresh, key=lambda item: item[0])
+                    group = self._even_reuse(sorted(fresh, key=lambda item: item[0]))  # PX1
                     for sq, other, _ in group:
                         active[sq] = other
                     for (sq, other, _), pick in zip(group, self._pack_prefill(group), strict=True):
@@ -1598,9 +2268,13 @@ class GgmlEngine:
                             threads = learning.choose(ctx, self.pilot.load.foreign, threads, len(order))
                     if threads != self.threads:
                         self.set_threads(threads)
+                mark("offers_rows")
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
                 seconds = time.perf_counter() - started
+                mark("native")
+                if prof is not None and not fresh and not batched and len(rows) == len(order) >= 8:
+                    prof["_keep"] = 1
                 for sq, held in fillers:  # KG3: the placeholders leave nothing behind
                     self.L.llama_memory_seq_rm(self.memory, sq, held, -1)
                 if self.policy is not None and decode_rows and not batched:  # a prompt in the call is not a step's price
@@ -1609,6 +2283,7 @@ class GgmlEngine:
                     # Gap fillers execute in the decode batch and carry no request prompt.
                     self.observer(len(rows) - prompt_rows, prompt_rows,
                                   sum(len(j.ids) + len(j.tokens) for j in active.values()), seconds)
+                mark("observe")
                 self.steps += 1
                 at = produced = 0
                 for seq, (drafts, bucket), k, r in zip(order, offers, ks, real):
@@ -1637,16 +2312,33 @@ class GgmlEngine:
                     active[seq] = job
                     take(seq, job, picks[at])
                     at += 1
+                mark("accept_take")
                 if self.pool is not None:  # SP1: what every running sequence's cells hold now
                     with self._lock:
                         for seq, job in active.items():
                             self.pool.sync(seq, job.full_context(), job.limit - len(job.tokens),
                                            length=len(job.ids) + len(job.tokens) - 1)
         finally:
+            if steps_prof and TRACE:  # DH1: medians over this run's full-width decode steps, ms
+                parts = sorted({k for d in steps_prof for k in d})
+                trace_note("stepprof " + json.dumps({"steps": len(steps_prof), **{
+                    k: round(1000 * statistics.median(d.get(k, 0.0) for d in steps_prof), 3) for k in parts}}))
+            if peak > 1:  # PK1-C: a burst's size; a lone request between bursts leaves the memory as it was
+                self._burst_peak = peak
+                # and the burst memory itself: a window that caught only the burst's first request cleared it (GB1's
+                # "lone arrival that waited in vain"), although the rest joined this run right after (A100 pod 32)
+                self._burst_at = time.monotonic()
             if scope is not None:
                 scope.end()
             for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
                 finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
+            if emitter is not None:  # DH2: every token delivered before the run returns
+                failing = sys.exc_info()[0] is not None  # an engine error already on its way out wins
+                try:
+                    emitter.close()
+                except BaseException:
+                    if not failing:
+                        raise  # a failed token delivery fails the run
         if cohort is not None:
             started, group = cohort
             if all(j.reason in ("eos", "length") and started < j.first_ns <= j.finished_ns for j in group):
@@ -1692,7 +2384,10 @@ class GgmlEngine:
                                   "prompts": self.prefill_batch_prompts, "rows": self.prefill_batch_rows},
                 **({"pack": {"calls": self.pack_calls, "prompts": self.pack_prompts, "rows": self.pack_rows,
                              "ubatch": UBATCH or 512, "batch": self.batch_cap,
-                             "pk2": getattr(self, "pk2", {})}} if self.pack else {}),
+                             "pk2": getattr(self, "pk2", {}),
+                             "px1_evened": getattr(self, "px1_evened", 0),
+                             **({"pass_ms": {str(r): round(1000 * t, 2) for r, t in self.pass_costs.points}}
+                                if getattr(self, "pass_costs", None) is not None else {})}} if self.pack else {}),
                 "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
                                  "reused_tokens": self.reused_tokens},
                 **({"shared_pool": self.pool.summary()} if self.pool is not None else {}),
@@ -1724,6 +2419,14 @@ class GgmlEngine:
     def close_context(self) -> None:
         """Free the context, its KV cache, batch and thread pool; the loaded model stays."""
         if getattr(self, "batch", None) is not None:
+            views = getattr(self, "_bf1", None)
+            if views is not None:  # BF1: llama.cpp frees the per-row sequence arrays it allocated
+                import ctypes
+
+                kind = type(self.batch.seq_id[0])
+                for i, address in enumerate(views["own"]):
+                    self.batch.seq_id[i] = ctypes.cast(address, kind)
+                self._bf1 = None
             self.L.llama_batch_free(self.batch)
             self.batch = None
         if getattr(self, "_threadpool", None) and getattr(self, "ctx", None):
@@ -2051,7 +2754,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     # Under generated matmuls even the default attention setting can change answers. AG10 may then
     # vary width only within the settings actually chosen by the gate.
     kernel = _kernel_digest()
-    default_alternative = kernel == ""
+    default_alternative = kernel == "" and not (on_gpu and ggml_profiles.cublas_override())
     model_digest = file_sha256(gguf)
     machine = machine_key()
     experience = None
@@ -2061,6 +2764,8 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
         experience = suggest(experience_root, model_digest, ggml_devices(), machine, seq_ctx)
     key_parts = [model_digest, settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS, default_alternative,
                  int(extra_bytes) >> 28, WIDTH_GAIN, machine, device, round(total / 2**30)]
+    if on_gpu:
+        key_parts.append(ggml_profiles.cache_key())
     if not default_alternative:
         key_parts.append(kernel)
     if experience:
@@ -2311,6 +3016,7 @@ def gate_key(snapshot: str, gguf: str) -> str:
     shape_key = [file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, FACT_VERSION,
                                      ENGINE_VERSION, OPTION_BOUND, machine_key(), SEQS, SEQ_CTX, kg5, os.environ.get("IRONMULE_KG5_SHAPE"),
                                      _kernel_digest()]
+    shape_key.append(ggml_profiles.cache_key())
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "1":
         shape_key.append("grouped-split-kv-prefill-v1")
     if os.environ.get("IRONMULE_GGML_PREFILL_BATCH") == "long-444":
@@ -2346,6 +3052,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     stored = cache / f"{key}.json"
     # A fresh worker in the opposite benchmark order may reuse its own content-matched gate.
     experimental = os.environ.get("IRONMULE_KG5") == "1"
+    cublas_override = ggml_profiles.cublas_override() if gpu_layers() > 0 else None
     batch_mode = os.environ.get("IRONMULE_GGML_PREFILL_BATCH")
     prefill_batch = (batch_mode == "1" or (batch_mode == "long-444" and cuda_kernel_device())) and gpu_layers() > 0
     shape = os.environ.get("IRONMULE_KG5_SHAPE") == KG5_SHAPE
@@ -2377,6 +3084,8 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         child_env = ({**env, "IRONMULE_KG_LIB": "", "IRONMULE_KG5": "0", "IRONMULE_GGML_PREFILL_BATCH": "0",
                       "IRONMULE_W4": "0", "IRONMULE_GGML_PACK": "0", "IRONMULE_GGML_UBATCH": "0",
                       "IRONMULE_CUBLAS_MIN_ROWS": "0"} if stock else env)
+        if stock and os.environ.get("IRONMULE_GPU_PROFILE_GATE") == "1":
+            child_env = {**child_env, **ggml_profiles.profile("conservative")}
         # GR3 (2026-11-22): the gate's children run with llama.cpp's one-row CUDA graphs. Multi-row graphs
         # (IRONMULE_CUDA_GRAPHS_ROWS) leave the tokens unchanged (A100, Qwen3-32B: the same greedy tokens with and
         # without) but ran the tuning child, which opens several contexts in one process, out of an A100's 80 GB.
@@ -2456,7 +3165,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         # reference can serve. A generated or explicit experimental kernel still needs its own gate.
         skipped = diag.sanitize({**diag.make("acceptance", "skipped_uninformative_reference"),
                                  "reference_factual": tallies})
-        if experimental or prefill_batch or os.environ.get("IRONMULE_KG_LIB"):
+        if experimental or prefill_batch or cublas_override or os.environ.get("IRONMULE_KG_LIB"):
             return failure(skipped, ran=True, tried=[])
         tune = {"order": [DEFAULT_SETTINGS], "measured": []}
     else:
@@ -2497,7 +3206,7 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
 
     tried = []
     for settings in tune["order"]:  # the fastest option passing likelihood and factual correctness serves
-        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch:
+        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch and not cublas_override:
             tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference["nll"]),
                           "passes": True, "basis": "identical_reference"})
             break

@@ -1,0 +1,255 @@
+--- original
++++ actual
+@@ -18,3 +18,28 @@
+-
+-
+-def main():
++DRAFT_SHA256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
++
++
++def rejected_first_seed(folder, arm):
++    if arm not in {
++        prefix + "2" for prefix in ("F", "I", "M", "J", "Y", "W", "S", "Z", "T", "X")
++    }:
++        return None
++    first = arm[:-1] + "1"
++    ready = folder / f"ready-{first}.json"
++    if not (folder / f"end-{first}.json").is_file() or not ready.is_file():
++        return None
++    fallback = json.loads(ready.read_bytes())["health"].get("kernel_fallback") or {}
++    rejected = any(
++        attempt.get("passes") is False
++        and (attempt.get("diagnostic") or {}).get("code") == "quality_rejected"
++        for attempt in fallback.get("attempts", ())
++    )
++    if fallback.get("serving") == "stock" and rejected:
++        return {
++            "first": first,
++            "ready_sha256": checksum(ready),
++            "reason": "same program rejected by the fixed model quality gate before serving",
++        }
++    return None
++
++
++def main(*, comparator="awq_marlin"):
+@@ -35,0 +61,5 @@
++    parser.add_argument("--reference-archive", type=Path)
++    parser.add_argument(
++        "--vllm-recheck-reason",
++        help="record what decision needs a fresh comparator process",
++    )
+@@ -36,0 +67,12 @@
++    from lab.pk6.native_dispatch.reference import ARCHIVE, installation, lookup
++
++    archive = args.reference_archive or ARCHIVE
++    reason = (args.vllm_recheck_reason or "").strip()
++    if (
++        "vllm" in args.arms
++        and not (archive / "vllm-reference.json").is_file()
++        and not reason
++    ):
++        parser.error(
++            "archived vLLM evidence missing: pass --reference-archive from the study checkout or record a --vllm-recheck-reason"
++        )
+@@ -41,0 +84,18 @@
++    draft = None
++    if any(a.startswith(("K", "O", "C")) for a in args.arms):
++        draft = args.models / "Qwen3-0.6B-Q8_0.gguf"
++        if checksum(draft) != DRAFT_SHA256:
++            raise ValueError("foreign draft model")
++    draft_load = None
++    if any(a.startswith("C") for a in args.arms):
++        if not args.policy:
++            raise ValueError("missing measured draft-load proposal")
++        draft_load = json.loads(args.policy.read_bytes())
++        if (
++            not draft_load["selected"]
++            or draft_load["hardware"] != hw
++            or draft_load["gguf"] != GGUF
++            or draft_load["draft"] != DRAFT_SHA256
++            or (draft_load["slots"], draft_load["max_running"]) != (4, 8)
++        ):
++            raise ValueError("foreign drafting profile")
+@@ -78 +138 @@
+-    if any(a.startswith("H") for a in args.arms):
++    if any(a.startswith(("H", "W")) for a in args.arms):
+@@ -88 +148,41 @@
+-    awq = verify(args.models / "qwen3-32b-awq")
++    packed_receipt = None
++    if any(a.startswith("W") for a in args.arms):
++        if not args.routing_receipt or not args.lib:
++            raise ValueError("missing measured packed program")
++        packed_receipt = json.loads(args.routing_receipt.read_bytes())
++        if (
++            packed_receipt["kind"] != "packed-marlin"
++            or packed_receipt["hardware"] != hw
++            or packed_receipt["gguf"] != GGUF
++            or packed_receipt["pool_cells"] != pool["cells"]
++            or packed_receipt["library_sha256"] != checksum(args.lib)
++            or packed_receipt["ggml_cuda"]
++            != checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
++        ):
++            raise ValueError("foreign packed kernel or KV capacity")
++    bounded_w4 = None
++    if any(a.startswith("S") for a in args.arms):
++        if not args.routing_receipt or not args.lib:
++            raise ValueError("missing bounded W4 build")
++        bounded_w4 = json.loads(args.routing_receipt.read_bytes())
++        folder = args.lib.resolve().parent
++        if (
++            not bounded_w4["selected"]
++            or bounded_w4["hardware"] != hw
++            or bounded_w4["gguf"] != GGUF
++            or checksum(args.lib) != bounded_w4["counter_library"]
++            or checksum(folder / "w4-original.so") != bounded_w4["library_sha256"]
++            or checksum(folder / "selected.table") != bounded_w4["table_sha256"]
++        ):
++            raise ValueError("unverified bounded W4 program or table")
++    chunk_plan = None
++    if any(a.startswith("Q") for a in args.arms):
++        if args.policy is None:
++            raise ValueError("missing measured device forecast")
++        chunk_plan = json.loads(args.policy.read_bytes())
++        if (
++            chunk_plan["hardware"] != hw
++            or chunk_plan["gguf"] != GGUF
++            or chunk_plan["rows"] not in (256, 384, 512, 768, 1024, 1536)
++        ):
++            raise ValueError("foreign chunked prefill forecast")
+@@ -90,10 +190,23 @@
+-    version = subprocess.check_output(
+-        [
+-            str(args.vllm / "bin/python"),
+-            "-c",
+-            "import importlib.metadata as m; print(m.version('vllm'))",
+-        ],
+-        text=True,
+-    ).strip()
+-    if version != "0.34.0":
+-        raise ValueError("unexpected comparator")
++    reference = (
++        lookup(archive, artifact=comparator) if "vllm" not in args.arms else None
++    )
++    comparator_install = None
++    if reference:
++        version = reference["version"]
++        awq_digest = reference["quantized_model"]
++    else:
++        awq_digest = verify(args.models / "qwen3-32b-awq")["manifest_sha256"]
++        version = subprocess.check_output(
++            [
++                str(args.vllm / "bin/python"),
++                "-c",
++                "import importlib.metadata as m; print(m.version('vllm'))",
++            ],
++            text=True,
++        ).strip()
++        if version != "0.34.0":
++            raise ValueError("unexpected comparator")
++        if "vllm" in args.arms:
++            comparator_install = installation(
++                args.vllm / "bin/python", args.models / "tokenizers/qwen3-32b"
++            )
+@@ -105 +218,6 @@
+-            "awq_manifest_sha256": awq["manifest_sha256"],
++            "awq_manifest_sha256": awq_digest,
++            **(
++                {"external_reference_waves_sha256": reference["waves_sha256"]}
++                if reference
++                else {}
++            ),
+@@ -108,0 +227 @@
++            **({"vllm_installation": comparator_install} if comparator_install else {}),
+@@ -115,0 +235 @@
++            "draft_gguf_sha256": DRAFT_SHA256 if draft else None,
+@@ -116,0 +237,4 @@
++            **({"draft_load_plan": draft_load} if draft_load else {}),
++            "packed_program": packed_receipt,
++            "shared_chunk_plan": chunk_plan,
++            **({"bounded_w4": bounded_w4} if bounded_w4 else {}),
+@@ -119,0 +244,2 @@
++    reused = []
++    skipped = {}
+@@ -120,0 +247,20 @@
++        rejection = rejected_first_seed(args.out, arm)
++        if rejection:
++            skipped[arm] = rejection
++            continue
++        if arm == "vllm":
++            target = json.loads((args.out / "target.json").read_bytes())
++            known = lookup(archive, target, artifact=comparator)
++            if known and not reason:
++                save(args.out / "reused-vllm.json", known)
++                reused.append(arm)
++                continue
++            if reason:
++                save(
++                    args.out / "vllm-recheck.json",
++                    {"reason": reason, "previous": known},
++                )
++        if time.monotonic() >= deadline:
++            raise TimeoutError(
++                "qualification window exhausted before starting another server"
++            )
+@@ -123,0 +270,3 @@
++            "IRONMULE_LAB_DRAFT_MIX",
++            "IRONMULE_GGML_DRAFT_SLOTS",
++            "IRONMULE_GGML_DRAFT_MAX_RUNNING",
+@@ -125,0 +275 @@
++            "IRONMULE_LAB_SHARED_CHUNK",
+@@ -139,0 +290,10 @@
++        if arm.startswith(("K", "O", "C")):
++            os.environ["IRONMULE_LAB_DRAFT_MIX"] = (
++                "context_first" if arm.startswith("O") else "model_first"
++            )
++        if arm.startswith("C"):
++            os.environ.update(
++                IRONMULE_LAB_DRAFT_MIX="limited_catchup",
++                IRONMULE_GGML_DRAFT_SLOTS=str(draft_load["slots"]),
++                IRONMULE_GGML_DRAFT_MAX_RUNNING=str(draft_load["max_running"]),
++            )
+@@ -152 +312,3 @@
+-        if arm.startswith("H"):
++        if arm.startswith("Q"):
++            os.environ["IRONMULE_LAB_SHARED_CHUNK"] = str(chunk_plan["rows"])
++        if arm.startswith(("H", "W")):
+@@ -170 +332 @@
+-        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y")):
++        elif arm.startswith(("F", "V", "I", "M", "Z", "J", "Y", "W")):
+@@ -177,0 +340,6 @@
++        elif arm.startswith("S"):
++            os.environ.update(
++                IRONMULE_LAB_KERNEL_TRACE="1",
++                IRONMULE_KG_LIB=str(args.lib.resolve()),
++                IRONMULE_W4_TABLE=str(args.lib.resolve().with_name("selected.table")),
++            )
+@@ -179 +347 @@
+-            ("R", "U", "N", "G", "T", "X", "A", "L", "H", "E")
++            ("Q", "R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O", "C")
+@@ -182,2 +350,13 @@
+-        trial.measure(args, arm, hw, 0, deadline)
+-    save(args.out / "completed.json", {"hardware": trial.board(), "order": args.arms})
++        if not arm.startswith("S") and bounded_w4:
++            os.environ.pop("IRONMULE_W4_TABLE", None)
++        if arm.startswith(("K", "O", "C")):
++            trial.measure(args, arm, hw, 0, deadline, draft=draft)
++        else:
++            trial.measure(args, arm, hw, 0, deadline)
++    completed = {
++        "hardware": trial.board(),
++        "order": [a for a in args.arms if a not in reused and a not in skipped],
++    }
++    if reused:
++        completed.update(requested=args.arms, reused=reused)
++    save(args.out / "completed.json", completed)
+@@ -190 +369,9 @@
+-        fcntl.flock(lock, fcntl.LOCK_EX)
++        while True:
++            remaining = float(os.environ["RP_DEADLINE"]) - time.time() - 45
++            if remaining <= 0:
++                raise TimeoutError("device wait exhausted the reserved window")
++            try:
++                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
++                break
++            except BlockingIOError:
++                time.sleep(min(remaining, 1.0))

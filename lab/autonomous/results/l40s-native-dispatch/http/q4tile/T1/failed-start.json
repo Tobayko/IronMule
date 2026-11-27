@@ -1,0 +1,9 @@
+{
+  "arm": "T1",
+  "completed_waves": 0,
+  "cost_scope": "Included in the shared L40S lease. No performance label.",
+  "failure": "quality_rejected",
+  "raw_log_sha256": "3309be287d5d8d66311d953e1d30b64a304c4a55894575139cef3f06b12f783c",
+  "reached_ready": false,
+  "stage": "acceptance"
+}

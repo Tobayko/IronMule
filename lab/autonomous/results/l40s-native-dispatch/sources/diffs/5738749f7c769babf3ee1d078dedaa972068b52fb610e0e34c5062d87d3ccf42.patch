@@ -1,0 +1,25 @@
+--- original
++++ actual
+@@ -264 +264,2 @@
+-    tuned_env = ("IRONMULE_W4_TABLE", "IRONMULE_GGML_PACK", "IRONMULE_GGML_UBATCH", "IRONMULE_CUDA_GRAPHS_ROWS")
++    tuned_env = ("IRONMULE_W4_TABLE", "IRONMULE_GGML_PACK", "IRONMULE_GGML_UBATCH", "IRONMULE_CUDA_GRAPHS_ROWS",
++                 "IRONMULE_CUBLAS_MIN_ROWS")
+@@ -282 +283,2 @@
+-    from ironmule.ggml_engine import gate
++    from ironmule.ggml_engine import gate, gpu_layers
++    from ironmule.ggml_profiles import cublas_override
+@@ -283,0 +286,3 @@
++
++    threshold = cublas_override()
++    explicit_cublas = threshold is not None and gpu_layers() > 0
+@@ -289,0 +295,2 @@
++            if explicit_cublas:
++                os.environ["IRONMULE_CUBLAS_MIN_ROWS"] = "0"
+@@ -298 +305,3 @@
+-    mode = "generated" if probe or os.environ.get("IRONMULE_KG_LIB") else "stock"
++    mode = "cublas" if explicit_cublas else "stock"
++    if probe or os.environ.get("IRONMULE_KG_LIB"):
++        mode = "generated"
+@@ -303 +312 @@
+-    if (not first["passes"] and mode == "generated" and not probe
++    if (not first["passes"] and mode != "stock" and not probe

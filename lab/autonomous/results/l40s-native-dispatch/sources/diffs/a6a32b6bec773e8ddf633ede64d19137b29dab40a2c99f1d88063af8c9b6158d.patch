@@ -1,0 +1,76 @@
+--- original
++++ actual
+@@ -1209,0 +1210,3 @@
++            if hasattr(lib, "im_prompt_threshold"):
++                lib.im_prompt_threshold.restype = ctypes.c_int
++                return {"family":"prompt_only", "minimum_rows":lib.im_prompt_threshold(), "tokens_served":[]}
+@@ -1375 +1378,12 @@
+-        params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, logical, physical
++        lab_shared_profile = os.environ.get("IRONMULE_LAB_SHARED_PROFILE", "")
++        if lab_shared_profile and shared and self.gpu_layers:
++            if lab_shared_profile != "wide":
++                raise ValueError("unknown experimental shared-pool profile")
++            physical = min(logical, 2048)
++        cells = seqs * seq_ctx
++        if shared and self.gpu_layers and os.environ.get("IRONMULE_LAB_POOL_CELLS"):
++            requested = int(os.environ["IRONMULE_LAB_POOL_CELLS"])
++            if requested < 2 * seq_ctx or requested % 256:
++                raise ValueError("invalid experimental unified pool size")
++            cells = min(cells, requested)
++        params.n_ctx, params.n_batch, params.n_ubatch = cells, logical, physical
+@@ -1409 +1423,3 @@
+-        self.pool = SharedPool(self, seqs * seq_ctx, self.cap, ids, MAX_DRAFT_SLACK) if shared else None
++        self.pool = SharedPool(self, cells, self.cap, ids, MAX_DRAFT_SLACK) if shared else None
++        if shared and TRACE and os.environ.get("IRONMULE_LAB_POOL_CELLS"):
++            trace_note(f"physical_pool cells={self.pool.cells} allocated={self.L.llama_n_ctx(self.ctx)} cap={self.pool.cap}")
+@@ -2038,0 +2055,13 @@
++                if (self.pool is not None and not PROMPT_BUDGET and len(pending) >= 4
++                        and os.environ.get("IRONMULE_LAB_SHARED_PROFILE") == "wide"
++                        and not any(job.hardware_probe for job in pending)):
++                    limit = min(self.seq_ctx, self.batch_cap, 2048) - len(active)
++                    if budget < limit:
++                        trace_note(f"shared_budget from={budget} to={limit} queued={len(pending)}")
++                        budget = limit
++                chunk_rows = int(os.getenv("IRONMULE_LAB_SHARED_CHUNK", "0"))
++                chunk_cohort = (self.pool is not None and not PROMPT_BUDGET
++                                and len(pending) >= 4 and len(active) < chunk_rows <= self.batch_cap
++                                and not any(j.hardware_probe for j in pending))
++                if chunk_cohort:
++                    budget = max(budget, self.batch_cap)
+@@ -2095,0 +2125,10 @@
++                if (chunk_cohort and len(fresh) >= 2
++                        and sum(len(j.ids)-keep for _,j,keep in fresh) + len(active) > chunk_rows
++                        and len(active) + len(fresh) < chunk_rows):
++                    from lab.pk6.mixed_progress.schedule import serve as serve_shared_chunks
++
++                    active.update((seq, job) for seq, job, _ in fresh)
++                    trace_note(f"shared_chunks rows={chunk_rows} fresh={len(fresh)} running={len(active)-len(fresh)}")
++                    serve_shared_chunks(self, fresh, active, take, finish, chunk_rows, shared=True)
++                    arrived = 0
++                    continue
+@@ -2757 +2796 @@
+-    default_alternative = kernel == ""
++    default_alternative = kernel == "" and not os.getenv("IRONMULE_LAB_MMQ_TILE")
+@@ -3085 +3124 @@
+-                      "IRONMULE_CUBLAS_MIN_ROWS": "0"} if stock else env)
++                      "IRONMULE_CUBLAS_MIN_ROWS": "0", "IRONMULE_LAB_MMQ_TILE": ""} if stock else env)
+@@ -3167 +3206 @@
+-        if experimental or prefill_batch or os.environ.get("IRONMULE_KG_LIB"):
++        if experimental or prefill_batch or os.getenv("IRONMULE_LAB_MMQ_TILE") or os.environ.get("IRONMULE_KG_LIB"):
+@@ -3208 +3247 @@
+-        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch:
++        if settings == DEFAULT_SETTINGS and not os.environ.get("IRONMULE_KG_LIB") and not prefill_batch and not os.getenv("IRONMULE_LAB_MMQ_TILE"):
+@@ -3240,0 +3280,4 @@
++        if os.getenv("IRONMULE_LAB_STREAM_ALTERNATIVE") == "plain" and not streams.get("passes"):
++            flash_result = streams
++            streams = probe({**chosen["settings"], "flash_attn": False, "kv_unified": False}, "plain_streams")
++            streams = {**streams, "previous_flash_result": flash_result}
+@@ -3270,0 +3314,8 @@
++
++if os.environ.get("IRONMULE_LAB_KERNEL_TRACE") and TRACE:
++    from lab.pk6.native_dispatch.capture import count_dispatches
++    count_dispatches(GgmlEngine, TRACE)
++
++if os.environ.get("IRONMULE_LAB_ACTIVITY"):
++    from lab.pk6.native_dispatch.capture import install
++    install(GgmlEngine)

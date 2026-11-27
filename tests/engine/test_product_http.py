@@ -585,3 +585,42 @@ def test_chat_page_is_served_without_a_key_while_the_api_still_needs_one():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+class _ReadyCountingService(ControlService):
+    """ADM1: a service that answers readiness on its own; health() must not run on the chat path."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.health_calls = 0
+        self.ready_calls = 0
+
+    def health(self) -> dict[str, object]:
+        self.health_calls += 1
+        return super().health()
+
+    def ready(self) -> bool:
+        self.ready_calls += 1
+        return False
+
+
+def test_chat_request_asks_ready_not_the_whole_health_report():
+    service = _ReadyCountingService()
+    try:
+        server = create_server(service, port=0)
+    except PermissionError as exc:
+        pytest.skip(f"loopback bind denied by test environment: {exc}")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, payload = request(server, "POST", "/v1/chat/completions",
+                                  {"model": "gemma-local", "messages": [{"role": "user", "content": "hello"}]},
+                                  {"Content-Type": "application/json"})
+        assert status == 503 and payload["error"]["code"] == "backend_unavailable"
+        assert (service.ready_calls, service.health_calls, service.stream_calls) == (1, 0, 0)
+        status, _ = request(server, "GET", "/health")  # the report itself is unchanged
+        assert status == 200 and service.health_calls == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

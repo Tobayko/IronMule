@@ -1,0 +1,165 @@
+{
+  "decode": 16,
+  "elapsed_s": 0.22492290299851447,
+  "kernels": [
+    {
+      "calls": 382,
+      "device_s": 0.1393577840000001,
+      "symbol": "void mul_mat_q<(ggml_type)12, 128, false>(char const*, int const*, int const*, int const*, float*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 63,
+      "device_s": 0.02643442099999993,
+      "symbol": "void mul_mat_q<(ggml_type)14, 128, false>(char const*, int const*, int const*, int const*, float*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 64,
+      "device_s": 0.015507180999999983,
+      "symbol": "void flash_attn_ext_f16<128, 128, 8, 8, 4, 2, false, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, int, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+    },
+    {
+      "calls": 64,
+      "device_s": 0.010024421,
+      "symbol": "void unary_gated_op_kernel<&_INTERNAL_fe259106_8_unary_cu_eb6d5366::op_silu, float>(float const*, float const*, float*, long, long, long, long)"
+    },
+    {
+      "calls": 382,
+      "device_s": 0.0050918060000003955,
+      "symbol": "void mul_mat_q_stream_k_fixup<(ggml_type)12, 128, false>(int const*, int const*, float*, float const*, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 384,
+      "device_s": 0.0036056880000001888,
+      "symbol": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)1>(float const*, int const*, void*, long, long, long, long, long, int, int)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.003000187999999834,
+      "symbol": "void ironmule_add_rms_norm_mul_f32<1024>(float const*, float const*, float*, float*, float const*, int, int, float, __half*, int, int)"
+    },
+    {
+      "calls": 6,
+      "device_s": 0.0019252619999999996,
+      "symbol": "Memcpy HtoD (Pinned -> Device)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.0017294800000001163,
+      "symbol": "void rope_neox<true, false, float>(float const*, float*, int, int, int, int, int, int const*, float, float, float, rope_corr_dims, float, float const*)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.001606572000000059,
+      "symbol": "void rms_norm_f32<32, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)"
+    },
+    {
+      "calls": 64,
+      "device_s": 0.0014330639999998876,
+      "symbol": "void flash_attn_stream_k_fixup<128, 8, 8>(float*, float2 const*, int, int, int, int)"
+    },
+    {
+      "calls": 2,
+      "device_s": 0.0013436890000000131,
+      "symbol": "void mul_mat_q<(ggml_type)14, 24, false>(char const*, int const*, int const*, int const*, float*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 65,
+      "device_s": 0.0010818960000000795,
+      "symbol": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0>(float const*, int const*, void*, long, long, long, long, long, int, int)"
+    },
+    {
+      "calls": 63,
+      "device_s": 0.0008018909999999579,
+      "symbol": "void mul_mat_q_stream_k_fixup<(ggml_type)14, 128, false>(int const*, int const*, float*, float const*, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 128,
+      "device_s": 0.0006944049999999979,
+      "symbol": "void k_set_rows<float, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)"
+    },
+    {
+      "calls": 2,
+      "device_s": 0.0003316509999999835,
+      "symbol": "void mul_mat_q<(ggml_type)12, 24, false>(char const*, int const*, int const*, int const*, float*, float*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 1,
+      "device_s": 4.492900000000372e-05,
+      "symbol": "argmax_f32(float const*, int*, long)"
+    },
+    {
+      "calls": 1,
+      "device_s": 1.635200000000077e-05,
+      "symbol": "void rms_norm_f32<1024, true>(float const*, float*, int, long, long, long, float, float const*, long, long, long, int, int, int, int)"
+    },
+    {
+      "calls": 1,
+      "device_s": 1.3664000000000669e-05,
+      "symbol": "void cpy_flt<&(void _INTERNAL_8db1dfbb_6_cpy_cu_843ac19f::cpy_1_flt<float, __half>(char const*, char*))>(char const*, char*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, char**, int)"
+    },
+    {
+      "calls": 2,
+      "device_s": 1.1872000000003026e-05,
+      "symbol": "void mul_mat_q_stream_k_fixup<(ggml_type)14, 24, false>(int const*, int const*, float*, float const*, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 2,
+      "device_s": 7.5190000000002324e-06,
+      "symbol": "void mul_mat_q_stream_k_fixup<(ggml_type)12, 24, false>(int const*, int const*, float*, float const*, int, int, int, int, int, int, int, int)"
+    },
+    {
+      "calls": 2,
+      "device_s": 4.511999999987893e-06,
+      "symbol": "void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)"
+    },
+    {
+      "calls": 1,
+      "device_s": 1.9520000000193247e-06,
+      "symbol": "Memcpy DtoH (Device -> Pageable)"
+    }
+  ],
+  "logical_batch_capacity": 2048,
+  "occupied_kv_cells": 1954,
+  "pid": 10149,
+  "prompt": 433,
+  "request_ids": [
+    "chatcmpl-03753d6d0ec4421e9ab45b0c3eec5dea",
+    "chatcmpl-0ae7214b46554274ae1e3d6c1eb855a4",
+    "chatcmpl-0b6223e919734bb7ad8e7e4682e7c8fc",
+    "chatcmpl-255e03f5c72e444fb6f140b8ffcc7c2b",
+    "chatcmpl-25e6cb3af4f64ff2acba446340eebda9",
+    "chatcmpl-3b750b530d7c4b86875164d97515ebe7",
+    "chatcmpl-4de4038fb413402da88e6676d7d6c7c9",
+    "chatcmpl-75195b1548994c8aaa945ab10259c7d5",
+    "chatcmpl-803cfa84c9a246b5bc33870082745309",
+    "chatcmpl-8af778f42f0e4211ae6168882945fbcf",
+    "chatcmpl-94fc670685714d28b50666286864f704",
+    "chatcmpl-9dbc7df0418f41638d6cc4d1818eae9a",
+    "chatcmpl-ae29e0317def405c8502f203f40d5f59",
+    "chatcmpl-cdc134f7fff34b8eac477e1404981722",
+    "chatcmpl-d7bbcadf173d4f7d8598cc7a4583161b",
+    "chatcmpl-e7977053d52a4ef696bbf60272ea8406",
+    "chatcmpl-f2d03954e8c845c9a6ebf3db6eb61efa"
+  ],
+  "sequences": [
+    0,
+    1,
+    3,
+    4,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "shared": true,
+  "start_monotonic": 863947.725563015
+}

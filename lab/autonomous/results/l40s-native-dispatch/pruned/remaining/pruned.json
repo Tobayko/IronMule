@@ -1,0 +1,12 @@
+{
+  "eligible": false,
+  "pruned": [
+    "N2",
+    "U2"
+  ],
+  "reason": "The fixed qualification selected shared KV for N1, while split streams failed. In U1 it selected no shared pool, so the widened budget could never run. Neither proposal was active. The separate G profile still gets a target trial.",
+  "reference_arms": [
+    "N1",
+    "U1"
+  ]
+}

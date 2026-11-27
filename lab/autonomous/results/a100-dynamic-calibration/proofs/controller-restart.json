@@ -1,0 +1,19 @@
+{
+  "target_exit": 0,
+  "trained_weights_sha256": "a699ed8a586ea5f8e8c470395b757ed657e61476399dd36074f02b31f73dd6ad",
+  "activation": {
+    "arm": "candidate",
+    "withdrawn": false,
+    "receipt_sha256": "c7840a9f67a42558f8027517b59fc79520f8dd73db3957aa29890824c49898e7",
+    "target_check_sha256": "802d1b64386cc94fe7876bce9e9e0f1228982f3722cf5ce16763e41cc6ea546c",
+    "pr": 62
+  },
+  "publication": {
+    "pr": 62,
+    "receipt_sha256": "c7840a9f67a42558f8027517b59fc79520f8dd73db3957aa29890824c49898e7"
+  },
+  "restart_result_identical": true,
+  "first_framework": "37ed1874",
+  "resumed_framework": "8438e83",
+  "command": "lab.rp.ordered_campaign --author archived --publish"
+}

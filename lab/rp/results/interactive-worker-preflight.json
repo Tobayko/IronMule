@@ -1,0 +1,26 @@
+{
+  "schema": "ironmule.restricted-pipe-smoke.v1",
+  "date": "2026-11-26",
+  "hardware": "RunPod Linux, EPYC 7742 / A100 SXM4",
+  "operation": "real root-brokered one-shot preflight and binary stdin/stdout roundtrip after exec, affinity 20",
+  "launcher_sha256": "a79b51ccea50ea33691f9a99e253a062021f3c93a144e294681f1b77d1b8b4d6",
+  "uid": 60000,
+  "capabilities": {
+    "CapInh": 0,
+    "CapPrm": 0,
+    "CapEff": 0,
+    "CapBnd": 0,
+    "CapAmb": 0
+  },
+  "network_denied": true,
+  "byte_pipe_roundtrip": true,
+  "one_shot_preflight": true,
+  "nvidia_arithmetic_in_this_probe": false,
+  "broker_exit_probe": {
+    "launcher_sha256": "9aa622b883efc9889711a7992879c271d5c63d5386f8e60603b96fc5717e7d7f",
+    "broker_hard_exit": true,
+    "worker_exit_confirmed_by_pidfd": true,
+    "deadline_s": 120,
+    "max_observation_s": 3
+  }
+}

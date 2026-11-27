@@ -1,0 +1,81 @@
+3011c3011,3016
+< struct ironmule_gr3_state { bool changed = true; bool recapture = false; int pause = 0; };
+---
+> struct ironmule_gr3_state { bool changed = true; bool recapture = false; int pause = 0; unsigned gen = 0; };
+> // PD1: a choice the kernel library makes while a graph is captured (ironmule_kg_pd1_set) only takes effect when the
+> // graph is captured again; ironmule_cuda_graphs_invalidate makes every context treat its next graph as changed.
+> static std::atomic<unsigned> ironmule_graphs_gen{0};
+> extern "C" GGML_BACKEND_API void ironmule_cuda_graphs_invalidate(void);
+> extern "C" GGML_BACKEND_API void ironmule_cuda_graphs_invalidate(void) { ironmule_graphs_gen.fetch_add(1); }
+3024a3030,3034
+>     const unsigned ironmule_gen = ironmule_graphs_gen.load();  // PD1
+>     if (ironmule_st.gen != ironmule_gen) {
+>         ironmule_st.gen = ironmule_gen;
+>         cuda_ctx->cuda_graph->ggml_graph_properties.clear();  // as a graph of another size: changed
+>     }
+3088c3098,3099
+<         const float * mul, const int ncols, const int mul_ncols, const float eps, half * dst16 = nullptr) {
+---
+>         const float * mul, const int ncols, const int mul_ncols, const float eps, half * dst16 = nullptr,
+>         const int sat16 = 0) {
+3124c3135,3136
+<             dst16[col] = __float2half(v);  // PK4: the conversion the cuBLAS path would run next
+---
+>             // PK4: the conversion the cuBLAS path would run next; PD1: the W4R library's prep_x conversion
+>             dst16[col] = sat16 ? __float2half_rn(fminf(fmaxf(v, -65000.0f), 65000.0f)) : __float2half(v);
+3156a3169,3190
+> // PD1 (IronMule): in a decode step (up to 32 rows, inside CUDA graph capture as well) the matmul on `node` goes to the
+> // kernel library (KG1), which converts the activations into its own fp16 copy (prep_x) before every first matmul on
+> // them. The library's ironmule_kg_prepare names where the producer can write that copy itself (its scratch, under
+> // PK3's key of node, graph epoch, data, rows and stream) or returns nullptr (PD1 off, no such matmul, or no room inside
+> // a capture), and the producer then writes none. The values are prep_x's: saturated to +-65000, rounded to nearest;
+> // prep_x's activation sums are not written, the library runs prep_x anyway for a kernel that reads them.
+> typedef void * (*ironmule_kg_prepare_fn)(const void * node, unsigned long long epoch, const float * x, int64_t k,
+>                                          int64_t batch, cudaStream_t stream);
+> static half * ironmule_pd1_slot(const ggml_tensor * node, int64_t ncols, int64_t nrows, cudaStream_t stream) {
+>     static const ironmule_kg_prepare_fn fn = [] {
+>         const char * path = getenv("IRONMULE_KG_LIB");
+>         void * handle = (path && *path) ? dlopen(path, RTLD_NOW | RTLD_LOCAL) : nullptr;
+>         return handle ? (ironmule_kg_prepare_fn) dlsym(handle, "ironmule_kg_prepare") : (ironmule_kg_prepare_fn) nullptr;
+>     }();
+>     if (fn == nullptr || node->type != GGML_TYPE_F32 || !ggml_is_contiguous(node) || node->ne[2] != 1 ||
+>         node->ne[3] != 1 || node->ne[0] != ncols || node->ne[1] != nrows) {
+>         return nullptr;
+>     }
+>     return (half *) fn(node, ironmule_graph_epoch.load(std::memory_order_relaxed), (const float *) node->data, ncols,
+>                        nrows, stream);
+> }
+> 
+3159c3193
+<         const int64_t n, const int64_t o0, const int64_t o1) {
+---
+>         const int64_t n, const int64_t o0, const int64_t o1, const int sat16 = 0) {
+3169c3203
+<     dst16[i] = __float2half(v);
+---
+>     dst16[i] = sat16 ? __float2half_rn(fminf(fmaxf(v, -65000.0f), 65000.0f)) : __float2half(v);  // PD1: prep_x's
+3188a3223,3227
+>     int sat16 = 0;
+>     if (dst16 == nullptr) {  // PD1
+>         dst16 = ironmule_pd1_slot(dst, dst->ne[0], ggml_nrows(dst), stream);
+>         sat16 = 1;
+>     }
+3202c3241,3242
+<     ironmule_swiglu_f32<<<blocks, CUDA_GLU_BLOCK_SIZE, 0, stream>>>(x, g, (float *) dst->data, dst16, k, nc, o0, o1);
+---
+>     ironmule_swiglu_f32<<<blocks, CUDA_GLU_BLOCK_SIZE, 0, stream>>>(x, g, (float *) dst->data, dst16, k, nc, o0, o1,
+>                                                                     sat16);
+3245a3286,3290
+>     int sat16 = 0;
+>     if (dst16 == nullptr) {  // PD1
+>         dst16 = ironmule_pd1_slot(mul, ncols, nrows, stream);
+>         sat16 = 1;
+>     }
+3249c3294
+<             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16);
+---
+>             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16, sat16);
+3253c3298
+<             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16);
+---
+>             (const float *) w->data, ncols, (int) w->ne[0], eps, dst16, sat16);

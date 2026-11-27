@@ -1,0 +1,7 @@
+1465c1465,1468
+<     return std::max<uint32_t>(1024u, 8u*model.n_tensors());
+---
+>     // PS1 (IronMule): a merged ubatch adds about eight nodes a layer for every rectangle it carries (at most 16); with
+>     // 8 a tensor, 8 rectangles of Qwen3-32B's 64 layers ran out of graph objects (A100 pod 35)
+>     const char * ps1 = getenv("IRONMULE_PS1");
+>     return std::max<uint32_t>(1024u, (ps1 && ps1[0] == '1' ? 24u : 8u)*model.n_tensors());

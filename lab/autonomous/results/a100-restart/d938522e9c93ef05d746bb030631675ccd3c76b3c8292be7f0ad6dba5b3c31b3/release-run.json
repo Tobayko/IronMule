@@ -1,0 +1,14 @@
+{
+  "arm": "candidate",
+  "source_sha256": "80a41c59bfe8088b305529cca5164134c25d4b5a0ce9572877cb25a2b7d269fd",
+  "seed": 93742,
+  "cache_used": true,
+  "work_sha256": "1e3ce02f8dd5bc4003a2e1b751935ed31e95bc832f9a13b1d04b2ff6f27b9a2f",
+  "cold_performance_completions": 32,
+  "warm_performance_completions": 32,
+  "graded_correct": 18,
+  "pilot_decisions": 73,
+  "cold_to_first_batch_s": 15.337294221040793,
+  "warm_wall_s": 3.299451515,
+  "full_worker_wall_s": 35.211863931966946
+}

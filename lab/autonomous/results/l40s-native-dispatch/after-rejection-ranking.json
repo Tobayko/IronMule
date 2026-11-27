@@ -1,0 +1,43 @@
+{
+  "candidates": [
+    {
+      "arm": "J",
+      "cells": [
+        {
+          "estimated_saved_us": 179.2080081367493,
+          "native_graph_us": 602.86,
+          "shape": [
+            12,
+            25600,
+            5120,
+            448
+          ],
+          "warm_device_us": 421.63199186325073
+        },
+        {
+          "estimated_saved_us": 206.08399162292483,
+          "native_graph_us": 622.21,
+          "shape": [
+            12,
+            5120,
+            25600,
+            448
+          ],
+          "warm_device_us": 414.0160083770752
+        }
+      ],
+      "estimated_saved_us": 385.2919997596741,
+      "family": "cached-check",
+      "library_sha256": "1f5161ab9d77b7ebaa7f6aaaf42fc60c859b79a618974ee9a33eb9f080364e52",
+      "source_sha256": "807e70fb24ec217c19ac3bd22085abfb26e542607a38de9dcc40156155665cb3"
+    }
+  ],
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "interpretation": "Ranking hypothesis. Warm CUDA arithmetic and full GGML graph timing have different boundaries. Only matched full-server measurements determine benefit.",
+  "native": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab"
+}

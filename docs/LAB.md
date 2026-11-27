@@ -3342,6 +3342,1048 @@ behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached
 [IronMule](../lab/pk1/results/a100-ironmule-http-pod21-sv4.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod21.jsonl).
 Balance after pod 21: 4.39 USD.
 
+### 2026-11-23, local (4-core cloud container, CPU build): why the 32 prompts took 100 ms to render (TK1)
+Maintainer change. The pod 21 trace left open why SV4 never engaged and why rendering the 32 benchmark prompts took
+about 103 ms before every 32-client prefill. Measured locally with Qwen3-0.6B Q4_K_M's own tokenizer (`GgufTokenizer`,
+the same Qwen2 vocabulary and template as Qwen3-32B): the chat template renders all 32 in 0.6 ms; llama.cpp's
+tokenizer takes 44.6 ms for their 7,632 tokens. A call costs about 0.23 ms per text fragment between special tokens
+plus about 0.8 us per token, because Qwen2's pre-tokenizer pattern has no hand-written splitter in llama.cpp and takes
+the `std::regex` path, which compiled the pattern again for every fragment (five fragments per chat prompt).
+- TK1 (`native/ggml_patches/tk1`, every build): each thread compiles a pattern once and keeps it. 32 prompts: 46 ->
+  6.2 ms serially. The ids equal Hugging Face's Qwen3 tokenizer on 370 texts (the benchmark prompts and chat-wrapped
+  ones, German, Japanese, Chinese, Korean, code, emoji, odd whitespace, written special tokens, 300 random Unicode
+  strings).
+- `GgufTokenizer` takes Hugging Face's batch interface (`tokenizer(texts)`, `apply_chat_template` over a list of
+  conversations), tokenizing in up to four threads (llama.cpp releases the GIL; 4 threads: 46 -> 12.5 ms without
+  TK1, 2.2 ms with it, the same ids). SV4's batch rendering in the worker now engages for GGUF serving and passed its
+  equality check: 3.4 ms for the 32 prompts, against 46 ms before.
+- Expected on the A100 pods: about 100 ms less per 32-client wave (about 2.5 % at 32 clients). Not yet measured there.
+- The HC1 probe on Kaggle (T4) failed before measuring (no `PYTHONPATH`; it also did not keep positions consecutive);
+  fixed and rerun, and its CUDA build is now kept as output so later Kaggle runs skip the 55-minute compile.
+- Wave tail, local server (CPU build, 0.6B, 32 clients, `lab/sv/tail_probe.py`): the last request ended 1.2-3.8 ms
+  after the last decode call, against 33-166 ms on the A100 pods. Locally a step takes about 200 ms; on the pods 31 ms,
+  with 32 token frames per step. That the pod tail depends on the pod (33-40 ms on pod 19, 153-166 ms on pod 21) fits
+  HC1 (the CPU threadpool spinning on every core while the server's Python threads stream), not yet shown.
+
+### 2026-11-23, A100 pod 22: TK1 and EM1 on the GPU, and vLLM on the same pod
+Maintainer session. RunPod A100 SXM4 80 GB (community cloud, 1.39 USD/h, 256 visible cores), Qwen3-32B Q4_K_M, build
+with every patch including TK1 and EM1.
+- EM1, engine A/B (`lab/em1/em1_probe.py`, waves of 8 and 32 benchmark prompts, 32-token answers): the answers with the
+  embedding on the GPU equal those with it on the CPU (6/6 waves, 120/120 answers). Decode steps unchanged (32 rows
+  32.46 against 32.44 ms, 8 rows 22.37 against 22.43); the 32-prompt prefill 10-15 ms shorter (2,575 / 2,418 against
+  2,589 / 2,432 ms). The server's quality gate with EM1 then failed: its KV-setting tuning ran out of GPU memory
+  (exit -6), since the table and the step's input rows now live on the GPU. EM1 is opt-in (`IRONMULE_GGML_EM1=1`).
+- HC1 refuted on this pod: rendering the 32 benchmark prompts took 12.9 ms with the engine idle and 12.9 ms while it
+  decoded (28 threads, busy-wait 50), with EM1 on or off; decode steps unchanged by the rendering. With TK1 the serial
+  rendering took 12.9 ms here (103 ms on pod 21).
+- Same pod, three repeats, IronMule `serve --agent on` (TK1, EM1 off) against vLLM 0.11.0 AWQ-Marlin:
+
+| Clients | IronMule (TK1) | vLLM AWQ | difference of the means |
+| ---: | ---: | ---: | ---: |
+| 1 | 55.4 / 95.1 / 98.2 | 51.5 / 51.8 / 51.9 | +60 % (the first repeat is the cold one) |
+| 8 | 161.5 / 163.3 / 165.7 | 190.4 / 186.5 / 189.5 | -13.4 % |
+| 32 | 275.6 / 273.0 / 271.4 | 274.0 / 278.8 / 276.2 | -1.1 % |
+
+  Facts 18/18 in every run except IronMule's third 32-client repeat (17/18).
+- Wave anatomy from the engine trace, 32 clients: where the burst reached the worker as one group, 50 ms passed from
+  the batch command to the packed prefill (106 ms on pod 21: the rendering is gone). In one wave the first request
+  arrived alone and the engine started it at once: a 441-row prefill of 217 ms before the other 31 (7,167 rows,
+  2.37 s), 240 ms from command to the big prefill. Prefill 2.37-2.50 s; 31 decode steps of 30.1-30.2 ms, the first two
+  after a prefill 35 and 42-44 ms (a new CUDA graph).
+- What this means for the +10 % goal at 32 clients: vLLM's wave takes about 3.71 s at 276 tok/s; +10 % needs about
+  3.37 s. IronMule's GPU work alone is about 2.45 s of prefill plus 31 x 30.2 ms of decoding, 3.39 s, before any server
+  time. The server's own time per wave is now small; the decode step (30.2 against about 23 ms in vLLM) is what
+  remains, and within it the 4-bit matmuls at 32 rows (about 21 ms at 0.94 TB/s, against 1.37 TB/s at one row).
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod22-tk1.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod22.jsonl).
+Pod time 0.87 h, about 1.20 USD; balance after pod 22: 3.17 USD.
+
+### 2026-11-23, RTX 4090: why SD1's drafts failed under multi-row CUDA graphs (GR4), and GB1
+Maintainer session. RunPod RTX 4090 (secure cloud, 0.89 USD/h, 0.47 h, about 0.42 USD; no Ampere card or A100 was
+free), Qwen3-4B Q4_K_M as the served model and Qwen3-0.6B Q4_K_M as SD1's draft, engine waves of the benchmark prompts
+(`lab/sd1/sd_wave.py`, 8 and 32 clients, 32-token answers, 1,024 context per sequence: 2,048 did not fit both models'
+KV caches into 24 GB), W4R tuned on the card.
+- The bug reproduced: drafts accepted 0.59-0.62 with one-row CUDA graphs, 0.03-0.05 with graphs up to 32 rows.
+- SG1 (one W4R scratch per CUDA stream, grown buffers kept; commit c3f95f3) was not the cause: the same draft counts
+  to the token (12 / 224, 16 / 456, 20 / 688 accepted) with the W4R library before and after it. SG1 stays as a
+  robustness change (it touches no arithmetic).
+- The cause was GR3's capture state ("changed", "capture next time", the pause counter): process-wide statics, so the
+  draft model's context consumed or set the served model's flags and replayed a stored graph instance of another of
+  its graphs. GR4 (`native/ggml_patches/gr4`) keeps that state per CUDA backend context: with 32-row graphs the drafts
+  were accepted 0.62 / 0.61 / 0.59 again (the one-row numbers), with `IRONMULE_GR4=0` 0.05 / 0.04 / 0.03.
+- On this card SD1 still lost at 8 clients (583 against 752 tok/s without drafts): next to a 4B model a 0.6B draft
+  is expensive. Whether it pays next to Qwen3-32B is measured on the A100 (below).
+- Side observation: the served model's answers with 32-row graphs differ from those with one-row graphs in 16-21 of
+  120 answers (greedy divergence; not examined further here).
+- GB1 (local, `tests/engine/test_ggml_engine.py`): after a group of several prompts, the next lone arrival waits with
+  the burst's gather window once; on pods 20 and 22 a 32-client burst had started its first request alone (a 441-row
+  prefill of 217 ms) with the other 31 behind it.
+
+### 2026-11-23, A100 pod 24: the server with GB1, GR4 and SD1 (rejected)
+RunPod A100 SXM4 80 GB (secure cloud, 2.19 USD/h; no community A100 was free), Qwen3-32B Q4_K_M,
+`serve --agent on --draft-gguf Qwen3-0.6B-Q4_K_M` with `IRONMULE_GGML_SD=1 IRONMULE_GGML_SD_MAX_RUNNING=8` (SD1 drafts
+while at most 8 requests run), GB1 and GR4 in the build. Startup 1,362 s (gate and the draft model's measurements).
+Three repeats, facts 18/18 in every run:
+
+| Clients | IronMule with SD1 (pod 24) | IronMule without SD1 (pod 22, another pod) |
+| ---: | ---: | ---: |
+| 1 | 52.1 / 52.4 / 52.9 | 55.4 / 95.1 / 98.2 |
+| 8 | 148.1 / 153.6 / 152.2 | 161.5 / 163.3 / 165.7 |
+| 32 | 269.2 / 269.0 / 267.6 | 275.6 / 273.0 / 271.4 |
+
+- SD1 rejected for the server: at one client the batch drafter takes the place of the context drafts that gave
+  95-98 tok/s, and at 8 clients a draft call plus a verification step of two rows per request cost more than the
+  accepted drafts saved (pods differ by up to 10 %, but the one-client drop is far outside that). SD1 stays off by
+  default; GR4 stays (it fixes a second CUDA context's graph state, whatever drafts).
+- GB1 on the server: all three 32-client bursts were prefilled in one call with all 32 prompts (pods 20 and 22 had a
+  lone first request in two of six bursts).
+- No vLLM run on this pod (the remaining balance did not cover it, and this configuration is not the one to compare).
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod24-sd1.jsonl). Pod time 0.52 h, about 1.13 USD; balance after
+pod 24: 1.64 USD.
+
+### 2026-11-23, A100 pod 25: TK1, GB1 and GR4 (no SD1) against vLLM on the same pod
+RunPod A100 SXM4 80 GB (community cloud, 1.39 USD/h), Qwen3-32B Q4_K_M, `serve --agent on`, build with every patch
+(TK1, EM1 opt-in and off, GR4), SD1 off. Startup 1,221 s. Three repeats each:
+
+| Clients | IronMule | vLLM 0.11.0 AWQ-Marlin | difference of the means |
+| ---: | ---: | ---: | ---: |
+| 1 | 55.3 / 95.7 / 101.4 | 51.8 / 52.7 / 52.1 | +62 % (the first IronMule repeat is the cold one) |
+| 8 | 164.3 / 165.9 / 169.0 | 191.1 / 190.7 / 193.9 | -13.3 % |
+| 32 | 283.3 / 280.3 / 280.0 | 287.4 / 287.4 / 288.0 | -2.2 % |
+
+Facts 18/18 in every run except IronMule's third 32-client repeat (17/18). GB1 only partly held: prompts per prefill
+call in the three 32-client bursts were 1 + 31, 2 + 31 and 32. Before the first burst a lone request (the end of the
+8-client part) had waited in vain and cleared the burst memory; in the second the first two requests arrived more than
+the 25 ms quiet gap before the rest. Over the six same-pod comparisons since PK5 (pods 17, 19, 20, 21, 22, 25)
+IronMule is level with to 3.3 % behind vLLM at 32 clients and 13-15 % behind at 8; the +10 % goal is not reached.
+[IronMule](../lab/pk1/results/a100-ironmule-http-pod25-gb1.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod25.jsonl).
+Pod time 0.56 h, about 0.77 USD; balance after pod 25: 0.86 USD.
+
+### 2026-11-24: width 24 in the W4R tuner, PS (precomputed Q4_K scales), PK2-M; the A100 measurement is pending
+Maintainer session. Goal (owner): +10 % over vLLM at 32 clients on the A100 with Qwen3-32B (pod 25: 281.2 against
+287.6 tok/s; about 405 ms per wave short) and a smaller gap at 8 (166.4 against 191.9). No A100 was reachable within
+the approved GPU time (Kaggle has none; 0.77 USD left on RunPod against about 3.4 USD for the session below), so the
+changes are built and checked locally and the session is prepared (`lab/w4bw/a100_20261124.sh`); no number below is
+measured on a GPU yet.
+- Width 24 (fix, on by default): `ironmule/w4_kernels.py` measured 1 / 8 / 16 / 32 tokens and serves every count by the
+  measurement of its tile count, so 17-24 tokens (three tiles) had no table entry and fell back to llama.cpp's kernels;
+  the engine's startup check then found no gain there. TOKENS now includes 24, and the v9 families (VWN, VW6N) are
+  built for three tiles too. Test: `tests/engine/test_w4_kernels.py`. Pending: steps of 17-24 rows and HTTP at 24
+  clients, against the old table (session step 2a and 3).
+- PS / v12 (experimental, opt-in `IRONMULE_W4_PRE=1`): `repack_q4k_pre` stores each row's eight sub-block scales and
+  negated minimums as fp16 in the tile-order copy (2,560 bytes a tile and super-block against 2,304, i.e. 160 against
+  144 bytes a row and super-block), rounded as v9 rounds them in the kernel, so `w4dp` must equal `w4d` bit for bit.
+  Per sub-block it replaces two byte permutes, a subtract and a multiply (scale and minimum each) by one permute.
+  Compiled for sm_80: up to 255 registers per thread against 128-168 for v9 (the prefetched headers are twice as
+  wide), little spilling; variants with a forced minimum occupancy (VWPB) are included. The benchmark
+  (`lab/w4bw/bench.py --shapes Q4_K:5120:25600`) reports the best PS and the best v9 time per shape and token count and
+  whether their outputs are identical. Pending: whether the saved work outweighs 11 % more weight bytes on the full
+  5120 x 25600 matrix and in the 32-row decode step (session steps 1 and 2b).
+- PK2-M (experimental, opt-in `IRONMULE_PK2_CALIBRATION=mix`): the startup calibration timed eight equal 444-token
+  prompts; the 8-client mix (4 short, 4 long) runs as two passes on one KV stream per sequence, the short one of about
+  130 rows below every threshold measured. "mix" times the thresholds (now with 128) on that mix and chooses by it.
+  Test in `tests/engine/test_ggml_engine.py`. Pending: prefill and time to first token per threshold on the real mix
+  (session step 2c).
+- The failed fact in pod 25's third 32-client repeat: that repeat's seed (20263169) holds "What is 33 * 6?", the case
+  pod 3 showed IronMule answering "200 - 2 = 198 ... **198**" instead of the number alone (a grader format miss, not a
+  wrong fact; vLLM answers in the asked format). The pod 25 record kept only a hash of the answers, so this is an
+  inference; `lab/pk1/http_bench.py` now records each missed case with its answer (`quality_misses`).
+
+### 2026-11-24, A100 pod 26: width 24, PS and PK2-M measured; baseline, candidate and vLLM on the same pod
+RunPod A100 SXM4 80 GB (community cloud, 1.39 USD/h, 1.28 h, about 1.77 USD), Qwen3-32B Q4_K_M, session
+`lab/w4bw/a100_20261124.sh` (log: `lab/pk1/results/a100-pod26-session.log`). Baseline 255a58f, candidate b901f27.
+Kernels (`lab/w4bw/bench.py`, random blocks in the model's shapes, every W4R variant, best per shape; the GPU read
+1,733 GB/s with a plain streaming kernel):
+
+| matrices of one decode step | 8 rows | 16 rows | 24 rows | 32 rows |
+| --- | ---: | ---: | ---: | ---: |
+| matmul time | 17.15 ms | 18.16 ms | 21.54 ms | 24.09 ms |
+| share of the achievable bandwidth | 65 % | 61 % | 52 % | 46 % |
+
+At 32 tokens the gate/up matrix (5120 x 25600) reached 56.5 %, down (Q4_K) 46.3 %, q and o 34-35 %, k and v
+(5120 x 1024) 9 %: the small matrices take about 7.4 of the 24.1 ms for about a fifth of the bytes.
+- PS (v12): bit for bit equal to v9 in every compared configuration; on the full 5120 x 25600 matrix 75.67 against
+  75.32 us at 32 tokens, 59.80 against 57.19 at 16, 65.95 against 68.10 at 24 (the one shape and width where it won);
+  slower on every other shape. In the decode step (engine, tables from one tuning run) 30.07 against 30.14 ms at
+  32 rows and 26.38 against 27.15 at 24, with 167 of 168 answers equal (another configuration won one entry).
+  Rejected: the saved instructions do not pay for 11 % more weight bytes and a second copy; it stays opt-in.
+- Width 24 (engine, decode step by rows, base table without width 24 against the candidate's): 20 rows 49.04 ->
+  25.90 ms, 24 rows 50.32 -> 27.15 ms; 8 and 32 rows unchanged (20.43 / 20.42, 30.22 / 30.14). Kept (on by default).
+- PK2-M (engine, the 8-client mix, five seeds): llama.cpp's kernels 2.202 s a wave and 1,558 ms to the first token;
+  threshold 1024 rows 1.458 s / 811 ms; "equal" (chose 256) 1.439 s / 792 ms; 128 rows 1.395 s / 748 ms; "mix" (chose
+  128) 1.392 s / 746 ms. Made the default (below).
+- HTTP, same pod, prompts, seeds and 32-token answers, three repeats each (output tok/s; first token median of the
+  per-run medians):
+
+| clients | baseline | candidate (width 24, PK2-M) | vLLM AWQ | candidate against vLLM |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 48.5 / 95.5 / 100.2 | 56.0 / 100.9 / 102.8 | 51.9 / 52.0 / 52.1 | +66 % |
+| 8 | 164.3 / 172.1 / 163.5 | 171.9 / 166.1 / 174.2 | 185.9 / 184.9 / 185.1 | -7.9 % (baseline -10.1 %) |
+| 24 | 207.5 / 207.1 / 202.8 | 256.8 / 254.5 / 256.0 | 254.8 / 259.8 / 254.6 | -0.2 % (baseline -19.7 %) |
+| 32 | 273.1 / 266.4 / 279.9 | 269.4 / 269.3 / 271.5 | 274.8 / 277.3 / 273.6 | -1.9 % (baseline -0.8 %) |
+
+  First token at 8 clients: baseline 852 / 871 / 885 ms, candidate 831 / 843 / 797, vLLM 844 / 853 / 854. At 32
+  clients the median first token is vLLM's (1.6-2.0 s against 2.7 s), the slowest IronMule's (2.73 against 3.0 s).
+  Facts 18/18 in every run except the baseline's third 32-client repeat: 17/18, recorded now as
+  `20263169:arithmetic-2` with the answer "200 - 2 = 198 / So, 33 * 6 = **198**" (right, not in the asked format).
+- Decisions: width 24 kept (+24.3 % at 24 clients, 3 of 3 repeats above every baseline repeat); PK2-M made the
+  default (first token earlier in 3 of 3 repeats, throughput +2.4 % with overlapping ranges); PS rejected. The +10 % at
+  32 clients is not reached (-1.9 % here); the 8-client gap shrank from -10.1 % to -7.9 % on this pod.
+- Next lever from the kernel table: the small matrices at 32 tokens (k and v at 9 %, q and o at 35 % of the bandwidth),
+  i.e. one launch for q, k and v (and for gate and up) instead of three (two).
+[baseline](../lab/pk1/results/a100-ironmule-http-pod26-base.jsonl) ·
+[candidate](../lab/pk1/results/a100-ironmule-http-pod26-cand.jsonl) · [vLLM](../lab/pk1/results/a100-vllm-awq-pod26.jsonl) ·
+[kernels](../lab/pk1/results/pod26/a100-w4bw-bench.json). Balance after pod 26: 49.03 USD.
+- Kaggle T4 (T4W: the W4R kernels built for Turing, m16n8k8 and plain copies; Turing numbers, not an A100's): the
+  T4 read 277 GB/s; a decode step's matmuls 75.8 / 78.3 / 83.3 / 92.4 / 99.0 ms at 1 / 8 / 16 / 24 / 32 tokens, 92 / 89 /
+  84 / 76 / 70 % of that bandwidth; PS equal to v9 bit for bit and slower on every shape but k / v at 32 tokens.
+  [T4 kernels](../lab/pk1/results/pod26/t4-w4bw-bench.json)
+
+### 2026-11-24, A100 pod 27: Q/K/V in isolation, separate against one fused launch (v13)
+RunPod A100 SXM4 80 GB (community, 0.18 h, about 0.25 USD; no model needed: random blocks of the real formats).
+`lab/w4bw/qkv_bench.py`: a layer's q (5120 -> 8192), k and v (5120 -> 1024) as served, i.e. the best W4R variant of
+each shape back to back on one stream with one prepared x shared (PK3), against v13 (`w4dq`, one launch over the
+segments as one virtual matrix); weights in eight copies beyond the L2 cache, two alternating rounds, best of each.
+Correction to pod 26's note: the 7.4 ms there included the o projection (after attention); Q/K/V alone is 4.8 ms at
+32 rows.
+
+| rows | layer (32 each) | separate | fused | per decode step: separate -> fused |
+| ---: | --- | ---: | ---: | ---: |
+| 8 | q + k + v (v Q4_K) | 45.50 us | 31.51 us | |
+| 8 | q + k (v Q6_K apart, 15.62 us) | 36.63 us | 34.44 us | 3.128 -> 2.610 ms (-0.52) |
+| 24 | q + k + v | 62.67 us | 41.40 us | |
+| 24 | q + k (v Q6_K apart, 18.43 us) | 59.67 us | 48.74 us | 4.505 -> 3.474 ms (-1.03) |
+| 32 | q + k + v | 66.73 us | 48.03 us | |
+| 32 | q + k (v Q6_K apart, 19.71 us) | 63.97 us | 57.24 us | 4.813 -> 3.999 ms (-0.81) |
+
+Every fused output within the error bound against float64 (relative 3.5-3.8e-4); not bit for bit equal to the separate
+path (another configuration wins, so another summation order). At 32 rows that is about a quarter of the 3.3 ms the
+small matrices were estimated to leave, about 2.7 % of a 30.1 ms step and about 25 ms of a 3.8 s wave. Next: v13 in
+the served step behind a switch, the step at 8 / 24 / 32 rows with and without it. Not yet in llama.cpp's graph.
+[measurements](../lab/pk1/results/pod27/a100-qkv-isolated.json)
+
+### 2026-11-24, A100 pod 28: QK1 (q, k, v in one launch) in the served decode step -- no gain, HTTP skipped
+RunPod A100 SXM4 80 GB (community, 0.42 h, about 0.58 USD), Qwen3-32B Q4_K_M, build with qk1, session
+`lab/w4bw/a100_qkv.sh`. The isolated measurement repeated pod 27 (per step 3.32 -> 2.78 ms at 8 rows, 3.74 -> 3.10 at
+16, 4.53 -> 3.49 at 24, 4.78 -> 4.00 at 32). The served decode step (engine, the pod's own W4R table, CUDA graphs up to
+32 rows, rounds off / on / off / on, median step):
+
+| rows | QKV off | QKV on |
+| ---: | --- | --- |
+| 8 | 20.615 / 20.626 ms | 20.681 / 20.682 ms |
+| 24 | 26.588 / 26.582 ms | 26.475 / 26.435 ms |
+| 32 | 30.500 / 30.522 ms | 30.595 / 30.533 ms |
+
+Answers with QKV on: 189 of 192 equal to the first off round (off rounds 192 / 192). The 32-row gain stayed within the
+spread, so by the rule fixed before the run no HTTP run. Kernel profile of 16 steps at 32 rows (CUPTI, per step):
+q 2.11 ms (64 calls), k and the Q4_K v 1.18 ms (96), prep_x 1.19, reduce_split 0.50; with QKV on the fused q + k 2.72 ms
+(63 calls), 33 separate 1024-row calls 0.41 ms, prep_x 1.40, reduce_split 0.28; all kernels 28.66 against 28.62 ms.
+- The group took q and k in 63 of 64 layers but never the Q4_K v: in those 32 layers v's output shares memory with a
+  tensor between q and v (QK1's overlap check), so v ran alone; and the fused path did not leave its prepared x for
+  PK3, so those v calls prepared x again (+0.21 ms a step).
+- The isolated benchmark overstated the separate path: under CUDA graphs q, k and v take 3.29 ms a step, not 4.78; a
+  1024-row call takes 12.2 us, not 17-19 (launches on a stream outside a graph carry gaps the graph does not have).
+  The small matrices' 9 % of the bandwidth was largely that.
+- With v grouped and x shared the step would gain at most about 0.4 ms (1.3 %), about 13 ms of a 3.8 s wave: not
+  worth more work. QK1 stays opt-in (`IRONMULE_KG_QKV=1`), off by default.
+- Where a 32-row step's 28.7 ms of kernels go (QKV off): gate / up 9.35 ms (128 calls, already about 56 % of the
+  bandwidth), down 5.74 (Q6_K 3.20, Q4_K 2.54), o 2.25, q 2.11, k / v 1.55 (Q4_K 1.18, Q6_K 0.37), prep_x 1.19,
+  reduce_split 0.50, output 0.48, SwiGLU 0.42; matmuls about 21.5 ms. A gate / up group would not change gate / up's
+  own efficiency (each already fills the GPU), so it is not the next experiment either; the matmul kernels themselves
+  at 32 rows (gate / up, down) are.
+[session](../lab/pk1/results/pod28/a100-pod28-session.log) · [profile](../lab/pk1/results/pod28/a100-pod28-profile.log)
+
+### 2026-11-24, A100 pod 29: PF1, the prefill/decode timeline of one 32-client wave -- the decode step, not the schedule
+RunPod A100 SXM4 80 GB (community, 0.685 h, about 0.95 USD), Qwen3-32B Q4_K_M (IronMule, build 96a4b6c with the
+patches of pod 28, QK1 off) against Qwen3-32B AWQ (vLLM 0.11.0, AWQ-Marlin, its defaults: chunked prefill with a
+2,048-token budget, prefix caching), session `lab/pf/a100_pf1.sh`. Workload: `lab/pk1/http_bench.py`'s 32-client mix
+(16 short prompts of 33 tokens, 16 documents of about 444), 32-token answers, three waves with their own prompts, the
+same seeds for both engines. Each arm is a fresh server process; vLLM's prefix-cache hits over the timed waves: 0 of
+7,632 tokens a wave; IronMule reused 0-12 tokens of a prompt (its kept template prefix). Prompt tokens a wave: IronMule
+7,413-7,423, vLLM 7,632 (chat templates differ). New instrumentation (trace only, no added synchronisation): the
+engine trace's per-call prompt / decode / placeholder rows and per-request prefill start and end, the service's
+submit / dispatch / first / end times, the client's arrival of every token, joined by the server's request id
+(`lab/pf/analyze.py`).
+
+Whole waves (single values, s; "last long first" is the last document's first token at the client, "after" is from
+there to the wave's end, both on the same request's timeline):
+
+| arm | tok/s | wave | last long first | after | short TTFT min / median / max | long TTFT median | short done median |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| IronMule, no trace | 267.3 / 267.4 / 278.3 | 3.823 / 3.824 / 3.676 | 2.771 / 2.790 / 2.650 | 1.05 / 1.03 / 1.03 | 0.48 / 2.74 / 2.75, 2.75 / 2.76 / 2.77, 2.62 / 2.62 / 2.63 | 2.75 / 2.77 / 2.63 | 3.78 / 3.78 / 3.65 |
+| IronMule, trace | 275.0 / 270.0 / 275.0 | 3.720 / 3.788 / 3.720 | 2.674 / 2.773 / 2.716 | 1.05 / 1.02 / 1.00 | 0.38 / 2.65 / 2.65, 2.74 / 2.75 / 2.75, 2.68 / 2.69 / 2.70 | 2.66 / 2.76 / 2.70 | 3.68 / 3.75 / 3.68 |
+| vLLM | 279.9 / 279.5 / 277.6 | 3.655 / 3.659 / 3.685 | 2.958 / 2.962 / 2.995 | 0.70 / 0.70 / 0.69 | 0.23 / 1.59 / 2.93, 0.22 / 1.60 / 2.94, 0.71 / 1.80 / 2.90 | 1.96 / 1.96 / 2.16 | 3.62 / 3.63 / 3.64 |
+
+Facts: IronMule 18/18, vLLM 18/18 (one graded wave each, apart from the timed ones). The trace costs nothing visible
+(270-275 against 267-278 tok/s).
+- IronMule's schedule: the wave's prompts go into one native call (waves 2 and 3: 7,413 and 7,423 rows of 32
+  sequences, 2.55 and 2.52 s; wave 1: 2 early arrivals alone, 474 rows in 0.29 s, then 7,155 rows of 30 in 2.25 s),
+  then 31 decode calls of 32 rows (engine 30.26 ms median over 135 calls; 31.2-31.6 ms between tokens at the
+  client). So a short request does not wait after its own prefill: its prefill ends in the same call as the longest
+  prompt's, and its first token comes 0-30 ms after the documents' (every short request: 0 tokens when the last
+  prefill ended, 1 at the last document's first token).
+- vLLM's schedule (`/metrics` per wave): 37 steps, 4 of 1,025-2,048 tokens (the prompt chunks with the running
+  requests' decode rows), 1 of 257-1,024, 32 of at most 64 (31 of at most 32). First tokens come in four groups about
+  0.72 s apart, one per chunk. By the last document's first token the short requests had 1-6 tokens (median 3), the
+  documents 1-6: mixing gained them three to four tokens, not a shorter path.
+- Where the wave's difference sits: vLLM ends its last prefill 0.17-0.35 s later than IronMule (2.96-3.00 against
+  2.65-2.79 s: IronMule's packed prompt call is the faster prefill, about 2,900 against 2,600 prompt tokens a second;
+  vLLM's chunks also carry the running requests' decode rows), and needs 0.69-0.70 s instead of 1.00-1.05 s for the remaining 31 tokens:
+  22.7-22.8 ms a step against 31.2-31.6 ms. vLLM's waves are 0.02-0.17 s shorter because of the decode step alone.
+- vLLM mainly hands out first tokens earlier (short median 1.6-1.8 against 2.6-2.8 s; its slowest first token is
+  later, 2.90-2.94 against 2.64-2.78 s); it does not finish the wave earlier by scheduling. With one burst of
+  arrivals the wave cannot end before the last prompt's prefill plus its 31 decode steps; mixing decode rows into the
+  prompt calls only moves that prefill later (and, with IronMule's KV streams, splits the call into passes). A mixed
+  prefill/decode prototype would trade later documents for earlier short answers and is not the next experiment for
+  throughput or wave time.
+- Next: the 32-row decode step. At vLLM's 22.7 ms the same waves would take about 2.65-2.79 + 0.70 s = 3.35-3.49 s,
+  5-9 % below vLLM's 3.65-3.69 s. The step's parts (pod 28): about 28.7 ms of kernels, of which gate / up 9.35 ms and
+  down 5.74 ms (Q4_K and Q6_K), against a 30.26 ms native call and a 31.5 ms client gap: about 1.5 ms of launch and
+  graph overhead and about 1.2 ms of host time (sampling, events) a step. The gate / up and down kernels at 32 rows
+  come first, the host time per step second.
+[session](../lab/pk1/results/pod29/a100-pod29-session.log) · [raw data](../lab/pk1/results/pod29/) (client timelines
+`tl_*.jsonl`, engine trace `trace.txt`, service `stability-log.jsonl`, vLLM `metrics_vllm.jsonl`, analysis `pf_*.json`)
+
+### 2026-11-24, PF1 numbers attributed, and A100 pod 30: DK1, what limits the 32-row decode matmuls -- v9 on gate / up is not HBM-bound; the ablations give no bounds
+Owner's order for this round: first attribute PF1's numbers, then one dominant decode bottleneck, at most two variants.
+
+PF1 (pod 29) on one time axis, from the raw data already saved:
+- vLLM's 22.7 ms is a direct 32-row reference, not an average over shrinking batches: in every wave 26-27 consecutive
+  token arrivals reached all 32 requests at once, 22.6-23.5 ms apart at the client (the last 4-5 steps had 31-1
+  requests). It is vLLM's whole step period at the client; its GPU time per 32-row step (the 2026-11-20 study, another
+  run) was about 20 ms, so about 2.8 ms of it are outside the kernels, not split further.
+- IronMule, traced waves: 32-row native call 30.0-30.1 ms (median per wave), 1.2-1.3 ms between calls (median;
+  0.5-1.7), start to start 31.2-31.4 ms = the client's spacing of full 32-token arrivals (31.2-31.5 ms); the first
+  chunk arrives 0.6-0.8 ms after a call ends. Inside the call the kernels are not on this time axis; the 28.4 ms of
+  kernels per 32-row step come from pod 13's profile (another run, CUPTI), so the 1.6-1.7 ms between them and the call
+  stay unexplained here (pod 13 put about 0.8 ms of input setup and 0.1-0.7 ms of readback around its graph).
+- What +10 % over vLLM needs, wave by wave (the same prompts; target = vLLM's wave / 1.10; IronMule's own time to the
+  last document's first token and 31 steps after it):
+
+| wave | vLLM wave | target | IronMule last first token (no trace / trace) | step period needed (no trace / trace) | now |
+| --- | ---: | ---: | --- | --- | --- |
+| 1 | 3.655 s | 3.322 s | 2.771 / 2.674 s | 17.8 / 20.9 ms | 31.4 ms |
+| 2 | 3.659 s | 3.327 s | 2.790 / 2.773 s | 17.3 / 17.9 ms | 31.4 ms |
+| 3 | 3.685 s | 3.350 s | 2.650 / 2.716 s | 22.6 / 20.4 ms | 31.2 ms |
+
+  So with the present prefill, a 17-23 ms step period (a native call of about 16-21 ms): a cut of 30-47 %, not the
+  "20-22 ms" working figure; the same throughput could also come partly from the prefill (68-74 % of the wave).
+
+DK1 on pod 30 (RunPod A100 SXM4 80 GB, community, 0.546 h, about 0.76 USD; Qwen3-32B Q4_K_M; build 38e4267, product
+kernels unchanged; `lab/dk1`, raw data in `lab/pk1/results/pod30`):
+- Nsight Compute is installed but RunPod's container refuses GPU counters (`ERR_NVGPUCTRPERM`, a host driver setting):
+  no DRAM bytes, stall reasons or pipe utilisation. The limit was located by timing instead: lab-only compile switches
+  in v9 (`IRONMULE_W4_ABL`, default off; the product build's SASS is unchanged, 2,072 instructions, 236 registers, no
+  spills) that remove one part at a time, all builds loaded in one process and measured in turn after a warm-up, six
+  rounds of 200 calls (spread below 1 %). Separate processes with short windows had scattered by up to 20 % and
+  were discarded; a first pin of the blocks per SM through dynamic shared memory also shrank L1 to 28 KB and slowed
+  the full kernel to 104-121 us, so it was replaced.
+- The winners at 32 tokens (all variants measured again): gate / up v9 (variant 184: 2 warps, 2 tiles per warp, 236
+  registers, 4 blocks = 8 warps per SM, 400 blocks for 432 slots) 75.6 us; down Q4_K v11 (VF(4,4,1), K-split 4, 122
+  registers, 36 KB shared) 92.3 us; down Q6_K v11 111.9 us (times with prep_x and reduce_split; the pod's own tuning
+  chose the same). Served steps without a profiler: 20.4 / 22.3 / 26.8 / 30.2 ms at 8 / 16 / 24 / 32 rows.
+- Gate / up at 32 tokens, us per call (median of six rounds):
+
+| arm (v9, variant 184) | us | what else the arm changed (SASS and ptxas of the same builds) |
+| --- | ---: | --- |
+| product build | 75.4 | 2,072 instructions per two super-blocks, 236 registers, 4 blocks per SM |
+| largest L1 requested (carveout 0 %) | 75.4 | nothing: the driver already chose the largest L1 in this process |
+| carveout 50 % / 100 % (L1 about 28 KB) | 79.1 / 103.3 | only the L1 size |
+| weights streamed only (no x, no math) | 50.7 | 416 instructions, 122 registers, 8 blocks per SM |
+| weights from L2 instead of DRAM | 72.2 | 2,192 instructions (address arithmetic), 236 registers, 4 blocks per SM |
+| x from one sub-block (L1-resident) | 67.7 | x loads hoisted (40 LDG instead of 100), 194 registers, 5 blocks per SM |
+| no mma | 63.4 | HMMA replaced by XORs (363 LOP3 instead of 186), 164 registers, 6 blocks per SM |
+| no dequantisation (raw words into the mma) | 61.3 | 1,000 instructions, 206 registers, 4 blocks per SM |
+
+  Down Q4_K with v9 (variant 184, K-split 4): 102.7 us full, 59.2 weights only, 95.3 weights from L2, 84.3 without
+  dequantisation. This is v9 on the down shape, not the served down kernels (Q4_K: variant 256, v11 VF(4,4,1);
+  Q6_K: variant 266, v11 for Q6_K; both K-split 4, 122-126 registers, 36 KB of shared memory, x staged in shared
+  memory): nothing here is measured for them.
+- What the measurements support (v9 on gate / up at 32 tokens): taking the DRAM stream away (weights from L2, the
+  same registers and occupancy) saves 3.2 of 75.4 us, so the HBM bandwidth itself is not the dominant limit there.
+  That does not show that other layouts would not help: a layout also changes the dequantisation, the registers and
+  the accesses inside the SM, which this arm leaves as they are.
+- What they do not support: the other arms are not cost blocks and not upper bounds. Each one also changed the
+  instructions executed, the registers and with them the blocks per SM (5, 6 or 8 instead of 4), and the dependence
+  chains (no mma: nothing waits for the dequantised registers; no dequantisation: the mma no longer waits for it), so
+  their differences cannot be added or read as the most a change could gain. That HMMAs and dequantisation are
+  interleaved in the SASS order says nothing about whether they overlap in execution; restructuring the data
+  dependences (for example dequantising one sub-block ahead into a second register set) would be a different
+  hypothesis from reordering the source, and is untested. A count of the SASS per super-block (about 1,036
+  instructions, 128 HMMA, about 475 integer ops at half rate) estimates tensor pipe, integer pipe and issue at about
+  25-27 us each of the 72 us; without counters this is an estimate.
+- No variant was built in this round. The best-targeted mechanism found (nibble unpacking by LOP3 with a permuted
+  tile layout, 7 -> 5 integer ops per 8 weights) was estimated at a few microseconds per gate / up call and needs a
+  second copy of the weights in another layout; PS (pod 26), which removed the per-sub-block scale arithmetic, gained
+  nothing at 32 tokens. This is an estimate, not a measured limit; the kernel line is open, not closed.
+- For the whole step: all matmuls of a 32-row step at the copy bandwidth would save about 9.6 ms (pod 13: 21.1 ms at
+  0.94 TB/s against 11.4 ms at 1.73), about the size of the needed cut. The other parts of a 32-row step known from
+  earlier runs (not re-measured here): prep_x and reduce_split 1.95 ms (pod 13, an older build and run: a starting
+  hypothesis, not an available saving), attention 2.5 ms against vLLM's 1.5, norms / RoPE / KV / SwiGLU about 2.7 ms
+  against about 1.3, and 1.6-1.7 ms inside the native call outside the kernels plus 1.2 ms between calls (PF1). No
+  single one of them closes the gap; the prefill is 68-74 % of the wave.
+- Next: decode producers that write the matmul's prepared activations (PD1 below), then reduce_split separately.
+[session](../lab/pk1/results/pod30/a100_dk1.log) · [ablations, separate processes](../lab/pk1/results/pod30/a100_dk1b.log) ·
+[ablations, one process](../lab/pk1/results/pod30/a100_dk1c.log) · [down](../lab/pk1/results/pod30/a100_dk1d_down.jsonl)
+
+### 2026-11-24, A100 pod 31: PD1 (decode producers write the matmul's fp16 activations) kept; RF1 (K-split reduced in the kernel) rejected
+RunPod A100 SXM4 80 GB (community, 1.453 h, about 2.02 USD; balance afterwards 44.36 USD), Qwen3-32B Q4_K_M, build
+with patch pd1, the pod's own W4R table (matmul variants and K-splits unchanged in every arm). Sessions
+`lab/pd1/a100_pd1.sh` and `lab/rf1/a100_rf1.sh`; raw data in `lab/pk1/results/pod31`.
+
+What prep_x did, from the code: per matmul input x [B][K] (float) it wrote the fp16 copy (saturated to +-65000,
+rounded to nearest) into the W4R library's scratch with the token rows padded to the 8-token tile, plus the 16- and
+32-value sums of the rounded copy. Only w4r and the 1-8-token kernels v7 / v8 read those sums; the 9-32-row
+winners (v9, v11, w4d6) read the fp16 copy alone. PK3 already shared one copy between q / k / v and gate / up.
+PD1: FU1's fused add + RMS norm + mul (the attention and FFN inputs of every layer but the first) and PK4's SWIGLU
+write that copy themselves when the library offers a slot (`ironmule_kg_prepare`): this stream's scratch, recorded
+under PK3's key (node, graph epoch, data, B, K, rows, stream, buffer) as prepared without sums. A matmul skips prep_x
+only on that key and only with a variant that reads no sums; no slot is given where a table entry for that K and
+batch reads sums, inside a capture without room, for other K or batch. The fp32 outputs are still written; the first
+layer's norm, the output norm and the o projection (input from attention) keep prep_x.
+- Correctness: one round with `IRONMULE_KG_PD1_CHECK=1` (prep_x run beside every producer-written copy, inside the
+  CUDA graphs, compared bit for bit): 45,485,568,000 halves compared, 0 differed; answers of all 64 timed waves
+  identical to the reference arm (8 / 16 / 24 / 32 requests, two prompt sets, four rounds).
+- Decode step, reference and PD1 in one process (graphs captured anew after each switch, a discarded wave per
+  width), medians of eight waves each, no profiler:
+
+| rows | reference | PD1 | difference |
+| ---: | ---: | ---: | ---: |
+| 8 | 20.392 ms | 20.429 ms | +0.037 ms |
+| 16 | 22.515 ms | 21.973 ms | -0.542 ms |
+| 24 | 26.764 ms | 26.119 ms | -0.645 ms |
+| 32 | 30.486 ms | 29.638 ms | -0.848 ms |
+
+  The waves of the two arms did not overlap at 16-32 rows (32 rows: 30.47-30.56 against 29.58-29.78 ms). At 8 rows
+  the table's variants read the sums, so prep_x still ran and the producer's copy was extra work; the slot is now
+  refused there (8-row step with the corrected rule in the RF1 run: 20.372 ms).
+- The chain, CUPTI kernel tables of 16 steps at 32 rows (diagnostic, apart): prep_x 19.49 ms (4,112 calls) -> 4.07 ms
+  (1,040: the o projection and the output matrix), FU1 norm 15.46 -> 15.85 ms, SWIGLU 6.73 (llama.cpp's) -> 7.10 ms
+  (PK4's with the copy), matmuls unchanged; kernels per step -0.92 ms.
+- HTTP on the same pod (IronMule reference / PD1 / reference / PD1, two repeats each; vLLM 0.11.0 AWQ-Marlin), 32
+  clients, tok/s, wave, the last document's first token and the rest of the wave (client timelines):
+
+| arm | tok/s | wave s | last long first token s | after it s |
+| --- | --- | --- | --- | --- |
+| IronMule reference | 273.5 / 271.9 / (185.3) / 270.4 | 3.739 / 3.761 / (5.521) / 3.783 | 2.710 / 2.748 / (4.463) / 2.751 | 1.030 / 1.013 / (1.057) / 1.032 |
+| IronMule PD1 | 283.4 / 277.6 / 270.3 / 278.8 | 3.609 / 3.684 / 3.781 / 3.668 | 2.577 / 2.665 / 2.775 / 2.663 | 1.031 / 1.019 / 1.006 / 1.006 |
+| vLLM | 277.6 / 276.4 | 3.684 / 3.701 | 2.991 / 3.006 | 0.693 / 0.695 |
+
+  At 8 clients: reference 174.0 / 176.4 / 172.5 / 169.3, PD1 172.7 / 177.0 / 172.8 / 175.9, vLLM 188.0 / 188.1 tok/s.
+  Facts 18/18 in every run of every server. The bracketed reference wave was the first after a restart that reused
+  the gate: its 32 requests reached the engine within 0.145 s, one was prefilled alone (first token 0.43 s), the
+  packed prefill of the others gave first tokens only at 4.45 s instead of about 2.6 s; no engine trace ran, so its
+  cause is open (not PD1's arm). Without it: reference 271.9, PD1 277.5, vLLM 277.0 tok/s mean. The decode part of
+  the waves moved by the expected amount (31 steps x 0.85 ms = 26 ms: 1.013-1.032 against 1.006-1.031 s); the rest
+  of the HTTP difference is the prefill's spread between server starts (last first token 2.58-2.78 s), which is
+  larger than PD1's whole effect. So PD1 is worth about +0.7 % per 32-client wave on IronMule, and IronMule with PD1
+  is level with vLLM on this pod (277.5 against 277.0), not ahead.
+- PD1 is on by default (`IRONMULE_KG_PD1=0` turns it off). Its output is bit-identical to prep_x's, so the quality
+  gate's cached results stay valid; the gate ran anew in the PD1 arm here and passed.
+
+RF1 (`IRONMULE_KG_RF1=1`, off): the v11 kernels (down Q4_K 256/4, q 256/4, down Q6_K 267/8; 128 of the 160
+reduce_split calls of a 32-row step) reduce their own K-split partials: every block fences and counts, the last block
+of a row range adds the partials in reduce_split's order and resets the count; nothing waits. Outputs bit-identical
+(isolated and all 64 waves), but slower, prep_x + matmul + whole reduction per call: down Q4_K 92.0 -> 114.4 us, q
+40.3 -> 55.7, down Q6_K 117.2 -> 129.8; the w4d6 control 19.7 -> 19.7. Decode step with PD1 on in both arms:
++0.42 ms at 16 rows, +2.26 ms at 32, none at 8 and 24. The last block of each range sums 64 rows x 32 tokens x 4-8
+partials with 128 threads after its own matmul, a serial tail of L2 loads at the end of the kernel that costs more
+than the separate reduce kernel (0.51 ms per 32-row step in the profile). Rejected in this form; a reduction in the
+consumer (the next residual add or norm reading the partials) would avoid that tail and is untested.
+
+Where +10 % over vLLM stands (this pod's paired waves): vLLM 3.684 / 3.701 s gives a target of 3.349 / 3.365 s; with
+IronMule's present time to the last first token (2.58-2.78 s) the decode part would have to fall from about 1.01 s
+to 0.57-0.77 s. In IronMule's waves the prefill up to the last first token is 70-74 % of the wave and the decode
+part 27-28 %, and the prefill alone varies by about 0.2 s between server starts. Next, by share of the wave: the
+prefill, first its spread (one traced HTTP wave per start: gathering, packing and the packed call apart), then the
+packed call itself.
+
+### 2026-11-24, A100 pod 32: PF2, the prefill and its spread between server starts; PK1-C (gathering window) measured, opt-in
+RunPod A100 SXM4 80 GB (community, 1.398 h, about 1.94 USD; balance afterwards 42.47 USD), Qwen3-32B Q4_K_M, the final
+PD1 state (PD1 on with the 8-row rule, RF1 off), one state directory for every start (the first ran the quality gate
+and the W4R tuning, the others reused both). Sessions `lab/pf2/a100_pf2.sh` and `lab/pf2/a100_pk1c.sh`; raw data in
+`lab/pk1/results/pod32` (engine traces, client timelines, service logs, nvidia-smi every 200 ms, CUPTI summaries).
+New trace fields (only with `IRONMULE_GGML_TRACE`, clock reads where calls return anyway): each native call's host
+batch build, llama_decode and readback; when the engine made each request; the gathering window's start and end; a
+start's stages and choices. `lab/pf2/balance.py` lays every wave out as one chain on one time axis.
+
+Reference (PD1 final) over HTTP, the same prompts at the same position in every start and in vLLM, tok/s:
+
+| | 32 clients, first wave | 32 clients, later waves | 8 clients (facts) |
+| --- | --- | --- | --- |
+| IronMule S1 (first start, 1,300 s) | 202.6 | 275.2 / 279.7 | 171.2 / 182.3 (18/18) |
+| IronMule S2 (reused, 91 s) | 178.4 | 267.3 / 276.8 | 171.7 / 183.9 (18/18) |
+| IronMule S3 (reused, 85 s) | 279.2 | 265.4 / 262.4 | 170.0 / 181.6 (18/18) |
+| vLLM (141 s) | 210.7 | 278.8 / 277.5 | 186.2 / 187.3 (18/18) |
+
+- Saving needed for +10 % over vLLM, wave by wave (IronMule wave - vLLM wave / 1.10, same prompts): 0.30-0.55 s in
+  the later waves (0.380 / 0.304, 0.490 / 0.346, 0.519 / 0.549 s). PD1's 26 ms are inside every IronMule number above;
+  the spread between starts and waves (later waves 3.65-3.90 s) is larger than that and is not read as a gain of
+  anything.
+- A start's stages, every engine of a start (the serving one and the gate's children): warm-up 0.3-2.4 s, argmax check
+  0.15 s, W4R step measurement 17.5-18.9 s, PK2 calibration 21-24 s, Pilot 1.2-1.9 s. The choices were the same in
+  every start: PK2 from 128 rows, W4R for 1-8 / 16 / 24 / 32 rows.
+- The chain of a later wave (no split): burst 20-25 ms, through the service to the engine 36-147 ms, gathering 25-37
+  ms, the packed prefill call 2.41-2.49 s for about 7,400 rows (host batch build 5-13 ms, readback 0.4-1.7 ms; the
+  rest inside llama_decode), first token at the client 26-33 ms after it, the decode part 1.01-1.05 s.
+- Inside the packed call (CUPTI, a separate engine process with the server's settings; 7,632 prompt tokens): 2.37-2.40
+  s of kernels in a 2.46-2.48 s region: cuBLAS fp16 GEMMs 1.84-1.90 s, Q4_K / Q6_K dequantisation 0.115 s, SWIGLU 0.10,
+  norms 0.09, attention 0.08, RoPE 0.03, activation conversion 0.026, KV writes 0.018; gaps 58-64 ms, host time before
+  the first kernel 21-22 ms. First-time work in the first wave after the start: 2 cudaMalloc and 2 cudaFree (18 ms),
+  nothing else. During server prefills the SM clock sat at 1,245-1,410 MHz with the software power cap (400 W) active.
+- Split bursts: in 7 of the 9 32-client waves of S1-S3 the gathering window closed with 1-4 requests and the others
+  waited for a second prefill call (a first call of 31-483 ms, then 16-108 ms until the second). Cause, from the
+  service's log: the client sends 32 requests within 20-25 ms; the service admits the first eight 10-26 ms apart and
+  the rest within 1 ms each (admits over about 100 ms), starts a group with the first one to three and forwards the
+  others as joins 3 to over 60 ms after it; the engine's window (25 ms of quiet in a burst) closes in between. At 8
+  clients the window held in 5 of 6 waves.
+- Slow first waves: in S1 and S2 the first wave's large prefill call took 3.71 and 4.03 s instead of about 2.4 s; the
+  GPU ran about 0.6 s, then idled 1.2-2.0 s in the middle of the call (utilisation 0-1 %, about 88 W), then finished:
+  host-side waiting inside llama_decode, between the passes of a packed call. Not in S3's or S4's first wave, not in
+  two separate engine processes (one with the server's split), no major page faults in S4's worker (the pod had 2 TB
+  of memory). The same signature recurred twice in later waves of the A/B below (3.16 and 3.03 s calls). Cause open.
+- vLLM's first wave was slow too (4.86 s against 3.67-3.69 s afterwards).
+
+PK1-C (`IRONMULE_GGML_PK1C=1`, opt-in): within GB1's burst memory the gathering window expects as many requests as
+the last run held at its peak; while fewer have come it waits for a longer quiet gap (inside the 150 ms burst limit)
+and it ends at once when they are all there; a run that held several requests renews the burst memory. Three A/Bs on
+the same pod, server starts alternating, the PF2 state reused, six (first: three) 32-client waves and two 8-client
+waves per start, facts 18/18 in every one:
+- 60 ms expected quiet, first form: c1's window lost its memory after a split first wave (GB1 cleared it on a lone
+  arrival although the rest joined); fixed (the run's end renews it).
+- 60 ms after the fix: the window held where the joins came within 60 ms; in other waves the rest came more than 60
+  ms after the first request (`gathered 1 expect 32` after exactly 60 ms).
+- 120 ms: later 32-client waves in one prefill call 10 of 10 with PK1-C against 6 of 10 without; mean wave 3.788 s
+  (3.733 s without one wave with a 3.03 s call) against 3.765 s, time to the last first token 2.770 (2.715) against
+  2.741 s; 8-client waves 1.480 / 1.361 and 1.531 / 1.376 against 1.522 / 1.404 and 1.455 / 1.400 s. The packed call
+  of the same size itself took 2.37-2.64 s from wave to wave, more than the 33-320 ms a split costs, so no wave-time
+  gain is resolved. A lone request within the memory (the benchmark's warm-up request) waited the full 150 ms.
+- So PK1-C stays off by default (expected quiet 120 ms when on). The split is solved as a mechanism, the throughput
+  gain is not shown, and +10 % over vLLM is not reached.
+
+Next, by share of the wave: the packed prefill call (2.4-2.6 s of a 3.65-3.90 s wave; cuBLAS GEMMs 1.84-1.90 s of it),
+first its spread of about 0.25 s between waves of the same size (the power cap and clocks above are the first
+suspect; observed, not tested), then the host-side pause that turns some calls into 3.0-4.0 s.
+
+### 2026-11-24, PF3 before the pod: PF2's conclusions made precise, the GEMM efficiency of the packed prefill, pass fragmentation (PX1) chosen
+Local analysis of pod 32's raw data (`lab/pk1/results/pod32`), no GPU time. PD1 on, RF1 and PK1-C off.
+
+Corrections to PF2:
+- Split bursts, at equal prompt work: pairing every split 32-client wave with an unsplit one of the same repeat (same
+  prompts, PF2 S1-S3 and the PK1-C A/Bs, pause calls excluded), the time to the last first token differs by a median
+  of +24 ms (-49 to +79 ms) for the split waves. The first, small call computes rows the wave needs anyway; what a
+  split adds is one more pass through the weights, and an unsplit wave spends 0.20-0.24 s in the service and the
+  gathering window before its call where a split wave spends 0.05-0.09 s. So the split is not the largest avoidable
+  block.
+- PK1-C only waits: it holds the window open until the expected count is there. Ten of ten merged later waves show
+  that the grouping works, not that the wave gets faster (it did not, within the call-to-call spread). The cause of
+  the late joins is the admission path (below), not the window.
+- Page faults: S4's worker had no major faults, but S4 had no pause. That does not exclude page faults (or anything
+  else) in the paused calls of S1 and S2; the cause of those pauses stays open until a paused call is observed with
+  the probe below.
+
+GEMM efficiency of the packed prefill (CUPTI kernels of pod 32's separate engine process; Qwen3-32B, 64 layers):
+
+| per layer (out x in) | q 8192x5120 | k, v 1024x5120 | o 5120x8192 | gate, up 25600x5120 | down 5120x25600 |
+| --- | --- | --- | --- | --- | --- |
+| share of the GEMM FLOPs | 8.6 % | 1.1 % each | 8.6 % | 26.9 % each | 26.9 % |
+
+- Path (PK2, passes of 128 rows or more): Q4_K / Q6_K weights dequantised to fp16 per pass, then
+  `cublasGemmEx(OP_T, OP_N)` with fp16 weights and activations, fp32 output, `CUBLAS_COMPUTE_32F`,
+  `CUBLAS_GEMM_DEFAULT_TENSOR_OP` (cuBLAS's heuristic; ggml sets no workspace of its own). Kernels:
+  `ampere_s16816gemm_fp16_256x128_ldg8_stages_64x3_tn`, its 128x256 sibling and
+  `cutlass_80_tensorop_s16816gemm_f16_128x256_32x6_tn_align8` (fp16 MMA, fp32 accumulation). 7 GEMMs a layer, 448 a
+  pass; the tokens are the GEMM's N, unpadded (the tile edge wastes 1.2 % at 6,576 rows, 9 % at 1,056).
+- The output projection runs only on the 32 rows that need logits (below the PK2 threshold, not cuBLAS).
+- Wave 0 (passes of 1,056 and 6,576 rows, 7,632 tokens): 2 x 7,632 x 31.21e9 = 4.763e14 FLOP in 1,904 ms of GEMM
+  kernels = 250 TFLOPS. Wave 3 (896 + 6,464 cuBLAS rows and five small W4R passes): about 250 TFLOPS as well.
+- The A100's fp16 tensor peak is 108 SMs x 2,048 FLOP a clock: 312 TFLOPS at 1,410 MHz, 280 TFLOPS at the 1,268 MHz
+  the SM clock held during these calls (power cap 400 W active). Achieved: 89 % of the clock-adjusted peak, 80 % of
+  the nominal one. Lower bound for these FLOPs: 1.70 s at the observed clock, 1.53 s at 1,410 MHz.
+- Practically supported target: large fp16 GEMMs with fp32 accumulation reach about 90-93 % of the clock's peak on
+  A100s; fp16 accumulation has the same peak on the A100, so the type is no lever. From 89 % to 93 %: about 0.08 s a
+  wave; a workspace or algorithm choice that recovers part of it: 0.03-0.06 s. The clock itself is a measurement
+  condition here, not a shown reserve.
+- So the GEMMs hold no reserve near the 0.30-0.55 s needed for +10 % over vLLM.
+
+Pass fragmentation (`lab/pf3/passes.py`, the passes rebuilt from the trace's request lines with llama.cpp's
+sequential split): with one KV stream per sequence a pass takes the run of consecutive sequence ids that all still
+have tokens and advances each by the fewest any of them has left. Prefix reuse keeps 0-12 template tokens per stream,
+different from stream to stream, so in later waves prompts of equal length become unequal and a 32-request prefill
+runs as 6-14 passes (median 8; first waves: 2). Fitted over 60 large calls, robustly (pause calls excluded): 0.3347
+ms a row plus 21.5 ms a pass (95 % bootstrap 18.6-23.9 ms), residual median 11.5 ms. Keeping the same prefix in every
+stream of a packed group gives 2 passes in every call for a median of 67 more rows: predicted -110 ms a packed call
+(median; 0 to -233 ms), in later waves only. That is 20-37 % of the needed saving, the largest supported candidate.
+
+Admission path (local CPU server, py-spy): the client's 16-22 ms burst becomes 94-113 ms of submits, because every
+request runs `ProductService.health()` (JSON reads under file locks, about 62 ms over 32 requests) and
+`ServingLog.append` (about 23 ms) on the serialised Python path. Estimated 40-60 ms; the next candidate after PX1.
+
+PX1 (`IRONMULE_GGML_PX1=1`, off until measured): a packed group keeps the smallest kept prefix in every stream when
+that saves passes, for at most 32 recomputed rows per pass saved (`llama_memory_seq_rm` cuts the longer prefixes;
+the recomputed tokens are an ordinary prefill). The trace notes the passes before and after either way.
+
+Pause diagnostics prepared, for the server only with `IRONMULE_GGML_TRACE`: `IRONMULE_GGML_PAUSE` (per call: thread
+CPU time, minor and major faults, run delay, cgroup throttling; for calls of 1 s or more, buffered samples every 5 ms
+of the thread's state, system call with its file and wait channel; one `py-spy dump --native` past a set time) and
+the llama.cpp patch TL1 (`IRONMULE_TL1`: per ubatch the host time for graph build, inputs, launch and output copy; no
+added synchronisation; buffered). `lab/pf3/pauses.py` joins them and classifies a call's excess as compute, CPU
+wait, driver call, other synchronisation, page faults or open. The CUDA API calls around a gap are not recorded (no
+CUPTI in the timed server); a driver call shows as an ioctl on /dev/nvidia*.
+
+### 2026-11-24, A100 pod 33: PF3 measured -- PX1 kept (on by default), no pause in 80 large prefill calls
+RunPod A100 SXM4 80 GB (community, 0.818 h, 1.14 USD; balance afterwards 41.29 USD), Qwen3-32B Q4_K_M, PD1 on, RF1
+and PK1-C off, at bff6984. Session `lab/pf3/a100_pf3.sh` with scope, stop rule and a 2.0 h watchdog fixed before
+the pod (not reached, not changed); raw data in `lab/pk1/results/pod33/raw`. nvidia-smi every 200 ms: during the
+HTTP arms the SM clock's median was 1,410 MHz (10th percentile 1,290-1,305 MHz) in every arm alike; during the dense
+in-process prefills 1,305 MHz at the 400 W cap. Runtimes are not normalised.
+
+Pause diagnostics (three server starts with the probe and TL1; the first ran the quality gate, 1,224 s): no pause.
+The three first waves took 3.80, 3.70 and 3.58 s, their large calls 2.22-2.34 s for 7,122-7,599 rows in 2 passes.
+In every large call the thread was running in every sample (`R`, no system call): llama_decode returns from the
+launch after 0.36-0.43 s and then spins in the output copy's synchronisation for 1.07-1.13 s while the GPU computes;
+CPU time 1.57-1.83 s user and 0.64-0.69 s system per call; no major faults, no run delay, no cgroup throttling. No
+call in any trace of this pod (80 calls of 300 rows or more, HTTP and in-process) exceeded its rows' expectation by
+more than 0.2 s. So the 1.2-2.0 s pauses of pod 32 did not recur, and their cause stays open; the probe is ready
+(`IRONMULE_GGML_PAUSE`, `IRONMULE_TL1`, `lab/pf3/pauses.py`) for the next pod where one occurs.
+
+PX1 in one engine process (`lab/pf3/px1_ab.py`; the benchmark's 32-request repeats 1 and 2, each after a primer of
+the repeat before with the KV cleared first, so both arms find the same kept prefixes; 12 ABBA pairs, 32-token
+answers, no profiler):
+
+| | passes (reference -> PX1) | rows recomputed | prefill call | wave (prefill + decode) |
+| --- | --- | --- | --- | --- |
+| repeat 2, 6 pairs | 7 -> 2 | 99 | 2,405-2,413 -> 2,310-2,316 ms | 3.357-3.365 -> 3.262-3.271 s, -87 to -98 ms in every pair |
+| repeat 1, 6 pairs | 5 (2 possible) | 99 not allowed | unchanged | -2 to +20 ms (noise) |
+
+- Repeat 1 was not evened: 99 recomputed rows exceed the 32-rows-per-saved-pass limit (96 for 3 passes). By the
+  pod-32 fit the break-even is about 64 rows a pass (21.5 / 0.335 ms), so a looser limit would likely gain about 30
+  ms there too; noted post hoc, not changed in this run.
+- Answers: 378 of 384 identical; the six differences are one request (repeat 2, request 19) diverging at its third
+  token in every PX1 wave, deterministic (the recomputed prefix is computed in a different batch).
+- Stop rule (median paired saving >= 40 ms, faster in >= 10 of 12 pairs): 53.7 ms, 11 of 12. HTTP followed.
+
+HTTP, same pod, server starts alternating reference (PX1 off) / PX1 / reference / PX1, then vLLM 0.11.0 (AWQ-Marlin),
+the same prompts at the same position everywhere:
+
+| 32 clients | wave 0 | wave 1 | wave 2 | first token p50 |
+| --- | --- | --- | --- | --- |
+| reference R1 / R2 | 3.630 / 3.535 s | 3.701 / 3.670 s | 3.758 / 3.738 s | 2.571-2.672 s (median 2.617) |
+| PX1 P1 / P2 | 3.593 / 3.585 s | 3.594 / 3.549 s | 3.691 / 3.509 s | 2.471-2.603 s (median 2.512) |
+| vLLM | 3.669 s | 3.767 s | 3.661 s | 1.788-2.102 s (max 2.94-3.05 s) |
+
+- Median 32-client wave over both starts: 3.589 s with PX1 against 3.686 s (-96 ms, -2.6 %); later waves only 3.572
+  against 3.720 s (-148 ms); first waves unchanged (3.589 against 3.583 s mean). Throughput median 285.3 against
+  277.9 tok/s (vLLM 279.1). First token p50 -105 ms. Facts 18/18 in all four starts and in vLLM.
+- In the HTTP later waves PX1 evened 9-11 passes to 2 (extra rows 60-107) and the large prefill call took 2,221-2,318
+  ms against 2,300-2,499 ms.
+- 8 clients (two waves each): reference 1.479 / 1.394 and 1.494 / 1.390 s, PX1 1.451 / 1.402 and 1.479 / 1.397 s, vLLM
+  1.382 / 1.356 s: no PX1 effect (the 8-request groups were not fragmented enough to qualify) and IronMule is 3-7 %
+  behind vLLM here.
+- Release rule (median 32-client wave >= 40 ms shorter, first token not later by more than 5 %, facts 18/18): met.
+  PX1 is on by default (`IRONMULE_GGML_PX1=0` turns it off).
+
+Against +10 % over vLLM (target wave = vLLM wave / 1.10, same prompts): PX1 leaves 0.25 s (wave 0), 0.15 s (wave 1)
+and 0.27 s (wave 2) at 32 clients, and 0.17-0.21 s at 8 clients. Supported reserve for the next round: the admission
+path (40-60 ms, both widths), the PX1 row limit (about 30 ms where 3 passes are at stake), the GEMM algorithm or
+workspace (0.03-0.06 s); together still below the remaining gap, so a larger mechanism is needed (the decode part of
+the wave, about 1.0 s, and the first waves' 2-pass prefill).
+
+### 2026-11-25, before the pod: where the 32-client wave loses time outside the GPU -- ADM1, ADM2, BF1, PX2
+Maintainer work towards +10 % over vLLM at 32 clients (reference 584ec37: IronMule 285.3, vLLM 279.1 tok/s on pod 33;
+remaining gap 0.15-0.27 s a wave). Local analysis of pod 33's raw data and a local reproduction; no GPU time.
+
+One wave on one time axis (`lab/adm1/anatomy.py`, `lab/adm1/tail.py`; pod 33, PX1 arms, 32 clients, ms from the first
+send; the client sends all 32 requests within 17-25 ms):
+
+| part | P1 / P2 waves | ideal |
+| --- | --- | --- |
+| first send to the large prefill call | 142-185 (unsplit waves) | about 30 |
+| large prefill call | 2,221-2,368 | -- |
+| prefill end to first decode call | 6-9 | -- |
+| 31 decode steps, start to start | 31.0-31.8 a step (native call 29.8-30.5) | -- |
+| last decode call's end to the last response's end | 47-85 | a few |
+
+- Admission (`lab/adm1/adm.py` over the stability log): the service admitted the burst over 80-128 ms, its first
+  requests 10-30 ms apart. Every chat request ran `ProductService.health()` (the optimizer status and the settings,
+  read under file locks) and appended to the stability log with pathlib's exists, stat and open, on the Python path
+  that 32 HTTP threads, the scheduler and the worker's reader share. Local reproduction (`lab/adm1/stub_server.py`:
+  the real HTTP server, ProductService, scheduler and join path, a stub worker; the benchmark's own client): the burst
+  reached the worker over 40-45 ms on 4 cores, 15-18 ms with the server pinned to one core (contention for the GIL,
+  not work alone). The 4-core container is not the pod; the pod had 192-256 visible cores.
+- The wave's end: the engine finished all 32 requests 10-13 ms after its last call (`# job` end times), but the
+  service read their done frames 1.6 ... 52-85 ms after it (`member_done`), each request's last chunk 0.5 ms before.
+  Every finished request costs about five log lines (member_done, http, end, the serving log, and the frames' JSON)
+  and two thread hand-offs on the same contended path. Stub: removing the logs halved the tail (30 -> 15 ms).
+- Host batch build of the large prefill call: 6-16 ms (`b=` in the trace), a Python loop over ctypes arrays.
+- PX1's fixed limit against a cost decision, offline over pods 32/33's 48 large HTTP calls (`lab/adm1/px2_offline.py`,
+  the fitted pass costs below): PX1 already evened nearly every fragmented call (6-14 passes to 2); a cost decision
+  adds 1 ms a call on average (one call 42 ms). The 30 ms expected for PX2 holds for the in-process repeat 1 (5
+  passes, 99 rows), not for the benchmark's HTTP waves.
+- Pass costs fitted over 186 calls of pods 32/33 (pause calls out): a pass under PK2's 128-row threshold 16.5 ms +
+  0.98 ms a row, a cuBLAS pass 91 ms + 0.287 ms a row (residual median 11.6 ms).
+
+Changes, each with its own switch (all on by default until the pod decides; `IRONMULE_LAB_SWITCH` flips them inside
+one server start for paired waves):
+- ADM1 (`IRONMULE_ADM1`): a chat request asks `ProductService.ready()` (the same answer as health()["ready"], no
+  file reads); log lines are appended with one open, fstat and write. Stub: last request at the worker 41 -> 20 ms.
+- ADM2 (`IRONMULE_ADM2`): the stability and serving logs are written behind by one thread per log, every waiting
+  line in one call; `read()`, `flush_logs()` and the service's close flush. Stub, with ADM1: tail 30 -> 19 ms.
+- BF1 (`IRONMULE_GGML_BF1`): calls of 64 rows or more fill llama.cpp's batch with numpy copies (the rows point into
+  one contiguous sequence-id array; llama.cpp's own arrays are given back before its free). Same tokens (CPU build,
+  Qwen3-0.6B, 18 calls of 64+ rows); 500 rows 0.23 -> 0.07 ms on the container.
+- PX2 (`IRONMULE_GGML_PX2`): a packed engine times one-sequence passes of 1, 8, 16, 32, 127, 128, 256 and 1,024 rows
+  at its start (logits on the last row only) and prices a split as the sum of its passes' interpolated times; every
+  kept-prefix level of the group is priced with the passes it would really make, the cheapest taken when it saves
+  2 ms. Without the measurement PX1's fixed limit decides.
+
+Larger lever, chosen by the remaining milliseconds (not more than three candidates):
+
+| mechanism | evidenced share of a wave | expected net saving | effort | decisive test |
+| --- | --- | --- | --- | --- |
+| server path: admission and wave end (ADM1 + ADM2) | 110-150 ms before the prefill, 45-80 ms after the last call | 80-150 ms (stub 79 -> 39 ms) | low | paired waves in one server start |
+| one large prefill pass instead of two (matmuls over all rows, attention per pass shape) | 91 ms a cuBLAS pass | about 90 ms | high (llama.cpp graph and KV views) | engine prefill of the benchmark mix |
+| decode host time between native calls | 1.0-1.5 ms x 31 steps | 15-30 ms | medium | decode period at 32 rows |
+
+Speculative decoding stays out: the verification path was measured already (pod 17: 64 rows 56.4 ms = 1.86 x a
+32-row step; draft acceptance 0.66 at k = 1), which leaves no reserve at 32 clients. The server path is chosen: the
+largest block with the smallest effort, and its pieces are measured per wave on the pod.
+
+### 2026-11-25, A100 pod 34: ADM1 and ADM2 kept -- 312.1 against 293.4 tok/s at 32 clients (+6.4 %), +10 % not reached
+RunPod A100 SXM4 80 GB (secure cloud: no community stock; 2.19 USD/h, 0.794 h, about 1.74 USD; balance afterwards
+39.60 USD; 192 visible cores, power limit 500 W), Qwen3-32B Q4_K_M, builds d371f98 (code) and c4001f6 (session), phase E with DH1 at b1f33ea,
+vLLM 0.11.0 AWQ-Marlin. Session `lab/adm2/a100_adm2.sh`, scope, rules and a 2.5 h watchdog fixed before the pod (not
+reached, not changed); phase E (`lab/adm2/a100_e.sh`) was added inside the same limit. Raw data in
+`lab/pk1/results/pod34/raw`. No profiler in any timed wave.
+
+Paired waves in one server start (`lab/adm2/paired.py`, `IRONMULE_LAB_SWITCH`; rotated order, prompts of their own
+per wave, one discarded wave per width), 32 clients, wave seconds and the paired difference to the round's reference:
+
+| phase | arm | median wave | tok/s | paired vs reference | first token p50 | 8 clients (4 rounds) |
+| --- | --- | ---: | ---: | --- | ---: | --- |
+| A1 | R (584ec37: ADM1, ADM2, PX2, BF1 off) | 3.418 s (3.318-3.549) | 299.6 | -- | 2,406 ms | 1.334 s, 18/18 |
+| A1 | A (ADM1) | 3.288 s (3.269-3.307) | 311.5 | -138.7 ms, 8 of 8 | 2,300 ms | 1.347 s, 18/18 |
+| A1 | P (PX2) | 3.419 s (3.320-3.534) | 299.5 | -45.1 ms, 5 of 8 | 2,397 ms | 1.341 s, 18/18 |
+| A1 | AP | 3.290 s (3.266-3.306) | 311.3 | -132.2 ms, 8 of 8 | 2,307 ms | 1.332 s, 18/18 |
+| A2 | B = A | 3.312 s | 309.2 | -- | 2,311 ms | 1.413 s, 18/18 |
+| A2 | C = A + ADM2 + BF1 | 3.276 s | 312.6 | -33.1 ms, 8 of 8 | 2,296 ms | 1.410 s (-3.8 ms, 4 of 4), 18/18 |
+| E | F = C | 3.294 s | 310.9 | -- | 2,294 ms | -- |
+| E | F + PX2 | 3.278 s | 312.4 | -9.2 ms, 11 of 12 | 2,286 ms | -- |
+
+- By the rule A passed, P did not (5 of 8; its waves spread like R's), AP's saving was smaller than A's: B = A. C
+  passed against B. Without ADM1 the 32-client waves spread over 0.23 s (split bursts); with it over 0.04 s.
+- Admission and the wave's end (`lab/adm1/anatomy.py`, the fresh starts below): the large prefill call started
+  27-61 ms after the first send with F against 58-116 ms with R (pod 33: 142-185 ms); the last response ended
+  20-41 ms after the last native call (pod 33: 47-85 ms; R on this pod: 16-39 ms).
+- PX2's pass costs on this pod (ms, one sequence): 1 / 8 / 16 / 32 rows 19.4 / 21.1-23.0 / 21.9-23.5 / 28.9-29.2,
+  127 rows 125.0-125.7, 128 rows (cuBLAS) 121.4-121.7, 256 rows 146.8-147.7, 1,024 rows 382.7-383.3: about 68 ms
+  fixed and 0.31 ms a row for a cuBLAS pass. PX2 stays on (rule: not 10 ms slower; phase E: -9.2 ms).
+- Decode host time (DH1, `IRONMULE_GGML_STEPPROF`, medians of 31 full-width steps per wave, F): native call
+  29.97-30.23 ms, accepting and streaming the 32 tokens 0.53-0.68 ms, pilot and admission 0.07, rows 0.045, the
+  rest below 0.01; start to start 30.8-31.0 ms. At most about 20 ms a wave is left there.
+
+HTTP, the existing benchmark, fresh server starts alternating reference / final, then vLLM, the same prompts at the
+same positions (median over all 32-client waves, first waves included, as fixed before the pod):
+
+| 32 clients | wave 0 | wave 1 | wave 2 | median tok/s | first token p50 |
+| --- | --- | --- | --- | ---: | ---: |
+| R1 / R2 | 280.96 / 297.87 | 301.61 / 302.92 | 309.33 / 303.29 | 302.3 | 2,363 ms |
+| F1 / F2 (ADM1, ADM2, BF1) | 300.77 / 301.92 | 311.80 / 312.36 | 314.35 / 312.44 | 312.1 | 2,284 ms |
+| vLLM | 288.69 | 293.50 | 293.41 | 293.4 | 1,843 ms (max 2.78-2.83 s) |
+
+- F against vLLM: 1.064x (+6.4 %); F against R: +3.25 %. Remaining gap to vLLM's wave / 1.10: 108 ms (median wave
+  3.281 against 3.173 s); by position 174 / 109 / 95 ms. IronMule's slowest first token is earlier than vLLM's
+  (2.28-2.41 against 2.78-2.83 s), its median later (vLLM's chunked prefill hands out first tokens in groups).
+- 8 clients: F 186.9 against R 183.1 tok/s (+2.0 %; waves 1.395 / 1.346 / 1.390 / 1.350 against 1.439 / 1.358 /
+  1.456 / 1.359 s), vLLM 195.3 (F 4.3 % behind). Facts 18/18 in every start of every server.
+- Not run: the diagnostic py-spy of the worker (ptrace refused in this container, `Permission denied`).
+
+Where the 108 ms remain (F, later waves: about 30 ms to the prefill, 2,236 ms prefill, 8 ms, 31 x 31.0 ms decode, 22
+ms to the last response): no server-side block of that size is left. The largest single item is the second large
+prefill pass of every wave (short prompts in one pass, long ones in a second, as llama.cpp's split over one KV
+stream per sequence requires): about 68 ms of fixed cost (dequantisation and per-pass work) measured here. The
+missing solution is a prefill whose matmuls run once over all rows of both passes while attention keeps the two
+per-stream shapes (a llama.cpp graph and KV-view change), worth about 68 ms; with the remaining decode host time
+(about 20 ms) and wave end (about 15 ms) that still leaves the decode step itself, 30.0 ms at 32 rows against
+vLLM's 22.7 ms step period, as the lever that closes the rest.
+
+### 2026-11-25, before pod 35: the starting point, PS1 (one native pass for a packed prefill) and DH2 prepared
+Starting point, two configurations (Qwen3-32B Q4_K_M, A100 SXM4 80 GB, pod 34):
+- Measured over HTTP as "F" (+6.4 % against vLLM, 312.1 against 293.4 tok/s): `IRONMULE_ADM1=1 IRONMULE_ADM2=1
+  IRONMULE_GGML_BF1=1 IRONMULE_GGML_PX2=0`, everything else at its 11f00e4 default.
+- The 11f00e4 default: ADM1, ADM2, BF1 and PX2 on. PX2 was measured on top of F only in paired waves (-9.2 ms, 11 of
+  12), not in the fresh-start HTTP benchmark. Gap of F to vLLM / 1.10, paired by position: 174 / 109 / 95 ms.
+  Pod 35's reference arm R is this default; its final arm runs the default build with nothing set by environment.
+
+PS1 (`native/ggml_patches/ps1`, every build; `IRONMULE_PS1`, read by the native library on every call, set by the engine
+from its own default): llama.cpp's KV cache (unified-cache class, multi-stream mode) merges the rectangular ubatches
+that one decode call's sequential split made into one ubatch, after `prepare()` placed every rectangle as before. The
+graph then runs embedding, norms, projections, RoPE, FFN and the output once over all rows; attention runs per
+rectangle on its rows of Q (a contiguous slice), its streams' K / V views and its own mask (filled after every
+rectangle's cells were placed, so a stream split over two rectangles sees its earlier tokens and not its later ones).
+With flash attention the rectangles write their outputs into one tensor of all rows (the FA results are views of it,
+no copy); `IRONMULE_PS1_CONCAT=1` joins them with `ggml_concat` instead (diagnostics). Attention work is the same as
+with separate passes (the same rectangles); the merged ubatch never exceeds n_ubatch; graphs are not reused across it.
+Merging needs an untransposed V cache (flash attention) and `ggml_set_rows`; elsewhere nothing changes. With PS1 on,
+PX1/PX2 no longer cut kept prefixes: the trace notes the prefix rows kept, the rows computed and the rectangles.
+- CPU build, Qwen3-0.6B Q4_K_M, 8 KV streams with prompts of 25-140 tokens and kept prefixes of 0-12, one packed call
+  of 616 rows (merged into 6 + 2 rectangles at n_ubatch 512) and 8 decode steps (`lab/ps1/check.py`): logits of every
+  output row bit-identical to separate passes (max |diff| 0.0), with the view and the concat variant; tokens equal.
+- The patch applies to a fresh 0.3.16 tree with every other patch (CPU and CUDA sets).
+- Hypothesis for the GPU, to be confirmed: one cuBLAS pass of fixed cost (about 68 ms on pod 34, mostly the Q4_K ->
+  fp16 dequantisation per pass) less a wave, and the 60-160 template rows PX1/PX2 recompute kept instead.
+
+DH2 (`IRONMULE_GGML_DH2`, GPU engines): during a run the tokens' delivery (the worker's `_BatchStream.on_token`:
+detokenizer, frame, queue; 0.53-0.68 ms a 32-row step on pod 34) goes to an emitter thread that runs while the next
+native call holds no GIL, in order per request; a request's last token (its done frame reads engine state) is
+delivered on the engine thread after the emitter drained; the run drains it before it returns. The worker's
+detokenizer pool takes a lock. Upper bound about 0.6 ms x 31 steps = 19 ms a wave.
+
+The decode path from logits to token, checked first (pod 33 TL1 timestamps, 205 calls of 32 rows): AM1 already picks
+the argmax on the GPU and copies one index per output row; inside the native call 0.10 ms split, 0.21 ms inputs
+(the KQ mask), 0.61 ms graph launch, 28.84 ms waiting for the GPU and the copy; after it 0.75 ms of Python (DH1). No
+further logit transfer to remove; DH2 takes the largest part that can overlap without a new graph structure.
+
+Session `lab/ps1/a100_ps1.sh` with its rules fixed in the file before the pod.
+
+### 2026-11-25, A100 pod 35: PS1 measured (-90 ms a wave in one process, outliers over HTTP: rejected by the rule), DH2 no gain; +7.7 % against vLLM
+RunPod A100 SXM4 80 GB (secure: no community stock; 2.19 USD/h, 1.263 h, 2.77 USD; balance afterwards 36.69 USD; 128
+visible cores, 400 W), Qwen3-32B Q4_K_M, vLLM 0.11.0 AWQ-Marlin. Session `lab/ps1/a100_ps1.sh` (rules fixed in it
+before the pod), watchdog at 2.5 h (not reached, not changed). Three runs inside the limit, each reason recorded; raw
+data in `lab/pk1/results/pod35/raw` (`run1`, `run2`, `run3`, `h`).
+- Run 1, C: the first GPU check ran out of graph objects (`GGML_ASSERT(obj_new)`: 8 rectangles x 64 layers above
+  llama.cpp's 8 nodes a tensor). Fixed (24 with `IRONMULE_PS1=1`, at most 16 rectangles merged; 13f23c5), rebuilt on
+  the pod. Then, 8 KV streams, 616 rows of unequal prompt and kept-prefix lengths: PS1 against the concat variant
+  bit-identical (max |diff| 0.0: the in-place outputs are right on CUDA), against separate passes max |logit diff|
+  0.47 (MMQ against cuBLAS for the small passes), top-1 8 of 8, tokens equal; the call 0.670 -> 0.215 s.
+- Run 1, E (one process, the benchmark's prompts after a primer, 10 rotated rounds, no profiler): PS1 -89.9 ms a
+  32-client wave in 10 of 10 rounds (wall 3.319 -> 3.227 s, prefill 2,380 -> 2,287 ms), prompt rows 7,472 -> 7,373,
+  rows reused 160 -> 259, answers identical in 315 of 320.
+- Run 1, A (paired HTTP waves, one start, lab switch): PS1 +50.6 ms (3 of 8); 5 of 13 merged prefills took 2.83-2.86 s
+  instead of 2.29-2.32 s (the same row counts ran both ways). Suspected: the compute buffer regrown at every new
+  maximum, since each rectangle's mask makes the need depend on the shape. Run 2 let an existing buffer grow to 1.5x
+  its need (ggml-alloc.c): the worker crashed with SIGSEGV at its first request; withdrawn, not investigated further.
+  Run 3 grows the buffer at the engine's start with one merged prefill of 32 different lengths (8,165 rows, 2.57 s).
+- Run 3, A (8 rounds of 32 clients, 4 of 8; arms on top of the 11f00e4 default):
+
+| arm | median wave | paired vs R | first token p50 | 8 clients: paired vs R | facts |
+| --- | ---: | --- | ---: | --- | --- |
+| R | 3.455 s | -- | 2,464 ms | -- | 18/18 |
+| S (PS1) | 3.383 s | -82.5 ms, 5 of 8 | 2,398 ms | -49.9 ms, 4 of 4 (first token 697 against 770 ms) | 18/18 |
+| D (DH2) | 3.462 s | +0.6 ms, 4 of 8 | 2,452 ms | +24.1 ms | 18/18 |
+| SD | -- | -68.7 ms, 7 of 8 | -- | -- | 18/18 |
+
+  3 of 16 merged 32-client prefills still took 0.45-0.55 s more (2,599 / 2,778 / 2,825 ms; 7,423 rows ran in 2,310 ms
+  in another wave), not decreasing over the rounds; the cause is not shown. By the rule S failed (5 of 8), D failed,
+  and SD may only be taken when both pass: F = R. PS1 and DH2 are off by default now.
+- H (fresh starts, the existing benchmark, first waves included), replacing the script's H once F = R: R (PS1, DH2 off:
+  the default after this pod) against P (PS1 and DH2 on), then vLLM:
+
+| 32 clients | waves (tok/s) | median | vs vLLM | gap to vLLM / 1.10 (median wave; by position) |
+| --- | --- | ---: | ---: | --- |
+| R | 295.37 / 300.38 / 299.99, 293.11 / 301.93 / 301.78 | 300.2 | +7.7 % | 72 ms; 148 / 61 / 10 ms |
+| P | 261.11 / 304.65 / 304.75, 262.91 / 300.16 / 305.47 | 302.4 | +8.5 % | 47 ms; 576 / 47 / -37 ms |
+| vLLM | 279.34 / 278.81 / 274.40 | 278.8 | -- | -- |
+
+  8 clients: R 180.5, P 189.2, vLLM 186.5 tok/s; first token p50 at 32: R 2,411, P 2,369, vLLM 1,607 ms (vLLM's slowest
+  first token is later); facts 18/18 everywhere. P's first wave after a start is 0.5 s slower (the merged prefill's
+  first shapes), its later waves are 1.6-1.7 % faster than R's and at position 2 above +10 % over vLLM.
+- What blocks +10 % now: PS1 saves about 90 ms a wave where its prefill runs as expected, which is most of the
+  remaining 72 ms; it fails on the merged prefills that take 0.45-0.55 s more, the first after a start and some
+  later ones. The missing piece is a merged graph whose memory need does not depend on the rectangles (one mask
+  tensor of fixed size for all of them, or the compute buffer reserved for the largest merged shape at the start),
+  measured on the GPU first; then the same rule again.
+
+### 2026-11-25, before pod 36: what the slow PS1 prefills have in common, TL2, and the start-up warm-up of the full micro-batch
+From pod 35's raw data (local, no GPU time). Every merged 32-client prefill of runs 1 and 3 and of the H stage, in the
+order the server ran them (rows = the merged call's prompt rows; "max before" = the largest merged call of the process
+so far, the start's warm-up included):
+
+| call | rows | max before | prefill |
+| --- | ---: | ---: | --- |
+| run 3 S0 (first PS1 wave) | 6,943 | about 6,100 (warm-up: 32 lengths merged as 16 + 16) | 2,599 ms, slow |
+| run 3 S1 | 7,423 | 6,943 | 2,778 ms, slow |
+| run 3 S2 | 7,382 | 7,423 | 2,308 ms |
+| run 3 S7 | 7,423 | 7,423 | 2,310 ms |
+| run 3 SD6 | 7,435 | 7,423 | 2,825 ms, slow |
+| H P1 / P2, first wave | 7,629 | about 6,100 | 2,817 / 2,813 ms, slow |
+| H P1 / P2, later waves | 7,344-7,373 | 7,629 | 2,266-2,278 ms |
+
+Every slow call, the first waves after a start and the later ones alike, was the process's first merged call above all
+earlier ones; no call below the maximum was slow (the same 7,423 rows ran in 2,778 and 2,310 ms). The reference never
+exceeds 6,576 rows in a pass after its start and had no such call. So both cases have one trigger in these data; what
+grows there, and where the 0.45-0.55 s go, is not shown by them (no TL1 ran on pod 35).
+
+Prepared for the pod:
+- TL2 (`native/ggml_patches/tl2`, `tl2c`; diagnostics, nothing without `IRONMULE_TL1` / `IRONMULE_TL2`): the TL1 line
+  of every ubatch adds the graph's construction apart from the scheduler's allocation, the thread's CPU time and a
+  merged ubatch's rectangles; every compute-buffer reallocation (ggml-alloc) and every CUDA pool growth (VMM:
+  cuMemCreate / cuMemMap / cuMemSetAccess; legacy: cudaMalloc) is written with its sizes and host microseconds.
+- `lab/ps1/growth.py`: one engine process, packed prefills of 8, 16, 16, 24, 24, 32, 32, 24, 32 fresh prompts (every
+  rise a new maximum, every repeat a known shape), TL1/TL2 per wave, CUPTI for chosen waves (PF2's summary: kernels,
+  busy time, gaps, first-time CUDA API calls).
+- `IRONMULE_PS1_WARM` (with PS1 on): "2" (default) one merged call of the full micro-batch in 16 rectangles at the
+  start, the largest merged call the engine can make (8,192 rows; CPU build: one merge of 16 rectangles, checked);
+  "1" run 3's form; "0" none. PS1 stays off by default.
+- Session `lab/ps1/a100_ps1b.sh`, stages d1 / d2 / d3 / h, rules in the file.
+
+### 2026-11-25, A100 pod 36: PS1's slow prefills attributed and removed (PS1a), PS1 on by default, +9.2 % against vLLM
+Maintainer session on one RunPod A100 SXM4 80 GB (secure cloud, US-WA-1, 32 vCPU; the community tier had no stock),
+Qwen3-32B Q4_K_M GGUF, vLLM 0.11.0 with the official AWQ checkpoint (AWQ-Marlin). Build: cdd45ad's patch sets plus
+PS1a below (the pod's tree was rebuilt in place after D1; 605bfef holds the same files). DH2 off in every arm.
+Raw data: `lab/pk1/results/pod36/` (`ps1b_all.tgz`: every stage, TL1/TL2, traces, HTTP rows, vLLM; `d1.tgz`, `d2.tgz`,
+`ps1b_d1.log`). Cost 1.45 h at 2.19 USD/h, 3.18 USD; pod deleted, watchdog (2.5 h) not reached.
+
+**D1, the attribution** (`lab/ps1/growth.py`, one engine process, waves of 8, 16, 16, 24, 24, 32, 32, 24, 32 fresh
+prompts, one packed prefill each, TL1/TL2 on). PS1 without the start's warm-up, the first call of each new size:
+
+| call | rows | prefill | TL1: build (graph / allocation) | TL2 | GPU wait (out) |
+| --- | ---: | ---: | --- | --- | ---: |
+| first 32-request call | 7,632 | 2,761.5 ms | 386.8 ms (0.96 / 385.8) | CUDA0 compute buffer 14.02 -> 18.69 GB, 384.7 ms | 1,271 ms |
+| the same shape again | 7,632 | 2,372.6 ms | 2.3 ms | none | 1,270 ms |
+| first 24-request call | 5,724 | 1,797.7 ms | 11.2 ms | 9.35 -> 14.02 GB, 9.1 ms | 955 ms |
+
+The whole extra time of the slow call is the scheduler's allocation: ggml-alloc freeing the 14 GB compute buffer and
+allocating 18.7 GB (host time, 23 ms of it CPU; GPU execution unchanged, launch 1,088 against 1,085 ms). The buffer
+grew by 2.2 MB for every merged row (5.15, 9.35, 14.02, 18.69 GB at 1,908 / 3,816 / 5,724 / 7,632 rows), 2.1 MB of it
+exactly 64 layers x 8,192 floats: every layer's attention output at once. `CUDA_MODULE_LOADING=EAGER` changed nothing
+(2,777 ms); CUPTI on the 24-request call showed one 851 ms stream synchronisation, the GPU's own work. The prepared
+warm-up (one merged call of 8,192 rows at the start, 2.47 s) removed the slow calls in D1, but in the first server
+start the start-up gate's W4R tuning then died with `out_of_memory` (SIGSEGV) next to the 18.7 GB buffer; that run
+was discarded (`d2_failed/`).
+
+The mechanism (ggml-alloc.c, `ggml_gallocr_alloc_graph_impl`): every graph leaf is allocated before the first node,
+for the whole graph. PS1's per-layer tensor that the segments' flash attention writes into (`ggml_new_tensor_2d`, no
+op) is a leaf, so all 64 were placed together. A first change (the segment outputs chained, so that their views
+release it) left the growth byte for byte unchanged; with PS1's concat fallback (no such tensor) the buffer did not
+grow at 3,816 rows (1,216 ms). **PS1a** (`native/ggml_patches/ps1a`, after tl2): a leaf named `ps1_all-<layer>` is
+not pre-allocated; ggml-alloc places it at its first reader (the allocator's parent loop already does that) and, with
+the chain, frees it after the layer's projection reads it. CPU build, Qwen3-0.6B, 16 streams with unequal prompts and
+kept prefixes: logits and tokens identical to PS1 off (max |difference| 0.0). A100, the same D1 waves: no compute-buffer
+growth after the start at all (TL2 lists only CUDA pool growths under 2 ms), first 32-request call 2,379 ms, its
+repeats 2,380 / 2,382 ms; the reference on the same calls 2,445 ms. The warm-up is no longer needed (default "0").
+
+**D2, the server** (PS1 on from the start, warm-up 0, trace, TL1, TL2; first start with the gate: 1,223 s, gate
+passed, W4R ratio 0.994; 62.1 GB after ready): after ready one CUDA pool growth (0.25 ms) and no compute-buffer
+growth; the allocation section of every merged call 0.7-3.3 ms. Every 32-client prefill after ready: S merged calls
+of up to 23 rectangles with kept prefixes 2,281-2,322 ms, R's two-pass calls 2,387-2,402 ms, the benchmark's first
+call (7,629 rows, no kept prefix yet) 2,359 ms. Paired R / S, 8 rounds of 32 clients: S -75.8 ms, 8 of 8.
+
+**D3, decisive** (fresh start, PS1 on, no trace; paired waves through the lab switch, the rule fixed in
+`lab/ps1/a100_ps1b.sh`): S -80.8 ms per paired 32-client wave, faster in 8 of 8 rounds; 8 clients -53.4 ms (wave
+ratio 0.950, 4 of 4); 32-client first-token p50 ratio 0.969; facts 18/18 in both arms. S kept.
+
+**H, fresh starts R1 S1 R2 S2 (trace on, as in every H), then vLLM.** Output tok/s, every wave, first waves included:
+
+| arm | 32 clients (wave 1 / 2 / 3, two starts) | median | first-token p50 | 8 clients (median, facts) |
+| --- | --- | ---: | ---: | --- |
+| S (PS1 + PS1a) | 292.4 / 300.5 / 301.2, 291.5 / 301.5 / 299.6 | 300.0 | 2,360 ms | 194.3, 18/18 x 4 |
+| R (PS1 off) | 284.3 / 289.2 / 291.4, 286.9 / 295.1 / 293.2 | 290.3 | 2,435 ms | 183.0, 18/18 x 4 |
+| vLLM | 276.5 / 273.0 / 274.8 | 274.8 | 2,049 ms | 187.3, 18/18 x 2 |
+
+- S against vLLM +9.2 % (300.0 against 274.8): +10 % not reached. Remaining gap: median S wave 3.413 s against vLLM's
+  3.726 s / 1.10 = 3.387 s, 25.7 ms; by position 139.7 / -8.0 / 21.7 ms. R against vLLM +5.6 %. S against R +3.3 %
+  at 32 clients, +6.1 % at 8 clients (8 clients: S ahead of vLLM by 3.7 %, R behind by 2.3 %).
+- Startup (85 s) and memory after ready (61,579 against 61,569 MiB) the same for S and R.
+- No slow call: every S prefill within 1.15 x its position's median (first 2,356 / 2,367, later 2,288-2,305 ms);
+  R's 2,370-2,435 ms.
+- Where S's first wave loses its 100 ms against its later waves (trace and client timeline): 35 ms from the first send
+  to the prefill call (79-84 against 39-49 ms) and 65 ms in the prefill (7,629 rows without a kept prefix against
+  about 7,390). Decode (31 calls, 1,016-1,032 ms) and the tail after the last call (28-48 ms) are the same in every
+  position. vLLM's first wave is not slower than its others.
+- The first start of a pod with PS1 now passes the gate; the 18.7 GB buffer was also what made the warm-up variant
+  fail it.
+
+Default since this session: `IRONMULE_PS1=1`, `IRONMULE_PS1_WARM=0`, DH2 off, patch set ps1a in every build: the
+configuration measured as S. Next: the first wave's 35 ms before the prefill and its 65 ms of rows without a kept
+prefix are the largest single remainder (140 ms of the first wave's gap); the later waves are within 22 ms.
+
+### 2026-11-25, before pod 37: what sets the median wave, and two small levers (PK6, SV5)
+Starting point 02b285b (PS1 + ps1a, warm-up 0, DH2 off). Pod 36: 300.0 against vLLM's 274.8 tok/s; +10 % needs
+302.28 (+0.76 %), 25.7 ms a median wave. Local analysis of pod 36's raw data, no GPU time.
+
+- Which waves decide: the six 32-client waves sorted are 291.5 / 292.4 (the two first waves) / 299.6 / 300.5 / 301.2
+  / 301.5; the median is the mean of the third and fourth, both later waves. A faster first wave would not move it
+  unless it overtook them; the later waves need about 26 ms.
+- A later wave (3.39-3.42 s), from the client timeline, the engine trace and the stability log: first send to the
+  prefill call 39-49 ms; prefill 2,288-2,305 ms; to the first decode call 8 ms; 31 decode calls of 31.3 ms (980 ms)
+  and 30 gaps of 1.0-1.2 ms (28-37 ms); after the last call 28-48 ms (the 32 done frames handled about one a
+  millisecond; locally 0.85 ms a frame, mostly thread hand-offs, frames of 7.8 KB; no small fix found).
+- Before the prefill (later waves): the client's last request is sent at 14-17 ms, admitted at 25-30 ms; the worker
+  receives 11-31 of the requests as one join at 30-36 ms and renders them one by one in 7-12 ms (the batch's first
+  requests already go through SV4's batched rendering, joins did not), then 3-5 ms to the call. In the first wave the
+  admission ends later (51-60 ms) and 16-24 ms more pass between the decision and the call (a first-time cost there).
+- The prefill (pod 36 CUPTI, 5,724 rows): GEMM 1,431 of 1,757 ms of kernels (about 250 TFLOPS, 89 % of the
+  clock-adjusted peak), SwiGLU 78, norms 66 (the fused add + RMS norm 42), attention 61, weight dequantisation 59,
+  rope 26, activation conversion 20, KV writes 13 ms. Lever A as asked: a cuBLAS algorithm or workspace choice stays an
+  unmeasured 30-60 ms (pod 32's estimate); a dead write in two of the bandwidth-bound kernels is a sure one.
+
+Prepared (each with its own switch, read while running, so the lab switch can pair them in one server):
+- PK6 (`native/ggml_patches/pk6`, `IRONMULE_PK6=1`): PK4 makes SwiGLU and FU1's add + RMS norm write an fp16 copy
+  for the next matmul besides their f32 result; in a prefill the matmuls (Q4_K / Q6_K, more than 64 rows: KG1's
+  libraries decline them, PK2 sends them to cuBLAS) read only the copy. The f32 write is skipped when every reader of
+  the tensor in the graph is such a matmul and nothing in between (matmul, GLU, ADD) can replace PK3's copy; a matmul
+  that still misses the copy of a skipped tensor aborts instead of reading unwritten memory. Values unchanged (the
+  floats are not read); one GPU split holds the whole model (pod 36: 2 splits, the other the CPU input). Expected
+  about -40 ms a later wave (SwiGLU 14 -> 10 bytes an element, -29 ms; the norm about 18 -> 14, -12 ms, at 7,390
+  rows), if both kernels stay bandwidth-bound. Not compiled locally (no nvcc here); the CPU build is unaffected.
+- SV5 (`IRONMULE_SV5=1`, worker): a join of several requests goes through SV4's batched rendering, checked equal to
+  one-by-one rendering the first time. Locally 30 benchmark prompts 7.2-7.4 -> 3.3-3.6 ms; expected about -5 ms.
+- Session `lab/pk6/a100_pk6.sh` (stages e, d, h; rules in the file): E checks PK6's logits on the GPU (must be equal)
+  and its skips, and times it in one engine process (8 ABBA pairs); D pairs R / PK6 / SV5 / both in one server
+  start; H alternates fresh starts R1 K1 K2 R2, then vLLM.
+
+### 2026-11-25, A100 pod 37: PK6 kept -- 304.6 against 276.9 tok/s at 32 clients (+10.02 %), the +10 % reached by its rule
+Maintainer session on one RunPod A100 SXM4 80 GB (secure, US-WA-1, 32 vCPU; community without stock), Qwen3-32B
+Q4_K_M GGUF, vLLM 0.11.0 with the official AWQ checkpoint (AWQ-Marlin). Build 0d6d69d (patch sets up to tl2c, ps1a and
+pk6). Reference R = 02b285b's default (PS1 + ps1a, warm-up 0, DH2 off). Session `lab/pk6/a100_pk6.sh`, rules fixed in
+it before the pod. Raw data: `lab/pk1/results/pod37/` (`pk6_all.tgz`: every stage, HTTP rows, timelines, traces of H,
+stability logs, vLLM; the logits files of E left out, their comparison is in `pk6_e.log`). Cost: about 0.62 h at
+2.19 USD/h, 1.36 USD (balance 33.45 -> 32.09); pod deleted, watchdog (2.5 h) not reached.
+
+- E, engine without server: `lab/ps1/check.py` with 32 streams of unequal prompts and kept prefixes (2,466 rows),
+  PK6 off / on: logits of every output row and greedy tokens identical (max |difference| 0.0); 189 f32 writes skipped
+  in every prefill graph (64 SwiGLU, the fused add + norm of 63 FFN and 62 attention inputs). `lab/pk6/engine_ab.py`,
+  8 ABBA pairs of 32 fresh benchmark prompts (7,632 rows, one PS1 call, 31 decode steps): prefill 2,342.8 -> 2,314.1
+  ms (-27.9 ms, 8 of 8), wave -29.2 ms (8 of 8), tokens equal in 8 of 8 pairs. Less than the 40 ms estimated from the
+  kernels' bytes.
+- D, one server start (first start with the gate: 1,229 s; 62.0 GB after ready), paired waves through the lab
+  switch, 8 rounds of 32 clients, 4 of 8 with the factual check, no trace:
+
+| arm | 32 clients: paired wave vs R | rounds faster | 8-client wave ratio | first-token p50 ratio | facts |
+| --- | ---: | ---: | ---: | ---: | --- |
+| P (PK6) | -38.8 ms | 7 / 8 | 1.015 | 0.991 | 18/18 |
+| V (SV5) | -15.7 ms | 5 / 8 | -- | -- | 18/18 |
+| C (PK6 + SV5) | -27.1 ms | 6 / 8 | 1.008 | 0.996 | 18/18 |
+
+  Rule: P passes, C passes with less saving than P, so K = P. SV5 is not kept (off by default); its effect stays
+  within the spread of paired waves.
+- H, fresh starts R1 K1 K2 R2 (order turned around in the middle), engine trace on as in every H, then vLLM. Output
+  tok/s, every wave:
+
+| arm | 32 clients, waves 1 / 2 / 3 of each start | median | first-token p50 | 8 clients (median, facts) |
+| --- | --- | ---: | ---: | --- |
+| K (PS1 + PK6) | 297.1 / 313.2 / 306.0, 297.3 / 303.2 / 307.5 | 304.6 | 2,321 ms | 195.6, 18/18 x 4 |
+| R (PS1) | 293.7 / 308.5 / 304.6, 293.4 / 299.8 / 304.0 | 301.9 | 2,353 ms | 193.7, 18/18 x 4 |
+| vLLM | 278.7 / 276.7 / 276.9 | 276.9 | 1,823 ms | 189.4, 18/18 x 2 |
+
+- K against vLLM: 1.1002 (+10.02 %), the fixed criterion (>= 1.10) met; gap -0.3 ms a median wave (K 3.3615 s, vLLM
+  3.698 s / 1.10 = 3.3618 s); by position 105.5 / -40.1 / -23.8 ms. The margin is nil: per start K1 1.105, K2 1.095.
+  R against vLLM on this pod 1.090. Correction (2026-11-25, after the entry): pod 37's R had PS1 on, pod 36's R had
+  it off, so pod 36's 1.056 is not the comparable value and the two do not show a pod-to-pod spread; the comparable
+  previous default is pod 36's S, 1.092 against vLLM (300.0 / 274.8). K against R
+  +0.9 % at 32 clients, +1.0 % at 8 clients; first-token p50 -32 ms. Not repeated (the rule allows one run).
+- First and later waves: K's first waves 297.1 / 297.3 (3.447 / 3.444 s), later 303.2-313.2 (3.270-3.377 s); R's
+  first 293.7 / 293.4, later 299.8-308.5. The median is set by later waves, as before.
+- Prefills (traces): K's later waves 2,240-2,252 ms, R's 2,270-2,284 ms (-30 ms); first waves K2 2,326 ms in one call,
+  R 2,353 / 2,360 ms; K1's first wave came in two calls (2,382 + 5,247 rows, 782 + 1,585 ms: early arrivals started
+  alone), which is why the slow-call list marks K2's single first call against a median of split calls; no call
+  regrew the compute buffer or stood out within one start.
+- Startup 80-86 s and memory after ready 61,573 MiB for both arms.
+
+Default since this session: PS1 + ps1a + PK6 (`IRONMULE_PK6=1`), warm-up 0, DH2 off, SV5 off: the configuration
+measured as K. What limits the margin: the first wave after a start (105 ms over the target line, its admission and
+the prompt rows without a kept prefix) and the decode step (31 calls of 31.3 ms against vLLM's about 23 ms).
+
 ### 2026-11-23, hardware placement on a Linux CPU
 
 SmolLM2-135M-Instruct Q4_K_M ran on an AMD EPYC 9V74, with affinity for five CPUs, a four-core cgroup quota,
@@ -3384,3 +4426,556 @@ A second experiment used independent one- and three-thread workers on the same C
 The v3 follow-up used the same two CPU workers. IronMule rejected the first campaign after 98.04 seconds because the faster routes changed responses and output counts. Then 32 short requests arrived four at a time. IronMule learned a new workload plan that included two requests ahead on one worker and one on the other. It recreated and drained the observed queues for each measured route. The second campaign took 70.05 seconds. The native reward policy and the native latency model tied on the selection set, and the controller selected the immediate latency model. In the two fresh rounds its total completion time was 48.68% and 55.47% of the shortest-queue reference. Time to first token was 46.69% and 51.38% of the reference. Visible responses, output-token counts and stop reasons matched on every selected route. A subsequent foreground request used the qualified three-thread route. Offline fitting and holdout replay of the saved trace took 0.82 ms with the native trainer already built.
 
 Reproduce this load transition with `python -m lab.placement.cpu_pair --gguf MODEL --state-dir STATE --short-traffic --burst-size 4`. The results cover a single host and this small GGUF with short outputs. [Queue patterns, paired timings and verdicts](../lab/placement/results/smollm2-cpu-reward-burst-v3.json)
+
+### 2026-11-26: CPU Pilot development order and rejected tokenizer change
+
+An offline planner observed four real waves of four concurrent copy requests with SmolLM2-135M-Instruct
+Q4_K_M on the GGML CPU backend. The baseline was the head of PR 57, a4e2fc4, on an Intel Xeon
+Platinum 8573C with a four-core cgroup quota. The serving path encoded the prompts, ran the shipped
+Pilot and native engine, and streamed detokenized output. There was no HTTP transport. From the
+caller-thread profile and its step-cost simulation, IronMule selected GgufTokenizer.encode.
+The estimated recoverable time was 1.9 ms per wave under an assumed 25% reduction in self time.
+
+A Codex worker proposed returning the ctypes token-array slice directly. The development CLI
+received HTTP 401 in this environment. The session dispatched the saved order to a hosted Codex
+worker and imported its response. IronMule compiled the candidate, ran the engine and tokenizer
+tests and evaluated six pairs in independent Linux namespaces. Runtime flags, GGUF digest,
+output IDs, stop reasons and the unprofiled evaluator were matched within pairs. Each pair used a
+fresh seed, alternating which arm ran first, with a fresh engine and one warm-up wave per arm.
+Both arms answered 96/96 correctly, generated 288 tokens and took 72 measured Pilot decisions.
+Per-pair throughput ratios were 1.302, 1.078, 0.919, 1.320, 1.002 and 0.974. The six-win rule
+rejected the candidate. The wide variation exceeds the measured share of the tokenizer.
+The paired workloads consumed 33.84 s of serving and 79.14 s including worker initialization.
+This trial incurred no additional CPU rental or metered API charges. It did not change any serving default.
+
+[Order, waves, patch, outputs and decision](../lab/autonomous/results/cpu-tokenizer-01/).
+
+### 2026-11-26: CPU Pilot thread proposals from paired decode
+
+On a Linux Intel Xeon Platinum 8573C with a four-core quota, the two-slot SmolLM2-135M-Instruct Q4_K_M
+GGML engine attempted 224 eight-token decode measurements. The load and output checks left 116 timed
+arms and ten complete counterbalanced series. A new 20,232-parameter Pilot thread head trained on one CPU
+process from seed 20261126. Adding the measured 256–383-token context bins changed the selected threads
+from two to three for one training input and three to four for another. On the two matched held-out series,
+the new and shipped Pilots each chose three and four threads, respectively. Their summed mean times were
+0.2664 s, against 0.2785 s with one thread and 0.1589 s with all four. Results apply to fixed plain-decode work.
+[Paired measurements](../evidence/runtime/cpu-pilot-thread-trials.json) ·
+[Grouped training and replay](../evidence/runtime/cpu-pilot-thread-replay.json)
+
+Three bounded native-serving audits tested quiet operation and one or two independent CPU load workers.
+The new head proposed three threads instead of two under the heaviest load. The four-triplet qualification
+measured a median candidate/reference ratio of 0.78 and a maximum reference-repeat spread of 0.94.
+IronMule retained the shipped Pilot in all three runs. The four timed 48-token generations in each
+audit matched the reference output and stop reason. No new serving speedup was qualified in these runs.
+[Quiet audit](../evidence/runtime/cpu-pilot-thread-serving.json) ·
+[One load worker](../evidence/runtime/cpu-pilot-thread-contention.json) ·
+[Two load workers](../evidence/runtime/cpu-pilot-thread-two-workers.json) ·
+[Search and qualification observations](../evidence/runtime/cpu-pilot-thread-qualification.json)
+
+The four-slot evaluator needed its own checkpoint. Sixteen series tested the same GGUF with one or four
+decode rows. Eight series met the complete-pair and output checks. On fresh held-out 392- and
+456-token single-row contexts, the fit updated with new experience selected two threads in both cases
+(the earlier fit selected four). The candidate took a summed 0.1721 s and the shipped Pilot took
+0.1486 s. The four-slot candidate therefore carries no blanket performance qualification.
+[Four-slot corpus](../evidence/runtime/cpu-pilot-four-slot-trials.json) ·
+[Four-slot replay](../evidence/runtime/cpu-pilot-four-slot-replay.json) ·
+[Experimental checkpoint](../evidence/runtime/cpu-pilot-four-slot-candidate.npz)
+
+### 2026-11-26: four-slot scratch Pilot in the development loop on Linux CPU
+
+On a four-core quota on an Intel Xeon Platinum 8573C, the locally trained thread head proposed
+five alternatives during 83.030 s of bounded qualification. None passed the fresh on-machine gate.
+The reference completed 16/16 correct copy requests on SmolLM2-135M-Instruct Q4_K_M, produced all
+48 tokens, and made 16 Pilot decisions. The four profiled waves took 2.709 s in total, with engine
+p95 time to first visible token of 1.021 s. The full discovery took 89.813 s. No scratch choice
+qualified in the timed waves, so the experiment stopped before code authoring. The measurements
+came from source 9c9618d, with both raw repeats and rejection reasons retained. Reproduce on the
+matching machine with the bounded CPU command and the four-slot checkpoint in the method guide.
+[Measured discovery and qualification](../evidence/runtime/cpu-pilot-four-slot-discovery.json) ·
+[Experiment commands](OPTIMIZATION_METHODS.md#run-one-development-experiment-on-linux)
+
+### 2026-11-26 RunPod EPYC scratch Pilot in live four-client serving
+
+SmolLM2-135M-Instruct Q4_K_M served on four pinned physical cores of an AMD EPYC 7742, with CUDA masked.
+IronMule collected 48 equal-output native decode measurements across six complete series on commit
+79ee889. The initial fit used 72-token contexts and the update added separate 264-token contexts.
+Both widths of the 392-token family stayed out of both fits. For one and four decode rows, the
+trained head selected four threads and took 52.49 ms and 122.96 ms per eight-token probe. The shipped Pilot
+selected one thread and took 118.39 ms and 349.04 ms. The simple all-four-threads rule matched the new head
+on both held-out cells. The update changed the scores and preserved these two choices.
+[Measurements](../evidence/runtime/cpu-pilot-epyc-trials.json) · [Grouped replay](../evidence/runtime/cpu-pilot-epyc-replay.json) · [Checkpoint](../evidence/runtime/cpu-pilot-epyc-candidate.npz)
+
+A fresh qualification then admitted four threads for plain four-row decode in the 64–127-token context band.
+Across four paired windows, candidate/reference time ranged from 0.313 to 0.347 and the maximum
+A/A spread was 4.94%. Qualification and search took 42.65 s. The head made four qualified choices in
+the subsequent sixteen measured Pilot decisions. Sixteen of sixteen copy requests returned correct
+answers with 48 tokens in 6.166 s. The observed engine p95 time to first visible token was 2.196 s.
+The entire campaign took 231.97 s, including collection, both fits, qualification and serving.
+These profiled waves have no end-to-end baseline arm. The original load feature counts busy time
+across the host, including CPUs outside the worker's affinity.
+[Serving receipt](../evidence/runtime/cpu-pilot-epyc-discovery.json) · [Campaign and time breakdown](../lab/autonomous/results/runpod-epyc-pilot/campaign.json)
+
+The world model used all four completed serving waves and retrieved the prior rejected tokenizer
+experiment. The largest exclusive host-function share in any wave was 0.04764% for
+`GgufTokenizer.encode`. Even removing that entire measured cost falls below the 1.96078% elapsed-time
+saving required for the existing 2% throughput gate. IronMule therefore deferred a Python code order on
+this workload. This estimate covers the instrumented engine and tokenizer source sites only.
+[Decision and retrieved records](../lab/autonomous/results/runpod-epyc-pilot/planner-decision.json)
+
+### 2026-11-26, A100 SXM4 80 GB, prefill cuBLASLt screen deferred a source experiment
+
+The pinned Qwen3-32B Q4_K_M capture at commit `33dc7bf` executed 7,616 prompt rows in 2.369 s.
+The FFN gate/up and down groups were attributed 1,036.75 and 527.10 ms from device times, counts,
+the graph and the actual matrix dimensions. Call-argument traces would give direct confirmation.
+The bounded planner selected a synthetic-input micro-test of the same TN FP16-input/FP32-output
+GEMM layouts. It charged 3.788 s to compile and execute on the existing pod, including 2.222 s
+for compilation. Its portion of the occupied lease is already included in the RunPod journal.
+[Capture](../lab/autonomous/results/a100-prefill-lt/profile.log) · [Experiment plan](../lab/autonomous/results/a100-prefill-lt/plan.json)
+
+| Projection | M × N × K | Calls per prefill | Bitwise matches / Lt heuristics | Best paired median projected saving |
+| --- | --- | ---: | ---: | ---: |
+| Gate/up | 25,600 × 7,616 × 5,120 | 126 | 3 / 3 | 21.12 ms |
+| Down | 5,120 × 7,616 × 25,600 | 63 | 2 / 4 | 3.70 ms |
+
+Each qualifying heuristic matched every output bit across the warm-up and four alternating pairs
+on cuBLAS 12.8.4. The two rejected down heuristics each changed 38,857,337 FP32 values.
+The optimistic sum of the best within-shape estimates was 24.83 ms. Even a wave consisting only of the
+observed prefill would require 46.45 ms to meet the existing 2% throughput gate. The planner deferred
+a new source build. The trial measured isolated GEMMs and left the deployed cuBLAS path in place.
+[Raw timings and quality](../lab/autonomous/results/a100-prefill-lt/measurement.json) · [Planning decision](../lab/autonomous/results/a100-prefill-lt/decision.json) · [Replay](../lab/pk1/prefill-probe.md)
+
+### 2026-11-26 EPYC prefill code trial stopped on mismatched thread profiles
+
+On four pinned cores of an AMD EPYC 7742, a Codex-authored change to `GgmlEngine._prefill` passed
+84 engine and tokenizer tests (six skipped). The first pair of restricted real SmolLM2 135M workers
+each delivered 16 correct answers and 48 matching tokens. The incumbent independently qualified
+offset +3 for load bucket `1:1:4:4`. The candidate qualified offset +2 for `1:2:4:4`.
+That changed the execution conditions. Qualification stopped at the first pair, the raw times are
+excluded from speed training, and the reference stayed active. The complete source order, authored
+patch and first-pair receipts are preserved together.
+[Order](../lab/autonomous/results/runpod-epyc-pilot/prefill-order.json) · [Authored diff](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/candidate.diff) · [Rejection](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/comparison-rejected.json) · [Raw byte hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v1/sha256.json)
+
+### 2026-11-26 EPYC matched-profile prefill source qualification
+
+The matched trial reused the original code proposal and calibrated a complete reference profile on
+four pinned EPYC 7742 cores. The reference qualified offset +3 for bucket `1:1:4:4` after 79
+visits. It delivered 16 correct calibration answers with three scratch-head decisions. Its search
+and warm-up took 41.72 seconds. Each child then had to requalify the same profile on the live host.
+The two completed triplets delivered 16 correct answers and 48 identical tokens per arm and seed.
+
+| Seed | Incumbent wall | Authored prefill wall | Fixed four-thread rule wall |
+| --- | ---: | ---: | ---: |
+| 18351 | 6.207 s | 2.969 s | 1.753 s |
+| 18352 | 6.180 s | 2.963 s | 1.767 s |
+
+The third incumbent completed. During the following rule worker's startup, the native qualifier
+declined the required regime. Its traceback is preserved. That worker exited before writing its
+native timing samples or serving the scored batch. The experiment stopped with seven verified
+serving arms out of eighteen. The source remains unqualified and the two triplets supply no
+six-pair performance label. The code remained on the incumbent. The cost file records the entire
+shared lease to that point, before its billing tail.
+[Replayed refusal](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/qualification-stopped.json) · [Calibration and probe times](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/profile.json) · [Worker exit](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/rule-18353.log) · [Captured file hashes](../lab/autonomous/results/runpod-epyc-pilot/prefill-code/qualification-v2/sha256.json)
+
+### 2026-11-26 EPYC CPU Pilot checkpoint withdrawal and restart
+
+On four pinned physical cores of the same AMD EPYC 7742, the scratch head served real
+SmolLM2-135M-Instruct Q4_K_M requests before and after a process restart. The five stages
+each completed 16 correct requests and generated 48 tokens. Every answer, output token,
+stop reason and prompt digest matched the original serving receipt. The 136.49 s run
+included warmups, qualification and the separate process startup.
+
+| Stage | Active local thread offsets | Scratch choices in measured waves | Complete wave time |
+| --- | --- | ---: | ---: |
+| Initial qualification | 2 → 4 threads in context band 1 | 2 | 3.417 s |
+| One additional CPU worker | 2 → 4 threads in context band 1 | 4 | 4.011 s |
+| Checkpoint withdrawn, same process | Empty | 0 | 3.427 s |
+| Restored checkpoint, new process before qualification | Empty | 0 | 6.338 s |
+| New process after independent qualification | 1 → 4 threads in context band 1 | 4 | 6.412 s |
+
+The idle recheck under external load admitted a separate two-to-three-thread choice in
+context band 2. Both offsets disappeared when the next idle check noticed removal of the
+published checkpoint. The restored file supplied proposals to the restarted process. Its
+first measured waves ran on the shipped Pilot until the local hardware gate admitted the
+new offset. Withdrawal was explicitly induced. The load test observed no performance
+regression. The stage timings describe different process and load states.
+
+Replay all five original sets of answers offline with
+`python -m training.pilot_withdrawal_replay`. The experiment used the existing RunPod
+lease. Its elapsed time is included in the campaign cost journal.
+[Measured outcome and source digests](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/outcome.json) · [Raw receipts](../lab/autonomous/results/runpod-epyc-pilot/withdrawal/raw/) · [Hardware driver](../lab/rp/cpu_pilot_withdrawal.py)
+
+### 2026-11-26 A100 source planning after the PR 60 startup improvement
+
+Two new, separately started Qwen3-32B Q4_K_M workers used the trained CPU startup head.
+Both selected the merged PR 60 source and reused its qualified W4 profile. Each cold worker
+delivered 32 full mixed requests, 32 warm requests and 18 correct factual answers. An
+independent control-host verifier checked source bytes, CUDA objects, masks, qualified
+head scores, executed decisions and complete deliveries.
+
+The planner received disjoint Python source timings from startup and all three serving
+phases. Six source methods had editable implementation time. Across those methods
+combined, startup plus the first wave accounted for only 6.89 ms and 3.67 ms on the two
+seeds. An optimistic 50% reduction at the largest individual site would save 1.58 ms.
+The preregistered 2% correct-work gate required 303.07 ms. The planner deferred authoring.
+These bounds apply to attributed Python implementation time. The 193 native-backed
+decode calls in startup require separate measurements inside their call paths.
+
+The diagnostic used 70.51 seconds of broker time, including the two trained selections.
+Its share of the already running lease was $0.0431 at the reserved hourly rate. The
+planner estimated $0.389 for a full follow-up qualification and left it unspent.
+[Measured source observations and decision](../lab/autonomous/results/a100-post-restart-60/) · [Discovery contract](../training/post_restart_contract.json) · [Qualification contract](../lab/pk1/followup_contract.py)
+
+## 2026-11-26 — Native attribution and prospective calibration decisions after PR 60
+
+Two fresh Qwen processes traced all 193 startup decodes through the active W4 path on
+the A100-SXM4-80GB. Their common unprotected setup in the pass-cost and padding
+calibrations had the same logical KV, input, mask and output. A third call sharing that
+signature belonged to the protected W4 receipt check. The traced large prefill used
+cuBLAS/CUTLASS kernels and kernels with symbols matching IronMule's GGML patches.
+A separate tokenizer diagnostic attempted CUDA allocation during the first inventory.
+Both dependent observations carry a timing exclusion. Their structure and 3,993 CUDA
+device events remain in the archive. No code author order resulted from those times.
+[Source and device inventory, incident and replay](../lab/autonomous/results/a100-post-restart-native-60/)
+
+The next search ranked complete return values across all eight matched PR 60 starts.
+The two continuous calibration outputs varied in all eight. Only the discrete padding
+table repeated exactly. The controller chose to test that forecast in two new complete
+starts. Both returned the predicted empty table, with different underlying sets of 16
+fresh prices. The older full-calibration reference had also recorded a nonempty table.
+An early-sampling simulation reproduced the new answers but its preregistered empirical
+intervals allowed alternative choices at 15 widths in both starts. It abstained.
+[Full original holdouts, state, prediction and abstention](../lab/autonomous/results/a100-calibration-stability/)
+
+The retained raw timings showed elevated early post-warm measurements. A program
+ranked ten fresh-measurement plans within a human-directed search family and selected
+two warmups and two measurements per width. It fixed that plan before a further pair
+of independent starts. All four prospective starts used the trained CPU startup head,
+each served 32 cold and 32 warm completions and answered all 18 factual questions
+correctly. Across the last two, the maximum full-price prediction errors were 0.4001%
+and 0.4498%. Every tested interval gave the same discrete dispatch as the full
+original measurement. Both starts had about 0.682 s of measured tail work outside the
+paid prefix. The program produced Codex order `4e87c90d…` for a source experiment.
+The two separate prospective pairs consumed 141.36 s and an estimated $0.08646 of the
+existing lease. Source qualification has its own independent end-to-end release gate.
+[Bound order, costs, raw measurements and replay](../lab/autonomous/results/a100-calibration-sampling/)
+
+## 2026-11-26 — PR 57 warm HTTP replication on a second A100
+
+On a fresh RunPod A100 SXM4 80 GB, the ordinary PR 57 server selected 32 sequences on
+its local numerical and width gates. Qwen3-32B GGUF Q4_K_M delivered 297.535 tokens/s
+at 32 clients, versus 271.26 for vLLM 0.11.0 with the official Qwen3-32B AWQ checkpoint.
+The original scoring rule gives a ratio of 1.09686. The two IronMule process medians
+were 297.13 and 301.90 tokens/s. At eight clients the medians were 190.805 and
+184.005 tokens/s. At 32 clients the median of the per-wave median TTFT was 2405.9 ms
+for IronMule and 1706.1 ms for vLLM. All six factual batches scored 18/18.
+The nine timed 32-client waves delivered 1024 tokens apiece. The independent verifier
+checks all 288 client timelines against their aggregate token counts and TTFT.
+The complete first IronMule readiness took 1401.12 seconds including fresh calibration,
+vLLM took 158.43 seconds, and the second IronMule start using local state took 80.03
+seconds. The historical pod 37 result was 1.1002. Different quantizations and the
+scope of the single-device workload limit both comparisons. This replication measures
+Claude's existing warm path. [Registration, raw waves and target](../lab/autonomous/results/a100-pr57-warm-repeat/)
+
+## 2026-11-26 — IronMule selects PK2 from two ordinary A100 starts
+
+IronMule ranked the repeated local measurements in two actual PR 57 server starts.
+It selected `GgmlEngine.measure_pk2` (18.807 and 18.752 s) and commissioned a
+separate Codex author. The search family was supplied by the developers. The
+ranked method, order, implementation, measured acceptance and source activation
+are individually attributable in the archive. The earlier losing padding method
+was excluded by its stored result. [Forecast and source response](../lab/autonomous/results/a100-dynamic-calibration/)
+
+The generated code sometimes finishes the five-option GPU calibration in 15 calls.
+Uncertain measurements take the original 20. Both execution paths test their
+threshold with fresh likelihood measurements. The independent 16-chunk stock
+gate on the RunPod A100 SXM4 80 GB gave a 95% upper ratio of 1.00015 against a
+limit of 1.005. Reference, repeat and candidate all answered 18/18 correctly.
+
+With six mixed-first ordered native pairs, first completion of all 32 answers
+took median 55.290 s on the reference and 51.057 s on the candidate. The median
+paired rate ratio was 1.08324. Warm wall-time ratio was 0.99991 and warm p95
+TTFT ratio 1.00000. Peak GPU memory matched. The two held-out factual-first
+pairs achieved 1.06585× and 1.07919×. The eight paired runs and two unchanged
+controls occupied 1,302.04 worker seconds. At the median 4.256 s saving per
+mixed cold start, these workers alone cost the time saved across 306 starts.
+The separate stock quality check occupied another 341.01 s. The experimental
+investment is additional to the controller's measured per-request overhead.
+
+The qualified source was automatically merged in PR 62. Two fresh target
+pairs improved complete first delivery by factors of 1.07901 and 1.08386.
+New processes with original random and newly trained CPU weights chose
+different source profiles for the same mixed input. Including the broker,
+first completion took 55.888 s versus 51.797 s. Both CPU selection calls took
+about 3.11 ms including loading the checkpoint. The fixed always-qualified
+candidate rule tied the learned head on the two held-out factual pairs.
+[Qualification PR](https://github.com/Tobayko/IronMule/pull/62) · [Reproduction commands](../lab/pk6/local-calibration.md)
+
+The unchanged asynchronous ordinary HTTP reference reproduced 31 of 32 warm
+responses exactly. Its mandatory A/A check closed that source experiment.
+The independent PR 57 comparison above measures warm HTTP throughput for the
+existing stack. The ordered source release measures a gain on fresh native
+workers. Source and training receipts bind one device, runtime and GGUF.
+
+The additional caller-supplied JSON interface admitted the same source only
+after independent mixed and factual pairs. Time to complete the submitted batch
+was 56.761 to 52.889 s for 32 mixed prompts and 53.951 to 49.157 s for 18
+factual prompts, with identical delivered text, tokens and stops. A new
+18-question request selected the trained candidate, and a single unsupported
+question used the reference and answered 7. A separate process timed the full
+CLI, from launch until every reply was received. It measured 50.107 s with
+the candidate and 54.334 s after a persisted withdrawal for the exact same
+18 questions. A later request verified the durable latency monitor. Both
+owned RunPod leases were removed. The total conservative booking for this
+first development stage, including both cleanup tails, was $16.77. [Caller evidence](../lab/autonomous/results/a100-dynamic-calibration/client/) · [Campaign cost journal](../lab/rp/results/campaign-costs.json)
+
+After cleanup the RunPod account balance fell by $16.02165 relative to the
+initial reservation. Two successive queries returned the same delta and zero
+remaining owned pods. The provider's individual pod records were still posting
+when the journal was exported. The conservative total of $16.76980 includes
+a ten-minute cleanup tail for each lease and zero metered API charges.
+
+### 2026-11-26, first content in the independent PR 57 warm HTTP comparison
+
+A post-hoc join matched each of the 192 native request IDs in the client timelines to its engine job and KV sequence. All six IronMule waves contained 16 prompts of 33 tokens and 16 of 444. Each wave submitted one packed prefill call with all 32 requests. Its elapsed time ranged from 2,279 to 2,441 ms. Median client send to engine admission ranged from 22 to 39 ms per wave. Median engine admission to first prefill ranged from 15 to 56 ms. Prompt processing dominated the wait for short requests too.
+
+| Process | First content p50 by wave, ms | First content p50 for the 33-token prompts, ms |
+| --- | --- | --- |
+| IronMule K1 | 2,562 / 2,404 / 2,408 | 2,555 / 2,398 / 2,404 |
+| vLLM | 1,706 / 1,856 / 1,673 | 1,705 / 1,856 / 1,673 |
+| IronMule K2 | 2,469 / 2,338 / 2,369 | 2,461.5 / 2,332.4 / 2,363.0 |
+
+Both systems streamed 32 output tokens per request on one A100-SXM4-80GB. IronMule used Qwen3-32B Q4_K_M and vLLM 0.11.0 used AWQ-Marlin. First content is the first nonempty streamed text piece, which can include whitespace. The native interval is shared elapsed wall time for the packed call. Only client timings are available here for vLLM. These data locate a wait inside IronMule. Explaining the cross-system difference requires a controlled intervention.
+
+The [redacted job and call projections](../lab/autonomous/results/a100-warm-ttft/) preserve counts, timing, opaque request IDs and the original trace digests from the earlier startup receipts. The [protocol for the paired A100 intervention](../lab/pk6/first_token/protocol.md) was committed before its lease.
+
+```sh
+python -m lab.pk6.first_token.phases --projections lab/autonomous/results/a100-warm-ttft
+```
+
+### 2026-11-26, earlier first content for a 32-request burst and a two-second streaming pause
+
+Codex split the packed prefill after 17 requests in an isolated checkout. On a freshly calibrated A100-SXM4-80GB, R1/C1/C2/R2 ran as four sequential production HTTP servers. Every counted wave contained the same 16 short and 16 long prompts in matching positions in its pair, and delivered 32 tokens per client. Across the six candidate waves the native trace shows 16 short jobs and one long job completing in the first call, then 15 long jobs in the second. Every reference wave used one 32-job call. PS1 and PK6 were enabled across all starts. The generated W4 library and dispatch table hashes matched and the Pilot selected the same PK2 threshold of 128 rows.
+
+| Median over six 32-client waves per arm | PR 57 reference | Early delivery |
+| --- | ---: | ---: |
+| Time to first text chunk, p50 | 2,336 ms | 401 ms |
+| Time to first text chunk, p95 | 2,346 ms | 2,392 ms |
+| Time to second text chunk, p50 | 2,366 ms | 2,424 ms |
+| Longest gap between text chunks per request, p95 | 59 ms | 2,034 ms |
+| Generated tokens per second | 302.69 | 301.79 |
+
+The registered paired median ratios for throughput were 0.9982 and 0.9803, and p95 first-content ratios were 1.0161 and 1.0270. Both pairs missed both gates. All eight 18-case factual checks at width eight passed. This smaller shape uses the reference code path. Output text digests at width 32 matched in four of six pairs of waves. Delivering one early token left many clients waiting through the remaining prefill before their next piece of text. The evaluator retained the PR 57 reference.
+
+The lease ran for 32.75 minutes. The journal booked USD 1.5697 including the cleanup tail, bringing cumulative booked cost to USD 18.3395. The provider confirmed deletion. The native traces remain in private storage. The [public result and source projections](../lab/autonomous/results/a100-first-token/), [registered protocol](../lab/pk6/first_token/protocol.md) and [replay commands](../lab/pk6/first_token/replay.md) reproduce the decision. The separate research ledger could not be accessed for this entry.
+
+### L40S, Qwen3-32B and the wait between streamed text blocks (2026-11-26)
+
+The A100 experiment in PR 66 improved median first content while introducing a long pause afterwards. For the next trial the CPU step-cost model ranked six row budgets and selected 2,048. Codex wrote a packed scheduler to advance active streams during the remaining prefill. Two CPU variants and an independent four-pair SmolLM2 screen exercised the native path. All 64 held-out copy answers were correct. Later greedy tokens sometimes differed. [Protocol and reproduction](../lab/pk6/mixed_progress/replay.md)
+
+On a 46,068 MiB NVIDIA L40S the full generated W4 selection exhausted memory during tuning. An automatic stock retry started building W4 again through the raw engine's second cache. PR 68 bound that retry to stock. The product then qualified its shared KV pool and rejected separate KV streams on quality. The packed scheduler requires separate streams, so the mixed calls in these GPU traces came from the incumbent. R1 used the conservative device profile. C1 also inherited two implicit flags from the benchmark's tokenization client and required a separate local qualification. C2 and R2 matched. The scheduler received no production promotion. [Fallback repair](https://github.com/Tobayko/IronMule/pull/68) · [Device receipts, traces and scored waves](../lab/autonomous/results/l40s-mixed-prefill-progress)
+
+With 32 clients R1 delivered 154.7 output tokens/s, first content in 0.559 s and the eighth text chunk in 2.517 s. vLLM 0.11.0, pooled over its two seed blocks, delivered 240.5 tokens/s, 2.153 s and 3.369 s respectively. The complete fixed-work requests and paired per-seed ratios are archived. First-content p95 was 4.704 s on R1 and 3.165 s for vLLM. During the serving windows, peak sampled device memory was 36,122 vs 41,289 MiB. IronMule used Q4_K_M and vLLM used the official AWQ artifact. The recorded customer-visible and native timings include host overhead. [Replayable result](../lab/autonomous/results/l40s-mixed-prefill-progress/result.json)
+
+The explicit shared-pool starts also supplied real GPU call durations for the CPU world model. It learned from 83 mixed calls in C1 and predicted 84 calls from another seed and process in C2. Mean absolute error fell from 42.20 ms with the A100 parameters to 21.80 ms after the CPU update. A constant fitted to the same 83 observations scored 65.43 ms. These are prediction errors for native calls on this board. [Checkpoint, baseline and holdout replay](../lab/autonomous/results/l40s-mixed-prefill-progress/learned-step-cost.json)
+
+The same board subsequently served vLLM 0.34.0 (PyTorch 2.14.0, Transformers 5.22.2) with its official AWQ-Marlin model. The table uses the **same first seed** for all three processes, three repeats per width and 32 output tokens per performance request. IronMule ran the conservative stock kernel profile with shared KV. The experimental S1 used a 2,048-row budget when its queue held at least four requests. Each cell gives output tokens/s, median seconds to first content and p95 seconds for the longest gap per request. [vLLM 0.34.0 waves and package versions](../lab/autonomous/results/l40s-vllm-034) · [Shared-pool discovery traces](../lab/autonomous/results/l40s-pool-admission)
+
+| Concurrent requests | IronMule reference R1 | IronMule experiment S1 | vLLM 0.34.0 |
+| ---: | ---: | ---: | ---: |
+| 1 | 43.3 / 0.062 / 0.061 | 44.2 / 0.062 / 0.059 | 37.7 / 0.041 / 0.027 |
+| 8 | 110.5 / 0.222 / 0.283 | 111.3 / 1.063 / 1.002 | 164.1 / 0.716 / 0.563 |
+| 32 | 154.7 / 0.559 / 0.305 | 171.1 / 1.033 / 1.018 | 266.6 / 1.676 / 0.764 |
+
+Over both seed blocks vLLM 0.34.0 delivered 264.2 tokens/s at width 32. Its p95 first content came at 2.858 s and its p95 completion at 3.835 s. Its serving peak was 39,661 MiB across 21 telemetry samples, against 36,122 MiB across 15 for R1. Both vLLM seed blocks graded 32/32. R1 and R2 each graded 32/32 on their respective seed.
+
+The shared-pool variant raised width-32 throughput by 10.4% and 6.6% in matched discovery blocks. A fresh input seed reversed the process order, first serving the candidate H1 and then the restored stock B1. A second candidate L1 selected 1,024 rows and a queue threshold of 12 from the discovery seeds only. It exercised the change at width 32 and left widths 1 and 8 outside the rule. The next table reports median wave measurements on that fresh seed. Percent changes in the results use the median of three paired ratios.
+
+| Fresh-seed process, width 32 | Output tokens/s | Median first content | Median eighth chunk | p95 worst streaming pause | p95 completion |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| B1, stock after rollback | 155.8 | 0.548 s | 2.487 s | 0.305 s | 6.470 s |
+| H1, 2,048 rows | 168.5 | 1.053 s | 4.554 s | 1.034 s | 6.016 s |
+| L1, 1,024 rows | 162.3 | 0.554 s | 2.951 s | 0.504 s | 6.142 s |
+
+All three processes answered 32/32 fresh factual questions correctly. The 1,024-row rule slightly improved the tail time to first content and raised paired throughput by 3.8%, but the p95 streaming pause grew 65.3%. Both candidates stay experimental. Stock rollback served the full workload with zero budget-change markers. [Reversed fresh pair](../lab/autonomous/results/l40s-pool-holdout) · [Intermediate selection and measured result](../lab/autonomous/results/l40s-pool-balanced)
+
+A separate native screen used the measured memory headroom to select four complete W4 shape entries, representing 128 dispatch rows. Its stock worker answered 18/18 correctly. The GPU offloaded all 65 layers and loaded the candidate library. The collector treated the atomically rewritten attempt map as an append-only file and terminated before saving the candidate worker result. The corrected collector validates successive decoded maps and preserves previous attempts across restart. No paired W4 rate or quality result is available from that run. [W4 screen and diagnostic](../lab/autonomous/results/l40s-bounded-w4) · [Cumulative cost journal](../lab/autonomous/results/l40s-mixed-prefill-progress/cost.json)
+
+### 2026-11-26, Qwen3-32B GPU kernels and CPU profile selection on L40S
+
+One RunPod NVIDIA L40S (46,068 MiB, driver 595.112.07) served two new workload seeds. The IronMule reference used Q4_K_M GGUF and the conservative shared-KV configuration from PR 57. vLLM 0.34.0 used the official AWQ-Marlin checkpoint. The clients supplied identical rendered inputs, used greedy decoding and requested 32 output tokens for every performance request. Each seed included three timed waves per concurrency and a separate 32-question factual check. The references answered all 32 correctly on both seeds.
+
+| Concurrent clients | IronMule output tokens/s, first and second start | vLLM output tokens/s, two-seed median | IronMule median first content, seconds | vLLM median first content, seconds |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 37.2 / 44.6 | 37.4 | 0.064 / 0.064 | 0.047 |
+| 8 | 111.6 / 111.4 | 164.0 | 0.224 / 0.265 | 0.716 |
+| 32 | 155.2 / 153.9 | 266.5 | 0.548 / 0.558 | 1.709 |
+
+During counted streams the native reference peaked at 36,122 MiB and vLLM at 39,615 MiB in one-second device samples. The first native process peaked at 45,160 MiB including setup. Its first readiness took 494.3 seconds, the second 62.1 seconds, and the initial vLLM process took 200.1 seconds. Startup cache state matters for these figures. [Raw streams, matched request identities, sampled board energy and replay](../lab/autonomous/results/l40s-native-dispatch/)
+
+An instrumented mixed call joined 433 prompt rows and 16 decode rows. GPU activity attributed 139 ms to the Q4_K specialization and 26 ms to Q6_K in a 225 ms host interval. The world model priced alternative targets against an unprofiled reference wave. IronMule selected Q4_K and issued a bound code order. Codex supplied an Ada tile limit for 384–512 rows. The isolated native CUDA build replaced one translation unit and retained upstream launch validation. [Order, author response and native build](../lab/autonomous/results/l40s-native-dispatch/tile-order/)
+
+Codex also implemented FP8, integer and Marlin operator candidates. Their standalone arithmetic tests used the target GGUF weights. FP8 failed the full-model quality gate even with all 18 short answers correct. Its lowest upper perplexity ratio exceeded 1.027, above the 1.005 limit. The counted FP8-arm requests ran on the recovery profile. Three scratch-trained cost heads used two activation seeds and 56 projection/width combinations. The candidate selected stock in all 24 held-out cells at a median 16.3 microseconds per CPU decision, matching the constant stock rule. [Grouped CPU replay](../lab/autonomous/results/l40s-native-dispatch/pilot/holdout.json) · [Operator arithmetic and qualification commands](../lab/pk6/native_dispatch/README.md)
+
+The explicit 128-row cuBLAS comparison exposed a gate identity error. After correction, all eight candidate settings failed. Default attention reached an upper perplexity ratio of 1.007736. The actual Linux serving worker received a zero threshold and an empty plugin after fallback. It completed all 155 requests, including 32 correct factual answers. The previously misclassified comparisons remain in the archive and are excluded from promotion. [Merged fix](https://github.com/Tobayko/IronMule/pull/70) · [Serving-worker receipt](../lab/autonomous/results/l40s-native-dispatch/http/fixed-http/worker-B1.json)
+
+### 2026-11-27, L40S memory, numerical gates and reuse of the comparator
+
+On the first Qwen3-32B mixed-workload seed, reducing the unified KV pool from 65,536 to 16,384 cells cut sampled serving memory from 36,122 to 23,834 MiB. Both complete processes peaked at 45,160 MiB during startup. At 32 concurrent clients the smaller pool delivered 159.46 output tokens/s against the native reference's 155.22. It answered 32/32 factual requests correctly. The program records both the scheduler capacity and the actual allocation reported by llama.cpp.
+
+The trained CPU policy replayed 56 operator decisions in 5.32 ms including loading the model, and selected stock. The separate step-cost model fitted native mixed calls from the first process and predicted the second seed and restart with 25.5 ms mean absolute error. The earlier A100 parameters scored 49.7 ms and a constant fitted on the first L40S process scored 60.9 ms. The planner selected a 768-row shared-KV prefill experiment. Four CPU smoke-test waves on SmolLM2-135M completed all 32 copy tasks.
+
+The full INT8 and Marlin programs failed the product quality gate. Across eight native configurations each, the lowest upper bounds on the perplexity ratio were 1.11060 and 1.00762 respectively, above the 1.005 ceiling. Their HTTP workers returned to stock. Each uninformative second fallback run was cancelled. Before those results the planner ranked Marlin and INT8. After recording the rejections and the cached-INT8 arithmetic measurements, it proposed the cached variant. [Experiment, source and replay](../lab/pk6/native_dispatch/README.md)
+
+The earlier vLLM 0.34.0 AWQ-Marlin reference already contains six performance waves per concurrency level. At 32 clients its measured range was 265.08–269.20 output tokens/s. Both optional comparator restarts in this lease were cancelled before loading a model. The CPU reference command checks raw receipts, input protocol, software and tokenizer identity and reports the spread. [Reference evidence](../lab/autonomous/results/l40s-native-dispatch/vllm-reference.json) · [Repository rule](https://github.com/Tobayko/IronMule/pull/71)
+
+The commissioned 96-column Q4_K tile built successfully. Its T1 process tried all eight
+numeric profiles on the L40S. The smallest upper perplexity ratio was 1.005743 against
+the existing 1.005 limit, and the process exited before readiness. It served zero waves.
+The packed Marlin screen admitted four weight geometries, all at 16 rows, after graph-level
+speed ratios of 1.139–1.220 across two seeds. The R1 trace spent 2.30 of 28.05 native
+seconds at that outer width during performance requests. The factual wave had no such
+outer call. Dispatch within each request still requires a serving trace.
+
+H2 reproduced the 12 GiB serving-memory reduction and answered 32/32 factual requests. At 32 clients H1/H2 delivered 159.46/157.46 output tokens/s versus 155.22/153.85 on R1/R2. At one client the separate H2 and R2 rate medians were 39.3 and 44.6. The median of the three matched H2/R2 ratios was 1.007. The bounded W4 four-worker screen completed on both seeds with identical outputs. At eight clients its two gains were 5.13% and 5.87%; at one client it lost 0.40% and 0.16%. The S serving profile binds the selected table and its generating CUDA library to the same board.
+
+#### Long documents under sustained KV pressure
+
+On the same L40S and Qwen3-32B, a wave of 32 simultaneous 900-word inventories showed a
+larger effect. Each timed answer used the fixed 32-token limit. The two seed pairs ran in
+opposite process order. Each process answered 32/32 short factual questions after its timed
+waves. The generated inventory summaries sometimes differed between profiles.
+
+| Seed | Stock → compact, output tokens/s | Stock → compact, median first token | Stock → compact, p95 completion |
+| --- | ---: | ---: | ---: |
+| 943819 | 24.78 → 47.78 | 10.81 → 5.76 s | 41.25 → 21.38 s |
+| 180341 | 27.49 → 47.55 | 11.85 → 7.96 s | 37.18 → 21.52 s |
+
+The time inside llama.cpp calls that processed prompt and decode rows together grew across
+the three stock waves from 21.2 to 45.8 seconds on one seed and from 21.2 to 43.3 on the
+other. It stayed between 17.6 and 18.7 seconds in all six compact waves. Each profile ran
+23 mixed calls per wave on the first seed. The pair reused almost the same number of input
+tokens. These observations locate the time difference. Separating the effects of allocation,
+admission and the KV range seen by attention requires another experiment. The vLLM reference
+uses the earlier mixed workload. [Request and memory receipts](../lab/autonomous/results/l40s-native-dispatch/controls/capacity/) · [Native time by wave](../lab/autonomous/results/l40s-native-dispatch/long-document-phases.json)
+
+The 0.6B model-first drafter (K) reached 55.87 and 51.97 tokens/s at one client on the
+ordinary mixed workload. The context-first variant (O) reached 56.33 and 57.18. At 32 clients
+O delivered 129.45 and 129.77 tokens/s, below the native controls. Every K and O start
+answered all 32 factual questions correctly. The existing L40S vLLM target at one client
+is 37.38 tokens/s and a median first token of 0.047 s. The four native draft starts took
+0.061–0.064 s to deliver their median first token. [Draft process receipts](../lab/autonomous/results/l40s-native-dispatch/http/draft-mix-v2-lease-resume/)
+
+The independent retrieval check used two more sets of 32 documents. Each contained three
+different six-digit seals. Stock and compact both returned the requested seal in all 64
+cases and answered all 32 subsequent short factual cases correctly. CPU training used all
+widths from seed 943819. On seed 180341 the randomly initialized ensemble chose stock in
+all six cells. After fitting it chose compact for the document cells and stock for mixed
+traffic. A simple length rule made the same choices. The measured criteria admitted the
+compact profile for sustained eight- and 32-client document traffic. At one client the
+streaming pause missed the ten-percent requirement. [Quality cases and serving traces](../lab/autonomous/results/l40s-native-dispatch/controls/document-retrieval/) · [Controller fit and held-out comparisons](../lab/autonomous/results/l40s-native-dispatch/pool-pilot/fit.json)
+
+For the single-client context-first drafter, paired O/vLLM speed ratios were
+1.501, 1.150 and 2.418 on seed 180341 and 1.534, 1.138 and 2.442 on seed 943819.
+The native stock worker also benefited from repeated short prefixes. Against that stock
+worker the median paired ratios were 0.995 and 0.951. A ratio of separately reported
+median rates answers a different question from the median of the three matched ratios.
+The pool Pilot was fitted on per-cohort median elapsed times and its deployment gate
+uses matched ratios. [Original requests](../lab/autonomous/results/l40s-native-dispatch/http/) · [Scored pairs](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+
+A new process read the observed traffic, loaded the fitted CPU Pilot and chose 16,384 cells.
+It served all 155 requests and passed its numerical gate. At 32 concurrent documents
+it delivered 47.50 output tokens/s. The verifier retained the profile after charging
+0.920 s for the full CPU fit, startup decision and verification, giving 1.685× net speed
+against its recorded stock qualification. The worker took 62.04 s to become ready.
+After an explicit persistent withdrawal, a fresh process read the same inputs and chose
+stock. It served all 155 requests and answered all 32 factual questions. The two measured
+processes delivered 47.50 vs 29.04 tokens/s, with first content in 8.04 vs 12.56 s
+and p95 completion in 21.51 vs 35.13 s. Peak device memory while serving was 23,834 vs
+36,122 MiB. From launch through the final factual check the workers took 151.43 and
+205.55 s. Charging the full 0.920 s of controller work to compact gives a 1.349× ratio
+over that complete run, including startup. The profile applies to sustained document traffic on this L40S through the
+bounded launcher. [Decisions and rollback](../lab/autonomous/results/l40s-native-dispatch/controls/pool-restart/pool-live/) · [Fresh worker pair](../lab/autonomous/results/l40s-native-dispatch/pool-restart.json)
+
+On the mixed workload the 768-row prefill budget delivered 166.83 and 166.45 output
+tokens/s at 32 clients. It raised median first-content time by 34% and 83% and the p95
+streaming pause by 54% and 48% against each seed's stock process. The four-geometry
+W4 worker gained 5–6% at eight clients in isolation, then reached 113.00 and 113.41
+tokens/s at that width over HTTP. First qualification took 728 s. Both server starts
+answered 32/32 factual questions and reported real generated-kernel dispatch during
+requests. Both experimental profiles remain outside the qualified mixed-workload defaults.
+[HTTP requests and native dispatch](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+With the weights frozen, IronMule observed a third seed (630217) outside training and
+qualification. It checked the fresh stock process, including all native request IDs,
+then selected compact in 79 ms including startup checks. The two servers each served
+155 requests and answered all 32 facts correctly. At 32 clients, throughput was
+47.66 vs 28.34 output tokens/s, median first content was 7.85 vs 14.67 s, and p95
+completion was 21.43 vs 36.12 s. After 0.926 s of controller costs, verification
+retained compact at 1.668× net on the three matched waves. Counting launch through the
+last factual answer, the elapsed ratio was 1.361×. This seed tests new inputs from the
+same 900-word document generator on the same physical L40S. [Fresh requests and scored pairs](../lab/autonomous/results/l40s-native-dispatch/unseen-documents.json) · [Actual decision and retention](../lab/autonomous/results/l40s-native-dispatch/controls/unseen-documents/pool-unseen/pilot/)
+
+The workload-selected MMQ grid passed the native numerical check (upper perplexity ratio
+1.00124) and actually dispatched in the first 32-client block and factual wave. The
+matched throughput ratio at 32 was 1.011, with a p95 streaming pause ratio of 1.005.
+The packed Marlin variant paired its four screened weight geometries with the compact
+pool. Its first worker served all facts and counted 846, 1,692 and 282 dispatches during
+the eight-client, 32-client and factual waves respectively. Compared with the same
+compact pool alone, its paired 32-client throughput ratio was 1.000 to three decimals.
+The full-width cached INT8 trial's best upper perplexity ratio across eight settings was
+1.20356. The product recovered to stock and counted zero INT8 dispatches during requests.
+[Process measurements, native markers and matched controls](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+On the second mixed-workload seed the MMQ grid counted 96 dispatches during factual
+requests and zero during timed requests. The packed Marlin worker counted 846 and
+1,692 during the eight- and 32-client waves and zero during the factual wave. Its
+matched throughput ratio against the compact pool alone was 1.003 at 32 clients.
+The cached FP16 program passed its native numerical gate, but neither start recorded
+a dispatch during counted HTTP requests. The higher-load drafter really verified tokens
+with more than two active requests on both seeds. At eight clients it delivered
+84.75 and 87.76 tokens/s. The two-slot model-first control delivered 112.84 and
+101.19. Each start answered all 32 facts correctly. No mixed-workload candidate met
+the seven streaming requirements at all three widths. The kernel planner exhausted
+its screened arithmetic programs and a repeat on CPU selected no further GPU experiment.
+[Source-bound results](../lab/autonomous/results/l40s-native-dispatch/comparison.json) · [Final kernel ranking](../lab/autonomous/results/l40s-native-dispatch/post-serving-ranking.json)
+
+The additional L40S campaign ran for 4.77 hours. The provider confirmed deletion of
+the only leased pod. The journal booked **5.50 USD** of the additional 10.00 USD,
+including a ten-minute cleanup allowance. The prior stage had booked 19.71 USD, giving
+**25.21 USD** total across both stages. The public cost journal distinguishes posted pod
+charges from the conservative booking. [This lease](../lab/autonomous/results/l40s-native-dispatch/costs.json) · [Prior stage](../lab/autonomous/results/l40s-mixed-prefill-progress/cost.json)
+
+### 2026-11-27, why a mixed L40S step gets slower as the server stays busy
+
+On the original two Qwen3-32B Q4_K_M seeds, a 32-client wave contains 16 short chats and 16 documents. Six complete HTTP waves had 1,024 output tokens each. In every wave 16 calls each accepted approximately 430–446 document rows alongside ongoing answers. These calls took 3.91–4.99 s, or 66–70% of HTTP wall time. All native decode calls together occupied 97.0–97.7% of the wall. For all 96 short requests the longest gap between streamed chunks overlapped these large calls by at least 80%. The per-wave median overlap was 97.7–98.9%. [HTTP timestamps and native traces](../lab/autonomous/results/l40s-native-dispatch/http/primary/)
+
+A second physical NVIDIA L40S with 46,068 MiB and driver 595.112.07 replayed the two input seeds. The rendered token digests matched all 18 original performance waves. The shared cache allocates space for 65,536 tokens. Its native attention range ends at the highest occupied physical cell, rounded up. For the 16 large calls per wave the median range grew from 5,376 positions in the first wave to 13,440 and 14,208 in the last wave of each seed. The corresponding median step time grew from 242 to 301 ms and from 255 to 324 ms. These are native worker timings. [Target and step-level records](../lab/autonomous/results/l40s-mixed-bottleneck/span/)
+
+On the same board, a controlled single step used 433 document rows and 16 rows from existing short requests. All weights, input rows and logical histories were fixed. Only the length of the masked KV range varied. Four counterbalanced timing rounds and a separate CUDA capture were run on each seed. All 17 greedy picks agreed at all four settings on both seeds.
+
+| Physical KV positions | Median step time, two seeds | GPU flash attention, separate captures | GPU main Q4_K and Q6_K matmuls, separate captures |
+| ---: | ---: | ---: | ---: |
+| 1,024 | 215.7–217.5 ms | 9.4–9.5 ms | 174.1–174.2 ms |
+| 8,192 | 249.1–250.4 ms | 46.0 ms | 169.9–171.4 ms |
+| 16,384 | 289.6–291.8 ms | 87.3–88.1 ms | 167.0–168.6 ms |
+| 32,768 (stress) | 419.0–419.2 ms | 214.2–215.8 ms | 164.6–166.5 ms |
+
+This identifies the source of the growing cost and the largest cost at short spans. The synchronized 448-row operator benchmarks estimate 77 ms for the 128 Q4_K gate/up matrices and 45 ms for the feed-forward down projections per pass on the original board. These are estimates from layer counts and standalone operators. CUDA confirms a large quantized matmul cost in the actual mixed step. The archived vLLM 0.34.0 deployment used AWQ-Marlin and delivered 266.55 output tokens/s at this width. The fresh L40S had a different physical fingerprint. [Isolated operator measurements](../lab/autonomous/results/l40s-native-dispatch/operator-calibration/) · [Validated comparator](../lab/autonomous/results/l40s-native-dispatch/vllm-reference.json)
+
+The product trial limited cache cells held exclusively by completed requests to 2,048 out of 65,536 (`IRONMULE_GGML_KEEP=0.03125`). Active requests retained their context and reservations. Each process used the same conservative kernel flags, the qualified shared pool and 32 sequence slots. Three timed waves per width and seed used the incumbent's rendered inputs. Stock ran first on seed 180341 and second on seed 943819.
+
+| Seed, 32 clients | Stock → limited, output tokens/s | Paired throughput ratio | Paired first-content time ratio | Paired p95 stream-pause ratio | Paired p95 completion ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 180341 | 153.07 → 173.89 | 1.136 | 0.865 | 0.899 | 0.880 |
+| 943819 | 154.98 → 175.84 | 1.135 | 0.864 | 0.895 | 0.886 |
+
+Both settings answered all 64 factual questions correctly and passed the product's numerical gate. The fixed-length performance responses had identical text digests in 121 of the 192 pairs at width 32. At one client the paired throughput ratios were 1.007 and 0.994. At eight they were 0.997 and 1.003. A ratio of the separately reported median throughputs answers a different question from the median of the three within-wave ratios. The retention limit is a high-concurrency candidate on this hardware. Stock remains the serving default. [Product worker receipts](../lab/autonomous/results/l40s-mixed-bottleneck/http/)
+
+The initial H1 worker inherited PS1 and PK6 settings from tokenization in the benchmark's parent process. It used a different qualified kernel profile from the first R1 process. Its H2 and R2 successors also used the explicit profile. The three runs are retained as exploratory evidence. The runner restores the launcher's six kernel flags before each new process. The scored comparison reuses the original conservative R1 and joins it to fresh conservative H1, H2 and R2 workers, verifies the counted candidates' inherited retention value and requires matching kernel profiles and input digests. [Exploratory runs](../lab/autonomous/results/l40s-mixed-bottleneck/exploratory/) · [Study and replay commands](../lab/pk6/native_dispatch/README.md#attribute-the-mixed-step-on-l40s)
+
+On a separate replay, the native mask was inspected before attention at 8 query rows × 256 key positions per tile. Across the six stock waves, 80.7–89.4% of the tiles were entirely masked. In every wave 51.3–73.6% of **all** tiles were masked below the final visible tile for their query group. A scan that only shortens the tail still includes those tiles. The original CUDA dispatch enables its tail scan for at least 1,024 query rows or multiple physical streams. These mixed steps have fewer than 512 rows in one shared stream. Tile counts measure eligible work. The time saved by skipping that work still requires an implementation and a matched serving trial. [Observed masks](../lab/autonomous/results/l40s-mixed-bottleneck/masks/) · [CUDA dispatch](https://github.com/ggml-org/llama.cpp/blob/4227c9b/ggml/src/ggml-cuda/fattn-common.cuh#L842-L857)
+
+The bounded-retention replay verified the same inputs and counted the same 16 mixed calls per wave. Both policies started at a median physical span of 5,376 positions. By the third wave the stock spans reached 13,440 and 14,208. With the cap, both were 4,864. Even then about 70% of the tiles in each third wave were fully masked below the final visible tile. [Bounded-retention masks](../lab/autonomous/results/l40s-mixed-bottleneck/masks-limited/) · [Reproducible summary](../lab/autonomous/results/l40s-mixed-bottleneck/summary.json)
+
+The investigation booked $0.8351 including the cleanup allowance, bringing the $10 campaign journal to $6.3347. RunPod confirmed removal of the L40S. [Cost journal](../lab/autonomous/results/l40s-mixed-bottleneck/costs.json)

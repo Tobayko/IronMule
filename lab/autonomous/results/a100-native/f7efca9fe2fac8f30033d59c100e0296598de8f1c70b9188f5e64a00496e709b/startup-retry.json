@@ -1,0 +1,6 @@
+{
+  "order": "f7efca9fe2fac8f30033d59c100e0296598de8f1c70b9188f5e64a00496e709b",
+  "repair": "Staged the missing trusted framework modules, verified imports, worker isolation hash and the unchanged evaluator hash.",
+  "requested_unix_s": 1795656631.8511486,
+  "incident": "ModuleNotFoundError: No module named 'lab.portable_gpu'"
+}

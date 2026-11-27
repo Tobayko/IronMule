@@ -10,6 +10,7 @@ from __future__ import annotations
 from http import HTTPStatus
 import ipaddress
 import json
+import os
 import re
 import secrets
 import socket
@@ -28,6 +29,13 @@ from .types import GenerationRequest, MAX_REQUEST_BYTES
 
 
 _SOCKET_TIMEOUT_SECONDS = 15.0
+# ADM1 (2026-11-25): a chat request asks the service whether it is ready through its `ready()` (the same answer as
+# health()["ready"]), not through the whole health report. health() reads the optimizer status and the settings under
+# file locks; on the A100 pods every one of a 32-client burst's requests did that on the serialised Python path before it
+# was admitted, and the burst that the client sent within 20-25 ms was admitted over about 110 ms. A100 pod 34, paired
+# waves in one server start: 32-client wave -138.7 ms (8 of 8 rounds), 299.6 -> 311.5 tok/s, facts 18/18. "0" restores
+# the health() call.
+_ADM1 = os.environ.get("IRONMULE_ADM1", "1") != "0"
 _MAX_ERROR_MESSAGE = 512
 _MAX_WORKERS = 64
 _DECIMAL = re.compile(r"^[0-9]+$")
@@ -403,6 +411,9 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         return GenerationRequest.from_payload(payload, exact=True)
 
     def _service_ready(self) -> bool:
+        ready = getattr(self.server.service, "ready", None) if _ADM1 else None
+        if callable(ready):  # ADM1
+            return ready() is True
         result = self.server.service.health()
         return isinstance(result, dict) and result.get("ready") is True
 
@@ -480,6 +491,14 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         end = "done"  # STAB1: how the response ended for the client
         try:
             request = self._request()
+            reference_for = getattr(self.server.service, "reference_for", None)
+            if reference_for and (location := reference_for(request)):
+                self.send_response(HTTPStatus.TEMPORARY_REDIRECT)
+                self.send_header("Location", location)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if not self._service_ready():
                 raise _HTTPProductError("product service is not ready", HTTPStatus.SERVICE_UNAVAILABLE, "backend_unavailable")
             stream = self.server.service.stream(request)

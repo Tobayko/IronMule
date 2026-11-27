@@ -1,0 +1,181 @@
+{
+  "status": "four witnessed matched CPU waves; empty active and reservation maps after completion",
+  "waves": [
+    {
+      "chunked": false,
+      "completed": 8,
+      "correct": 8,
+      "observed": 0,
+      "output_sha256": "631b9b70c1d4325aafc86e79ea6af3d2f0e19396a831c62a5d835480eac60aa7",
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ]
+      ],
+      "seed": 274041,
+      "tokens": 96,
+      "wall_s": 1.637666556
+    },
+    {
+      "chunked": true,
+      "completed": 8,
+      "correct": 8,
+      "observed": 1,
+      "output_sha256": "9a8654071afe5ec0fdbce373051e76635dce449311fa3c81d90bd267a54a8dfc",
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ]
+      ],
+      "seed": 274041,
+      "tokens": 96,
+      "wall_s": 1.759917876
+    },
+    {
+      "chunked": true,
+      "completed": 8,
+      "correct": 8,
+      "observed": 1,
+      "output_sha256": "d1ac10c67e134cf7216973c1a9a927260c631bb3e9e014adef38ee516c7002b4",
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          38,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          104,
+          12
+        ]
+      ],
+      "seed": 898013,
+      "tokens": 96,
+      "wall_s": 1.748620033
+    },
+    {
+      "chunked": false,
+      "completed": 8,
+      "correct": 8,
+      "observed": 0,
+      "output_sha256": "53411c77a64e7013c968087acb989e1b3570f20cfc838759c49db495f57f494b",
+      "requests": [
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          38,
+          12
+        ],
+        [
+          105,
+          12
+        ],
+        [
+          39,
+          12
+        ],
+        [
+          104,
+          12
+        ]
+      ],
+      "seed": 898013,
+      "tokens": 96,
+      "wall_s": 1.70259583
+    }
+  ]
+}

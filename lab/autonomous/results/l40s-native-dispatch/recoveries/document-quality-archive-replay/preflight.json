@@ -1,0 +1,6 @@
+{
+  "prior": "document-quality",
+  "reason": "Detached base predates extraction of the vLLM command. Native-only archive lookup now verifies its archived receipts independently of the caller. Both initial attempts stopped before model startup.",
+  "retry": "document-quality-archive-replay",
+  "verified_archived_target_tok_s": 266.5495223670416
+}

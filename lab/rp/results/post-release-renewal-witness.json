@@ -1,0 +1,21 @@
+{
+  "schema": "ironmule.renewal-ack-witness.v1",
+  "observed_unix_s": 1795661766.111202,
+  "old_cutoff": 1795665066,
+  "active_cutoff": 1795668666,
+  "request_id": "post-release-followup-window",
+  "registrations_with_request_id": 1,
+  "owner_and_sku_confirmed": true,
+  "provider_hourly_gpu_usd": 2.19,
+  "budget_usd": 15.0,
+  "reserved_including_10_min_tail_usd": 11.666666666666668,
+  "account_delta_since_reservation_usd": 5.627087695499998,
+  "estimated_time_price_before_tail_usd": 5.687908128282759,
+  "control_watchdog_ack_matches_live_process": true,
+  "pod_watchdog": {
+    "live": true,
+    "marker": true,
+    "identical_enforcement": true
+  },
+  "registered_and_live_gpu_name": "NVIDIA A100-SXM4-80GB"
+}

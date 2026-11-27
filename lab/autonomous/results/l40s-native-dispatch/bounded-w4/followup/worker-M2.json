@@ -1,0 +1,152 @@
+{
+  "native_repacked_bytes": 2620538880,
+  "q6k_tokens_served": [],
+  "quality": {
+    "629317:arithmetic-0": true,
+    "629317:arithmetic-1": true,
+    "629317:arithmetic-2": true,
+    "629317:arithmetic-3": true,
+    "629317:arithmetic-4": true,
+    "629317:arithmetic-5": true,
+    "629317:extraction-0": true,
+    "629317:extraction-1": true,
+    "629317:extraction-2": true,
+    "629317:extraction-3": true,
+    "629317:extraction-4": true,
+    "629317:extraction-5": true,
+    "629317:facts-0": true,
+    "629317:facts-1": true,
+    "629317:facts-2": true,
+    "629317:facts-3": true,
+    "629317:facts-4": true,
+    "629317:facts-5": true
+  },
+  "seed": 629317,
+  "startup_s": 51.83323548396584,
+  "tokens_served": [
+    1,
+    5,
+    6,
+    7,
+    8,
+    16,
+    24,
+    32
+  ],
+  "waves": [
+    {
+      "output_ids_sha256": "92bf16e5fbb34535eed78b5c105ba806c9f8a1c21ae6bb3dfb95b64210bacace",
+      "reasons": [
+        "length"
+      ],
+      "repeat": 0,
+      "seconds": 1.023536053020507,
+      "tokens": [
+        32
+      ],
+      "width": 1
+    },
+    {
+      "output_ids_sha256": "92bf16e5fbb34535eed78b5c105ba806c9f8a1c21ae6bb3dfb95b64210bacace",
+      "reasons": [
+        "length"
+      ],
+      "repeat": 1,
+      "seconds": 1.0172379990108311,
+      "tokens": [
+        32
+      ],
+      "width": 1
+    },
+    {
+      "output_ids_sha256": "92bf16e5fbb34535eed78b5c105ba806c9f8a1c21ae6bb3dfb95b64210bacace",
+      "reasons": [
+        "length"
+      ],
+      "repeat": 2,
+      "seconds": 1.0187378809787333,
+      "tokens": [
+        32
+      ],
+      "width": 1
+    },
+    {
+      "output_ids_sha256": "a474111bac0ffc14668a798b70a6e7f856531140556a54b15958ba4fb93cd563",
+      "reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "repeat": 0,
+      "seconds": 1.784460118971765,
+      "tokens": [
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32
+      ],
+      "width": 8
+    },
+    {
+      "output_ids_sha256": "a474111bac0ffc14668a798b70a6e7f856531140556a54b15958ba4fb93cd563",
+      "reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "repeat": 1,
+      "seconds": 1.7890154460910708,
+      "tokens": [
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32
+      ],
+      "width": 8
+    },
+    {
+      "output_ids_sha256": "a474111bac0ffc14668a798b70a6e7f856531140556a54b15958ba4fb93cd563",
+      "reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "repeat": 2,
+      "seconds": 1.7993628570111468,
+      "tokens": [
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32
+      ],
+      "width": 8
+    }
+  ]
+}

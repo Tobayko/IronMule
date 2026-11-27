@@ -1,0 +1,2 @@
+{"label": "im_quality", "engine": "ironmule", "warmup_s": 0.121}
+{"label": "im_quality", "engine": "ironmule", "repeat": 0, "width": 32, "tok_s": 280.78, "wall_s": 3.647, "ttft_p50_ms": 2628.8, "ttft_p95_ms": 2639.3, "ttft_max_ms": 2639.6, "tokens": 1024, "prompt_tokens": 7632, "texts": "a0e3d0c37e504b4b", "queue_ms": [6.2, 59.6], "dispatch_to_first_ms": [2545.6, 2555.2], "first_to_end_ms": [985.0, 996.9], "quality": "18/18", "quality_misses": []}

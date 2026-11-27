@@ -1,0 +1,13 @@
+{
+  "backend": "93f62a1dc83b01a8771b693c007b8fa0e3b3971b3dd7c9c310713ebac29100c4",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "plan": "6d12b76681020c37d1a7ac5e4c680ca7a0275484846e72f35fd8eb7375ae27c9",
+  "reference_cuda": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab",
+  "source": "643a6436fc1b981c6ef78547f2acb3db2f49873422c6d48c6d32fdc61bb44ad5",
+  "upstream": "537c64a520bc24ed4f874945dedac8a8f4a87dbd8adc3f4ee37ed81c9813e8fc"
+}

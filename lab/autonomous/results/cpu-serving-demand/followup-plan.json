@@ -1,0 +1,69 @@
+{
+  "schema": "ironmule.deferred-code-experiment.v1",
+  "binding": {
+    "affinity": [
+      0,
+      1
+    ],
+    "cores": 2,
+    "devices": [
+      {
+        "description": "INTEL(R) XEON(R) PLATINUM 8573C",
+        "name": "CPU",
+        "provider": "cpu",
+        "total_memory": 18882662400,
+        "type": "cpu"
+      }
+    ],
+    "engine_settings": {
+      "flash_attn": false,
+      "kv_f32": false,
+      "kv_unified": false
+    },
+    "env_sha256": "2f042c8fc06fabcad82de1ebc177df871d5c62d206839de1e2643996a664abdb",
+    "gpu_layers": 0,
+    "machine": "x86_64|5|INTEL(R) XEON(R) PLATINUM 8573C|3df0291feefca3991de5965f99d6cf0fbfa71c167c90be7913852fabb6e84604",
+    "model_bytes": 105454432,
+    "model_name": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "model_sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "native": {
+      "sha256": {
+        "backend/CPU": "e88e2a86e0b21ce1b919f27c63cd38f071b49941f5a886914dc4036f79a37ec0",
+        "ggml_backend_reg_count": "404b639819bd535e6aeeedfbf2574308d04633899899978be05d66992782bd3a",
+        "ggml_init": "57df2f8555cbe24df5e9fcf5c2c7ffac58b8754b3ed6c576feff293f79ac3349",
+        "llama_backend_init": "502f5da4b2c5865c6b8eded3cdc5fa85cbeb84193bada168456aa7b43775ec8b"
+      }
+    },
+    "offloaded_layers": [],
+    "pilot_weights_sha256": "735f5f4dd9b930ab3e518c51952eae750846b405b99e77191755081f15d90622",
+    "prefix_reuse": true,
+    "provider": "cpu",
+    "python": "3.12.14",
+    "speculate": true,
+    "threads": 2
+  },
+  "evaluator": "ironmule.serving_trial.v1",
+  "base_commit": "bf0a3c636c9839d8c9a88b219ed7e3b3de9b4bcf",
+  "reason": "remaining host sites lack measured headroom",
+  "simulation": {
+    "kind": "simulated",
+    "required_wall_fraction": 0.019607843137254943,
+    "highest_remaining_measured_self_fraction": 0.00021331689061824518,
+    "assumption": "Removing all exclusive host time at one site; indirect effects unknown.",
+    "paired_profiled_wave_cost_s": 6.132464124000762
+  },
+  "completed_observations": [
+    "e6ca339527c7f9f22ae9f42064ac6589bfb2218a55948a0a23e7357e6f0e42c7",
+    "e900236958ef6cd8930b891bc1727e46724863431c97d4ebd8b47da33d04d289",
+    "12cd03fa0f5926cc187eac8f0efd0872958fc47988b8e1b618189660dfe61e6e",
+    "eb77ff29d39aa8e782608a73e1073aee2e7f97a6e4f833a838e4d5f6ef5ff0cc"
+  ],
+  "remaining_sites": 19,
+  "prior_sites": [
+    {
+      "path": "ironmule/gguf_tokenizer.py",
+      "function": "GgufTokenizer.encode",
+      "line": 115
+    }
+  ]
+}

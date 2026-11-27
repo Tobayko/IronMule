@@ -22,6 +22,19 @@ deployment comparison on the same workload. The L40S native AWQ reference delive
 225.1 output tok/s at 32 clients, while IronMule delivered 165.0.
 [Measured workloads and first-token latency](LAB.md#2026-11-18-qwen3-32b-gguf-and-native-awq-on-one-l40s)
 
+The [A100 early-delivery experiment](../lab/pk6/first_token/protocol.md) retained the
+current packed prefill. Returning 17 first tokens early improved median first content,
+but the p95 longest pause reached 2.03 seconds and both pairs missed the throughput
+and tail gates. Reopen with a mechanism that can advance short requests while the
+remaining long prompts are processed. [Paired results](../lab/autonomous/results/a100-first-token/)
+
+On the L40S with Qwen3-32B and 32 mixed HTTP requests, changing prompt admission alone raised
+throughput but lengthened streaming pauses. The conservative reference spent a median **4.869 s in
+the native backend across 20 mixed calls** per wave, with 0.003 s building those calls and 0.002 s
+reading them back. The next target is GPU work inside those mixed calls. Capture a native GPU profile
+on a fresh lease and qualify any kernel change with the original mixed and factual workloads.
+[Current vLLM comparison, budget holdout and rollback](LAB.md#l40s-qwen3-32b-and-the-wait-between-streamed-text-blocks-2026-11-26)
+
 The L40S prefill retest captured the 96 standalone calls previously missing from
 the cost model. In two paired replays the controller retained width 8 and throughput
 held near 33.75 output tok/s on the short-output workload. The cost of waiting for
@@ -108,6 +121,18 @@ tests and numbers; (4) a gain counts only on the hardware it was measured on. Th
 correct it.
 
 ## Open: the GGUF engine and the Pilot
+
+### L40S shared-KV attention in mixed document steps
+
+On the Qwen3-32B Q4_K_M L40S path a 449-row mixed step spends 9 ms in GPU attention at
+1,024 physical KV positions and 87–88 ms at 16,384, with identical logical history.
+Test a shared-pool attention kernel that omits fully masked key blocks while preserving the
+order of visible keys. Count which mask tiles the kernel skips on the actual 32-client
+workload. Charge mask discovery, indexing and launch overhead to the candidate. Close the
+candidate if the saved GPU work fails to improve matched HTTP throughput or worsens
+time to first content or p95 streaming pauses on either seed. Keep the previous numerical
+and factual gates. The feed-forward gate/up projections remain a separate measured target
+even at short spans. [L40S measurement and retention comparison](LAB.md#2026-11-27-why-a-mixed-l40s-step-gets-slower-as-the-server-stays-busy)
 
 ### QG1 — A correctness check for answer quality
 
@@ -254,6 +279,28 @@ for a retry. A new file or device is measured again. Automatic generated-kernel 
 one visible CUDA device, since the timing loop measures only that device. The end-to-end step comparison still
 decides whether a built kernel is faster on the serving machine. Hardware performance of these cache changes has
 not been measured.
+
+### Code experiments selected by the Pilot's measured world model
+
+An offline development worker can investigate a source location selected from measured wave or kernel costs.
+Keep PR 57's PS1, ps1a and PK6 configuration as the A100 reference. Measure identical completed work,
+including the controller, and reject a candidate that misses the predeclared correctness, paired throughput,
+TTFT or resource gates. After rejection, retain the program and timing evidence for future experiment selection.
+The first CPU tokenizer experiment failed the six-pair gate. On the A100 the selected W4 specialization
+preserved all checked matrix values and took 27% longer. The next warm-source search priced five other
+specializations using two device traces and six new real reference waves. Under the original 10% kernel
+sensitivity assumption, the largest projected saving was 19.92 ms against the required 64.72 ms.
+The planner deferred that order. The cuBLASLt prefill probe has a separate measured headroom estimate.
+[Warm search](../lab/autonomous/results/a100-warm-followup/decision.json) · [Prefill probe](../lab/pk1/prefill-probe.md)
+· [CPU trial](LAB.md#2026-11-26-cpu-pilot-development-order-and-rejected-tokenizer-change)
+
+The repeat-start experiment uses the previously fixed A100, model, full stack and output-quality criteria.
+It compares two original starts, missing and stale receipts, six mixed-first pairs and two factual-first
+pairs, then requires a new seed after a source-bound pull request passes CI. The four-core EPYC prefill experiment checks
+the local head, a matched incumbent and the four-thread rule under six counterbalanced seeds.
+The complete rules are in the [A100 protocol](../lab/pk1/restart-trial.md) and
+[EPYC protocol](../lab/rp/cpu-campaign.md). GitHub returned 404 for the separate research repository in this
+session. The raw records and decisions are preserved here. A separate research-ledger entry is outstanding.
 
 ### Local Pilot thread weights (opt-in, 2026-11-18)
 

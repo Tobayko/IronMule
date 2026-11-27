@@ -1,0 +1,7 @@
+--- original
++++ actual
+@@ -142,3 +142 @@
+-            """self.pool = SharedPool(self, cells, self.cap, ids, MAX_DRAFT_SLACK) if shared else None
+-        if shared and TRACE and os.environ.get("IRONMULE_LAB_POOL_CELLS"):
+-            trace_note(f"physical_pool cells={self.pool.cells} allocated={self.L.llama_n_ctx(self.ctx)} cap={self.pool.cap}")""",
++            "self.pool = SharedPool(self, cells, self.cap, ids, MAX_DRAFT_SLACK) if shared else None",

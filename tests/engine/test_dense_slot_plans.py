@@ -286,6 +286,9 @@ def test_ag5r_rev2_start_section_and_acceptance_through_the_real_path(tmp_path, 
 def _log(path: Path) -> list[dict]:
     import json
 
+    from ironmule_product.serving_policy import flush_logs
+
+    flush_logs()  # ADM2: the service writes its log behind
     if not path.exists():
         return []
     text = path.read_text()

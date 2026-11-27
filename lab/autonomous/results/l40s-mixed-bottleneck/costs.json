@@ -1,0 +1,140 @@
+{
+ "campaign_budget_usd": 10.0,
+ "booked_with_tail_usd": 6.334684907269754,
+ "journal": [
+  {
+   "kind": "reserve",
+   "time": 1795730957.8467975,
+   "usd": 2.2500000000000004,
+   "hourly_quote": 1.1138095238095238,
+   "deadline": 1795736357.0
+  },
+  {
+   "kind": "created",
+   "time": 1795730958.887394,
+   "hourly": 1.1138095238095238
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795733431.8516896,
+   "old": 1795736357.0,
+   "new": 1795739957.0,
+   "additional_usd": 1.35
+  },
+  {
+   "kind": "renewed",
+   "time": 1795733432.548835,
+   "old": 1795736357.0,
+   "new": 1795739957.0,
+   "reserved": 3.6000000000000005,
+   "control_watchdog_confirmed": true,
+   "pod_watchdog_confirmed": true
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795735842.884117,
+   "old": 1795739957.0,
+   "new": 1795745057.0,
+   "additional_usd": 1.9125000000000003
+  },
+  {
+   "kind": "renewed",
+   "time": 1795735843.5751345,
+   "old": 1795739957.0,
+   "new": 1795745057.0,
+   "reserved": 5.512500000000001,
+   "control_watchdog_confirmed": true,
+   "pod_watchdog_confirmed": true
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795743098.4375525,
+   "old": 1795745057.0,
+   "new": 1795748057.0,
+   "additional_usd": 1.125
+  },
+  {
+   "kind": "renewed",
+   "time": 1795743099.4817574,
+   "old": 1795745057.0,
+   "new": 1795748057.0,
+   "reserved": 6.637500000000001,
+   "control_watchdog_confirmed": true,
+   "pod_watchdog_confirmed": true
+  },
+  {
+   "kind": "renewal_reserved",
+   "time": 1795746985.5491023,
+   "old": 1795748057.0,
+   "new": 1795748957.0,
+   "additional_usd": 0.3375
+  },
+  {
+   "kind": "renewed",
+   "time": 1795746986.2173276,
+   "old": 1795748057.0,
+   "new": 1795748957.0,
+   "reserved": 6.975000000000001,
+   "control_watchdog_confirmed": true,
+   "pod_watchdog_confirmed": true
+  },
+  {
+   "kind": "removed",
+   "time": 1795748133.328095,
+   "booked": 5.499583430228788
+  },
+  {
+   "kind": "reserve",
+   "time": 1795787977.0244567,
+   "usd": 1.625,
+   "hourly_quote": 1.1048809523809524,
+   "deadline": 1795791877.0
+  },
+  {
+   "kind": "created",
+   "time": 1795787977.8324454,
+   "hourly": 1.1048809523809524
+  },
+  {
+   "kind": "removed",
+   "time": 1795790098.0102084,
+   "booked": 0.8351014770409654
+  }
+ ],
+ "confirmed_owned_pods_remaining": 0,
+ "observed_unix_s": 1795790099.5505683,
+ "provider_account_delta_since_first_reservation_usd": 5.947870056699999,
+ "external_settlements_usd": 0,
+ "approved_extensions_minutes": [
+  60.0,
+  85.0,
+  50.0,
+  15.0
+ ],
+ "retained_cleanup_tail_seconds_per_pod": 600,
+ "leases": [
+  {
+   "gpu": "NVIDIA L40S",
+   "verified_absent": true,
+   "hours": 4.770967024432288,
+   "account_delta_at_cleanup_usd": 5.2882170716,
+   "booked_with_tail_usd": 5.499583430228788,
+   "hourly_with_disk_usd": 1.1138095238095238,
+   "disk_hourly_upper_usd": 0.02380952380952381,
+   "posted_records": 2,
+   "posted_usd": 5.307355653261766
+  },
+  {
+   "gpu": "NVIDIA L40S",
+   "verified_absent": true,
+   "hours": 0.5891627059380213,
+   "account_delta_at_cleanup_usd": 0.6405144017999991,
+   "booked_with_tail_usd": 0.8351014770409654,
+   "hourly_with_disk_usd": 1.1048809523809524,
+   "disk_hourly_upper_usd": 0.014880952380952382,
+   "posted_records": 0,
+   "posted_usd": null
+  }
+ ],
+ "basis": "Posted pod charges can lag. The account delta can include unrelated use. Booked cost conservatively includes a cleanup tail. Fees are USD."
+}

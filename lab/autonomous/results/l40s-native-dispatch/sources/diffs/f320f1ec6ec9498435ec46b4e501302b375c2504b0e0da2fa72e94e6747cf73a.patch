@@ -1,0 +1,7 @@
+--- original
++++ actual
+@@ -3270,0 +3271,4 @@
++
++if os.environ.get("IRONMULE_LAB_ACTIVITY"):
++    from lab.pk6.native_dispatch.capture import install
++    install(GgmlEngine)

@@ -17,9 +17,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import statistics
 import threading
+import weakref
 from typing import Any, Iterable
 
 POLICY_FILE = "serving-policy.json"
@@ -106,18 +108,60 @@ def save_policy(root: Path, policy: ServingPolicy, evidence: dict[str, Any] | No
     return path
 
 
+# ADM1 (2026-11-25): see ironmule_product/http_server.py; "0" restores pathlib's appends
+_ADM1 = os.environ.get("IRONMULE_ADM1", "1") != "0"
+# ADM2 (2026-11-25): the service's logs (stability and serving log) are written by one thread per log, which writes
+# every line waiting in one call. A 32-request burst takes about six lines per request (admit, join, member_done,
+# http, end, the serving log), each an open, write and close on the Python path that the burst's HTTP threads, the
+# worker's reader and the scheduler share; on the A100 pods the 32 done frames of a wave's last step were read over
+# 50-85 ms after the engine had finished them in 10-13 ms. The lines and their order are those `append` writes; a
+# reader in this process sees them after `flush()` (`read()` and `close()` flush), another process within
+# milliseconds. A100 pod 34, paired waves on top of ADM1 (with BF1): 32-client wave -33.1 ms (8 of 8 rounds). "0" writes
+# every line on its caller's thread, as before.
+_ADM2 = os.environ.get("IRONMULE_ADM2", "1") != "0"
+_DEFERRED: "weakref.WeakSet[ServingLog]" = weakref.WeakSet()
+
+
+def flush_logs() -> None:
+    """ADM2: write every deferred log line of this process now (tests and diagnostics that read the files)."""
+    for log in list(_DEFERRED):
+        log.flush()
+
+
 class ServingLog:
     """JSON lines, one per completed request; times in seconds on one monotonic clock. Capped at
     ``max_bytes`` (about 5000 requests at the default): when the next line would pass it, the older
     half is dropped, since the dreamer needs recent traffic, not history."""
 
-    def __init__(self, root: Path, max_bytes: int = 1 << 20, name: str = LOG_FILE):
+    def __init__(self, root: Path, max_bytes: int = 1 << 20, name: str = LOG_FILE, deferred: bool = False):
         self.path = Path(root) / name
         self.max_bytes = max_bytes
         self._lock = threading.Lock()
+        self.deferred = bool(deferred)  # ADM2, while _ADM2 holds
+        self._waiting: list[bytes] = []
+        self._writing = False
+        self._ready = threading.Condition()
+        self._thread: threading.Thread | None = None
+        self._closed = False  # ADM2: after close() lines are written on the caller's thread
+        if self.deferred:
+            _DEFERRED.add(self)
 
     def append(self, record: dict[str, Any]) -> None:
         line = json.dumps(record, sort_keys=True) + "\n"
+        if self.deferred and _ADM2 and not self._closed:  # ADM2: the writer thread takes it
+            with self._ready:
+                self._waiting.append(line.encode("utf-8"))
+                if self._thread is None:
+                    self._thread = threading.Thread(target=self._write_behind, name="ironmule-log-writer",
+                                                    daemon=True)
+                    self._thread.start()
+                self._ready.notify_all()
+            return
+        if self.deferred:
+            self.flush()  # lines written behind before the switch turned it off come first
+        if _ADM1:
+            self._append_fd([line.encode("utf-8")])
+            return
         with self._lock:
             try:
                 if self.path.exists() and self.path.stat().st_size + len(line) > self.max_bytes:
@@ -130,7 +174,74 @@ class ServingLog:
             except OSError:
                 pass  # logging never fails a request
 
+    def flush(self) -> None:
+        """ADM2: return once every line appended so far is in the file."""
+        if not self.deferred:
+            return
+        with self._ready:
+            while self._waiting or self._writing:
+                self._ready.wait(0.05)
+
+    def close(self) -> None:
+        """ADM2: write every waiting line, then stop and join the writer thread; later lines are written directly."""
+        with self._ready:
+            self._closed = True
+            self._ready.notify_all()
+            thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join()
+
+    def _write_behind(self) -> None:
+        while True:
+            with self._ready:
+                while not self._waiting and not self._closed:
+                    self._ready.wait()
+                if not self._waiting:  # closed and drained
+                    self._ready.notify_all()
+                    return
+                lines, self._waiting = self._waiting, []
+                self._writing = True
+            try:
+                self._append_fd(lines)
+            finally:
+                with self._ready:
+                    self._writing = False
+                    self._ready.notify_all()
+
+    def _append_fd(self, lines: list[bytes]) -> None:
+        """ADM1: the same bytes and cap as `append` line by line, with one open, fstat and write on a descriptor
+        instead of pathlib's exists, stat and open for each line; ADM2 hands it every line waiting at once."""
+        with self._lock:
+            try:
+                fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
+                try:
+                    size = os.fstat(fd).st_size
+                    chunk: list[bytes] = []
+                    for data in lines:
+                        if size and size + len(data) > self.max_bytes:  # the older half goes, as in `append`
+                            if chunk:
+                                os.write(fd, b"".join(chunk))
+                                chunk = []
+                            os.close(fd)
+                            fd = -1
+                            kept = self.path.read_text().splitlines(keepends=True)
+                            tmp = self.path.with_suffix(".tmp")
+                            tmp.write_text("".join(kept[len(kept) // 2:]))
+                            tmp.replace(self.path)
+                            fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
+                            size = os.fstat(fd).st_size
+                        chunk.append(data)
+                        size += len(data)
+                    if chunk:
+                        os.write(fd, b"".join(chunk))
+                finally:
+                    if fd >= 0:
+                        os.close(fd)
+            except OSError:
+                pass  # logging never fails a request
+
     def read(self) -> list[dict[str, Any]]:
+        self.flush()
         try:
             lines = self.path.read_text().splitlines()
         except OSError:

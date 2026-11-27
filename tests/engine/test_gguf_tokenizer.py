@@ -73,6 +73,22 @@ def test_compiled_template_keeps_concurrent_request_variables_separate(monkeypat
         assert list(pool.map(request, range(16))) == [f"{i}-{i}" for i in range(16)]
 
 
+def test_a_group_is_tokenized_in_parallel_with_the_one_by_one_ids_in_order():
+    from ironmule.gguf_tokenizer import GgufTokenizer
+
+    tokenizer = object.__new__(GgufTokenizer)  # no vocabulary: encode stands in for llama.cpp's tokenizer
+    tokenizer.encode = lambda text, add_special_tokens=False: [ord(c) for c in text] + ([1] if add_special_tokens else [])
+    tokenizer.chat_template = "{% for m in messages %}<{{ m['role'] }}>{{ m['content'] }}{% endfor %}"
+    tokenizer.bos_token = tokenizer.eos_token = ""
+    texts = [f"text {i} " * i for i in range(40)]
+    assert tokenizer(texts)["input_ids"] == [tokenizer.encode(text) for text in texts]
+    assert tokenizer(texts, add_special_tokens=True)["input_ids"][3][-1] == 1
+    assert tokenizer("ab")["input_ids"] == [97, 98]
+    conversations = [[{"role": "user", "content": f"q{i}"}] for i in range(5)]
+    assert tokenizer.apply_chat_template(conversations) == [tokenizer.apply_chat_template(c) for c in conversations]
+    assert tokenizer.apply_chat_template(conversations, tokenize=False)[2] == "<user>q2"
+
+
 def test_a_gguf_answers_to_its_file_name_and_names_itself(tmp_path: Path):
     gguf = tmp_path / "Qwen3-4B-Q8_0.gguf"
     gguf.write_bytes(b"GGUF")

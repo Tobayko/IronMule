@@ -1,0 +1,5 @@
+--- original
++++ actual
+@@ -37,0 +38,2 @@
++    if os.getenv("IRONMULE_CUBLAS_MIN_ROWS") or os.getenv("IRONMULE_LAB_FP8"):
++        key.extend([os.getenv("IRONMULE_CUBLAS_MIN_ROWS"), os.getenv("IRONMULE_LAB_FP8")])

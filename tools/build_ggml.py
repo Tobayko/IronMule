@@ -19,6 +19,8 @@ variables the engine reads. Nothing is installed system-wide.
         Other shapes, types and devices use the library's own attention.
   am1   a decode can return only each output row's argmax (ironmule_set_argmax_only), computed where the logits are,
         instead of copying every row of logits to the host.
+  tk1   the tokenizer compiles each pre-tokenizer regex once per thread instead of once per text fragment (Qwen2's
+        pattern takes the std::regex path: about 0.23 ms per fragment); the same ids.
   gr2   CUDA builds only: CUDA graphs for decode steps of up to IRONMULE_CUDA_GRAPHS_ROWS rows (default 1, llama.cpp's).
   pk3   CUDA builds only: a graph epoch; within one graph the cuBLAS matmuls that read the same src1 node (q, k, v;
         gate, up) share one fp16 copy, and the KG library learns each src1 node (IRONMULE_PK3=0 turns sharing off).
@@ -30,6 +32,13 @@ variables the engine reads. Nothing is installed system-wide.
         slot, so no conversion kernel runs (IRONMULE_PK4=0 off).
   pk5   CUDA builds only: Q4_K -> fp16 for PK2's prompt matmuls with 16-byte stores, bit-identical to llama.cpp's
         dequantization (IRONMULE_PK5=0 off).
+  em1   CUDA builds only: get_rows takes Q4_K and Q6_K rows on the GPU (convert.cu's arithmetic), so the engine can keep
+        a GGUF's token embedding on the GPU and a decode step needs no CPU work (opt-in: IRONMULE_GGML_EM1=1).
+  gr4   CUDA builds only: GR3's capture state per CUDA backend context instead of process-wide, so a second context
+        (SD1's draft model) cannot replay another graph's instance (IRONMULE_GR4=0 off).
+  qk1   CUDA builds only, experimental: matmuls that read the same activations (a layer's q, k, v) computed by one call
+        of the kernel library's ironmule_kg_mul_mat_group (W4R v13), where no tensor in between shares their output
+        memory (IRONMULE_KG_QKV=1, table IRONMULE_KG_QKV_TABLE; off by default).
   pk2   CUDA builds only: from IRONMULE_CUBLAS_MIN_ROWS prompt rows on, quantized matmuls go through dequantization
         and cuBLAS with fp32 accumulation instead of llama.cpp's MMQ kernels; unset keeps llama.cpp's choice.
 
@@ -68,12 +77,35 @@ PATCH_SETS = {
     "kg1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr1, on the file gr1 left
     "pk2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after kg1, on the file kg1 left
     "am1": ([("src/llama-context.cpp", "llama-context.cpp.diff")], []),
+    "tk1": ([("src/unicode.cpp", "unicode.cpp.diff")], []),
+    "tl1": ([("src/llama-context.cpp", "llama-context.cpp.diff")], []),  # after am1; diagnostics, IRONMULE_TL1
     "gr2": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk2
     "pk3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr2
     "gr3": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk3
     "fu1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr3
     "pk4": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after fu1
     "pk5": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk4
+    "em1": ([("ggml/src/ggml-cuda/getrows.cu", "getrows.cu.diff"),
+             ("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pk5
+    "gr4": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after em1
+    "qk1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after gr4
+    "pd1": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after qk1
+    # PS1 (2026-11-25): one decode call's rectangular ubatches merged into one (projections once over all rows,
+    # attention per rectangle); off unless IRONMULE_PS1=1
+    "ps1": ([(f"src/{name}", f"{name}.diff") for name in ("llama-batch.h", "llama-kv-cache-unified.h",
+                                                         "llama-kv-cache-unified.cpp", "llama-graph.h",
+                                                         "llama-graph.cpp", "llama-context.cpp")], []),  # after tl1
+    # TL2 (2026-11-25, diagnostics): with IRONMULE_TL1 / IRONMULE_TL2, graph build apart from allocation, thread CPU
+    # time and a merged ubatch's rectangles per ubatch; every compute-buffer and CUDA-pool growth with its host time
+    "tl2": ([("src/llama-context.cpp", "llama-context.cpp.diff"), ("ggml/src/ggml-alloc.c", "ggml-alloc.c.diff")], []),
+    "tl2c": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after pd1
+    # PS1a (2026-11-25): ggml-alloc places a merged prefill's per-layer attention output ("ps1_all-<layer>") at its
+    # first reader instead of with the graph's leafs; without it all 64 layers' outputs were live together (2.1 MB a
+    # row on Qwen3-32B), the compute buffer grew 5.1 -> 18.7 GB and every new largest call reallocated it (0.38 s)
+    "ps1a": ([("ggml/src/ggml-alloc.c", "ggml-alloc.c.diff")], []),  # after tl2
+    # PK6 (2026-11-25): in a cuBLAS prompt step, SwiGLU and FU1's add + RMS norm skip the f32 writes only matmuls
+    # taking PK3's fp16 copy would read; IRONMULE_PK6=1 (read at every graph) turns it on
+    "pk6": ([("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml-cuda.cu.diff")], []),  # after tl2c
 }
 
 
@@ -208,9 +240,10 @@ def main(argv: list[str] | None = None) -> int:
             dest = dest / rocm
         source = fetch(dest)
         tree = source / "vendor" / "llama.cpp"
-        names = ["fa1", "row1", "am1"]
+        names = ["fa1", "row1", "am1", "tk1", "tl1", "ps1", "tl2", "ps1a"]
         if cuda:
-            names += ["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5"]
+            names += ["gr1", "kg1", "kg5", "pk2", "gr2", "pk3", "gr3", "fu1", "pk4", "pk5", "em1", "gr4", "qk1", "pd1",
+                      "tl2c", "pk6"]
         try:
             applied = [] if args.no_patches else patch(tree, names)
             lib = build(tree, cuda, args.jobs, rocm)

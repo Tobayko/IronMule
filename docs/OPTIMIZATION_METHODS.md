@@ -1,0 +1,83 @@
+# Methods for the IronMule Pilot
+
+Design notes based on primary sources reviewed on 2026-11-26. The engineering choices below describe how to adapt each method. Measurements and qualification outcomes belong with the experiment that produced them.
+
+| Source mechanism | Application to IronMule | Check |
+| --- | --- | --- |
+| **System One.** Jev takes state and typed questions and returns structured decisions with confidence. [TypeSafe introduction](https://typesafe.ai/blog/introducing-system-one-models-and-jev) · [Official SDK](https://github.com/typesafe-ai/typesafe-sdk-js) | Give the local CPU Pilot a finite action set of compatible execution profiles for this hardware and workload. Record the chosen profile, confidence and fallback reason. | Measure how often accepted choices win on independent runs, alongside the fraction of decisions that defer. A softmax score alone does not establish calibration. |
+| **DreamerV3.** Its world model learns from experience. The implementation starts imagined trajectories from replay states and evaluates predicted rewards over a limited horizon. [Hafner et al.](https://doi.org/10.1038/s41586-025-08744-2) · [Imagination code](https://github.com/danijar/dreamerv3/blob/main/dreamerv3/agent.py) | Replay workload transitions against measured costs for each eligible profile. Include switch costs such as losing a warm cache. Use short simulated trajectories to propose a trial. The existing Pilot and serving world model are the integration points. | Store the source experiment and mark each rollout as simulated. Compare predictions with later measurements on unseen runs. A rollout can schedule a measurement. Activation requires the measurement itself. |
+| **AlphaEvolve and ShinkaEvolve.** AlphaEvolve selects earlier programs for future prompts using automatically evaluated results. ShinkaEvolve's sampler supplies parent code, metrics, archive examples and failure feedback. [DeepMind method](https://deepmind.google/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/) · [Sakana publication](https://sakana.ai/shinka-evolve/) · [Prompt sampler](https://github.com/SakanaAI/ShinkaEvolve/blob/main/shinka/core/sampler.py) | Give Codex one hypothesis, its observation, parent revision, the relevant earlier attempts and the fixed evaluator. Keep the candidate diff and reason for acceptance or rejection. Repeated failures with the same identity can be retrieved before buying another run. | Record who proposed the hypothesis, who wrote the diff and which component decided adoption. Measure candidate and parent at equal work on the same target. Retain the previous version for rollback. |
+| **Resource-constrained contextual bandits.** Each choice has both a context-dependent reward and a resource cost, under a global budget. [Agrawal, Devanur and Li](https://proceedings.mlr.press/v49/agrawal16.html) | Among eligible trials, prioritize useful observations relative to expected total cost. Uncertainty makes a repeat valuable when another measurement could change which profile wins. | Reserve the maximum payable cost before a trial and keep outstanding charges across restarts. The ranking is an engineering heuristic. The paper's regret bounds depend on its algorithm and assumptions. |
+
+A crossover between two whole profiles estimates the effect of the bundle. Separating the effect of one kernel requires a comparison that holds the other settings fixed. Keep all repeats from one campaign together when testing generalization. Report completed correct work per wall-clock second, time to first token and the cost of deciding, learning and experimenting. The historical loss of cached prefixes after a width switch illustrates why timing steady-state decoding alone can give the wrong answer. [Measured width switch and rollback](../training/README.md#serving-the-proposed-width-and-testing-its-rollback)
+
+## Run one development experiment on Linux
+
+Use a Linux checkout with the IronMule CPU dependencies and a working GGML build. Activate its Python environment and load the backend environment file printed by the build. The qualification worker uses Bubblewrap with Linux user namespaces. Authoring uses an authenticated Codex CLI session on the included ChatGPT plan. The model catalog is queried at dispatch. This command runs on the current machine and requests no pods. On an existing paid pod its lease clock keeps running. [CPU backend setup](../README.md#serve-a-gguf-on-linux-cpu) · [RunPod operating guide](../lab/rp/README.md)
+
+Run the following in the repository root. Keep the state directory on persistent storage outside the checkout. One invocation requests at most one code proposal. Repeating the command for the same run ID resumes that proposal and its completed measurements.
+
+```sh
+export RUN_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/ironmule-experiments"
+mkdir -p "$RUN_STATE/models"
+python lab/portable_gpu/fetch.py smol --dir "$RUN_STATE/models"
+MODEL="$RUN_STATE/models/SmolLM2-135M-Instruct-Q4_K_M.gguf"
+python -m training.optimization_run --state "$RUN_STATE" --run-id first --gguf "$MODEL" --provider cpu
+```
+
+The runner pins HEAD on its first invocation. Pass `--base COMMIT` to choose a different reference on that machine. Discovery runs four warm engine waves, alternating short and document prompts. Each wave starts at tokenization and ends after output delivery. Timing excludes HTTP transport. The Pilot makes live per-step decisions. Its shipped weights support this discovery workload. Qualification of a new hardware-bound CPU thread head uses the training, replay and live exercise commands in the training guide. [Train and replay the thread head](../training/README.md#fitting-the-pilot-thread-head-from-paired-cpu-decode)
+
+The planner uses the observed transitions, a fitted cost model, earlier attempts and the experience archive to choose a source location. Codex produces a candidate for the frozen base. The worker builds and tests the changed code and measures six fresh pairs against the same current base. Each pair uses the same seed for both arms. Pair order alternates. The report contains complete output digests, first-token latency, memory and timed correct work. A measured serving gain has to repay discovery, development and testing. The summary estimates the number of similar requests needed to recover the recorded run time when each pair saves time. Recovery after a killed process retains evidence of the unfinished interval and leaves that estimate unknown.
+
+`$RUN_STATE/runs/first/` holds the pinned inputs and evaluator hashes in `context.json`, warmed profiles in `discovery/`, and the simulated ranking, selected hypothesis and source references in `order.json`. The `trial/` directory contains the proposed program, diff and qualification results. `complete.json` reports the hardware verdict and run overhead. A later run ID in the same state directory includes prior outcomes in its archive. Use `--publish` to request the qualified candidate's PR and activation procedure. Its checks and hardware binding apply to that specific workload. Production serving and the experiment are separate processes. Stop experimentation during competing foreground load.
+
+On the target Linux GPU build, use `--provider cuda`. The worker requires a registered CUDA backend, a successful device computation and native loader evidence that all model layers were offloaded. Select the intended GPU before starting the run. A short copy workload with SmolLM2 and the Qwen3-32B A100 campaign in PR 57 have different model, traffic and reference bindings. Each requires its own evidence. [PR 57 A100 handover](HANDOVER_A100.md)
+
+The CLI author checks `codex login status` for ChatGPT authentication before making its single development request. A host with a separate included Codex worker can use `IRONMULE_CODE_AUTHOR=hosted`. In this mode the run waits for a persisted reply to `trial/author/request.json`. The host sends the request to its worker and submits that worker's actual receipt, model and returned proposal through `python -m training.code_author --help`. Resume the same command and run ID after submission. The reply is bound to the source and order digest. An unanswered order stays pending. Neither adapter provisions compute. A leased machine can still incur charges between invocations.
+
+Read `historical_qualification` for the measured verdict. On resume the command also inspects the release checkout and reports its current commit and withdrawal status in `deployment`. It restores the reference when the selected checkout has changed. [Release and rollback commands](../training/experience-and-release.md)
+
+For an integrated CPU trial, pass `--thread-candidate CHECKPOINT.npz` to `training.optimization_run` with a checkpoint trained on the same CPU, native build, model and four-slot context. The runner snapshots the weights, verifies their hash on resume and mounts the copy read-only. Discovery and both evaluation arms qualify the proposed thread offsets from fresh local measurements before their timed real generations. They run with four slots, a 512-token sequence context and speculation disabled. Serving bindings include the checkpoint, trainer/learner source digests and qualified offsets. Different bindings or zero qualified choices in the timed waves disqualify the comparison. A completed discovery with zero qualified scratch choices retains its measurements in `discovery-rejected/` and closes the run. Interrupted measurements remain in a timestamped rejection directory. CLI workers run with a Linux nice value of at least 10.
+
+The [hardware coverage matrix](../training/optimization-hardware.md) distinguishes a detected backend, verified native computation, serving calibration and a qualified deployment.
+
+## Development model availability on 2026-11-26
+
+The RunPod operator used the repository's configured hosted `gpt-6-luna`. On the
+control machine, `codex debug models` listed `gpt-6.2-sol`, `gpt-6.1-sol`,
+`gpt-6-sol`, `gpt-5.6-sol`, `gpt-6.1-terra`, `gpt-5.6-terra`, `gpt-6-luna`
+and `gpt-5.6-luna` among the repo-permitted families. List the catalog again on
+the deployment host. The single-attempt CLI adapter selects an available Sol for
+source changes. Archive ingestion, costing, matching and scoring are deterministic
+local programs. The per-step controller runs locally in NumPy.
+
+The control machine's nested CLI reported a ChatGPT login, but its actual code
+request returned HTTP 401. A catalog entry alone cannot establish access to a
+billable endpoint. The hosted worker transport completed orders in this session.
+Its file request and returned receipt can be resumed independently. An unattended
+installation needs a working author transport and an appropriate spending limit
+for any metered provider. The measured run made no metered API requests.
+
+For an unattended host with a working Codex CLI subscription, consume an existing Python or CUDA order with `python -m training.code_author --state TRIAL_STATE --consume-cli`. The consumer checks the request hash, confirms a ChatGPT login and queries the visible catalog. It runs one ephemeral read-only CLI request. A native kernel order requests high reasoning. A successful CLI exit and a valid function/rationale response create a receipt linked to the request and selected model. On restart the consumer returns the existing response. If login or catalog discovery failed before dispatch, repair that condition and specify `--retry-preflight`. After dispatch, an unsuccessful exit leaves the order pending for inspection. The original hosted submission command remains available.
+
+The CLI consumer removes API credentials from its child environment and checks the subscription login. It opens no metered API account. A future metered adapter must reserve its worst-case input, output and retry charges against the persistent campaign limit before dispatch, settle actual charges and retain outstanding reservations across restarts. An available provider balance alone does not admit a call.
+
+### Adding another repository or backend
+
+The development transport accepts a versioned order and source text through
+`training.code_author.hosted_proposal(state, order, source, knowledge=notes)`.
+The order identifies the commit, measured workload and hardware binding, source target,
+allowed paths, observations, simulated hypothesis and evaluator. A new repository adapter
+can use its own schema and include the repository identity in the hashed order. The reply
+echoes the request digest and supplies one replacement definition, a rationale and worker
+attribution. Candidate code cannot select the scorer or publish itself.
+
+On the controller side, add a trusted evaluator for the new repository's normal entry
+point. Have it build the pinned proposal in isolation, measure matched work and retain the
+raw reference/candidate outputs, timings and resource use. Supply a verifier that recomputes
+its verdict from those receipts after a restart. Register its source and publication scope
+on the control host and implement target verification and withdrawal for that runtime.
+The existing publication adapters address `Tobayko/IronMule`. The Python serving,
+CUDA-kernel and Qwen restart evaluators show how the same author transport is used with
+different source languages and hardware contracts. [Author transport](../training/code_author.py)
+· [Measured source release](../training/scoped_release.py) · [CUDA qualification](../lab/pk1/native_trial.py)

@@ -1,0 +1,298 @@
+{
+  "hardware": {
+    "device_sha256": "7a2f320d896258b67549ecebcae06a0c38e93f46c405d111e32888eeff161b02",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "seed": 723449,
+  "selection": {
+    "cap": 1024,
+    "engine_sha256": "4b6b95dc1169d44489a1508fa3ea0365edd696ea860c32c6397c285f3da7c1f8",
+    "external": "0.34.0",
+    "hardware": {
+      "device_sha256": "7a2f320d896258b67549ecebcae06a0c38e93f46c405d111e32888eeff161b02",
+      "driver": "595.112.07",
+      "memory_mib": 46068,
+      "name": "NVIDIA L40S"
+    },
+    "min_queue": 12,
+    "reference_seed": 723449,
+    "simulated_gap_ratios": {
+      "768": [
+        0.7098381715642855,
+        0.68140215494866
+      ],
+      "1024": [
+        0.8341762330800461,
+        0.8042799658904998
+      ],
+      "1280": [
+        0.9585142945958065,
+        0.9271577768323398
+      ],
+      "1536": [
+        1.082852356111567,
+        1.0500355877741798
+      ]
+    }
+  },
+  "reference": "B1",
+  "candidate": "L1",
+  "starts": {
+    "B1": {
+      "trace_sha256": "64a86846bb47278a42c45f81fb7817a73bf0436c3d4b111650bb3178d5845078",
+      "waves_sha256": "06495f51ef55fd2ab9e99d8fc66c9e4bb8a1278a9c631740c482c9756b8ea463",
+      "quality": [
+        32,
+        32
+      ],
+      "by_width": {
+        "1": {
+          "tok_s": 41.73687586285732,
+          "first": 0.06269117293413728,
+          "visible": 0.06269177398644388,
+          "first_p95": 0.06269117293413728,
+          "eighth": 0.28090896701905876,
+          "gap_p95": 0.06037597602698952,
+          "end_p95": 0.7659001449355856
+        },
+        "8": {
+          "tok_s": 113.93492041581817,
+          "first": 0.26431994448648766,
+          "visible": 0.26432058052159846,
+          "first_p95": 1.150117430021055,
+          "eighth": 1.288739784504287,
+          "gap_p95": 0.25782667205203325,
+          "end_p95": 2.2418192450422794
+        },
+        "32": {
+          "tok_s": 155.8315788480156,
+          "first": 0.5477549594361335,
+          "visible": 0.5477554050157778,
+          "first_p95": 4.664627920021303,
+          "eighth": 2.4869648834574036,
+          "gap_p95": 0.3052554549649358,
+          "end_p95": 6.470137426047586
+        }
+      },
+      "changes": [
+        {
+          "width": 1,
+          "seed": 723449,
+          "repeat": 0,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 723449,
+          "repeat": 0,
+          "changes": 0
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 0,
+          "changes": 0
+        },
+        {
+          "width": 1,
+          "seed": 723449,
+          "repeat": 1,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 723449,
+          "repeat": 1,
+          "changes": 0
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 1,
+          "changes": 0
+        },
+        {
+          "width": 1,
+          "seed": 723449,
+          "repeat": 2,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 723449,
+          "repeat": 2,
+          "changes": 0
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 2,
+          "changes": 0
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 3,
+          "changes": 0
+        }
+      ]
+    },
+    "L1": {
+      "trace_sha256": "d4a6143223f223bd0244ce413f7578c74be9bc2479f221625fa566ca1f3708b3",
+      "waves_sha256": "6912a4fa2484175aeb5885f341516bdc72b5171e0503af379dad05b24b31e5ca",
+      "quality": [
+        32,
+        32
+      ],
+      "by_width": {
+        "1": {
+          "tok_s": 44.98108269638524,
+          "first": 0.06267784198280424,
+          "visible": 0.06267837295308709,
+          "first_p95": 0.06267784198280424,
+          "eighth": 0.2812921629520133,
+          "gap_p95": 0.05439590208698064,
+          "end_p95": 0.7104883290594444
+        },
+        "8": {
+          "tok_s": 112.32208672840841,
+          "first": 0.22316456149565056,
+          "visible": 0.22316515748389065,
+          "first_p95": 1.113062882097438,
+          "eighth": 1.141761803533882,
+          "gap_p95": 0.2629357340047136,
+          "end_p95": 2.272817917051725
+        },
+        "32": {
+          "tok_s": 162.2995730477483,
+          "first": 0.5537819110322744,
+          "visible": 0.5537824220373295,
+          "first_p95": 4.378800875972956,
+          "eighth": 2.9506989055662416,
+          "gap_p95": 0.5044411699054763,
+          "end_p95": 6.14223985793069
+        }
+      },
+      "changes": [
+        {
+          "width": 1,
+          "seed": 723449,
+          "repeat": 0,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 723449,
+          "repeat": 0,
+          "changes": 0
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 0,
+          "changes": 3
+        },
+        {
+          "width": 1,
+          "seed": 723449,
+          "repeat": 1,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 723449,
+          "repeat": 1,
+          "changes": 0
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 1,
+          "changes": 3
+        },
+        {
+          "width": 1,
+          "seed": 723449,
+          "repeat": 2,
+          "changes": 0
+        },
+        {
+          "width": 8,
+          "seed": 723449,
+          "repeat": 2,
+          "changes": 0
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 2,
+          "changes": 3
+        },
+        {
+          "width": 32,
+          "seed": 723449,
+          "repeat": 3,
+          "changes": 2
+        }
+      ]
+    }
+  },
+  "paired": {
+    "1": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        true,
+        true
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.9995529337676293,
+        "first": 0.9999114191256004,
+        "visible": 0.9999104306864683,
+        "first_p95": 0.9999114191256004,
+        "eighth": 1.0013641285182917,
+        "gap_p95": 0.9920020507102372,
+        "end_p95": 1.0000610706513868
+      }
+    },
+    "8": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 0.9858442549349792,
+        "first": 0.8753357295367385,
+        "visible": 0.8753351117816094,
+        "first_p95": 0.9750956494740148,
+        "eighth": 0.9771165982170108,
+        "gap_p95": 1.0070708558618688,
+        "end_p95": 1.013827462708244
+      }
+    },
+    "32": {
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ],
+      "candidate_over_reference": {
+        "tok_s": 1.0377754910469343,
+        "first": 1.011003006896268,
+        "visible": 1.0110031173884595,
+        "first_p95": 0.951976626057326,
+        "eighth": 1.186465850480426,
+        "gap_p95": 1.65252139380579,
+        "end_p95": 0.9688120797969255
+      }
+    }
+  },
+  "rollback_served_correctly": true,
+  "promotion": false,
+  "scope": "One L40S and one fresh seed. Paired ratios compare the candidate with restored stock. All stream metrics count."
+}

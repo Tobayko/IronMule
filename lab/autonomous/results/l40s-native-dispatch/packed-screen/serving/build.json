@@ -1,0 +1,30 @@
+{
+  "compiler": "Build cuda_12.8.r12.8/compiler.35583870_0",
+  "ggml_cuda": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab",
+  "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "kind": "packed-marlin",
+  "library_sha256": "d02babca2c04ae3367eb52bcbbd0919c9efbb6931356cfb3e26000a3fdb5066f",
+  "pool_cells": 16384,
+  "scope": "Experimental plugin. Separate model and product verification required before use.",
+  "seconds": 13.055313689052127,
+  "sources": {
+    "dequant.h": "8d8de7ec568d47928ff2f4fc833e8365d6afe46ab16b07fdf524a6dc5a1ddf95",
+    "gptq_marlin_repack.cuh": "46d51ba4bde14dbfe54442f30b456304ee9306e066b5f79eea863ee9d46f14a5",
+    "kernel.h": "266caf0c64cfd18fc3e26bc530234e8bb1b15c343e1b71afab2908a200cd2c64",
+    "marlin.cuh": "0fbf79e84e6dc4dcb084e3984e6fddf1cfbe347b5338ecdb82583df8985c8ea5",
+    "marlin_dtypes.cuh": "bd0e545afa3ecc23fbf919f50826219832258ce81d31d118a30b350e5cb9699a",
+    "marlin_prompt.cu": "1ef4307ed63cf3e9f60b56391f7f0c0e1d88aed7752ca234c17c956c1ce303cf",
+    "marlin_template.h": "86ac18b9587e3b1cdb801c596d906d849727d1b9a906fef8e5e0ab4a6c5b6f6f",
+    "mq1.cuh": "6f6c3a78e8f9c69788a6f001211ea79ae33246561bdeea8390b77716115db1a6",
+    "packed_routes.h": "1656666eb9883163ad21c36a99c919ec6c4df0e12287a2826674471b7c1c8a05",
+    "plan.json": "33b69d83ccbf1d1e083abce1b00af578c1cb14bd8c23d009797fe18e16c28436",
+    "scalar_type.hpp": "78080522e32913c5b2ba9c28502b315f434f40134d357d12f7f4474920c91a85",
+    "torch_shim.h": "4a71c533ba6df02ef892da9afcfd6db38b6058fe79369b039229bf8fe8bf5914"
+  }
+}

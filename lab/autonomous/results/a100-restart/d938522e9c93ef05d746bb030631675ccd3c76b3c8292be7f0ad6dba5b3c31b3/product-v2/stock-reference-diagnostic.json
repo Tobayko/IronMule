@@ -1,0 +1,15 @@
+{
+  "actual_offloaded_layers": 65,
+  "device": "NVIDIA A100-SXM4-80GB",
+  "error": "CUDA error: invalid configuration argument",
+  "exit_status": -6,
+  "function": "ggml_cuda_mul_mat_batched_cublas_impl",
+  "gate_device_receipt_sha256": "59df1587b98c8f07cec031af067ec8ee1cdc0a3acf255dfc36b767e8daefe99d",
+  "location": "ggml-cuda.cu:2077",
+  "model_layers": 65,
+  "private_raw_sha256": "3321fa95a6de0abe74fec4c6107164cd414093c15b7d27a5c159f47d123023c0",
+  "reference_sha256": "e8ec59ef2044996dc6873561aca4b34dbab16186a166c6f21615414ea18a7ec5",
+  "requested_gpu_layers": 999,
+  "schema": "ironmule.stock-product-reference-failure.v1",
+  "stage": "GATE_CANDIDATE"
+}

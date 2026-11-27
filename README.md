@@ -42,6 +42,16 @@ Two starts of the Qwen3-32B server spent almost 19 seconds each on one calibrati
 
 **How does a warm server compare?** In a separate HTTP test at 32 concurrent clients on that A100, IronMule produced **297.54 tokens/s** with Qwen3-32B Q4_K_M GGUF. vLLM 0.11.0 produced **271.26 tokens/s** with Qwen3-32B AWQ. That gives IronMule 9.69% more output per second across the group. vLLM delivered the first token sooner, with a median of 1.71 seconds versus IronMule’s 2.41. [PR 57 measurements and per-request timings](https://github.com/Tobayko/IronMule/tree/4b6971e5ba59f0fb74bf56cf7a4249b5d88fb9d5/lab/autonomous/results/a100-pr57-warm-repeat)
 
+### What changes on a smaller GPU?
+
+On an NVIDIA L40S, the trade-off changes with the queue. With one client IronMule delivered **43.3 output tokens/s** and vLLM 0.34.0 delivered **37.7**. With 32 clients IronMule started streaming in a median **0.56 seconds**, versus **1.68 seconds** for vLLM. Across the full group vLLM finished faster at **266.6 vs 154.7 tokens/s**. Both served Qwen3-32B with the same inputs and fixed output length, using Q4_K_M and AWQ-Marlin respectively. These are three repeats from the first matched seed. [Per-request measurements, quality checks and replay](lab/pk6/mixed_progress/replay.md)
+
+IronMule can also tell you which optimization it declined. On a second L40S run, it traced a slow GPU operation back to the requests waiting for it and issued a Q4_K kernel experiment to Codex. A separate FP8 kernel completed the short factual checks, but missed the model's perplexity limit. The server returned to its verified profile. You can replay the decisions and inspect the same fixed-length streams on a CPU. [L40S kernel experiments and replay](lab/pk6/native_dispatch/README.md)
+
+**What happens when 32 people send long documents at once?** On one L40S, a smaller KV cache freed **12 GiB during requests**. On two sets of 900-word documents it raised throughput from **24.78 to 47.78** and from **27.49 to 47.55 tokens/s**. Both cache sizes found all 64 six-digit seals hidden among distractors in a separate retrieval test. The trained CPU Pilot chose that cache on a fresh server and delivered **47.50 tokens/s**. A tested rollback restored the original cache and delivered **29.04 tokens/s** on the same requests. Initial qualification peaked at 45,160 MiB. [Document results, memory measurements and CPU replay](lab/pk6/native_dispatch/README.md)
+
+With one client and an experimental 0.6B draft model, IronMule finished each of six matched 32-token requests faster than vLLM 0.34.0 AWQ-Marlin. Median paired throughput was **1.50× and 1.53×** over the two seeds. vLLM still started streaming sooner. At 32 clients vLLM retained its throughput lead. [Per-load results and vLLM reference](lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
 ## Quick start
 
 ### Serve a GGUF on Linux CPU
@@ -105,18 +115,18 @@ Tested model families include Qwen 3, Gemma 3, Llama 3 and Mistral. Backend, mod
 
 ### Qwen3-32B on one A100 against vLLM
 
-On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`, and vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin on the same pod, one after the other. Both servers used the same HTTP client, prompts and seeds, with 32-token answers and three repeats each.
+> **Handover:** the current A100 state, defaults, reproduction, evidence and open points are in [docs/HANDOVER_A100.md](docs/HANDOVER_A100.md).
 
-| Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, three repeats) | vLLM 0.11.0, AWQ-Marlin (three repeats) |
+On one RunPod A100 SXM4 80 GB, IronMule served the Q4_K_M GGUF of Qwen3-32B through `ironmule serve --agent on`, and vLLM 0.11.0 served the official Qwen3-32B-AWQ checkpoint with AWQ-Marlin on the same pod, one after the other. Both servers used the same HTTP client, prompts and seeds, with 32-token answers (2026-11-25, pod 37; IronMule's default build over two server starts, every wave counted).
+
+| Concurrent clients | IronMule, Q4_K_M GGUF (output tok/s, every wave) | vLLM 0.11.0, AWQ-Marlin |
 | ---: | ---: | ---: |
-| 1 | 51.3 / 95.0 / 100.0 | 51.3 / 52.7 / 51.8 |
-| 8 | 165.7 / 167.4 / 169.8 | 190.2 / 197.3 / 194.6 |
-| 32 | 293.8 / 291.6 / 291.1 | 295.5 / 291.3 / 290.9 |
+| 8 | median 195.6 (four waves) | 189.4 (median of two) |
+| 32 | 297.1 / 313.2 / 306.0 / 297.3 / 303.2 / 307.5 | 278.7 / 276.7 / 276.9 |
 
-- Both servers answered 18/18 factual check questions in every run except one IronMule run at 32 clients (17/18), and IronMule passed its own perplexity quality gate on this machine.
-- At one client IronMule is level to 93% ahead, depending on the prompt (it drafts from the context).
-- At 32 clients the two are level on this pod (292.2 against 292.6 tok/s on average); on three later pods vLLM led by 2.1-3.3%. At 8 clients vLLM leads by 13-15%.
-- IronMule is not faster than vLLM in general. Next target: +10% over vLLM on the same machine.
+- At 32 clients IronMule is 10.0% ahead (median 304.6 against 276.9 tok/s), just at the +10% goal (per server start 10.5% and 9.5%). At 8 clients IronMule leads by 3.3%. vLLM gives its first tokens earlier (median 1.8 against 2.3 s at 32 clients). With the default of the time, pod 36 gave +9.2% (PS1 without PK6) and pod 35 +7.7% (PS1 off).
+- Both servers answered 18/18 factual check questions in every run, and IronMule passed its own perplexity quality gate on this machine.
+- On an earlier pod (pod 17) the two were level at 32 clients (292.2 against 292.6) and IronMule was level to 93% ahead for one client, depending on the prompt (it drafts from the context). [Pod 37](docs/LAB.md#2026-11-25-a100-pod-37-pk6-kept----3046-against-2769-toks-at-32-clients-1002--the-10--reached-by-its-rule) · [Pod 36](docs/LAB.md#2026-11-25-a100-pod-36-ps1s-slow-prefills-attributed-and-removed-ps1a-ps1-on-by-default-92--against-vllm) · [Pod 35](docs/LAB.md#2026-11-25-a100-pod-35-ps1-measured--90-ms-a-wave-in-one-process-outliers-over-http-rejected-by-the-rule-dh2-no-gain-77--against-vllm) · [Pod 34](docs/LAB.md#2026-11-25-a100-pod-34-adm1-and-adm2-kept----3121-against-2934-toks-at-32-clients-64--10--not-reached)
 
 On an earlier pod, before PK5, IronMule was 5% behind at 32 clients (252.5 against 265.9); pods differ by several percent for both servers, so only same-pod comparisons count. [Same-pod measurements](docs/LAB.md#2026-11-23-a100-speculative-decoding-with-a-batch-draft-model-sd1-and-vllm-on-the-same-pod-with-pk5) · [Earlier pod](docs/LAB.md#2026-11-22-a100-pk4-served-and-vllm-on-the-same-pod) · [Earlier A100 runs](docs/LAB.md#2026-11-22-a100-gr3-served-fu1-32-row-cuda-graphs-through-the-gate----level-with-vllm-at-32-clients)
 

@@ -1,0 +1,16 @@
+== 17:07:34 38e4267 DK1: one-process timing harness for the ablations and explicit L1 carveouts
+{"arm": "prod", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 75.4, "us_min": 75.39, "us": [75.58, 75.39, 75.4, 75.39, 75.43, 75.4]}
+{"arm": "c0", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 75.38, "us_min": 75.37, "us": [75.38, 75.37, 75.38, 76.03, 75.39, 75.39]}
+{"arm": "c50", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 79.14, "us_min": 79.06, "us": [79.22, 79.86, 79.14, 79.14, 79.11, 79.06]}
+{"arm": "c100", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 103.27, "us_min": 103.03, "us": [103.03, 103.3, 104.08, 103.23, 103.17, 103.9]}
+{"arm": "c0", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 75.44, "us_min": 75.41, "us": [75.41, 75.43, 75.46, 75.41, 75.44, 75.44]}
+{"arm": "m1", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 50.74, "us_min": 50.65, "us": [50.84, 50.75, 50.72, 50.75, 50.73, 50.65]}
+{"arm": "m2", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 72.22, "us_min": 72.08, "us": [72.16, 72.35, 72.37, 72.27, 72.08, 72.15]}
+{"arm": "m3", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 67.67, "us_min": 67.62, "us": [67.67, 68.34, 67.67, 67.62, 67.69, 67.62]}
+{"arm": "m4", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 63.35, "us_min": 63.15, "us": [63.42, 63.38, 63.58, 63.19, 63.33, 63.15]}
+{"arm": "m5", "shape": "Q4_K:5120:25600", "B": 32, "variant": 184, "ksplit": 1, "us_median": 61.32, "us_min": 61.24, "us": [61.34, 61.32, 61.33, 61.29, 61.32, 61.24]}
+== 17:10:15 16 tokens, same arms (v9, 2 warps, 2 tiles, 2 token tiles)
+{"arm": "prod", "shape": "Q4_K:5120:25600", "B": 16, "variant": 168, "ksplit": 1, "us_median": 61.34, "us_min": 61.27, "us": [61.38, 61.37, 61.34, 61.31, 61.33, 61.27]}
+{"arm": "c0", "shape": "Q4_K:5120:25600", "B": 16, "variant": 168, "ksplit": 1, "us_median": 61.26, "us_min": 61.22, "us": [61.22, 61.31, 61.26, 61.26, 61.22, 61.31]}
+{"arm": "c100", "shape": "Q4_K:5120:25600", "B": 16, "variant": 168, "ksplit": 1, "us_median": 69.43, "us_min": 69.38, "us": [69.46, 69.42, 69.44, 69.39, 69.38, 69.44]}
+== 17:10:17 A100-DK1C-DONE

@@ -1,0 +1,9 @@
+{"arm": "B", "round": 0, "pos": 0, "seed": 20261133, "width": 8, "wave_start": 655671.57975897, "tok_s": 181.2, "wall_s": 1.4128, "ttft_p50_ms": 739.6, "ttft_max_ms": 741.5, "tokens": 256}
+{"arm": "C", "round": 0, "pos": 1, "seed": 20261234, "width": 8, "wave_start": 655673.293860166, "tok_s": 181.63, "wall_s": 1.4094, "ttft_p50_ms": 735.9, "ttft_max_ms": 737.3, "tokens": 256}
+{"arm": "C", "round": 1, "pos": 0, "seed": 20262142, "width": 8, "wave_start": 655675.004447605, "tok_s": 181.7, "wall_s": 1.4089, "ttft_p50_ms": 739.1, "ttft_max_ms": 740.8, "tokens": 256}
+{"arm": "B", "round": 1, "pos": 1, "seed": 20262243, "width": 8, "wave_start": 655676.714411729, "tok_s": 181.16, "wall_s": 1.4131, "ttft_p50_ms": 740.9, "ttft_max_ms": 742.8, "tokens": 256}
+{"arm": "B", "round": 2, "pos": 0, "seed": 20263151, "width": 8, "wave_start": 655678.42863307, "tok_s": 181.44, "wall_s": 1.4109, "ttft_p50_ms": 739.8, "ttft_max_ms": 740.8, "tokens": 256}
+{"arm": "C", "round": 2, "pos": 1, "seed": 20263252, "width": 8, "wave_start": 655680.140662565, "tok_s": 181.55, "wall_s": 1.41, "ttft_p50_ms": 733.3, "ttft_max_ms": 734.6, "tokens": 256}
+{"arm": "C", "round": 3, "pos": 0, "seed": 20264160, "width": 8, "wave_start": 655681.851709579, "tok_s": 181.19, "wall_s": 1.4129, "ttft_p50_ms": 733.6, "ttft_max_ms": 734.6, "tokens": 256, "quality": "18/18"}
+{"arm": "B", "round": 3, "pos": 1, "seed": 20264261, "width": 8, "wave_start": 655684.737288956, "tok_s": 179.28, "wall_s": 1.4279, "ttft_p50_ms": 743.2, "ttft_max_ms": 744.9, "tokens": 256, "quality": "18/18"}
+{"summary": {"B": {"waves": 4, "tok_s_median": 181.18, "wall_s_median": 1.41295, "ttft_p50_median_ms": 740.3499999999999, "quality": ["18/18"]}, "C": {"waves": 4, "tok_s_median": 181.59, "wall_s_median": 1.4097, "ttft_p50_median_ms": 734.75, "quality": ["18/18"], "paired_wall_ms_vs_B": {"median": -3.8, "faster_rounds": 4, "rounds": 4}}}}

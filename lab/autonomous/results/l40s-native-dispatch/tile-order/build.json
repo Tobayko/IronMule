@@ -1,0 +1,8 @@
+{
+  "candidate_cuda": "d9a959db01e45cd0df1d77eec4290c6a3d91c868f0d265ee22720ae5f9d43977",
+  "edited_header_sha256": "9af348fba58f50e04fc5084d59ebe7696f99ab3871483a81c8c0b2cedc606e8e",
+  "header_sha256": "537c64a520bc24ed4f874945dedac8a8f4a87dbd8adc3f4ee37ed81c9813e8fc",
+  "observed_source": "ec5462da898fd37bae76f0d06b69637446ffa359f8a9092cfde6847345a431ab",
+  "reference_cuda": "3a779d84da5d5b0afdee571350e7db59a3bf121a18fded8840b4a6f9b75cb0ab",
+  "request": "44c8b52c8c82d829343d856b0582b9086f38cd3fc6de892a08e8efb00541453d"
+}
