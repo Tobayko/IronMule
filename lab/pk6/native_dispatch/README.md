@@ -143,3 +143,29 @@ python -m lab.pk6.native_dispatch.workload_grid "$results/http/primary" \
 LLAMA_CPP_LIB_PATH=/work/grid-calibration/bin python -m lab.pk6.native_dispatch.grid_screen \
   "$model" /work/grid-calibration /work/workload-measurements --workload-order /tmp/workload-grid-order.json
 ```
+
+#### Memory-bounded W4 decoding
+
+The ordinary generated-kernel startup ran out of GPU memory during calibration. IronMule
+sized a four-geometry table from the stock serving footprint, retaining 128 measured
+dispatch entries. With eight equal-length requests, the two CUDA worker pairs measured
+143.8 vs 136.7 and 143.1 vs 135.2 output tokens/s. Each generated the same token IDs
+as its paired reference and answered all 18 factual cases correctly. Single-client
+throughput changed by less than 0.4% on both seeds. The candidate packed 2.44 GiB.
+
+The S profile takes the selected table through the ordinary full-model quality gate and
+HTTP workload. Its counter forwards to the same generated library and counts successful
+native calls. CUDA graphs can replay previously captured calls. A successful serving
+claim needs a dispatch witness during measured requests and the factual wave.
+
+```bash
+python -m lab.pk6.native_dispatch.w4_profile "$results/bounded-w4/followup" /tmp/w4-order.json
+python -m lab.pk6.native_dispatch.w4_profile "$results/bounded-w4/followup" /work/bounded-profile \
+  --library "$generated_kernel"
+bash lab/pk6/native_dispatch/serve.sh /work/http/bounded --arms S1 S2 \
+  --reference-archive "$results" --lib /work/bounded-profile/w4-count.so \
+  --routing-receipt /work/bounded-profile/build.json
+```
+
+The build checks the original full calibration table beside `$generated_kernel`, the
+selected rows, the generating library, the Qwen3-32B model digest and the physical board.

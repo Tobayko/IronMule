@@ -1,0 +1,147 @@
+"""Select a memory-bounded W4 table for full product evaluation from four measured workers."""
+
+import argparse
+import json
+from pathlib import Path
+import shutil
+import subprocess
+from statistics import median
+
+from lab.pk6.mixed_progress.trial import board
+from lab.pk6.replay_http import checksum
+from lab.pk6.warm_repeat import GGUF, save
+
+
+def select(screen):
+    def read(name):
+        return json.loads((screen / name).read_bytes())
+
+    selection = read("selection.json")
+    table = screen / "selected.table"
+    rows = [line.split() for line in table.read_text().splitlines()]
+    shapes = {tuple(map(int, row[:3])) for row in rows}
+    if (
+        selection["gguf_sha256"] != GGUF
+        or len(rows) != selection["table_rows"]
+        or shapes != {tuple(v) for v in selection["allowed_shapes"]}
+        or any(len(row) != 6 for row in rows)
+    ):
+        raise ValueError("foreign measured W4 table")
+    attempts = read("outcome.json")["attempts"]
+    if attempts != {k: 0 for k in ("M1", "M2", "R1", "R2")}:
+        raise ValueError("incomplete paired W4 workers")
+    ratios = []
+    sources = {}
+    for index in ("1", "2"):
+        data = []
+        for prefix in ("R", "M"):
+            name = f"worker-{prefix}{index}.json"
+            sources[name] = checksum(screen / name)
+            data.append(read(name))
+        ref, candidate = data
+        if (
+            ref["seed"] != candidate["seed"]
+            or len(ref["quality"]) != 18
+            or ref["quality"] != candidate["quality"]
+            or not all(ref["quality"].values())
+            or candidate["native_repacked_bytes"] <= 0
+        ):
+            raise ValueError("W4 worker quality, repack or seed mismatch")
+        speeds = {}
+        for width in (1, 8):
+            medians = []
+            hashes = []
+            for worker in data:
+                rows = [w for w in worker["waves"] if w["width"] == width]
+                if [w["repeat"] for w in rows] != [0, 1, 2] or any(
+                    w["tokens"] != [32] * width
+                    or w["reasons"] != ["length"] * width
+                    or w["seconds"] <= 0
+                    for w in rows
+                ):
+                    raise ValueError("changed worker load")
+                hashes.append([w["output_ids_sha256"] for w in rows])
+                medians.append(median(32 * width / w["seconds"] for w in rows))
+            if hashes[0] != hashes[1]:
+                raise ValueError("different worker outputs")
+            speeds[str(width)] = medians[1] / medians[0]
+        ratios.append(speeds)
+    return {
+        "selected": all(r["8"] > 1 and r["1"] >= 0.98 for r in ratios),
+        "worker_ratios": ratios,
+        "sources": sources,
+        "hardware": selection["hardware"],
+        "gguf": GGUF,
+        "library_sha256": selection["library_sha256"],
+        "calibration_table": selection["table_sha256"],
+        "table_sha256": checksum(table),
+        "scope": "Prioritize only. Product quality, timed dispatch, fixed HTTP work and both restarts still require measurement.",
+    }
+
+
+def build(screen, library, out):
+    plan = select(screen)
+    if (
+        not plan["selected"]
+        or board() != plan["hardware"]
+        or checksum(library) != plan["library_sha256"]
+    ):
+        raise ValueError("ineligible W4 library or device")
+    original_table = library.with_name("dispatch.table")
+    if checksum(original_table) != plan["calibration_table"]:
+        raise ValueError("foreign original calibration")
+    included = {
+        tuple(v)
+        for v in json.loads((screen / "selection.json").read_bytes())["allowed_shapes"]
+    }
+    subset = [
+        line
+        for line in original_table.read_text().splitlines()
+        if tuple(map(int, line.split()[:3])) in included
+    ]
+    if (screen / "selected.table").read_text() != "\n".join(subset) + "\n":
+        raise ValueError("selected table differs from the measured calibration")
+    out.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(library, out / "w4-original.so")
+    shutil.copyfile(screen / "selected.table", out / "selected.table")
+    counter = Path(__file__).with_name("w4_count.cpp")
+    wrapper = out / "w4-count.so"
+    subprocess.run(
+        [
+            "c++",
+            "-std=c++17",
+            "-O2",
+            "-fPIC",
+            "-shared",
+            str(counter),
+            "-L",
+            str(out),
+            "-Wl,--no-as-needed",
+            "-l:w4-original.so",
+            "-Wl,-rpath,$ORIGIN",
+            "-ldl",
+            "-o",
+            str(wrapper),
+        ],
+        check=True,
+    )
+    save(
+        out / "build.json",
+        {
+            **plan,
+            "counter_source": checksum(counter),
+            "counter_library": checksum(wrapper),
+        },
+    )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("screen", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--library", type=Path)
+    args = parser.parse_args()
+    if args.library:
+        build(args.screen, args.library, args.output)
+    else:
+        save(args.output, select(args.screen))

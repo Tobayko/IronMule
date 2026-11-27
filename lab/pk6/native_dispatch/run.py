@@ -123,6 +123,21 @@ def main(*, comparator="awq_marlin"):
             != checksum(Path(os.environ["LLAMA_CPP_LIB_PATH"]) / "libggml-cuda.so")
         ):
             raise ValueError("foreign packed kernel or KV capacity")
+    bounded_w4 = None
+    if any(a.startswith("S") for a in args.arms):
+        if not args.routing_receipt or not args.lib:
+            raise ValueError("missing bounded W4 build")
+        bounded_w4 = json.loads(args.routing_receipt.read_bytes())
+        folder = args.lib.resolve().parent
+        if (
+            not bounded_w4["selected"]
+            or bounded_w4["hardware"] != hw
+            or bounded_w4["gguf"] != GGUF
+            or checksum(args.lib) != bounded_w4["counter_library"]
+            or checksum(folder / "w4-original.so") != bounded_w4["library_sha256"]
+            or checksum(folder / "selected.table") != bounded_w4["table_sha256"]
+        ):
+            raise ValueError("unverified bounded W4 program or table")
     chunk_plan = None
     if any(a.startswith("Q") for a in args.arms):
         if args.policy is None:
@@ -184,6 +199,7 @@ def main(*, comparator="awq_marlin"):
             "pool_plan": pool,
             "packed_program": packed_receipt,
             "shared_chunk_plan": chunk_plan,
+            **({"bounded_w4": bounded_w4} if bounded_w4 else {}),
         },
     )
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
@@ -270,10 +286,18 @@ def main(*, comparator="awq_marlin"):
                 IRONMULE_KG_LIB=str(args.lib.resolve()),
                 IRONMULE_LAB_FP8=str(args.threshold),
             )
+        elif arm.startswith("S"):
+            os.environ.update(
+                IRONMULE_LAB_KERNEL_TRACE="1",
+                IRONMULE_KG_LIB=str(args.lib.resolve()),
+                IRONMULE_W4_TABLE=str(args.lib.resolve().with_name("selected.table")),
+            )
         elif arm != "vllm" and not arm.startswith(
             ("Q", "R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O")
         ):
             raise ValueError("unregistered arm")
+        if not arm.startswith("S") and bounded_w4:
+            os.environ.pop("IRONMULE_W4_TABLE", None)
         if arm.startswith(("K", "O")):
             trial.measure(args, arm, hw, 0, deadline, draft=draft)
         else:

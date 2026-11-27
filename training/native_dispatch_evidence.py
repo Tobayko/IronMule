@@ -47,6 +47,46 @@ def experiences(root, source, digest):
                     authorship="Codex wrote the Ada candidates. IronMule ranked the native Q4_K tile order.",
                     uncertainty="System comparison on one board with distinct official quantizations. Diagnostic and rejected paths supply no production labels.",
                 )
+    elif path.name == "worker-plan.json":
+        from lab.pk6.native_dispatch.w4_profile import select
+
+        screen = folder / "followup"
+        if result != select(screen):
+            raise ValueError(
+                "bounded W4 proposal differs from its four measured workers"
+            )
+        for name, sha in result["sources"].items():
+            worker = json.loads((screen / name).read_bytes())
+            for width in (1, 8):
+                samples = [wave for wave in worker["waves"] if wave["width"] == width]
+                yield record(
+                    "native_bounded_w4_worker",
+                    source,
+                    digest,
+                    f"{name}/{width}",
+                    "l40s-bounded-w4-fixed-work",
+                    hardware=result["hardware"],
+                    model=result["gguf"],
+                    quantization="Q4_K_M",
+                    software={
+                        "library": result["library_sha256"]
+                        if name.startswith("worker-M")
+                        else "stock",
+                        "source_receipt": sha,
+                    },
+                    workload={
+                        "width": width,
+                        "seed": worker["seed"],
+                        "output_limit": 32,
+                    },
+                    metrics=samples,
+                    quality=worker["quality"],
+                    startup_s=worker["startup_s"],
+                    repacked_bytes=worker["native_repacked_bytes"],
+                    authorship="IronMule selected complete tensor geometries from the measured memory budget. Codex integrated the product experiment.",
+                    reason="measured fixed-output native worker",
+                    uncertainty="Repeated equal-length prompts on one L40S. Server queues, streaming, controller overhead and the product quality gate require a separate run.",
+                )
     elif path.name.startswith("qualification-"):
         target = json.loads((folder / "target.json").read_bytes())
         arm = path.stem.removeprefix("qualification-")

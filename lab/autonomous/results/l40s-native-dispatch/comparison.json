@@ -571,6 +571,103 @@
       "start": 1795735771.183713,
       "startup_s": 486.3471065768972
     },
+    "H2": {
+      "end": 1795740123.2579598,
+      "excluded_from_promotion": null,
+      "gate": {
+        "interval": [
+          1.0,
+          1.0
+        ],
+        "passes": true,
+        "ratio": 1.0
+      },
+      "metrics": {
+        "1": {
+          "eighth": 0.28416896203998476,
+          "end_p95": 0.8138719180133194,
+          "first": 0.06344954494852573,
+          "first_p95": 0.06344954494852573,
+          "gap_p95": 0.05957664200104773,
+          "tok_s": 39.28400520447176,
+          "visible": 0.06344982492737472
+        },
+        "32": {
+          "eighth": 2.5008381284424104,
+          "end_p95": 6.403527919901535,
+          "first": 0.5669732759706676,
+          "first_p95": 4.650465137092397,
+          "gap_p95": 0.3086222449783236,
+          "tok_s": 157.45989469645184,
+          "visible": 0.5669736219570041
+        },
+        "8": {
+          "eighth": 1.247695038036909,
+          "end_p95": 2.272751127020456,
+          "first": 0.2664207879570313,
+          "first_p95": 1.1617119068978354,
+          "gap_p95": 0.2656089449301362,
+          "tok_s": 112.39076060007021,
+          "visible": 0.26642149448161945
+        }
+      },
+      "proof": {
+        "cpu_policy": null,
+        "draft_verified_by_width": {},
+        "fallback": null,
+        "matched_native_requests": 155,
+        "native_raw_sha256": "e07b4effdbd25c6a28d90a64ddb458e60150b570cc6b40d3d3d56e71fb474115",
+        "observed_pool_capacities": [
+          [
+            16384,
+            16384,
+            32
+          ]
+        ],
+        "profile_flags": {
+          "IRONMULE_GGML_DH2": "0",
+          "IRONMULE_PK6": "0",
+          "IRONMULE_PS1": "0",
+          "IRONMULE_PS1_CONCAT": "0",
+          "IRONMULE_PS1_WARM": "0",
+          "IRONMULE_SV5": "0"
+        },
+        "prompt_plugin_dispatches_in_http_by_width": {
+          "1": 0,
+          "32": 0,
+          "8": 0
+        },
+        "prompt_plugin_dispatches_in_http_quality": 0,
+        "raised_budget_in_http": 0,
+        "selected_profile": "conservative",
+        "shared_pool": true,
+        "streams_pass": false,
+        "verified_compact_pool": true
+      },
+      "quality": {
+        "943819": 32
+      },
+      "resources": {
+        "estimated_board_joules_per_output_token": {
+          "1": 6.237640023181529,
+          "32": 2.133897856069159,
+          "8": 3.0038679461327717
+        },
+        "estimated_board_joules_per_output_token_by_seed": {
+          "943819": {
+            "1": 6.237640023181529,
+            "32": 2.133897856069159,
+            "8": 3.0038679461327717
+          }
+        },
+        "mean_sampled_watts": 331.2083333333333,
+        "peak_gpu_mib": 23834.0,
+        "process_peak_gpu_mib": 23834.0,
+        "samples": 30
+      },
+      "start": 1795740029.527321,
+      "startup_s": 62.037361238966696
+    },
     "I1": {
       "end": 1795737509.3408062,
       "excluded_from_promotion": "product rejected the proposed numeric profile",
@@ -2036,6 +2133,114 @@
         false
       ]
     },
+    "H2/R2/1": {
+      "candidate_over_reference": {
+        "eighth": 0.993045621577965,
+        "end_p95": 0.993988516957206,
+        "first": 0.9883660863512261,
+        "first_p95": 0.9883660863512261,
+        "gap_p95": 1.0087409860078074,
+        "tok_s": 1.0066430920109222,
+        "visible": 0.9883652536088233
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        true,
+        false,
+        true
+      ]
+    },
+    "H2/R2/32": {
+      "candidate_over_reference": {
+        "eighth": 0.99377880839961,
+        "end_p95": 0.992255528984684,
+        "first": 0.9999798492674247,
+        "first_p95": 0.990237016044303,
+        "gap_p95": 1.0004743319054157,
+        "tok_s": 1.0146052052054846,
+        "visible": 0.9999793512924761
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "H2/R2/8": {
+      "candidate_over_reference": {
+        "eighth": 1.0136638584661788,
+        "end_p95": 1.0321832607915857,
+        "first": 0.9848154388965639,
+        "first_p95": 0.9779089187937771,
+        "gap_p95": 0.9763857183005699,
+        "tok_s": 0.969280569607105,
+        "visible": 0.9848146591518119
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "H2/vllm/1": {
+      "candidate_over_reference": {
+        "eighth": 0.9534499683383124,
+        "end_p95": 0.8187351935801722,
+        "first": 1.3979609081004505,
+        "first_p95": 1.3979609081004505,
+        "gap_p95": 2.0760060382729497,
+        "tok_s": 1.221230599406361,
+        "visible": 1.3979536177686278
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "H2/vllm/32": {
+      "candidate_over_reference": {
+        "eighth": 0.8173760843548558,
+        "end_p95": 1.66614390190323,
+        "first": 0.29584041488191015,
+        "first_p95": 1.601184215037704,
+        "gap_p95": 0.3892446770257545,
+        "tok_s": 0.5940061030350409,
+        "visible": 0.29584050726795547
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
+    "H2/vllm/8": {
+      "candidate_over_reference": {
+        "eighth": 1.3797945274111512,
+        "end_p95": 1.461403322154651,
+        "first": 0.3726518150969651,
+        "first_p95": 1.6222673120859543,
+        "gap_p95": 0.46510639684176625,
+        "tok_s": 0.6846243239345909,
+        "visible": 0.372652631064865
+      },
+      "clear_win": false,
+      "same_fixed_work": true,
+      "text_digests_match": [
+        false,
+        false,
+        false
+      ]
+    },
     "I1/R1/1": {
       "candidate_over_reference": {
         "eighth": 0.9693636001830815,
@@ -2794,6 +2999,11 @@
     }
   },
   "two_seed_evaluation": {
+    "H": {
+      "both_seeds_32_facts": true,
+      "clear_on_every_timing_metric": false,
+      "excluded": false
+    },
     "P": {
       "both_seeds_32_facts": true,
       "clear_on_every_timing_metric": false,

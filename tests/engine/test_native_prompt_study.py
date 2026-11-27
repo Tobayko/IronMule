@@ -257,3 +257,84 @@ def test_native_only_rerun_needs_no_external_weights_or_runtime(tmp_path, monkey
     assert target["external_reference_waves_sha256"] == external["waves_sha256"]
     assert target["awq_manifest_sha256"] == external["quantized_model"]
     assert "vllm_installation" not in target
+
+
+def test_bounded_w4_order_uses_two_complete_fixed_work_pairs():
+    from lab.pk6.native_dispatch.reference import ARCHIVE
+    from lab.pk6.native_dispatch.w4_profile import select
+
+    plan = select(ARCHIVE / "bounded-w4/followup")
+    assert plan == json.loads((ARCHIVE / "bounded-w4/worker-plan.json").read_bytes())
+    assert plan["selected"] and len(plan["sources"]) == 4
+    assert all(row["8"] > 1.05 for row in plan["worker_ratios"])
+
+
+def test_w4_counter_forwards_both_native_calls(tmp_path):
+    import ctypes
+    import shutil
+    import subprocess
+    import sys
+
+    if sys.platform != "linux" or shutil.which("c++") is None:
+        pytest.skip("requires the Linux C++ loader")
+    source = tmp_path / "original.cpp"
+    source.write_text("""
+#include <cstdint>
+extern "C" int other_entry() { return 7; }
+extern "C" int ironmule_kg_mul_mat(int t, const void*, const float*, float*, int64_t, int64_t, int64_t, void*) { return t; }
+extern "C" int ironmule_kg_mul_mat_group(int n, const int*, const void*const*, const float*, float*const*, const int64_t*, int64_t, int64_t, void*) { return n-2; }
+""")
+    counter = (
+        Path(__file__).resolve().parents[2] / "lab/pk6/native_dispatch/w4_count.cpp"
+    )
+    original, wrapper = tmp_path / "w4-original.so", tmp_path / "w4-count.so"
+    subprocess.run(["c++", "-fPIC", "-shared", source, "-o", original], check=True)
+    subprocess.run(
+        [
+            "c++",
+            "-fPIC",
+            "-shared",
+            counter,
+            "-L",
+            tmp_path,
+            "-Wl,--no-as-needed",
+            "-l:w4-original.so",
+            "-Wl,-rpath,$ORIGIN",
+            "-ldl",
+            "-o",
+            wrapper,
+        ],
+        check=True,
+    )
+    lib = ctypes.CDLL(str(wrapper))
+    ptr, count = ctypes.c_void_p, ctypes.c_int64
+    lib.ironmule_kg_mul_mat.argtypes = [
+        ctypes.c_int,
+        ptr,
+        ptr,
+        ptr,
+        count,
+        count,
+        count,
+        ptr,
+    ]
+    lib.ironmule_kg_mul_mat_group.argtypes = [
+        ctypes.c_int,
+        ptr,
+        ptr,
+        ptr,
+        ptr,
+        ptr,
+        count,
+        count,
+        ptr,
+    ]
+    lib.im_prompt_dispatches.restype = ctypes.c_uint64
+    assert lib.other_entry() == 7 and lib.im_prompt_dispatches() == 0
+    assert lib.ironmule_kg_mul_mat(3, None, None, None, 1, 1, 1, None) == 3
+    assert lib.im_prompt_dispatches() == 0
+    assert lib.ironmule_kg_mul_mat(0, None, None, None, 1, 1, 1, None) == 0
+    assert (
+        lib.ironmule_kg_mul_mat_group(2, None, None, None, None, None, 1, 1, None) == 0
+    )
+    assert lib.im_prompt_dispatches() == 2

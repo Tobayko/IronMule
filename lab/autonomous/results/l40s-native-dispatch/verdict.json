@@ -1,6 +1,24 @@
 {
   "deployment": "GGUF Q4_K_M in IronMule and official AWQ-Marlin in vLLM. Timings cover three waves at each width on two seeds. Energy uses one-second board samples.",
   "families": {
+    "H": {
+      "first_stock_start_ratio": null,
+      "highest_serving_vram_ratio": 0.6016407926290547,
+      "profile_eligible": true,
+      "same_factual_accuracy": true,
+      "same_fixed_answers": true,
+      "second_start_over_late_comparator": null,
+      "ten_percent_on_every_width_and_seed": {
+        "eighth": false,
+        "end_p95": false,
+        "first": false,
+        "first_p95": false,
+        "gap_p95": false,
+        "tok_s": false,
+        "visible": false
+      },
+      "worst_sampled_energy_ratio": 1.6955330983154742
+    },
     "P": {
       "first_stock_start_ratio": null,
       "highest_serving_vram_ratio": 0.7284614413732172,
