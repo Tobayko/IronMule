@@ -7,6 +7,38 @@
     "target.json": "c593bc23835a8c2f760099ffc9490832de04f2fc5ecbb850a6a0c11da647e3c6",
     "waves-vllm.jsonl": "105d9197fe09e491a5a0eb94fbda5034cc4cda4eb73d961623ef2b08a2861610"
   },
+  "installation": {
+    "packages": {
+      "tokenizers": [
+        "0.23.3",
+        "28e08142404509ba4d976ede5a935faf5b02a3c009b0ae0f0893a6135a853858"
+      ],
+      "torch": [
+        "2.14.0",
+        "106d06aae3033aa6c1631703029c4809fc3164e95754c2839b35f9f260d69641"
+      ],
+      "transformers": [
+        "5.22.2",
+        "06f7c9c962c090b8072e397e69d436207d0658d95f32c8cb4de7190174c1f2f5"
+      ],
+      "triton": [
+        "3.8.0",
+        "efa198c51ae6e28ff6774d55f16009693739846fb60c0dc634a2c86bbecbf5fe"
+      ],
+      "vllm": [
+        "0.34.0",
+        "734e1e8b1bf6b70c9127e6602a3c0d9dcb057ef50d771021b32087f350c2a316"
+      ]
+    },
+    "tokenizer": {
+      "config.json": "97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb",
+      "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+      "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+      "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    }
+  },
+  "installation_provenance": "Read on the original reserved pod after measurement. Package RECORD hashes and actual tokenizer files. The optional GGUF dependencies occupied a separate directory.",
   "protocol": {
     "client_sha256": "7605a80cbf0072a0f9ef567cb2a5d9fd7cd6fa9d22a0d9f183380f390d800868",
     "command": [

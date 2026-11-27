@@ -134,6 +134,13 @@ def main(*, comparator="awq_marlin"):
     ).strip()
     if version != "0.34.0":
         raise ValueError("unexpected comparator")
+    comparator_install = None
+    if "vllm" in args.arms:
+        from lab.pk6.native_dispatch.reference import installation
+
+        comparator_install = installation(
+            args.vllm / "bin/python", args.models / "tokenizers/qwen3-32b"
+        )
     save(
         args.out / "target.json",
         {
@@ -143,6 +150,7 @@ def main(*, comparator="awq_marlin"):
             "seeds": trial.SEEDS,
             "order": args.arms,
             "vllm_version": version,
+            **({"vllm_installation": comparator_install} if comparator_install else {}),
             "source": subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], text=True
             ).strip(),

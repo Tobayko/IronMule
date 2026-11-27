@@ -124,6 +124,9 @@ def test_vllm_reuse_retains_scope_and_raw_reference(tmp_path):
 
     root = reference.ARCHIVE
     target = score.read(root / "http/primary/target.json")
+    target["vllm_installation"] = score.read(root / "vllm-reference.json")[
+        "installation"
+    ]
     measured = reference.lookup(root, target)
     assert measured["scope"] == "same_device" and len(measured["factual_correct"]) == 2
     assert measured["metrics"]["32"]["tok_s"]["median"] == pytest.approx(
@@ -136,6 +139,10 @@ def test_vllm_reuse_retains_scope_and_raw_reference(tmp_path):
         "hardware": {**target["hardware"], "device_sha256": "another device"},
     }
     assert reference.lookup(root, foreign)["scope"] == "historical_target"
+    assert (
+        reference.lookup(root, {**target, "vllm_installation": {}})["scope"]
+        == "historical_target"
+    )
     (tmp_path / "target.json").write_text(json.dumps(target))
     receipt = tmp_path / "reused-vllm.json"
     receipt.write_text(json.dumps(measured))
@@ -155,6 +162,13 @@ def test_runner_reuses_vllm_without_launching_the_comparator(tmp_path, monkeypat
     monkeypatch.setattr(sys, "argv", ["run", "--arms", "vllm", "--out", str(output)])
     monkeypatch.setenv("RP_DEADLINE", str(int(time.time()) + 120))
     monkeypatch.setattr(run.trial, "board", lambda: archived["hardware"])
+    monkeypatch.setattr(
+        reference,
+        "installation",
+        lambda *args: score.read(reference.ARCHIVE / "vllm-reference.json")[
+            "installation"
+        ],
+    )
     monkeypatch.setattr(run, "checksum", lambda _: archived["gguf_sha256"])
     monkeypatch.setattr(
         run, "verify", lambda _: {"manifest_sha256": archived["awq_manifest_sha256"]}

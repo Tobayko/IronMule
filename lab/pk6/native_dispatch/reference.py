@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 from pathlib import Path
+import subprocess
 from statistics import median
 
 from ironmule_product import compare
@@ -15,6 +16,32 @@ ARCHIVE = (
     Path(__file__).resolve().parents[2] / "autonomous/results/l40s-native-dispatch"
 )
 FILES = ("start-vllm.json", "ready-vllm.json", "end-vllm.json", "waves-vllm.jsonl")
+
+
+def installation(python, tokenizer):
+    """Read package receipts on CPU. No serving process or CUDA context is started."""
+    code = """import hashlib, importlib.metadata as md, json
+rows={}
+for name in ('vllm','torch','triton','transformers','tokenizers'):
+    dist=md.distribution(name)
+    record=dist.read_text('RECORD')
+    rows[name]=[dist.version, hashlib.sha256(record.encode()).hexdigest() if record else None]
+print(json.dumps(rows))
+"""
+    packages = json.loads(subprocess.check_output([str(python), "-c", code], text=True))
+    return {
+        "packages": packages,
+        "tokenizer": {
+            name: checksum(tokenizer / name)
+            for name in (
+                "config.json",
+                "merges.txt",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "vocab.json",
+            )
+        },
+    }
 
 
 def protocol():
@@ -78,12 +105,18 @@ def lookup(root, target=None, *, artifact="awq_marlin"):
             for k in runs[0]
             if k in measured["metrics"][str(w)]
         }
-    same = target is not None and target["hardware"] == meta["hardware"]
+    same = (
+        target is not None
+        and target["hardware"] == meta["hardware"]
+        and target.get("vllm_installation") == cert["installation"]
+        and all(v[1] for v in cert["installation"]["packages"].values())
+    )
     return {
         "scope": "same_device" if same else "historical_target",
         "artifact": artifact,
         "hardware": meta["hardware"],
         "version": meta["vllm_version"],
+        "installation": cert["installation"],
         "quantized_model": meta["awq_manifest_sha256"],
         "seeds": meta["seeds"],
         "metrics": spreads,
