@@ -1,6 +1,6 @@
 {
   "first_unix": 1795738787.9991045,
-  "last_unix": 1795747145.9207964,
+  "last_unix": 1795748106.6293347,
   "processes": {
     "controls/capacity/capacity-confirm/H1/end-H1.json": {
       "median_load1_in_requests": 34.33,
@@ -140,6 +140,12 @@
       "request_samples": 7,
       "request_samples_with_native_compiler": 0
     },
+    "http/native-final/C2/end-C2.json": {
+      "median_load1_in_requests": 17.605,
+      "process_samples": 20,
+      "request_samples": 8,
+      "request_samples_with_native_compiler": 0
+    },
     "http/native-final/J1/end-J1.json": {
       "median_load1_in_requests": 37.42,
       "process_samples": 102,
@@ -158,9 +164,33 @@
       "request_samples": 6,
       "request_samples_with_native_compiler": 0
     },
+    "http/native-final/X2/end-X2.json": {
+      "median_load1_in_requests": 13.940000000000001,
+      "process_samples": 18,
+      "request_samples": 6,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/native-final/Y1/end-Y1.json": {
+      "median_load1_in_requests": 23.200000000000003,
+      "process_samples": 89,
+      "request_samples": 6,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/native-final/Y2/end-Y2.json": {
+      "median_load1_in_requests": 39.894999999999996,
+      "process_samples": 19,
+      "request_samples": 6,
+      "request_samples_with_native_compiler": 0
+    },
     "http/packed-http-archive-replay/W1/end-W1.json": {
       "median_load1_in_requests": 10.68,
       "process_samples": 89,
+      "request_samples": 6,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/packed-http-confirm/W2/end-W2.json": {
+      "median_load1_in_requests": 14.735,
+      "process_samples": 19,
       "request_samples": 6,
       "request_samples_with_native_compiler": 0
     },

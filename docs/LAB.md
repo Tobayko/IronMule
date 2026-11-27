@@ -4926,3 +4926,22 @@ compact pool alone, its paired 32-client throughput ratio was 1.000 to three dec
 The full-width cached INT8 trial's best upper perplexity ratio across eight settings was
 1.20356. The product recovered to stock and counted zero INT8 dispatches during requests.
 [Process measurements, native markers and matched controls](../lab/autonomous/results/l40s-native-dispatch/comparison.json)
+
+On the second mixed-workload seed the MMQ grid counted 96 dispatches during factual
+requests and zero during timed requests. The packed Marlin worker counted 846 and
+1,692 during the eight- and 32-client waves and zero during the factual wave. Its
+matched throughput ratio against the compact pool alone was 1.003 at 32 clients.
+The cached FP16 program passed its native numerical gate, but neither start recorded
+a dispatch during counted HTTP requests. The higher-load drafter really verified tokens
+with more than two active requests on both seeds. At eight clients it delivered
+84.75 and 87.76 tokens/s. The two-slot model-first control delivered 112.84 and
+101.19. Each start answered all 32 facts correctly. No mixed-workload candidate met
+the seven streaming requirements at all three widths. The kernel planner exhausted
+its screened arithmetic programs and a repeat on CPU selected no further GPU experiment.
+[Source-bound results](../lab/autonomous/results/l40s-native-dispatch/comparison.json) · [Final kernel ranking](../lab/autonomous/results/l40s-native-dispatch/post-serving-ranking.json)
+
+The additional L40S campaign ran for 4.77 hours. The provider confirmed deletion of
+the only leased pod. The journal booked **5.50 USD** of the additional 10.00 USD,
+including a ten-minute cleanup allowance. The prior stage had booked 19.71 USD, giving
+**25.21 USD** total across both stages. The public cost journal distinguishes posted pod
+charges from the conservative booking. [This lease](../lab/autonomous/results/l40s-native-dispatch/costs.json) · [Prior stage](../lab/autonomous/results/l40s-mixed-prefill-progress/cost.json)
