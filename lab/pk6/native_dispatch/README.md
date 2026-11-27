@@ -295,3 +295,51 @@ tokens at 32 clients. Replaying the requests gave 47.66 vs 28.34 output tokens/s
 The verifier retained the profile. The second seed argument reserves the unused second arm.
 Run `python -m lab.pk6.native_dispatch.score "$results/controls/unseen-documents/pool-unseen" --seeds 630217 631223`
 for the full result. [Serving receipts](../../autonomous/results/l40s-native-dispatch/controls/unseen-documents/pool-unseen/)
+
+### Attribute the mixed step on L40S
+
+The 32-client workload interleaves 16 short answers with 16 document requests. For the physical KV span experiment, use the same Qwen3-32B Q4_K_M GGUF and a disposable SM89 build of the project's pinned llama.cpp. The diagnostic patch exposes the normal padded span and can only increase it, up to the allocated capacity. It leaves the sequence mask and tokens intact. No serving build installs the patch.
+
+```bash
+archive=lab/autonomous/results/l40s-native-dispatch
+receipts=lab/autonomous/results/l40s-mixed-bottleneck
+python -m lab.pk6.native_dispatch.bottleneck "$archive" "$receipts" /tmp/bottleneck.json
+cmp /tmp/bottleneck.json "$receipts/summary.json"
+```
+
+To repeat the GPU observation, set `IRONMULE_GGML_BINDINGS` and `LLAMA_CPP_LIB_PATH` to the isolated CUDA build. Choose a fresh output directory for each run. A single worker uses four CPU threads, flash attention, 32 sequences and 2,048 tokens per sequence. The replay verifies the original HTTP input digests for every timed wave. The token selector is greedy. The native replay and CUDA profiles have different timing boundaries from HTTP.
+
+```bash
+export PYTHONPATH="$PWD"
+tree="$IRONMULE_GGML_BINDINGS/vendor/llama.cpp"
+patch -d "$tree" -p1 < lab/pk6/native_dispatch/kv_span.diff
+cmake --build "$tree/build" --target llama -j 4
+export IRONMULE_GGML_GPU_LAYERS=999 IRONMULE_GGML_THREADS=4 IRONMULE_PILOT=0
+export IRONMULE_KG=0 IRONMULE_PS1=0 IRONMULE_PS1_CONCAT=0 IRONMULE_PS1_WARM=0 IRONMULE_PK6=0
+export IRONMULE_GGML_DH2=0 IRONMULE_SV5=0 IRONMULE_CUBLAS_MIN_ROWS=0
+export IRONMULE_GGML_PROMPT_BUDGET=128 IRONMULE_GGML_TRACE=/tmp/ironmule-span-trace
+model=/models/Qwen3-32B-Q4_K_M.gguf
+python -m lab.pk6.native_dispatch.kv_span "$model" /tmp/span
+```
+
+The first pass observes the native scheduler on the two original seeds. The second pass rebuilds the same 16 short contexts and one document prefix before each measurement. A step carries 16 ongoing answer rows and the 433 remaining document rows, with 17 requested logits. Four rotations change the physical KV span while holding rows, token IDs and stored history fixed. A fifth rotation records CUDA activity only. The operator attribution uses the earlier synchronized 448-row matrix benchmarks, weighted by matching matrix count. Their warm, isolated times rank projections. Device kernel times come from separate CUDA captures.
+
+The prefix-retention experiment uses the product server, its ordinary quality checks, its live controller and the same rendered requests. It runs stock then limited on the first seed and reverses the order on the second seed. Only the fraction of the shared pool available exclusively to finished requests changes. Use a new server state on a reserved host and retain its existing lease deadline.
+
+```bash
+(
+  unset IRONMULE_PILOT IRONMULE_GGML_PROMPT_BUDGET IRONMULE_GGML_TRACE IRONMULE_CUBLAS_MIN_ROWS
+  unset IRONMULE_PS1 IRONMULE_PS1_CONCAT IRONMULE_PS1_WARM IRONMULE_PK6 IRONMULE_GGML_DH2 IRONMULE_SV5
+  export IRONMULE_KG_LIB='' IRONMULE_GGML_PACK=1 IRONMULE_GGML_UBATCH=8192 IRONMULE_CUDA_GRAPHS_ROWS=32
+  export IRONMULE_COMPARE_LOCAL_KEY=ironmule-local-bench
+  python -m lab.pk6.native_dispatch.retention_trial --models /models --state /tmp/retention-state --out /tmp/retention-http
+)
+```
+
+After all HTTP workers exit, the optional mask instrumentation counts tiles of eight query rows by 256 keys in the real host mask. Its timings are excluded. The counts distinguish tiles after the final visible tile from fully masked tiles below it. The former can be skipped by the native tail bound. The latter require a different strategy. In the vendored CUDA implementation the mask scan is eligible for at least 1,024 query rows or multiple physical streams. The large mixed steps observed here use a single physical stream.
+
+```bash
+python -m lab.pk6.native_dispatch.mask_tiles prepare "$tree"
+cmake --build "$tree/build" --target llama -j 4
+python -m lab.pk6.native_dispatch.mask_tiles observe "$model" /tmp/mask-counts
+```

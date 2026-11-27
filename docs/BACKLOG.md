@@ -122,6 +122,17 @@ correct it.
 
 ## Open: the GGUF engine and the Pilot
 
+### L40S mixed-step attention and quantized projections
+
+At 32 clients, test whether the padded physical span of the shared KV cache adds latency
+to the mixed calls that interleave one document with ongoing answers. Hold tokens, query
+shape and logical history fixed while increasing only the masked KV extent. Profile GPU
+kernels separately from unprofiled timings. Close the span hypothesis if the timing trend
+fails to reproduce on another input seed or the naturally observed spans fall outside the
+measured range. Test the existing finished-prefix retention limit against two fresh stock
+workers before considering it as a serving profile. Separate GPU kernel coverage, full HTTP
+latency and output quality. [Experiment](../lab/pk6/native_dispatch/kv_span.py)
+
 ### QG1 — A correctness check for answer quality
 
 **Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers

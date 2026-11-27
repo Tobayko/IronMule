@@ -1,0 +1,33 @@
+--- a/src/llama-kv-cache-unified.cpp
++++ b/src/llama-kv-cache-unified.cpp
+@@ -1037,6 +1037,19 @@
+     return result;
+ }
+
++// Diagnostic build only. A single worker thread reads these counters after each call.
++static thread_local uint32_t lab_span_floor = 0;
++static thread_local uint32_t lab_span_natural = 0;
++static thread_local uint32_t lab_span_effective = 0;
++
++extern "C" LLAMA_API void ironmule_lab_kv_floor(uint32_t floor) {
++    GGML_ASSERT(floor % 256 == 0);
++    lab_span_floor = floor;
++    lab_span_natural = lab_span_effective = 0;
++}
++extern "C" LLAMA_API uint32_t ironmule_lab_kv_natural() { return lab_span_natural; }
++extern "C" LLAMA_API uint32_t ironmule_lab_kv_effective() { return lab_span_effective; }
++
+ uint32_t llama_kv_cache_unified::get_n_kv() const {
+     uint32_t result = 0;
+
+@@ -1046,7 +1059,9 @@
+         result = std::max(std::min(cells.size(), std::max(n_pad, GGML_PAD(cells.used_max_p1(), n_pad))), result);
+     }
+
+-    return result;
++    lab_span_natural = result;
++    lab_span_effective = std::max(result, std::min(lab_span_floor, get_size()));
++    return lab_span_effective;
+ }
+
+ bool llama_kv_cache_unified::get_supports_set_rows() const {
