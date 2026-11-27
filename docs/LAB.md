@@ -4915,3 +4915,14 @@ completion was 21.43 vs 36.12 s. After 0.926 s of controller costs, verification
 retained compact at 1.668× net on the three matched waves. Counting launch through the
 last factual answer, the elapsed ratio was 1.361×. This seed tests new inputs from the
 same 900-word document generator on the same physical L40S. [Fresh requests and scored pairs](../lab/autonomous/results/l40s-native-dispatch/unseen-documents.json) · [Actual decision and retention](../lab/autonomous/results/l40s-native-dispatch/controls/unseen-documents/pool-unseen/pilot/)
+
+The workload-selected MMQ grid passed the native numerical check (upper perplexity ratio
+1.00124) and actually dispatched in the first 32-client block and factual wave. The
+matched throughput ratio at 32 was 1.011, with a p95 streaming pause ratio of 1.005.
+The packed Marlin variant paired its four screened weight geometries with the compact
+pool. Its first worker served all facts and counted 846, 1,692 and 282 dispatches during
+the eight-client, 32-client and factual waves respectively. Compared with the same
+compact pool alone, its paired 32-client throughput ratio was 1.000 to three decimals.
+The full-width cached INT8 trial's best upper perplexity ratio across eight settings was
+1.20356. The product recovered to stock and counted zero INT8 dispatches during requests.
+[Process measurements, native markers and matched controls](../lab/autonomous/results/l40s-native-dispatch/comparison.json)

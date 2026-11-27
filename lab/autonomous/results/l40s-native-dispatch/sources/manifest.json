@@ -268,6 +268,18 @@
       "lab/pk6/native_dispatch/prepare.py": "43754a9332b20d0610999fae3e03f8487e533a692c05e930895133603abd6d2c",
       "lab/pk6/native_dispatch/run.py": "f19b5145d0558b772c2d33087168a4555cd6dee8a05f706bba17333a7ebc14f8"
     },
+    "packed-http-replay": {
+      "ironmule/ggml_engine.py": "1b75d4b0169ff443fba532edca2f0995b8da646d15f7ccba7cf1de7d5748bede",
+      "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
+      "ironmule_product/cli.py": "cc4e8df49dfff0ff8f3d3ae45cb2b658e6754b2dc6f7ec3744edf0d31a739955",
+      "lab/pk6/mixed_progress/schedule.py": "455bea90e8ade951d20eb59cc51f6bca0f5604c065137b03964b833d4255da5d",
+      "lab/pk6/mixed_progress/trial.py": "8df4865f11e0843e5c32714504ed040d99ce33ca143d6ffb5f9eb5f0a9c32f90",
+      "lab/pk6/native_dispatch/capture.py": "ec81bdf2c53c3ddd9387e4eed143f1ad6ae90a6ed8557181a9291cd8ae152065",
+      "lab/pk6/native_dispatch/prepare.py": "43754a9332b20d0610999fae3e03f8487e533a692c05e930895133603abd6d2c",
+      "lab/pk6/native_dispatch/reference.py": "e168e19137b024b0c0e33b05571ceb51bf1b828b7f8b8784245732b808012635",
+      "lab/pk6/native_dispatch/run.py": "f19b5145d0558b772c2d33087168a4555cd6dee8a05f706bba17333a7ebc14f8",
+      "lab/pk6/native_dispatch/score.py": "964214eab0aeef643d7de883beef52d46b69f04306d9422bac3283eb25ac2cef"
+    },
     "pilot-http": {
       "ironmule/ggml_engine.py": "9947f64f886ea7e7c7efd341bfe8e837a3dbd85b89a12069708b255c6e74c410",
       "ironmule/ggml_profiles.py": "77aff7e85738473b42167106032ebe0c7202630d211f920e84df90836f1514a8",
@@ -633,6 +645,11 @@
       "base_sha256": "17d71f1b480cda75540906e3f3fd803db6a60e4d239040e549c7ae1003718c4f",
       "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
       "patch": "2d907fa989b8dd8997adea434752423a3f3e2f0aed5bbdf83414a503c640118b"
+    },
+    "964214eab0aeef643d7de883beef52d46b69f04306d9422bac3283eb25ac2cef": {
+      "base_sha256": "607e9b5f1c61e449ded76ed4f9d3eb75de70c45af598adab8c3040e249a6662a",
+      "commit": "1ea549f59a245c9c96b488104b997fbbdc099084",
+      "patch": "f7a00b03f05e5b604842076e97aa61db4000b23d08d3b8f7d72d79e32c3dc55d"
     },
     "96c38fadc24a27e2e5656a4a8e0b48780a18ad7c3b8c6ecf94dec67904e5b720": {
       "base_sha256": "2d9a7be56673219edde1dce956d90f1a688296a64a2463f07ef27f6f960dff5a",

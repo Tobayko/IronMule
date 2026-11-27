@@ -1,6 +1,6 @@
 {
   "first_unix": 1795738787.9991045,
-  "last_unix": 1795746320.2622707,
+  "last_unix": 1795747145.9207964,
   "processes": {
     "controls/capacity/capacity-confirm/H1/end-H1.json": {
       "median_load1_in_requests": 34.33,
@@ -150,6 +150,18 @@
       "median_load1_in_requests": 30.6,
       "process_samples": 18,
       "request_samples": 5,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/native-final/X1/end-X1.json": {
+      "median_load1_in_requests": 19.104999999999997,
+      "process_samples": 84,
+      "request_samples": 6,
+      "request_samples_with_native_compiler": 0
+    },
+    "http/packed-http-archive-replay/W1/end-W1.json": {
+      "median_load1_in_requests": 10.68,
+      "process_samples": 89,
+      "request_samples": 6,
       "request_samples_with_native_compiler": 0
     },
     "http/pilot-http/L1/end-L1.json": {
