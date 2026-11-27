@@ -205,9 +205,23 @@ sets of 32 documents and repeats the short factual test after the long ones.
 ```bash
 python -m lab.pk6.native_dispatch.score "$results/controls/capacity" > /tmp/capacity.json
 python -m lab.pk6.native_dispatch.document_quality assess "$results/controls/document-retrieval" /tmp/retrieval.json
+python -m lab.pk6.native_dispatch.compact "$results/controls/capacity" /tmp/phases.json --explain-pressure
 python -m lab.pk6.native_dispatch.host_load "$results" "$results/host-samples.jsonl.gz" /tmp/host-load.json
 ```
 
 The host-load replay joins five-second CPU observations to the actual request windows. Its
 sample count indicates which processes ran after that observer started. The vLLM archive covers
 the earlier mixed workload. The long-document comparison uses IronMule's original physical KV pool.
+
+#### Learning a pool profile from served traffic
+
+`python -m lab.pk6.native_dispatch.pool_pilot fit "$results" /tmp/pool-pilot` trains three small
+cost heads from random weights on CPU. It uses the same Pilot inference function as the native
+operator study. All repetitions of seed 943819 train together. The six workload/concurrency
+cells from seed 180341 evaluate the fitted choice. The report also scores the untrained heads,
+a stock rule and a simple document-length rule. The independent reverse-order comparison and
+the retrieval test determine which choices may serve. A width needs the existing ten-percent
+criterion on every streaming metric in both long-document runs. Each correct reference
+retrieval must also survive, with examples at all three document positions and all 32 short
+factual answers correct. Unknown hardware or traffic outside the measured length range selects
+stock. The decisions apply at process startup for a workload observed on that target.

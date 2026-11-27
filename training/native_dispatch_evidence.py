@@ -88,7 +88,9 @@ def experiences(root, source, digest):
                             "candidate": candidate["metrics"][str(width)],
                             "reference": reference["metrics"][str(width)],
                             "paired_ratios": pair["candidate_over_reference"],
-                            "reference_peak_serving_mib": reference["resources"]["peak_gpu_mib"],
+                            "reference_peak_serving_mib": reference["resources"][
+                                "peak_gpu_mib"
+                            ],
                         }
                     ],
                     quality={
@@ -107,13 +109,25 @@ def experiences(root, source, digest):
             raise ValueError("document retrieval differs from its original requests")
         for arm, trial in result.items():
             yield record(
-                "native_document_retrieval", source, digest, arm,
+                "native_document_retrieval",
+                source,
+                digest,
+                arm,
                 "l40s-capacity-long-documents",
-                hardware=trial["hardware"], base_commit=trial["source"],
-                model=trial["model"], quantization="Q4_K_M",
-                workload={"document_seeds": list(SEEDS), "document_words": 900, "concurrency": 32},
+                hardware=trial["hardware"],
+                base_commit=trial["source"],
+                model=trial["model"],
+                quantization="Q4_K_M",
+                workload={
+                    "document_seeds": list(SEEDS),
+                    "document_words": 900,
+                    "concurrency": 32,
+                },
                 profiles=[{"arm": arm, "cells": 16384 if arm == "H2" else 65536}],
-                quality={"correct_by_wave": trial["correct_by_wave"], "requests_per_wave": 32},
+                quality={
+                    "correct_by_wave": trial["correct_by_wave"],
+                    "requests_per_wave": 32,
+                },
                 reason="two exact-retrieval waves followed by the short factual gate",
                 authorship="Codex designed this holdout after the measured compact-pool speedup.",
                 uncertainty="One cold process per profile, two document seeds, retrieval from synthetic inventory logs.",

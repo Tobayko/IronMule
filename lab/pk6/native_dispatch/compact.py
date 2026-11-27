@@ -66,14 +66,85 @@ def packing_budget(http):
     }
 
 
+def explain_pressure(root):
+    """Compare cache reuse and time inside actual mixed compute calls at 32 clients."""
+    from lab.pk6.mixed_progress import grade
+    from lab.pk6.native_dispatch.score import waves, read
+
+    pairs = {}
+    for seed in (1, 2):
+        candidate, reference = f"H{seed}", f"R{seed}"
+        arms = {}
+        for arm in (reference, candidate):
+            ends = list(root.rglob(f"end-{arm}.json"))
+            if len(ends) > 1:
+                raise ValueError(f"ambiguous process for {arm}")
+            if not ends:
+                break
+            path = ends[0].parent
+            target = read(path / "target.json")
+            rows = [w for w in waves(path, arm) if w["width"] == 32 and w["repeat"] < 3]
+            bound = grade.bindings(path, arm, rows)
+            cells = []
+            for w, cell in zip(rows, bound["cells"], strict=True):
+                phases = cell["phases"]
+                cells.append(
+                    {
+                        "repeat": w["repeat"],
+                        "http_wall_s": w["elapsed_s"],
+                        "input_tokens": cell["prompt_tokens"],
+                        "reused_tokens": cell["reused_tokens"],
+                        "mixed_calls": phases.get("mixed", {}).get("calls", 0),
+                        "mixed_llama_decode_s": phases.get("mixed", {}).get(
+                            "llama_decode_s", 0.0
+                        ),
+                    }
+                )
+            arms[arm] = (
+                target,
+                rows,
+                {"waves": cells, "trace_sha256": bound["trace_sha256"]},
+            )
+        if len(arms) < 2:
+            continue
+        rt, rw, reference_data = arms[reference]
+        ht, hw, candidate_data = arms[candidate]
+        if any(rt[k] != ht[k] for k in ("hardware", "source", "gguf_sha256")):
+            raise ValueError("pressure profiles used different targets")
+        pair = grade.paired(rw, hw)
+        if not pair["same_fixed_work"]:
+            raise ValueError("different work in long-document waves")
+        pairs[str(rw[0]["seed"])] = {
+            reference: reference_data,
+            candidate: candidate_data,
+        }
+    return {
+        "pairs": pairs,
+        "scope": "Three successive waves at 32 clients per process. A mixed call evaluated prompt and decode rows together. The effect of allocation, admission and attention range cannot be isolated from these two profiles.",
+    }
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("primary", type=Path)
     p.add_argument("output", type=Path)
-    p.add_argument(
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--explain-pressure",
+        action="store_true",
+        help="replay the long-document archive",
+    )
+    mode.add_argument(
         "--packed-memory",
         action="store_true",
         help="read the HTTP archive and estimate cache headroom from the compact process",
     )
     a = p.parse_args()
-    save(a.output, packing_budget(a.primary) if a.packed_memory else plan(a.primary))
+    evaluate = (
+        explain_pressure
+        if a.explain_pressure
+        else packing_budget
+        if a.packed_memory
+        else plan
+    )
+    save(a.output, evaluate(a.primary))

@@ -131,11 +131,15 @@ def assess(root):
             "hardware": target["hardware"],
             "model": target["gguf_sha256"],
             "correct_by_wave": counts,
+            "correct_case_ids": [
+                [q["case"] for q in w["requests"] if q["correct"]] for w in rows
+            ],
             "requests_per_wave": 32,
             "input_digests": [r["input_digest"] for r in rows],
             "trace_sha256": verified["trace_sha256"],
             "gate": gate,
             "source": target["source"],
+            "engine_sha256": target["engine_sha256"],
             "waves_sha256": verified["waves_sha256"],
             "target_sha256": checksum(folder / "target.json"),
         }
@@ -144,6 +148,7 @@ def assess(root):
         if (
             result["H2"]["hardware"] != result["R2"]["hardware"]
             or result["H2"]["source"] != result["R2"]["source"]
+            or result["H2"]["engine_sha256"] != result["R2"]["engine_sha256"]
             or result["H2"]["model"] != result["R2"]["model"]
             or result["H2"]["input_digests"] != result["R2"]["input_digests"]
         ):

@@ -255,11 +255,14 @@ def main(*, comparator="awq_marlin"):
                 save(args.out / "reused-vllm.json", known)
                 reused.append(arm)
                 continue
-            if reason:
-                save(
-                    args.out / "vllm-recheck.json",
-                    {"reason": reason, "previous": known},
+            if not reason:
+                parser.error(
+                    "archived comparator does not match this workload; record a --vllm-recheck-reason before scheduling a fresh measurement"
                 )
+            save(
+                args.out / "vllm-recheck.json",
+                {"reason": reason, "previous": known},
+            )
         if time.monotonic() >= deadline:
             raise TimeoutError(
                 "qualification window exhausted before starting another server"

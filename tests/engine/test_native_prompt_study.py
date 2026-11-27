@@ -375,3 +375,58 @@ def test_draft_load_order_replays_from_measured_requests():
     plan = propose(ARCHIVE / "http", ARCHIVE / "draft-metadata.json")
     assert plan == json.loads((ARCHIVE / "draft-load-plan.json").read_bytes())
     assert plan["selected"] and plan["additional_kv_bytes_estimate"] == 448 * 2**20
+
+
+def test_pool_profile_rejects_foreign_device_and_mixed_traffic(tmp_path):
+    from lab.pk6.native_dispatch import pool_pilot, score
+
+    root = (
+        Path(__file__).resolve().parents[2]
+        / "lab/autonomous/results/l40s-native-dispatch"
+    )
+    proof = pool_pilot.fit(root, tmp_path)
+    assert {r["server_seed_index"] for r in proof["scores"] if r["split"] == "fit"} == {
+        2
+    }
+    assert {
+        r["server_seed_index"] for r in proof["scores"] if r["split"] == "heldout"
+    } == {1}
+    prior = score.waves(root / "http/primary", "R1")
+    assert (
+        pool_pilot.select(tmp_path, prior, 32, proof["hardware"], proof["native"])[
+            "profile"
+        ]
+        == "stock"
+    )
+    (long_file,) = (root / "controls/capacity").rglob("waves-R1.jsonl")
+    long_rows = score.waves(long_file.parent, "R1")
+    assert (
+        pool_pilot.select(tmp_path, long_rows, 32, {"name": "other"}, proof["native"])[
+            "profile"
+        ]
+        == "stock"
+    )
+    assert (
+        pool_pilot.select(tmp_path, long_rows, 32, proof["hardware"], "different")[
+            "profile"
+        ]
+        == "stock"
+    )
+    expected = "compact" if 32 in proof["qualified_widths"] else "stock"
+    assert (
+        pool_pilot.select(tmp_path, long_rows, 32, proof["hardware"], proof["native"])[
+            "profile"
+        ]
+        == expected
+    )
+
+
+def test_detached_native_client_can_read_only_the_historical_target(monkeypatch):
+    from lab.pk6.native_dispatch import reference, score
+
+    target = score.read(reference.ARCHIVE / "http/primary/target.json")
+    monkeypatch.delattr(reference.trial, "vllm_command")
+    saved = reference.lookup(reference.ARCHIVE)
+    assert saved["scope"] == "historical_target"
+    assert saved["metrics"]["32"]["tok_s"]["median"] == pytest.approx(266.55, abs=0.01)
+    assert reference.lookup(reference.ARCHIVE, target) is None

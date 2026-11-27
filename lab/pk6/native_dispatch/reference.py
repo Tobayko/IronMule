@@ -77,7 +77,13 @@ def lookup(root, target=None, *, artifact="awq_marlin"):
     if not certificate.is_file():
         return None
     cert = score.read(certificate)
-    if artifact != cert["artifact"] or protocol() != cert["protocol"]:
+    if artifact != cert["artifact"]:
+        return None
+    # An unpaired historical target describes its own archived client. A detached native
+    # experiment can use different prompts or predate the extracted comparator command.
+    if target is not None and (
+        not hasattr(trial, "vllm_command") or protocol() != cert["protocol"]
+    ):
         return None
     folder = root / "http/primary"
     meta = score.read(folder / "target.json")

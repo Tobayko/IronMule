@@ -4837,3 +4837,23 @@ seconds at that outer width during performance requests. The factual wave had no
 outer call. Dispatch within each request still requires a serving trace.
 
 H2 reproduced the 12 GiB serving-memory reduction and answered 32/32 factual requests. At 32 clients H1/H2 delivered 159.46/157.46 output tokens/s versus 155.22/153.85 on R1/R2. H2 slowed single-client throughput to 39.3 versus 44.6. The bounded W4 four-worker screen completed on both seeds with identical outputs. At eight clients its two gains were 5.13% and 5.87%; at one client it lost 0.40% and 0.16%. The S serving profile binds the selected table and its generating CUDA library to the same board.
+
+#### Long documents under sustained KV pressure
+
+On the same L40S and Qwen3-32B, a wave of 32 simultaneous 900-word inventories showed a
+larger effect. Each timed answer used the fixed 32-token limit. The two seed pairs ran in
+opposite process order. Each process answered 32/32 short factual questions after its timed
+waves. The generated inventory summaries sometimes differed between profiles.
+
+| Seed | Stock → compact, output tokens/s | Stock → compact, median first token | Stock → compact, p95 completion |
+| --- | ---: | ---: | ---: |
+| 943819 | 24.78 → 47.78 | 10.81 → 5.76 s | 41.25 → 21.38 s |
+| 180341 | 27.49 → 47.55 | 11.85 → 7.96 s | 37.18 → 21.52 s |
+
+The time inside llama.cpp calls that processed prompt and decode rows together grew across
+the three stock waves from 21.2 to 45.8 seconds on one seed and from 21.2 to 43.3 on the
+other. It stayed between 17.6 and 18.7 seconds in all six compact waves. Each profile ran
+23 mixed calls per wave on the first seed. The pair reused almost the same number of input
+tokens. These observations locate the time difference. Separating the effects of allocation,
+admission and the KV range seen by attention requires another experiment. The vLLM reference
+uses the earlier mixed workload. [Request and memory receipts](../lab/autonomous/results/l40s-native-dispatch/controls/capacity/) · [Native time by wave](../lab/autonomous/results/l40s-native-dispatch/long-document-phases.json)
