@@ -185,6 +185,14 @@ if os.environ.get("IRONMULE_LAB_ACTIVITY"):
     if draft_mix:
         code = substitute(
             code,
+            "                    modelled = self.drafter.draft(wants, len(order)) if wants else {}",
+            """                    if draft_mix == "limited_catchup":
+                        from lab.pk6.native_dispatch.draft_load import prioritize
+                        wants = prioritize(wants, self.drafter.slot_of, self.drafter.held)
+                    modelled = self.drafter.draft(wants, len(order)) if wants else {}""",
+        )
+        code = substitute(
+            code,
             "                modelled: dict[int, list[int]] = {}",
             """                modelled: dict[int, list[int]] = {}
                 local_drafts = {}
@@ -219,7 +227,7 @@ if os.environ.get("IRONMULE_LAB_ACTIVITY"):
             "                        self.policy.observe_drafts(bucket, r, min(r, len(new) - 1))",
             """                        self.policy.observe_drafts(bucket, r, min(r, len(new) - 1))
                     if draft_mix and TRACE and r and (seq in modelled or seq in local_drafts):
-                        trace_note(f"draft_verified source={'model' if seq in modelled else 'context'} rows={r} accepted={min(r, len(new)-1)}")""",
+                        trace_note(f"draft_verified source={'model' if seq in modelled else 'context'} active={len(order)} rows={r} accepted={min(r, len(new)-1)}")""",
         )
     engine.write_text(code)
     flags.write_text(cache)

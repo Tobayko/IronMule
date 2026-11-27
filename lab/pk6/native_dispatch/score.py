@@ -52,7 +52,9 @@ def exclusion(arm, proof):
         for k in ("IRONMULE_PK6", "IRONMULE_PS1")
     ):
         return "requested PS1 and PK6 profile did not serve"
-    if arm.startswith(("K", "O")):
+    if arm.startswith("C") and not proof.get("verified_at_wider_draft_load", 0):
+        return "no draft verified with more than two active requests during the eight-client workload"
+    if arm.startswith(("K", "O", "C")):
         required = "context" if arm.startswith("O") else "model"
         if not any(
             v[required]["rows"]
@@ -185,6 +187,7 @@ def inspect(folder, arm, target, telemetry):
                         fields["source"],
                         int(fields["rows"]),
                         int(fields["accepted"]),
+                        int(fields.get("active", 0)),
                     )
                 )
             if line.startswith("# physical_pool "):
@@ -203,6 +206,7 @@ def inspect(folder, arm, target, telemetry):
                 event = dict(part.split("=") for part in line.split()[2:])
                 marks.append((float(event["t"]), int(event["launches"])))
         draft_counts = {}
+        widened = 0
         for width in (1, 8, 32):
             counted = {
                 source: {"rows": 0, "accepted": 0} for source in ("model", "context")
@@ -212,12 +216,19 @@ def inspect(folder, arm, target, telemetry):
                     continue
                 lo = min(x["t_send"] for x in r["requests"])
                 hi = max(x["t_done"] for x in r["requests"])
-                for t, source, guesses, accepted in drafts:
+                for t, source, guesses, accepted, active in drafts:
                     if lo <= t <= hi:
+                        if width == 8 and active > 2 and source == "model":
+                            widened += guesses
                         counted[source]["rows"] += guesses
                         counted[source]["accepted"] += accepted
             draft_counts[str(width)] = counted
         proof = {
+            **(
+                {"verified_at_wider_draft_load": widened}
+                if target.get("draft_load_plan")
+                else {}
+            ),
             "draft_verified_by_width": draft_counts
             if target.get("draft_gguf_sha256")
             else {},
@@ -377,7 +388,7 @@ def run(root, *, comparator="awq_marlin", reference_archive=None):
                 ["A" + arm[1:]]
                 if arm.startswith("T")
                 else ["K" + arm[1:]]
-                if arm.startswith("O")
+                if arm.startswith(("O", "C"))
                 else []
             )
         ):

@@ -338,3 +338,40 @@ extern "C" int ironmule_kg_mul_mat_group(int n, const int*, const void*const*, c
         lib.ironmule_kg_mul_mat_group(2, None, None, None, None, None, 1, 1, None) == 0
     )
     assert lib.im_prompt_dispatches() == 2
+
+
+def test_repeated_worker_seed_pruned_only_for_a_measured_numeric_rejection(tmp_path):
+    from lab.pk6.native_dispatch.reference import ARCHIVE
+    from lab.pk6.native_dispatch.run import rejected_first_seed
+
+    source = next((ARCHIVE / "http").rglob("ready-M1.json"))
+    ready = tmp_path / source.name
+    ready.write_bytes(source.read_bytes())
+    assert rejected_first_seed(tmp_path, "M2") is None
+    (tmp_path / "end-M1.json").write_text("{}")
+    assert rejected_first_seed(tmp_path, "M2")["first"] == "M1"
+    doc = json.loads(ready.read_bytes())
+    for attempt in doc["health"]["kernel_fallback"]["attempts"]:
+        if attempt.get("diagnostic"):
+            attempt["diagnostic"]["code"] = "out_of_memory"
+    ready.write_text(json.dumps(doc))
+    assert rejected_first_seed(tmp_path, "M2") is None
+
+
+def test_draft_slots_prioritize_the_cheapest_available_context():
+    from lab.pk6.native_dispatch.draft_load import prioritize
+
+    wants = {0: ([8] * 128, 1), 1: ([1, 2, 3], 2), 2: ([4] * 32, 1)}
+    held = {0: [4] * 31, 1: [1, 2]}
+    assert list(prioritize(wants, {1: 1}, held)) == [1, 2, 0]
+    assert prioritize(wants, {0: 0, 1: 1}, held) is wants
+    assert exclusion("C1", {"verified_at_wider_draft_load": 0})
+
+
+def test_draft_load_order_replays_from_measured_requests():
+    from lab.pk6.native_dispatch.reference import ARCHIVE
+    from lab.pk6.native_dispatch.draft_load import propose
+
+    plan = propose(ARCHIVE / "http", ARCHIVE / "draft-metadata.json")
+    assert plan == json.loads((ARCHIVE / "draft-load-plan.json").read_bytes())
+    assert plan["selected"] and plan["additional_kv_bytes_estimate"] == 448 * 2**20

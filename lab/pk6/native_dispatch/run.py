@@ -18,6 +18,30 @@ SEEDS = (180341, 943819)
 DRAFT_SHA256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
 
 
+def rejected_first_seed(folder, arm):
+    if arm not in {
+        prefix + "2" for prefix in ("F", "I", "M", "J", "Y", "W", "S", "Z", "T", "X")
+    }:
+        return None
+    first = arm[:-1] + "1"
+    ready = folder / f"ready-{first}.json"
+    if not (folder / f"end-{first}.json").is_file() or not ready.is_file():
+        return None
+    fallback = json.loads(ready.read_bytes())["health"].get("kernel_fallback") or {}
+    rejected = any(
+        attempt.get("passes") is False
+        and (attempt.get("diagnostic") or {}).get("code") == "quality_rejected"
+        for attempt in fallback.get("attempts", ())
+    )
+    if fallback.get("serving") == "stock" and rejected:
+        return {
+            "first": first,
+            "ready_sha256": checksum(ready),
+            "reason": "same program rejected by the fixed model quality gate before serving",
+        }
+    return None
+
+
 def main(*, comparator="awq_marlin"):
     parser = argparse.ArgumentParser(description=__doc__)
     for field, default in (
@@ -58,10 +82,23 @@ def main(*, comparator="awq_marlin"):
     if checksum(gguf) != GGUF:
         raise ValueError("unexpected GGUF")
     draft = None
-    if any(a.startswith(("K", "O")) for a in args.arms):
+    if any(a.startswith(("K", "O", "C")) for a in args.arms):
         draft = args.models / "Qwen3-0.6B-Q8_0.gguf"
         if checksum(draft) != DRAFT_SHA256:
             raise ValueError("foreign draft model")
+    draft_load = None
+    if any(a.startswith("C") for a in args.arms):
+        if not args.policy:
+            raise ValueError("missing measured draft-load proposal")
+        draft_load = json.loads(args.policy.read_bytes())
+        if (
+            not draft_load["selected"]
+            or draft_load["hardware"] != hw
+            or draft_load["gguf"] != GGUF
+            or draft_load["draft"] != DRAFT_SHA256
+            or (draft_load["slots"], draft_load["max_running"]) != (4, 8)
+        ):
+            raise ValueError("foreign drafting profile")
     policy_decision = None
     if any(a.startswith("Z") for a in args.arms):
         if not args.routing_receipt or not args.lib:
@@ -197,6 +234,7 @@ def main(*, comparator="awq_marlin"):
             "cpu_policy": policy_decision,
             "draft_gguf_sha256": DRAFT_SHA256 if draft else None,
             "pool_plan": pool,
+            **({"draft_load_plan": draft_load} if draft_load else {}),
             "packed_program": packed_receipt,
             "shared_chunk_plan": chunk_plan,
             **({"bounded_w4": bounded_w4} if bounded_w4 else {}),
@@ -204,7 +242,12 @@ def main(*, comparator="awq_marlin"):
     )
     deadline = time.monotonic() + float(os.environ["RP_DEADLINE"]) - time.time() - 45
     reused = []
+    skipped = {}
     for arm in args.arms:
+        rejection = rejected_first_seed(args.out, arm)
+        if rejection:
+            skipped[arm] = rejection
+            continue
         if arm == "vllm":
             target = json.loads((args.out / "target.json").read_bytes())
             known = lookup(archive, target, artifact=comparator)
@@ -225,6 +268,8 @@ def main(*, comparator="awq_marlin"):
             *FLAGS,
             "IRONMULE_LAB_ACTIVITY",
             "IRONMULE_LAB_DRAFT_MIX",
+            "IRONMULE_GGML_DRAFT_SLOTS",
+            "IRONMULE_GGML_DRAFT_MAX_RUNNING",
             "IRONMULE_LAB_MMQ_TILE",
             "IRONMULE_LAB_POOL_CELLS",
             "IRONMULE_LAB_SHARED_CHUNK",
@@ -242,9 +287,15 @@ def main(*, comparator="awq_marlin"):
             IRONMULE_GGML_UBATCH="8192",
             IRONMULE_CUDA_GRAPHS_ROWS="32",
         )
-        if arm.startswith(("K", "O")):
+        if arm.startswith(("K", "O", "C")):
             os.environ["IRONMULE_LAB_DRAFT_MIX"] = (
                 "context_first" if arm.startswith("O") else "model_first"
+            )
+        if arm.startswith("C"):
+            os.environ.update(
+                IRONMULE_LAB_DRAFT_MIX="limited_catchup",
+                IRONMULE_GGML_DRAFT_SLOTS=str(draft_load["slots"]),
+                IRONMULE_GGML_DRAFT_MAX_RUNNING=str(draft_load["max_running"]),
             )
         if arm.startswith("E"):
             # Exercise normal automatic generation on this board, sharing its real persistent calibration state.
@@ -293,18 +344,18 @@ def main(*, comparator="awq_marlin"):
                 IRONMULE_W4_TABLE=str(args.lib.resolve().with_name("selected.table")),
             )
         elif arm != "vllm" and not arm.startswith(
-            ("Q", "R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O")
+            ("Q", "R", "U", "N", "G", "T", "X", "A", "L", "H", "E", "K", "O", "C")
         ):
             raise ValueError("unregistered arm")
         if not arm.startswith("S") and bounded_w4:
             os.environ.pop("IRONMULE_W4_TABLE", None)
-        if arm.startswith(("K", "O")):
+        if arm.startswith(("K", "O", "C")):
             trial.measure(args, arm, hw, 0, deadline, draft=draft)
         else:
             trial.measure(args, arm, hw, 0, deadline)
     completed = {
         "hardware": trial.board(),
-        "order": [a for a in args.arms if a not in reused],
+        "order": [a for a in args.arms if a not in reused and a not in skipped],
     }
     if reused:
         completed.update(requested=args.arms, reused=reused)

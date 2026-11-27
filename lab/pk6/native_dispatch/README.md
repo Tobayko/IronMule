@@ -169,3 +169,24 @@ bash lab/pk6/native_dispatch/serve.sh /work/http/bounded --arms S1 S2 \
 
 The build checks the original full calibration table beside `$generated_kernel`, the
 selected rows, the generating library, the Qwen3-32B model digest and the physical board.
+
+#### Let the draft model work at a higher load
+
+With the existing two draft slots, K1 reached 55.87 output tokens/s at one client.
+The target verified 122 proposed tokens over those three waves. It verified 20
+proposed tokens across the eight-client waves, where throughput reached 112.84
+tokens/s. The two-slot drafter stops when more than two requests are active.
+
+IronMule used those observations to propose four slots and a limit of eight active
+requests. The draft GGUF metadata puts the extra FP16 KV storage at 448 MiB. In the
+C experiment, requests that already own a slot keep it. Among requests waiting for
+a slot, the new scheduler favors those requiring the fewest new draft prompt tokens.
+The target still verifies every proposed token. The trace records the active request
+count at verification. A C run requires evidence that the higher limit actually served.
+
+```bash
+python -m lab.pk6.native_dispatch.draft_load "$results/http" "$results/draft-metadata.json" /tmp/draft-load.json
+# In a disposable study checkout prepared with --draft-mix
+bash lab/pk6/native_dispatch/serve.sh /work/http/draft-load --arms C1 C2 \
+  --reference-archive "$results" --policy /tmp/draft-load.json
+```

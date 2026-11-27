@@ -1,0 +1,57 @@
+{
+  "additional_kv_bytes_estimate": 469762048,
+  "draft": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+  "eight_client_fraction_of_vllm": 0.6878634036299427,
+  "gguf": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+  "hardware": {
+    "device_sha256": "bb5e61052285ac82b12515672217562c291b0b9e6950827dbd4f87aef960fb3d",
+    "driver": "595.112.07",
+    "memory_mib": 46068,
+    "name": "NVIDIA L40S"
+  },
+  "max_running": 8,
+  "measured_headroom_bytes": 6700400640,
+  "metadata": {
+    "gguf": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+    "qwen3.attention.head_count_kv": 8,
+    "qwen3.attention.key_length": 128,
+    "qwen3.attention.value_length": 128,
+    "qwen3.block_count": 28
+  },
+  "scope": "One discovery seed. The Ada target accepted drafts mostly at low load. Four slots and catch-up ordering are a new experiment. Only a full product measurement can establish benefit.",
+  "selected": true,
+  "slots": 4,
+  "source": "0be0b415785999f9a64ccf77153553ee6af658462abf8db277f778a73281edfd",
+  "verified_by_width": {
+    "1": {
+      "context": {
+        "accepted": 0,
+        "rows": 0
+      },
+      "model": {
+        "accepted": 58,
+        "rows": 122
+      }
+    },
+    "32": {
+      "context": {
+        "accepted": 0,
+        "rows": 0
+      },
+      "model": {
+        "accepted": 18,
+        "rows": 22
+      }
+    },
+    "8": {
+      "context": {
+        "accepted": 0,
+        "rows": 0
+      },
+      "model": {
+        "accepted": 17,
+        "rows": 20
+      }
+    }
+  }
+}
